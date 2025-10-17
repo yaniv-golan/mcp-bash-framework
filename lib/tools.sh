@@ -16,6 +16,31 @@ MCP_TOOLS_TTL="${MCP_TOOLS_TTL:-5}"
 MCP_TOOLS_LAST_SCAN=0
 MCP_TOOLS_CHANGED=false
 
+mcp_tools_registry_max_bytes() {
+  local limit="${MCPBASH_REGISTRY_MAX_BYTES:-104857600}"
+  case "${limit}" in
+    ''|*[!0-9]*) limit=104857600 ;;
+  esac
+  printf '%s' "${limit}"
+}
+
+mcp_tools_enforce_registry_limits() {
+  local total="$1"
+  local json_payload="$2"
+  local limit
+  local size
+  limit="$(mcp_tools_registry_max_bytes)"
+  size="$(LC_ALL=C printf '%s' "${json_payload}" | wc -c | tr -d ' ')"
+  if [ "${size}" -gt "${limit}" ]; then
+    mcp_tools_error -32603 "Tool registry exceeds ${limit} byte cap"
+    return 1
+  fi
+  if [ "${total}" -gt 500 ]; then
+    printf '%s\n' "mcp-bash WARNING: tools registry contains ${total} entries; consider manual registration (Spec §9 guardrail)." >&2
+  fi
+  return 0
+}
+
 mcp_tools_error() {
   MCP_TOOLS_ERROR_CODE="$1"
   MCP_TOOLS_ERROR_MESSAGE="$2"
@@ -89,6 +114,9 @@ import json, os
 print(json.loads(os.environ.get("REGISTRY_JSON", "{}")).get('total', 0))
 PY
   )"
+  if ! mcp_tools_enforce_registry_limits "${MCP_TOOLS_TOTAL}" "${registry_json}"; then
+    return 1
+  fi
   MCP_TOOLS_LAST_SCAN="$(date +%s)"
   printf '%s' "${registry_json}" >"${MCP_TOOLS_REGISTRY_PATH}"
 }
@@ -251,6 +279,9 @@ import json, os
 print(json.loads(os.environ.get("REGISTRY_JSON", "{}")).get('total', 0))
 PY
   )"
+  if ! mcp_tools_enforce_registry_limits "${MCP_TOOLS_TOTAL}" "${registry_json}"; then
+    return 1
+  fi
 
   printf '%s' "${registry_json}" >"${MCP_TOOLS_REGISTRY_PATH}"
 }
@@ -480,32 +511,105 @@ PY
   local result_json
   if ! result_json="$(
     TOOL_STDOUT="${stdout_content}" TOOL_STDERR="${stderr_content}" TOOL_METADATA="${metadata}" TOOL_ARGS_JSON="${args_json}" TOOL_NAME="${name}" OUTPUT_SCHEMA="${output_schema}" EXIT_CODE="${exit_code}" HAS_JSON_TOOL="${has_json_tool}" "${py}" <<'PY'
-import json, os
+import json, os, math
+
+def type_matches(expected, value):
+    if isinstance(expected, list):
+        return any(type_matches(item, value) for item in expected)
+    if expected == "object":
+        return isinstance(value, dict)
+    if expected == "array":
+        return isinstance(value, list)
+    if expected == "string":
+        return isinstance(value, str)
+    if expected == "number":
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    if expected == "integer":
+        return isinstance(value, int) and not isinstance(value, bool)
+    if expected == "boolean":
+        return isinstance(value, bool)
+    if expected == "null":
+        return value is None
+    return True
+
+def validate(schema, value, path="$", errors=None):
+    if errors is None:
+        errors = []
+    if not isinstance(schema, dict):
+        return errors
+    schema_type = schema.get("type")
+    if schema_type is not None and not type_matches(schema_type, value):
+        errors.append(f"{path}: expected type {schema_type}, found {type(value).__name__}")
+        return errors
+    if isinstance(value, dict):
+        required = schema.get("required", [])
+        for key in required:
+            if key not in value:
+                errors.append(f"{path}: missing required property '{key}'")
+        properties = schema.get("properties", {})
+        for key, subschema in properties.items():
+            if key in value:
+                validate(subschema, value[key], path=f"{path}.{key}", errors=errors)
+    if isinstance(value, list):
+        items_schema = schema.get("items")
+        if isinstance(items_schema, dict):
+            for index, item in enumerate(value):
+                validate(items_schema, item, path=f"{path}[{index}]", errors=errors)
+    enum = schema.get("enum")
+    if enum is not None and value not in enum:
+        errors.append(f"{path}: value {value!r} not in enum {enum!r}")
+    return errors
+
 stdout = os.environ.get("TOOL_STDOUT", "")
 stderr = os.environ.get("TOOL_STDERR", "")
 metadata = json.loads(os.environ.get("TOOL_METADATA", "{}"))
 args = json.loads(os.environ.get("TOOL_ARGS_JSON", "{}"))
 name = os.environ.get("TOOL_NAME")
-output_schema_text = os.environ.get("OUTPUT_SCHEMA")
+output_schema_text = os.environ.get("OUTPUT_SCHEMA") or ""
 exit_code = int(os.environ.get("EXIT_CODE", "0"))
 has_json_tool = os.environ.get("HAS_JSON_TOOL") == "true"
 structured = None
+structured_errors = []
 if has_json_tool and stdout.strip():
     try:
         structured = json.loads(stdout)
-    except Exception:
+    except Exception as exc:
+        structured_errors.append(f"stdout is not valid JSON: {exc}")
+
+schema = None
+if output_schema_text:
+    try:
+        schema = json.loads(output_schema_text)
+    except Exception as exc:
+        structured_errors.append(f"Invalid outputSchema: {exc}")
+
+validation_errors = []
+if structured is not None and schema is not None:
+    validation_errors = validate(schema, structured)
+    if validation_errors:
         structured = None
+
 result = {"name": name, "content": []}
+meta = {"exitCode": exit_code}
+
 if structured is not None:
     result["structuredContent"] = structured
     result["content"].append({"type": "json", "json": structured})
+
 result["content"].append({"type": "text", "text": stdout})
-meta = {"exitCode": exit_code}
+
 if stderr:
     meta["stderr"] = stderr
+
+if structured_errors or validation_errors:
+    meta["validationErrors"] = structured_errors + validation_errors
+    result["isError"] = True
+
 result["_meta"] = meta
+
 if exit_code != 0:
     result["isError"] = True
+
 print(json.dumps(result, ensure_ascii=False, separators=(',', ':')))
 PY
   )"; then

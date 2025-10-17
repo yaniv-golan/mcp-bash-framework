@@ -16,6 +16,32 @@ MCP_PROMPTS_TTL="${MCP_PROMPTS_TTL:-5}"
 MCP_PROMPTS_LAST_SCAN=0
 MCP_PROMPTS_CHANGED=false
 
+mcp_prompts_registry_max_bytes() {
+  local limit="${MCPBASH_REGISTRY_MAX_BYTES:-104857600}"
+  case "${limit}" in
+    ''|*[!0-9]*) limit=104857600 ;;
+  esac
+  printf '%s' "${limit}"
+}
+
+mcp_prompts_enforce_registry_limits() {
+  local total="$1"
+  local json_payload="$2"
+  local limit
+  local size
+  limit="$(mcp_prompts_registry_max_bytes)"
+  size="$(LC_ALL=C printf '%s' "${json_payload}" | wc -c | tr -d ' ')"
+  if [ "${size}" -gt "${limit}" ]; then
+    MCP_PROMPTS_ERR_CODE=-32603
+    MCP_PROMPTS_ERR_MESSAGE="Prompts registry exceeds ${limit} byte cap"
+    return 1
+  fi
+  if [ "${total}" -gt 500 ]; then
+    printf '%s\n' "mcp-bash WARNING: prompts registry contains ${total} entries; consider manual registration (Spec §9 guardrail)." >&2
+  fi
+  return 0
+}
+
 mcp_prompts_error() {
   MCP_PROMPTS_ERR_CODE="$1"
   MCP_PROMPTS_ERR_MESSAGE="$2"
@@ -91,6 +117,9 @@ import json, os
 print(json.loads(os.environ.get("REGISTRY_JSON", "{}")).get('total', 0))
 PY
   )"
+  if ! mcp_prompts_enforce_registry_limits "${MCP_PROMPTS_TOTAL}" "${registry_json}"; then
+    return 1
+  fi
   MCP_PROMPTS_LAST_SCAN="$(date +%s)"
   printf '%s' "${registry_json}" >"${MCP_PROMPTS_REGISTRY_PATH}"
 }
@@ -216,6 +245,9 @@ import json, os
 print(json.loads(os.environ.get("REGISTRY_JSON", "{}")).get('total', 0))
 PY
   )"
+  if ! mcp_prompts_enforce_registry_limits "${MCP_PROMPTS_TOTAL}" "${registry_json}"; then
+    return 1
+  fi
 
   printf '%s' "${registry_json}" >"${MCP_PROMPTS_REGISTRY_PATH}"
 }
