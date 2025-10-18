@@ -18,6 +18,7 @@ MCP_RESOURCES_CHANGED=false
 MCP_RESOURCES_MANUAL_ACTIVE=false
 MCP_RESOURCES_MANUAL_BUFFER=""
 MCP_RESOURCES_MANUAL_DELIM=$'\036'
+MCP_RESOURCES_LOGGER="${MCP_RESOURCES_LOGGER:-mcp.resources}"
 
 mcp_resources_manual_begin() {
 	MCP_RESOURCES_MANUAL_ACTIVE=true
@@ -217,7 +218,7 @@ mcp_resources_emit_update() {
 	local payload="$2"
 	local py
 	py="$(mcp_resources_python)" || return 0
-	printf '%s\n' "mcp-resources debug: emit_update subscription=${subscription_id}" >&2
+	mcp_logging_debug "${MCP_RESOURCES_LOGGER}" "Emit update subscription=${subscription_id}"
 	local enriched
 	enriched="$(
 		PAYLOAD="${payload}" SUBSCRIPTION_ID="${subscription_id}" "${py}" <<'PY'
@@ -315,7 +316,7 @@ mcp_resources_enforce_registry_limits() {
 		return 1
 	fi
 	if [ "${total}" -gt 500 ]; then
-		printf '%s\n' "mcp-bash WARNING: resources registry contains ${total} entries; consider manual registration (Spec §9 guardrail)." >&2
+		mcp_logging_warning "${MCP_RESOURCES_LOGGER}" "Resources registry contains ${total} entries; consider manual registration"
 	fi
 	return 0
 }
@@ -429,7 +430,7 @@ mcp_resources_run_manual_script() {
 		mcp_resources_manual_abort
 		mcp_resources_error -32603 "Manual registration script failed"
 		if [ -n "${script_output}" ]; then
-			printf '%s\n' "${script_output}" >&2
+			mcp_logging_error "${MCP_RESOURCES_LOGGER}" "Manual registration script output: ${script_output}"
 		fi
 		return 1
 	fi
@@ -443,7 +444,7 @@ mcp_resources_run_manual_script() {
 	fi
 
 	if [ -n "${script_output}" ]; then
-		printf '%s\n' "${script_output}" >&2
+		mcp_logging_warning "${MCP_RESOURCES_LOGGER}" "Manual registration script output: ${script_output}"
 	fi
 
 	if ! mcp_resources_manual_finalize; then
@@ -454,14 +455,14 @@ mcp_resources_run_manual_script() {
 
 mcp_resources_refresh_registry() {
 	mcp_resources_init
-	printf '%s\n' "mcp-resources debug: refresh start register=${MCPBASH_REGISTER_SCRIPT} exists=$([[ -x ${MCPBASH_REGISTER_SCRIPT} ]] && echo yes || echo no) ttl=${MCP_RESOURCES_TTL:-5}" >&2
+	mcp_logging_debug "${MCP_RESOURCES_LOGGER}" "Refresh start register=${MCPBASH_REGISTER_SCRIPT} exists=$([[ -x ${MCPBASH_REGISTER_SCRIPT} ]] && echo yes || echo no) ttl=${MCP_RESOURCES_TTL:-5}"
 	if [ -x "${MCPBASH_REGISTER_SCRIPT}" ]; then
-		printf '%s\n' "mcp-resources debug: invoking manual script" >&2
+		mcp_logging_debug "${MCP_RESOURCES_LOGGER}" "Invoking manual registration script"
 		if mcp_resources_run_manual_script; then
-			printf '%s\n' "mcp-resources debug: refresh satisfied by manual script" >&2
+			mcp_logging_debug "${MCP_RESOURCES_LOGGER}" "Refresh satisfied by manual script"
 			return 0
 		fi
-		printf '%s\n' "mcp-resources debug: manual script returned empty/non-zero" >&2
+		mcp_logging_error "${MCP_RESOURCES_LOGGER}" "Manual registration script returned empty output or non-zero"
 		return 1
 	fi
 	local now
@@ -489,13 +490,13 @@ PY
 		fi
 	fi
 	if [ -n "${MCP_RESOURCES_REGISTRY_JSON}" ] && [ $((now - MCP_RESOURCES_LAST_SCAN)) -lt "${MCP_RESOURCES_TTL}" ]; then
-		printf '%s\n' "mcp-resources debug: refresh skipped due to ttl (last=${MCP_RESOURCES_LAST_SCAN})" >&2
+		mcp_logging_debug "${MCP_RESOURCES_LOGGER}" "Refresh skipped due to ttl (last=${MCP_RESOURCES_LAST_SCAN})"
 		return 0
 	fi
 	local previous_hash="${MCP_RESOURCES_REGISTRY_HASH}"
 	mcp_resources_scan || return 1
 	MCP_RESOURCES_LAST_SCAN="${now}"
-	printf '%s\n' "mcp-resources debug: refresh completed scan hash=${MCP_RESOURCES_REGISTRY_HASH}" >&2
+	mcp_logging_debug "${MCP_RESOURCES_LOGGER}" "Refresh completed scan hash=${MCP_RESOURCES_REGISTRY_HASH}"
 	if [ "${previous_hash}" != "${MCP_RESOURCES_REGISTRY_HASH}" ]; then
 		MCP_RESOURCES_CHANGED=true
 	fi
@@ -837,7 +838,7 @@ mcp_resources_read() {
 	fi
 	local py
 	py="$(mcp_resources_python)" || return 1
-	printf '%s\n' "mcp-resources debug: metadata resolved for name=${name:-<direct>} uri=${explicit_uri}" >&2
+	mcp_logging_debug "${MCP_RESOURCES_LOGGER}" "Metadata resolved for name=${name:-<direct>} uri=${explicit_uri}"
 	local info_json
 	info_json="$(
 		METADATA="${metadata}" URI_OVERRIDE="${explicit_uri}" "${py}" <<'PY'
@@ -879,12 +880,12 @@ PY
 		mcp_resources_error -32602 "Resource URI missing"
 		return 1
 	fi
-	printf '%s\n' "mcp-resources debug: reading provider=${provider} uri=${uri}" >&2
+	mcp_logging_debug "${MCP_RESOURCES_LOGGER}" "Reading provider=${provider} uri=${uri}"
 	local content
 	if ! content="$(mcp_resources_read_via_provider "${provider}" "${uri}")"; then
 		return 1
 	fi
-	printf '%s\n' "mcp-resources debug: provider returned ${#content} bytes" >&2
+	mcp_logging_debug "${MCP_RESOURCES_LOGGER}" "Provider returned ${#content} bytes"
 	local result
 	result="$(
 		CONTENT="${content}" MIME="${mime}" URI="${uri}" "${py}" <<'PY'

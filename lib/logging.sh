@@ -3,7 +3,7 @@
 
 set -euo pipefail
 
-MCP_LOG_LEVEL_DEFAULT="${MCPBASH_LOG_LEVEL_DEFAULT:-info}"
+MCP_LOG_LEVEL_DEFAULT="${MCPBASH_LOG_LEVEL:-${MCPBASH_LOG_LEVEL_DEFAULT:-info}}"
 MCP_LOG_LEVEL_CURRENT="${MCP_LOG_LEVEL_DEFAULT}"
 
 mcp_logging_level_rank() {
@@ -37,4 +37,68 @@ mcp_logging_is_enabled() {
 		return 1
 	fi
 	return 0
+}
+
+mcp_logging_python() {
+	if command -v python3 >/dev/null 2>&1; then
+		printf 'python3'
+		return 0
+	fi
+	if command -v python >/dev/null 2>&1; then
+		printf 'python'
+		return 0
+	fi
+	return 1
+}
+
+mcp_logging_quote() {
+	local text="$1"
+	local py
+	if py="$(mcp_logging_python 2>/dev/null)"; then
+		TEXT="${text}" "${py}" <<'PY'
+import json, os
+print(json.dumps(os.environ.get("TEXT", "")))
+PY
+		return 0
+	fi
+	printf '"%s"' "$(printf '%s' "${text}" | sed 's/\\/\\\\/g; s/"/\\"/g')"
+}
+
+mcp_logging_emit() {
+	local level="$1"
+	local logger="$2"
+	local message="$3"
+	local logger_json message_json
+	[ -n "${level}" ] || level="info"
+	[ -n "${logger}" ] || logger="mcp-bash"
+	if ! mcp_logging_is_enabled "${level}"; then
+		return 0
+	fi
+	logger_json="$(mcp_logging_quote "${logger}")"
+	message_json="$(mcp_logging_quote "${message}")"
+	rpc_send_line "$(printf '{"jsonrpc":"2.0","method":"notifications/log","params":{"level":"%s","logger":%s,"message":{"type":"text","text":%s}}}' "${level}" "${logger_json}" "${message_json}")"
+}
+
+mcp_logging_debug() {
+	mcp_logging_emit "debug" "$1" "$2"
+}
+
+mcp_logging_info() {
+	mcp_logging_emit "info" "$1" "$2"
+}
+
+mcp_logging_notice() {
+	mcp_logging_emit "notice" "$1" "$2"
+}
+
+mcp_logging_warning() {
+	mcp_logging_emit "warning" "$1" "$2"
+}
+
+mcp_logging_error() {
+	mcp_logging_emit "error" "$1" "$2"
+}
+
+mcp_logging_critical() {
+	mcp_logging_emit "critical" "$1" "$2"
 }

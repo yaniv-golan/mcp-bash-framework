@@ -15,6 +15,12 @@ Further phases will implement the remaining specification sections in order, mai
 - When no tooling is found, the core downgrades to minimal mode, exposing lifecycle, ping, and logging only as outlined in the Spec §2 minimal-mode surface table.
 - Legacy JSON-RPC batch arrays may be tolerated when `MCPBASH_COMPAT_BATCHES=true`, echoing the compatibility toggle described in Spec §2 “Legacy batch compatibility”.
 
+## Diagnostics & Logging (Spec §13)
+- The server honours the `MCPBASH_LOG_LEVEL` environment variable at startup (default `info`). Set `MCPBASH_LOG_LEVEL=debug` before launching `bin/mcp-bash` to surface discovery and subscription traces; higher levels (`warning`, `error`, etc.) suppress lower-severity messages.
+- Clients can still adjust verbosity dynamically via `logging/setLevel`; both the environment variable and client requests flow through the same log-level gate.
+- Deep payload tracing remains opt-in: `MCPBASH_DEBUG_PAYLOADS=true` writes per-message payload logs under `${TMPDIR}/mcpbash.state.*` for the session. When unset, no payload log files are created and the stdout guard operates silently.
+- All diagnostics now route through the logging capability instead of raw `stderr` prints, keeping default test runs quiet unless the log level includes `debug`.
+
 ## Repository Layout (Spec §3)
 ```
 mcp-bash/

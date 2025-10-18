@@ -20,6 +20,7 @@ mcp_handle_resources() {
 	local method="$1"
 	local json_payload="$2"
 	local id
+	local logger="mcp.resources"
 	if ! id="$(mcp_json_extract_id "${json_payload}")"; then
 		id="null"
 	fi
@@ -68,7 +69,7 @@ mcp_handle_resources() {
 		local name uri subscription_id result_json
 		name="$(mcp_json_extract_resource_name "${json_payload}")"
 		uri="$(mcp_json_extract_resource_uri "${json_payload}")"
-		printf '%s\n' "mcp-resources debug: subscribe request name=${name:-<none>} uri=${uri:-<none>}" >&2
+		mcp_logging_debug "${logger}" "Subscribe request name=${name:-<none>} uri=${uri:-<none>}"
 		if [ -n "${MCPBASH_STATE_DIR:-}" ]; then
 			printf '%s %s\n' "subscribe-start" "${name:-<none>}:${uri:-<none>}" >>"${MCPBASH_STATE_DIR}/resources.debug.log"
 		fi
@@ -80,14 +81,14 @@ mcp_handle_resources() {
 		fi
 		subscription_id="sub-$(uuidgen 2>/dev/null || date +%s%N)"
 		if ! result_json="$(mcp_resources_read "${name}" "${uri}")"; then
-			printf '%s\n' "mcp-resources debug: initial read failed code=${MCP_RESOURCES_ERR_CODE:-?} msg=${MCP_RESOURCES_ERR_MESSAGE:-?}" >&2
+			mcp_logging_error "${logger}" "Initial read failed code=${MCP_RESOURCES_ERR_CODE:-?} msg=${MCP_RESOURCES_ERR_MESSAGE:-?}"
 			local code="${MCP_RESOURCES_ERR_CODE:- -32603}"
 			local message
 			message=$(mcp_resources_quote "${MCP_RESOURCES_ERR_MESSAGE:-Unable to read resource}")
 			printf '{"jsonrpc":"2.0","id":%s,"error":{"code":%s,"message":%s}}' "${id}" "${code}" "${message}"
 			return 0
 		fi
-		printf '%s\n' "mcp-resources debug: subscribe initial read ok subscription=${subscription_id}" >&2
+		mcp_logging_debug "${logger}" "Subscribe initial read ok subscription=${subscription_id}"
 		if [ -n "${MCPBASH_STATE_DIR:-}" ]; then
 			printf '%s %s\n' "subscribe-read-ok" "${subscription_id}" >>"${MCPBASH_STATE_DIR}/resources.debug.log"
 		fi
@@ -108,7 +109,7 @@ PY
 		local key
 		key="$(mcp_ids_key_from_json "${id}")"
 		if [ -n "${key}" ] && mcp_ids_is_cancelled_key "${key}"; then
-			printf '%s\n' "mcp-resources debug: subscribe cancelled before response subscription=${subscription_id}" >&2
+			mcp_logging_debug "${logger}" "Subscribe cancelled before response subscription=${subscription_id}"
 			if [ -n "${MCPBASH_STATE_DIR:-}" ]; then
 				rm -f "${MCPBASH_STATE_DIR}/resource_subscription.${subscription_id}"
 			fi
@@ -117,7 +118,7 @@ PY
 		fi
 		local response
 		response="$(printf '{"jsonrpc":"2.0","id":%s,"result":{"subscriptionId":"%s"}}' "${id}" "${subscription_id}")"
-		printf '%s\n' "mcp-resources debug: subscribe emitting response subscription=${subscription_id}" >&2
+		mcp_logging_debug "${logger}" "Subscribe emitting response subscription=${subscription_id}"
 		rpc_send_line_direct "${response}"
 		if [ -n "${MCPBASH_STATE_DIR:-}" ]; then
 			printf '%s %s\n' "subscribe-response" "${subscription_id}" >>"${MCPBASH_STATE_DIR}/resources.debug.log"

@@ -18,6 +18,7 @@ MCP_TOOLS_CHANGED=false
 MCP_TOOLS_MANUAL_ACTIVE=false
 MCP_TOOLS_MANUAL_BUFFER=""
 MCP_TOOLS_MANUAL_DELIM=$'\036'
+MCP_TOOLS_LOGGER="${MCP_TOOLS_LOGGER:-mcp.tools}"
 
 mcp_tools_manual_begin() {
 	MCP_TOOLS_MANUAL_ACTIVE=true
@@ -186,7 +187,7 @@ mcp_tools_enforce_registry_limits() {
 		return 1
 	fi
 	if [ "${total}" -gt 500 ]; then
-		printf '%s\n' "mcp-bash WARNING: tools registry contains ${total} entries; consider manual registration (Spec §9 guardrail)." >&2
+		mcp_logging_warning "${MCP_TOOLS_LOGGER}" "Tools registry contains ${total} entries; consider manual registration"
 	fi
 	return 0
 }
@@ -296,7 +297,7 @@ mcp_tools_run_manual_script() {
 		mcp_tools_manual_abort
 		mcp_tools_error -32603 "Manual registration script failed"
 		if [ -n "${script_output}" ]; then
-			printf '%s\n' "${script_output}" >&2
+			mcp_logging_error "${MCP_TOOLS_LOGGER}" "Manual registration script output: ${script_output}"
 		fi
 		return 1
 	fi
@@ -310,7 +311,7 @@ mcp_tools_run_manual_script() {
 	fi
 
 	if [ -n "${script_output}" ]; then
-		printf '%s\n' "${script_output}" >&2
+		mcp_logging_warning "${MCP_TOOLS_LOGGER}" "Manual registration script output: ${script_output}"
 	fi
 
 	if ! mcp_tools_manual_finalize; then

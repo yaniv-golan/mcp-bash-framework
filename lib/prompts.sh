@@ -15,6 +15,7 @@ MCP_PROMPTS_ERR_MESSAGE=""
 MCP_PROMPTS_TTL="${MCP_PROMPTS_TTL:-5}"
 MCP_PROMPTS_LAST_SCAN=0
 MCP_PROMPTS_CHANGED=false
+MCP_PROMPTS_LOGGER="${MCP_PROMPTS_LOGGER:-mcp.prompts}"
 
 mcp_prompts_registry_max_bytes() {
 	local limit="${MCPBASH_REGISTRY_MAX_BYTES:-104857600}"
@@ -37,7 +38,7 @@ mcp_prompts_enforce_registry_limits() {
 		return 1
 	fi
 	if [ "${total}" -gt 500 ]; then
-		printf '%s\n' "mcp-bash WARNING: prompts registry contains ${total} entries; consider manual registration (Spec §9 guardrail)." >&2
+		mcp_logging_warning "${MCP_PROMPTS_LOGGER}" "Prompts registry contains ${total} entries; consider manual registration"
 	fi
 	return 0
 }
