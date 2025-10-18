@@ -51,126 +51,77 @@ mcp_handle_completion() {
 		if [ "${limit}" -gt 100 ]; then
 			limit=100
 		fi
-		local args_json
+		local args_json args_hash
 		args_json="$(mcp_json_extract_completion_arguments "${json_payload}")"
-		local py
-		py="$(mcp_tools_python 2>/dev/null || true)"
-		if [ -z "${py}" ]; then
+		if [ -z "${args_json}" ]; then
+			args_json="{}"
+		fi
+		if ! args_hash="$(mcp_completion_args_hash "${args_json}")" || [ -z "${args_hash}" ]; then
 			local message
 			message=$(mcp_completion_quote "Completion requires JSON tooling")
 			printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32603,"message":%s}}' "${id}" "${message}"
 			return 0
 		fi
-		local cursor start_offset
+		local cursor start_offset cursor_script_key
 		cursor="$(mcp_json_extract_cursor "${json_payload}")"
 		start_offset=0
+		cursor_script_key=""
 		if [ -n "${cursor}" ]; then
-			start_offset="$(
-				env CURSOR_VALUE="${cursor}" "${py}" <<'PY'
-import base64, json, os
-try:
-    padding = '=' * (-len(os.environ["CURSOR_VALUE"]) % 4)
-    data = json.loads(base64.urlsafe_b64decode(os.environ["CURSOR_VALUE"] + padding).decode('utf-8'))
-    print(int(data.get("next", 0)))
-except Exception:
-    print("0")
-PY
-			)"
+			if ! mcp_completion_decode_cursor "${cursor}" "${name}" "${args_hash}"; then
+				local message
+				message=$(mcp_completion_quote "Invalid cursor")
+				printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32602,"message":%s}}' "${id}" "${message}"
+				return 0
+			fi
+			start_offset="${MCP_COMPLETION_CURSOR_OFFSET}"
+			cursor_script_key="${MCP_COMPLETION_CURSOR_SCRIPT_KEY}"
 		fi
-		local prepared limited_json has_more_flag next_index
-		prepared="$(
-			env NAME="${name}" ARGS_JSON="${args_json}" LIMIT="${limit}" START="${start_offset}" "${py}" <<'PY'
-import json, os
-name = os.environ.get("NAME", "")
-args = json.loads(os.environ.get("ARGS_JSON", "{}"))
-limit = int(os.environ.get("LIMIT", "5") or 5)
-limit = max(1, min(limit, 100))
-start = int(os.environ.get("START", "0") or 0)
-start = max(0, start)
-query = (args.get("query") or args.get("prefix") or "").strip()
-base = query or name.strip() or "suggestion"
-candidates = [
-    {"type": "text", "text": base},
-    {"type": "text", "text": f"{base} snippet"},
-    {"type": "text", "text": f"{base} example"}
-]
-limited = candidates[start:start + limit]
-has_more = start + limit < len(candidates)
-next_index = start + limit if has_more else None
-print(json.dumps({"limited": limited, "hasMore": has_more, "next": next_index}, ensure_ascii=False, separators=(',', ':')))
-PY
-		)"
-		limited_json="$(
-			env PREPARED="${prepared}" "${py}" <<'PY'
-import json, os
-data = json.loads(os.environ["PREPARED"])
-print(json.dumps(data.get("limited", []), ensure_ascii=False, separators=(',', ':')))
-PY
-		)"
-		has_more_flag="$(
-			env PREPARED="${prepared}" "${py}" <<'PY'
-import json, os
-data = json.loads(os.environ["PREPARED"])
-print("true" if data.get("hasMore") else "false")
-PY
-		)"
-		next_index="$(
-			env PREPARED="${prepared}" "${py}" <<'PY'
-import json, os
-data = json.loads(os.environ["PREPARED"])
-value = data.get("next")
-print("" if value is None else str(value))
-PY
-		)"
-		if [ "${has_more_flag}" = "true" ]; then
-			# shellcheck disable=SC2034
+		if ! mcp_completion_select_provider "${name}" "${args_json}"; then
+			local message
+			message=$(mcp_completion_quote "Completion not found")
+			printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32601,"message":%s}}' "${id}" "${message}"
+			return 0
+		fi
+		if [ -n "${cursor_script_key}" ] && [ -n "${MCP_COMPLETION_PROVIDER_SCRIPT_KEY}" ] && [ "${cursor_script_key}" != "${MCP_COMPLETION_PROVIDER_SCRIPT_KEY}" ]; then
+			local message
+			message=$(mcp_completion_quote "Cursor no longer valid")
+			printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32602,"message":%s}}' "${id}" "${message}"
+			return 0
+		fi
+		if ! mcp_completion_run_provider "${name}" "${args_json}" "${limit}" "${start_offset}" "${args_hash}"; then
+			local message
+			message=$(mcp_completion_quote "${MCP_COMPLETION_PROVIDER_RESULT_ERROR:-Unable to complete request}")
+			printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32603,"message":%s}}' "${id}" "${message}"
+			return 0
+		fi
+		mcp_completion_reset
+		# shellcheck disable=SC2034
+		mcp_completion_suggestions="${MCP_COMPLETION_PROVIDER_RESULT_SUGGESTIONS}"
+		if [ "${MCP_COMPLETION_PROVIDER_RESULT_HAS_MORE}" = "true" ]; then
 			mcp_completion_has_more=true
-			if [ -n "${next_index}" ]; then
-				mcp_completion_cursor="$(
-					env NAME="${name}" NEXT="${next_index}" ARGS_JSON="${args_json}" "${py}" <<'PY'
-import base64, json, os
-payload = json.dumps({
-    "name": os.environ.get("NAME"),
-    "next": int(os.environ.get("NEXT", "0")),
-    "args": json.loads(os.environ.get("ARGS_JSON", "{}"))
-}, separators=(',', ':')).encode('utf-8')
-print(base64.urlsafe_b64encode(payload).decode('utf-8').rstrip('='))
-PY
-				)"
+		fi
+		if [ "${mcp_completion_has_more}" = true ]; then
+			local next_offset="${MCP_COMPLETION_PROVIDER_RESULT_NEXT}"
+			local cursor_value="${MCP_COMPLETION_PROVIDER_RESULT_CURSOR}"
+			if [ -n "${cursor_value}" ]; then
+				# shellcheck disable=SC2034
+				mcp_completion_cursor="${cursor_value}"
+			else
+				if [ -z "${next_offset}" ]; then
+					local count
+					count="$(mcp_completion_suggestions_count)"
+					next_offset=$((start_offset + count))
+				fi
+				if [ -n "${next_offset}" ]; then
+					local encoded_cursor
+					encoded_cursor="$(mcp_completion_encode_cursor "${name}" "${args_hash}" "${next_offset}" "${MCP_COMPLETION_PROVIDER_SCRIPT_KEY}")"
+					if [ -n "${encoded_cursor}" ]; then
+						# shellcheck disable=SC2034
+						mcp_completion_cursor="${encoded_cursor}"
+					fi
+				fi
 			fi
 		fi
-		local added=0
-		while IFS= read -r suggestion; do
-			[ -z "${suggestion}" ] && continue
-			if ! mcp_completion_add_json "${suggestion}"; then
-				# shellcheck disable=SC2034
-				mcp_completion_has_more=true
-				if [ -z "${mcp_completion_cursor}" ]; then
-					local next_offset
-					next_offset=$((start_offset + added))
-					mcp_completion_cursor="$(
-						env NAME="${name}" NEXT="${next_offset}" ARGS_JSON="${args_json}" "${py}" <<'PY'
-import base64, json, os
-payload = json.dumps({
-    "name": os.environ.get("NAME"),
-    "next": int(os.environ.get("NEXT", "0")),
-    "args": json.loads(os.environ.get("ARGS_JSON", "{}"))
-}, separators=(',', ':')).encode('utf-8')
-print(base64.urlsafe_b64encode(payload).decode('utf-8').rstrip('='))
-PY
-					)"
-				fi
-				break
-			fi
-			added=$((added + 1))
-		done < <(
-			env PAYLOAD="${limited_json}" "${py}" <<'PY'
-import json, os
-items = json.loads(os.environ.get("PAYLOAD", "[]"))
-for item in items:
-    print(json.dumps(item, separators=(',', ':')))
-PY
-		)
 		local result_json
 		result_json="$(mcp_completion_finalize)"
 		printf '{"jsonrpc":"2.0","id":%s,"result":%s}' "${id}" "${result_json}"
