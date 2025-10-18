@@ -62,6 +62,8 @@ mcp_runtime_cleanup() {
   fi
   MCPBASH_CLEANUP_REGISTERED="true"
 
+  mcp_io_log_corruption_summary
+
   if [ -n "${MCPBASH_STATE_DIR}" ] && [ -d "${MCPBASH_STATE_DIR}" ]; then
     rm -rf "${MCPBASH_STATE_DIR}"
   fi

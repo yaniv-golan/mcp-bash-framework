@@ -15,6 +15,32 @@ mcp_io_corruption_file() {
   printf '%s/corruption.log' "${MCPBASH_STATE_DIR}"
 }
 
+mcp_io_corruption_count() {
+  local file
+  file="$(mcp_io_corruption_file || true)"
+  if [ -z "${file}" ] || [ ! -f "${file}" ]; then
+    printf '0'
+    return 0
+  fi
+  awk 'NF {count++} END {print count+0}' "${file}"
+}
+
+mcp_io_log_corruption_summary() {
+  local file count window threshold
+  file="$(mcp_io_corruption_file || true)"
+  if [ -z "${file}" ] || [ ! -f "${file}" ]; then
+    return 0
+  fi
+  count="$(mcp_io_corruption_count)"
+  if [ "${count}" -eq 0 ]; then
+    return 0
+  fi
+  window="${MCPBASH_CORRUPTION_WINDOW:-60}"
+  threshold="${MCPBASH_CORRUPTION_THRESHOLD:-3}"
+  printf '%s\n' "mcp-bash corruption summary: ${count} event(s) recorded within the last ${window}s (threshold ${threshold}, allow override ${MCPBASH_ALLOW_CORRUPT_STDOUT})." >&2
+  return 0
+}
+
 mcp_io_handle_corruption() {
   local reason="$1"
   local allow="${MCPBASH_ALLOW_CORRUPT_STDOUT:-false}"
