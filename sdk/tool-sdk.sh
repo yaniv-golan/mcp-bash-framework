@@ -82,7 +82,11 @@ mcp_progress() {
 		;;
 	esac
 	local token_json message_json
-	token_json="$(__mcp_sdk_json_escape "${MCP_PROGRESS_TOKEN}")"
+	if printf '%s' "${MCP_PROGRESS_TOKEN}" | LC_ALL=C grep -Eq '^[-+]?[0-9]+(\.[0-9]+)?$'; then
+		token_json="${MCP_PROGRESS_TOKEN}"
+	else
+		token_json="$(__mcp_sdk_json_escape "${MCP_PROGRESS_TOKEN}")"
+	fi
 	message_json="$(__mcp_sdk_json_escape "${message}")"
 	printf '{"jsonrpc":"2.0","method":"notifications/progress","params":{"token":%s,"percent":%s,"message":%s}}\n' "${token_json}" "${percent}" "${message_json}" >>"${MCP_PROGRESS_STREAM}" 2>/dev/null || true
 }

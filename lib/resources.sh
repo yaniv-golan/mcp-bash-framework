@@ -957,6 +957,17 @@ PY
 		return 1
 	fi
 	mcp_logging_debug "${MCP_RESOURCES_LOGGER}" "Provider returned ${#content} bytes"
+	local limit="${MCPBASH_MAX_RESOURCE_BYTES:-${MCPBASH_MAX_TOOL_OUTPUT_SIZE:-10485760}}"
+	case "${limit}" in
+	'' | *[!0-9]*) limit=10485760 ;;
+	esac
+	local content_size
+	content_size="$(LC_ALL=C printf '%s' "${content}" | wc -c | tr -d ' ')"
+	if [ "${content_size}" -gt "${limit}" ]; then
+		mcp_logging_error "${MCP_RESOURCES_LOGGER}" "Resource ${name:-<direct>} content ${content_size} bytes exceeds limit ${limit}" || true
+		mcp_resources_error -32603 "Resource content exceeds ${limit} bytes"
+		return 1
+	fi
 	local result
 	result="$(
 		CONTENT="${content}" MIME="${mime}" URI="${uri}" "${py}" <<'PY'

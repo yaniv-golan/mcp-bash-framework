@@ -724,6 +724,22 @@ PY
 	) >"${stdout_file}" 2>"${stderr_file}" || exit_code=$?
 	exit_code=${exit_code:-0}
 
+	local limit="${MCPBASH_MAX_TOOL_OUTPUT_SIZE:-10485760}"
+	case "${limit}" in
+	'' | *[!0-9]*) limit=10485760 ;;
+	esac
+	local stdout_size
+	stdout_size="$(wc -c <"${stdout_file}" | tr -d ' ')"
+	if [ "${stdout_size}" -gt "${limit}" ]; then
+		mcp_logging_error "${MCP_TOOLS_LOGGER}" "Tool ${name} output ${stdout_size} bytes exceeds limit ${limit}" || true
+		rm -f "${stdout_file}" "${stderr_file}"
+		# shellcheck disable=SC2034
+		MCP_TOOLS_ERROR_CODE=-32603
+		# shellcheck disable=SC2034
+		MCP_TOOLS_ERROR_MESSAGE="Tool output exceeded ${limit} bytes"
+		return 1
+	fi
+
 	local stdout_content
 	stdout_content="$(cat "${stdout_file}")"
 	local stderr_content
