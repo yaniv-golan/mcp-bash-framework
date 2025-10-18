@@ -148,6 +148,15 @@ import json, os
 print(json.loads(os.environ.get("REGISTRY_JSON", "{}")).get('hash', ''))
 PY
       )"
+      MCP_RESOURCES_TOTAL="$(
+        REGISTRY_JSON="${MCP_RESOURCES_REGISTRY_JSON}" "${py}" <<'PY'
+import json, os
+print(json.loads(os.environ.get("REGISTRY_JSON", "{}")).get('total', 0))
+PY
+      )"
+      if ! mcp_resources_enforce_registry_limits "${MCP_RESOURCES_TOTAL}" "${MCP_RESOURCES_REGISTRY_JSON}"; then
+        return 1
+      fi
     fi
   fi
   if [ -n "${MCP_RESOURCES_REGISTRY_JSON}" ] && [ $((now - MCP_RESOURCES_LAST_SCAN)) -lt "${MCP_RESOURCES_TTL}" ]; then

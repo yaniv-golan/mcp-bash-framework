@@ -144,6 +144,15 @@ import json, os
 print(json.loads(os.environ.get("REGISTRY_JSON", "{}")).get('hash', ''))
 PY
       )"
+      MCP_TOOLS_TOTAL="$(
+        REGISTRY_JSON="${MCP_TOOLS_REGISTRY_JSON}" "${py}" <<'PY'
+import json, os
+print(json.loads(os.environ.get("REGISTRY_JSON", "{}")).get('total', 0))
+PY
+      )"
+      if ! mcp_tools_enforce_registry_limits "${MCP_TOOLS_TOTAL}" "${MCP_TOOLS_REGISTRY_JSON}"; then
+        return 1
+      fi
     fi
   fi
   if [ -n "${MCP_TOOLS_REGISTRY_JSON}" ] && [ $((now - MCP_TOOLS_LAST_SCAN)) -lt "${MCP_TOOLS_TTL}" ]; then
@@ -511,7 +520,10 @@ PY
   local result_json
   if ! result_json="$(
     TOOL_STDOUT="${stdout_content}" TOOL_STDERR="${stderr_content}" TOOL_METADATA="${metadata}" TOOL_ARGS_JSON="${args_json}" TOOL_NAME="${name}" OUTPUT_SCHEMA="${output_schema}" EXIT_CODE="${exit_code}" HAS_JSON_TOOL="${has_json_tool}" "${py}" <<'PY'
-import json, os, math
+import json, os, math, re
+
+def is_number(value):
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and not math.isnan(value) and not math.isinf(value)
 
 def type_matches(expected, value):
     if isinstance(expected, list):
@@ -523,7 +535,7 @@ def type_matches(expected, value):
     if expected == "string":
         return isinstance(value, str)
     if expected == "number":
-        return isinstance(value, (int, float)) and not isinstance(value, bool)
+        return is_number(value)
     if expected == "integer":
         return isinstance(value, int) and not isinstance(value, bool)
     if expected == "boolean":
@@ -532,32 +544,170 @@ def type_matches(expected, value):
         return value is None
     return True
 
+def validate_numeric(schema, value, path, errors):
+    exclusive_min = schema.get("exclusiveMinimum")
+    exclusive_max = schema.get("exclusiveMaximum")
+    minimum = schema.get("minimum")
+    maximum = schema.get("maximum")
+    multiple_of = schema.get("multipleOf")
+    if minimum is not None and value < minimum:
+        errors.append(f"{path}: value {value} < minimum {minimum}")
+    if maximum is not None and value > maximum:
+        errors.append(f"{path}: value {value} > maximum {maximum}")
+    if exclusive_min is not None and value <= exclusive_min:
+        errors.append(f"{path}: value {value} <= exclusiveMinimum {exclusive_min}")
+    if exclusive_max is not None and value >= exclusive_max:
+        errors.append(f"{path}: value {value} >= exclusiveMaximum {exclusive_max}")
+    if multiple_of is not None:
+        try:
+            if multiple_of == 0 or not math.isclose((value / multiple_of) % 1, 0, rel_tol=1e-9, abs_tol=1e-9):
+                errors.append(f"{path}: value {value} not multiple of {multiple_of}")
+        except Exception:
+            errors.append(f"{path}: unable to evaluate multipleOf {multiple_of}")
+
+def validate_string(schema, value, path, errors):
+    min_length = schema.get("minLength")
+    max_length = schema.get("maxLength")
+    pattern = schema.get("pattern")
+    if min_length is not None and len(value) < min_length:
+        errors.append(f"{path}: string shorter than minLength {min_length}")
+    if max_length is not None and len(value) > max_length:
+        errors.append(f"{path}: string longer than maxLength {max_length}")
+    if pattern is not None:
+        try:
+            if re.search(pattern, value) is None:
+                errors.append(f"{path}: string does not match pattern {pattern!r}")
+        except re.error as exc:
+            errors.append(f"{path}: invalid pattern {pattern!r}: {exc}")
+
+def validate_array(schema, value, path, errors):
+    min_items = schema.get("minItems")
+    max_items = schema.get("maxItems")
+    unique_items = schema.get("uniqueItems")
+    if min_items is not None and len(value) < min_items:
+        errors.append(f"{path}: array has fewer than minItems {min_items}")
+    if max_items is not None and len(value) > max_items:
+        errors.append(f"{path}: array has more than maxItems {max_items}")
+    if unique_items:
+        seen = set()
+        for index, item in enumerate(value):
+            marker = json.dumps(item, sort_keys=True, ensure_ascii=False)
+            if marker in seen:
+                errors.append(f"{path}[{index}]: duplicate item violates uniqueItems")
+                break
+            seen.add(marker)
+
 def validate(schema, value, path="$", errors=None):
     if errors is None:
         errors = []
     if not isinstance(schema, dict):
         return errors
+
     schema_type = schema.get("type")
     if schema_type is not None and not type_matches(schema_type, value):
         errors.append(f"{path}: expected type {schema_type}, found {type(value).__name__}")
         return errors
+
+    enum = schema.get("enum")
+    if enum is not None and value not in enum:
+        errors.append(f"{path}: value {value!r} not in enum {enum!r}")
+
+    const = schema.get("const")
+    if const is not None and value != const:
+        errors.append(f"{path}: value {value!r} not equal to const {const!r}")
+
+    if is_number(value):
+        validate_numeric(schema, value, path, errors)
+
+    if isinstance(value, str):
+        validate_string(schema, value, path, errors)
+
+    if isinstance(value, list):
+        validate_array(schema, value, path, errors)
+        items_schema = schema.get("items")
+        if isinstance(items_schema, dict):
+            for index, item in enumerate(value):
+                validate(items_schema, item, f"{path}[{index}]", errors)
+        elif isinstance(items_schema, list):
+            for index, item_schema in enumerate(items_schema):
+                if index < len(value):
+                    validate(item_schema, value[index], f"{path}[{index}]", errors)
+
     if isinstance(value, dict):
         required = schema.get("required", [])
         for key in required:
             if key not in value:
                 errors.append(f"{path}: missing required property '{key}'")
+
         properties = schema.get("properties", {})
+        pattern_properties = schema.get("patternProperties", {})
+        additional = schema.get("additionalProperties", True)
+
+        matched_keys = set()
         for key, subschema in properties.items():
             if key in value:
-                validate(subschema, value[key], path=f"{path}.{key}", errors=errors)
-    if isinstance(value, list):
-        items_schema = schema.get("items")
-        if isinstance(items_schema, dict):
-            for index, item in enumerate(value):
-                validate(items_schema, item, path=f"{path}[{index}]", errors=errors)
-    enum = schema.get("enum")
-    if enum is not None and value not in enum:
-        errors.append(f"{path}: value {value!r} not in enum {enum!r}")
+                matched_keys.add(key)
+                validate(subschema, value[key], f"{path}.{key}", errors)
+
+        for pattern, subschema in pattern_properties.items():
+            try:
+                regex = re.compile(pattern)
+            except re.error as exc:
+                errors.append(f"{path}: invalid patternProperties regex {pattern!r}: {exc}")
+                continue
+            for key, subvalue in value.items():
+                if regex.search(key):
+                    matched_keys.add(key)
+                    validate(subschema, subvalue, f"{path}.{key}", errors)
+
+        if additional is False:
+            for key in value:
+                if key not in matched_keys:
+                    errors.append(f"{path}: additional property '{key}' not permitted")
+        elif isinstance(additional, dict):
+            for key in value:
+                if key not in matched_keys:
+                    validate(additional, value[key], f"{path}.{key}", errors)
+
+        dependent_required = schema.get("dependentRequired") or schema.get("dependencies", {})
+        if isinstance(dependent_required, dict):
+            for parent, children in dependent_required.items():
+                if parent in value:
+                    for child in children:
+                        if child not in value:
+                            errors.append(f"{path}: presence of '{parent}' requires '{child}'")
+
+    # combinators
+    all_of = schema.get("allOf")
+    if isinstance(all_of, list):
+        for subschema in all_of:
+            validate(subschema, value, path, errors)
+
+    any_of = schema.get("anyOf")
+    if isinstance(any_of, list) and any_of:
+        matches = 0
+        for subschema in any_of:
+            sub_errors = validate(subschema, value, path, [])
+            if not sub_errors:
+                matches += 1
+        if matches == 0:
+            errors.append(f"{path}: value must satisfy at least one schema in anyOf")
+
+    one_of = schema.get("oneOf")
+    if isinstance(one_of, list) and one_of:
+        matches = 0
+        for subschema in one_of:
+            sub_errors = validate(subschema, value, path, [])
+            if not sub_errors:
+                matches += 1
+        if matches != 1:
+            errors.append(f"{path}: value must satisfy exactly one schema in oneOf (matched {matches})")
+
+    not_schema = schema.get("not")
+    if isinstance(not_schema, dict):
+        if not validate(not_schema, value, path, []):
+            errors.append(f"{path}: value matches forbidden schema in not")
+
     return errors
 
 stdout = os.environ.get("TOOL_STDOUT", "")
@@ -570,6 +720,7 @@ exit_code = int(os.environ.get("EXIT_CODE", "0"))
 has_json_tool = os.environ.get("HAS_JSON_TOOL") == "true"
 structured = None
 structured_errors = []
+
 if has_json_tool and stdout.strip():
     try:
         structured = json.loads(stdout)

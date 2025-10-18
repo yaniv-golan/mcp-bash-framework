@@ -147,6 +147,15 @@ import json, os
 print(json.loads(os.environ.get("REGISTRY_JSON", "{}")).get('hash', ''))
 PY
       )"
+      MCP_PROMPTS_TOTAL="$(
+        REGISTRY_JSON="${MCP_PROMPTS_REGISTRY_JSON}" "${py}" <<'PY'
+import json, os
+print(json.loads(os.environ.get("REGISTRY_JSON", "{}")).get('total', 0))
+PY
+      )"
+      if ! mcp_prompts_enforce_registry_limits "${MCP_PROMPTS_TOTAL}" "${MCP_PROMPTS_REGISTRY_JSON}"; then
+        return 1
+      fi
     fi
   fi
   if [ -n "${MCP_PROMPTS_REGISTRY_JSON}" ] && [ $((now - MCP_PROMPTS_LAST_SCAN)) -lt "${MCP_PROMPTS_TTL}" ]; then
