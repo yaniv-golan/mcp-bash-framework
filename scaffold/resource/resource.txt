@@ -1,0 +1,3 @@
+This is a sample resource body for __NAME__.
+
+Replace this text with the content you want to expose.

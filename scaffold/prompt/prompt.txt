@@ -1,0 +1,8 @@
+# auto-generated prompt
+
+You are assisting with __NAME__ tasks.
+
+Subject: ${subject}
+Details: ${details}
+
+Provide a concise summary.

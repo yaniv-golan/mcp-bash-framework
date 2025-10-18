@@ -1,0 +1,18 @@
+{
+  "name": "prompt.__NAME__",
+  "description": "Draft guidance for __NAME__",
+  "path": "prompts/__NAME__/__NAME__.txt",
+  "arguments": {
+    "type": "object",
+    "properties": {
+      "subject": {
+        "type": "string",
+        "description": "Topic to highlight"
+      },
+      "details": {
+        "type": "string",
+        "description": "Optional extra context"
+      }
+    }
+  }
+}
