@@ -4,6 +4,6 @@
 set -euo pipefail
 
 mcp_resource_provider_stub() {
-  printf '%s' "Provider not implemented"
-  return 1
+	printf '%s' "Provider not implemented"
+	return 1
 }

@@ -17,67 +17,67 @@ MCP_PROMPTS_LAST_SCAN=0
 MCP_PROMPTS_CHANGED=false
 
 mcp_prompts_registry_max_bytes() {
-  local limit="${MCPBASH_REGISTRY_MAX_BYTES:-104857600}"
-  case "${limit}" in
-    ''|*[!0-9]*) limit=104857600 ;;
-  esac
-  printf '%s' "${limit}"
+	local limit="${MCPBASH_REGISTRY_MAX_BYTES:-104857600}"
+	case "${limit}" in
+	'' | *[!0-9]*) limit=104857600 ;;
+	esac
+	printf '%s' "${limit}"
 }
 
 mcp_prompts_enforce_registry_limits() {
-  local total="$1"
-  local json_payload="$2"
-  local limit
-  local size
-  limit="$(mcp_prompts_registry_max_bytes)"
-  size="$(LC_ALL=C printf '%s' "${json_payload}" | wc -c | tr -d ' ')"
-  if [ "${size}" -gt "${limit}" ]; then
-    MCP_PROMPTS_ERR_CODE=-32603
-    MCP_PROMPTS_ERR_MESSAGE="Prompts registry exceeds ${limit} byte cap"
-    return 1
-  fi
-  if [ "${total}" -gt 500 ]; then
-    printf '%s\n' "mcp-bash WARNING: prompts registry contains ${total} entries; consider manual registration (Spec §9 guardrail)." >&2
-  fi
-  return 0
+	local total="$1"
+	local json_payload="$2"
+	local limit
+	local size
+	limit="$(mcp_prompts_registry_max_bytes)"
+	size="$(LC_ALL=C printf '%s' "${json_payload}" | wc -c | tr -d ' ')"
+	if [ "${size}" -gt "${limit}" ]; then
+		MCP_PROMPTS_ERR_CODE=-32603
+		MCP_PROMPTS_ERR_MESSAGE="Prompts registry exceeds ${limit} byte cap"
+		return 1
+	fi
+	if [ "${total}" -gt 500 ]; then
+		printf '%s\n' "mcp-bash WARNING: prompts registry contains ${total} entries; consider manual registration (Spec §9 guardrail)." >&2
+	fi
+	return 0
 }
 
 mcp_prompts_error() {
-  MCP_PROMPTS_ERR_CODE="$1"
-  MCP_PROMPTS_ERR_MESSAGE="$2"
+	MCP_PROMPTS_ERR_CODE="$1"
+	MCP_PROMPTS_ERR_MESSAGE="$2"
 }
 
 mcp_prompts_python() {
-  if command -v python3 >/dev/null 2>&1; then
-    printf 'python3'
-    return 0
-  fi
-  if command -v python >/dev/null 2>&1; then
-    printf 'python'
-    return 0
-  fi
-  return 1
+	if command -v python3 >/dev/null 2>&1; then
+		printf 'python3'
+		return 0
+	fi
+	if command -v python >/dev/null 2>&1; then
+		printf 'python'
+		return 0
+	fi
+	return 1
 }
 
 mcp_prompts_init() {
-  if [ -z "${MCP_PROMPTS_REGISTRY_PATH}" ]; then
-    MCP_PROMPTS_REGISTRY_PATH="${MCPBASH_REGISTRY_DIR}/prompts.json"
-  fi
-  mkdir -p "${MCPBASH_REGISTRY_DIR}"
-  mkdir -p "${MCPBASH_ROOT}/prompts" >/dev/null 2>&1 || true
+	if [ -z "${MCP_PROMPTS_REGISTRY_PATH}" ]; then
+		MCP_PROMPTS_REGISTRY_PATH="${MCPBASH_REGISTRY_DIR}/prompts.json"
+	fi
+	mkdir -p "${MCPBASH_REGISTRY_DIR}"
+	mkdir -p "${MCPBASH_ROOT}/prompts" >/dev/null 2>&1 || true
 }
 
 mcp_prompts_apply_manual() {
-  local manual_json="$1"
-  local py
-  py="$(mcp_prompts_python)" || {
-    MCP_PROMPTS_ERR_CODE=-32603
-    MCP_PROMPTS_ERR_MESSAGE="Manual registration requires python"
-    return 1
-  }
-  local registry_json
-  if ! registry_json="$(
-    INPUT="${manual_json}" "${py}" <<'PY'
+	local manual_json="$1"
+	local py
+	py="$(mcp_prompts_python)" || {
+		MCP_PROMPTS_ERR_CODE=-32603
+		MCP_PROMPTS_ERR_MESSAGE="Manual registration requires python"
+		return 1
+	}
+	local registry_json
+	if ! registry_json="$(
+		INPUT="${manual_json}" "${py}" <<'PY'
 import json, os, hashlib, time
 manual = json.loads(os.environ.get("INPUT", "{}"))
 prompts = manual.get("prompts", [])
@@ -95,93 +95,93 @@ registry = {
 }
 print(json.dumps(registry, ensure_ascii=False, separators=(',', ':')))
 PY
-  )"; then
-    return 1
-  fi
-  local new_hash
-  new_hash="$(
-    REGISTRY_JSON="${registry_json}" "${py}" <<'PY'
+	)"; then
+		return 1
+	fi
+	local new_hash
+	new_hash="$(
+		REGISTRY_JSON="${registry_json}" "${py}" <<'PY'
 import json, os
 print(json.loads(os.environ.get("REGISTRY_JSON", "{}")).get('hash', ''))
 PY
-  )"
-  if [ "${new_hash}" != "${MCP_PROMPTS_REGISTRY_HASH}" ]; then
-    MCP_PROMPTS_CHANGED=true
-  fi
-  MCP_PROMPTS_REGISTRY_JSON="${registry_json}"
-  MCP_PROMPTS_REGISTRY_HASH="${new_hash}"
-  # shellcheck disable=SC2034
-  MCP_PROMPTS_TOTAL="$(
-    REGISTRY_JSON="${registry_json}" "${py}" <<'PY'
+	)"
+	if [ "${new_hash}" != "${MCP_PROMPTS_REGISTRY_HASH}" ]; then
+		MCP_PROMPTS_CHANGED=true
+	fi
+	MCP_PROMPTS_REGISTRY_JSON="${registry_json}"
+	MCP_PROMPTS_REGISTRY_HASH="${new_hash}"
+	# shellcheck disable=SC2034
+	MCP_PROMPTS_TOTAL="$(
+		REGISTRY_JSON="${registry_json}" "${py}" <<'PY'
 import json, os
 print(json.loads(os.environ.get("REGISTRY_JSON", "{}")).get('total', 0))
 PY
-  )"
-  if ! mcp_prompts_enforce_registry_limits "${MCP_PROMPTS_TOTAL}" "${registry_json}"; then
-    return 1
-  fi
-  MCP_PROMPTS_LAST_SCAN="$(date +%s)"
-  printf '%s' "${registry_json}" >"${MCP_PROMPTS_REGISTRY_PATH}"
+	)"
+	if ! mcp_prompts_enforce_registry_limits "${MCP_PROMPTS_TOTAL}" "${registry_json}"; then
+		return 1
+	fi
+	MCP_PROMPTS_LAST_SCAN="$(date +%s)"
+	printf '%s' "${registry_json}" >"${MCP_PROMPTS_REGISTRY_PATH}"
 }
 
 mcp_prompts_refresh_registry() {
-  mcp_prompts_init
-  if [ -x "${MCPBASH_REGISTER_SCRIPT}" ]; then
-    local manual_json
-    manual_json="$(${MCPBASH_REGISTER_SCRIPT} 2>/dev/null || true)"
-    if [ -n "${manual_json}" ]; then
-      mcp_prompts_apply_manual "${manual_json}"
-      return 0
-    fi
-  fi
-  local now
-  now="$(date +%s)"
-  local py
-  py="$(mcp_prompts_python 2>/dev/null)" || true
-  if [ -z "${MCP_PROMPTS_REGISTRY_JSON}" ] && [ -f "${MCP_PROMPTS_REGISTRY_PATH}" ]; then
-    MCP_PROMPTS_REGISTRY_JSON="$(cat "${MCP_PROMPTS_REGISTRY_PATH}")"
-    if [ -n "${py}" ]; then
-      MCP_PROMPTS_REGISTRY_HASH="$(
-        REGISTRY_JSON="${MCP_PROMPTS_REGISTRY_JSON}" "${py}" <<'PY'
+	mcp_prompts_init
+	if [ -x "${MCPBASH_REGISTER_SCRIPT}" ]; then
+		local manual_json
+		manual_json="$(${MCPBASH_REGISTER_SCRIPT} 2>/dev/null || true)"
+		if [ -n "${manual_json}" ]; then
+			mcp_prompts_apply_manual "${manual_json}"
+			return 0
+		fi
+	fi
+	local now
+	now="$(date +%s)"
+	local py
+	py="$(mcp_prompts_python 2>/dev/null)" || true
+	if [ -z "${MCP_PROMPTS_REGISTRY_JSON}" ] && [ -f "${MCP_PROMPTS_REGISTRY_PATH}" ]; then
+		MCP_PROMPTS_REGISTRY_JSON="$(cat "${MCP_PROMPTS_REGISTRY_PATH}")"
+		if [ -n "${py}" ]; then
+			MCP_PROMPTS_REGISTRY_HASH="$(
+				REGISTRY_JSON="${MCP_PROMPTS_REGISTRY_JSON}" "${py}" <<'PY'
 import json, os
 print(json.loads(os.environ.get("REGISTRY_JSON", "{}")).get('hash', ''))
 PY
-      )"
-      MCP_PROMPTS_TOTAL="$(
-        REGISTRY_JSON="${MCP_PROMPTS_REGISTRY_JSON}" "${py}" <<'PY'
+			)"
+			MCP_PROMPTS_TOTAL="$(
+				REGISTRY_JSON="${MCP_PROMPTS_REGISTRY_JSON}" "${py}" <<'PY'
 import json, os
 print(json.loads(os.environ.get("REGISTRY_JSON", "{}")).get('total', 0))
 PY
-      )"
-      if ! mcp_prompts_enforce_registry_limits "${MCP_PROMPTS_TOTAL}" "${MCP_PROMPTS_REGISTRY_JSON}"; then
-        return 1
-      fi
-    fi
-  fi
-  if [ -n "${MCP_PROMPTS_REGISTRY_JSON}" ] && [ $((now - MCP_PROMPTS_LAST_SCAN)) -lt "${MCP_PROMPTS_TTL}" ]; then
-    return 0
-  fi
-  local previous_hash="${MCP_PROMPTS_REGISTRY_HASH}"
-  mcp_prompts_scan || return 1
-  MCP_PROMPTS_LAST_SCAN="${now}"
-  if [ "${previous_hash}" != "${MCP_PROMPTS_REGISTRY_HASH}" ]; then
-    MCP_PROMPTS_CHANGED=true
-  fi
+			)"
+			if ! mcp_prompts_enforce_registry_limits "${MCP_PROMPTS_TOTAL}" "${MCP_PROMPTS_REGISTRY_JSON}"; then
+				return 1
+			fi
+		fi
+	fi
+	if [ -n "${MCP_PROMPTS_REGISTRY_JSON}" ] && [ $((now - MCP_PROMPTS_LAST_SCAN)) -lt "${MCP_PROMPTS_TTL}" ]; then
+		return 0
+	fi
+	local previous_hash="${MCP_PROMPTS_REGISTRY_HASH}"
+	mcp_prompts_scan || return 1
+	MCP_PROMPTS_LAST_SCAN="${now}"
+	if [ "${previous_hash}" != "${MCP_PROMPTS_REGISTRY_HASH}" ]; then
+		MCP_PROMPTS_CHANGED=true
+	fi
 }
 
 mcp_prompts_scan() {
-  local py
-  py="$(mcp_prompts_python)" || {
-    MCP_PROMPTS_REGISTRY_JSON='{"version":1,"generatedAt":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","items":[],"hash":"","total":0}'
-    MCP_PROMPTS_REGISTRY_HASH=""
-    MCP_PROMPTS_TOTAL=0
-    printf '%s' "${MCP_PROMPTS_REGISTRY_JSON}" >"${MCP_PROMPTS_REGISTRY_PATH}"
-    return 0
-  }
+	local py
+	py="$(mcp_prompts_python)" || {
+		MCP_PROMPTS_REGISTRY_JSON='{"version":1,"generatedAt":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","items":[],"hash":"","total":0}'
+		MCP_PROMPTS_REGISTRY_HASH=""
+		MCP_PROMPTS_TOTAL=0
+		printf '%s' "${MCP_PROMPTS_REGISTRY_JSON}" >"${MCP_PROMPTS_REGISTRY_PATH}"
+		return 0
+	}
 
-  local registry_json
-  registry_json="$(
-    ROOT="${MCPBASH_ROOT}" PROMPTS_DIR="${MCPBASH_ROOT}/prompts" "${py}" <<'PY'
+	local registry_json
+	registry_json="$(
+		ROOT="${MCPBASH_ROOT}" PROMPTS_DIR="${MCPBASH_ROOT}/prompts" "${py}" <<'PY'
 import os, json, hashlib, time
 root = os.environ['ROOT']
 prompts_dir = os.environ['PROMPTS_DIR']
@@ -238,83 +238,83 @@ registry = {
 }
 print(json.dumps(registry, ensure_ascii=False, separators=(',', ':')))
 PY
-  )"
+	)"
 
-  MCP_PROMPTS_REGISTRY_JSON="${registry_json}"
-  MCP_PROMPTS_REGISTRY_HASH="$(
-    REGISTRY_JSON="${registry_json}" "${py}" <<'PY'
+	MCP_PROMPTS_REGISTRY_JSON="${registry_json}"
+	MCP_PROMPTS_REGISTRY_HASH="$(
+		REGISTRY_JSON="${registry_json}" "${py}" <<'PY'
 import json, os
 print(json.loads(os.environ.get("REGISTRY_JSON", "{}")).get('hash', ''))
 PY
-  )"
-  # shellcheck disable=SC2034
-  MCP_PROMPTS_TOTAL="$(
-    REGISTRY_JSON="${registry_json}" "${py}" <<'PY'
+	)"
+	# shellcheck disable=SC2034
+	MCP_PROMPTS_TOTAL="$(
+		REGISTRY_JSON="${registry_json}" "${py}" <<'PY'
 import json, os
 print(json.loads(os.environ.get("REGISTRY_JSON", "{}")).get('total', 0))
 PY
-  )"
-  if ! mcp_prompts_enforce_registry_limits "${MCP_PROMPTS_TOTAL}" "${registry_json}"; then
-    return 1
-  fi
+	)"
+	if ! mcp_prompts_enforce_registry_limits "${MCP_PROMPTS_TOTAL}" "${registry_json}"; then
+		return 1
+	fi
 
-  printf '%s' "${registry_json}" >"${MCP_PROMPTS_REGISTRY_PATH}"
+	printf '%s' "${registry_json}" >"${MCP_PROMPTS_REGISTRY_PATH}"
 }
 
 mcp_prompts_decode_cursor() {
-  local cursor="$1"
-  local hash="$2"
-  local offset
-  if ! offset="$(mcp_paginate_decode "${cursor}" "prompts" "${hash}")"; then
-    return 1
-  fi
-  printf '%s' "${offset}"
+	local cursor="$1"
+	local hash="$2"
+	local offset
+	if ! offset="$(mcp_paginate_decode "${cursor}" "prompts" "${hash}")"; then
+		return 1
+	fi
+	printf '%s' "${offset}"
 }
 
 mcp_prompts_list() {
-  local limit="$1"
-  local cursor="$2"
-  # shellcheck disable=SC2034
-  MCP_PROMPTS_ERR_CODE=0
-  # shellcheck disable=SC2034
-  MCP_PROMPTS_ERR_MESSAGE=""
+	local limit="$1"
+	local cursor="$2"
+	# shellcheck disable=SC2034
+	MCP_PROMPTS_ERR_CODE=0
+	# shellcheck disable=SC2034
+	MCP_PROMPTS_ERR_MESSAGE=""
 
-  mcp_prompts_refresh_registry || {
-    mcp_prompts_error -32603 "Unable to load prompts registry"
-    return 1
-  }
+	mcp_prompts_refresh_registry || {
+		mcp_prompts_error -32603 "Unable to load prompts registry"
+		return 1
+	}
 
-  local py
-  if ! py="$(mcp_prompts_python)"; then
-    mcp_prompts_error -32603 "Python interpreter required for prompts listing"
-    return 1
-  fi
+	local py
+	if ! py="$(mcp_prompts_python)"; then
+		mcp_prompts_error -32603 "Python interpreter required for prompts listing"
+		return 1
+	fi
 
-  local numeric_limit
-  if [ -z "${limit}" ]; then
-    numeric_limit=50
-  else
-    case "${limit}" in
-      '' | *[!0-9]*) numeric_limit=50 ;;
-      0) numeric_limit=50 ;;
-      *) numeric_limit="${limit}" ;;
-    esac
-  fi
-  if [ "${numeric_limit}" -gt 200 ]; then
-    numeric_limit=200
-  fi
+	local numeric_limit
+	if [ -z "${limit}" ]; then
+		numeric_limit=50
+	else
+		case "${limit}" in
+		'' | *[!0-9]*) numeric_limit=50 ;;
+		0) numeric_limit=50 ;;
+		*) numeric_limit="${limit}" ;;
+		esac
+	fi
+	if [ "${numeric_limit}" -gt 200 ]; then
+		numeric_limit=200
+	fi
 
-  local offset=0
-  if [ -n "${cursor}" ]; then
-    if ! offset="$(mcp_prompts_decode_cursor "${cursor}" "${MCP_PROMPTS_REGISTRY_HASH}")"; then
-      mcp_prompts_error -32602 "Invalid cursor"
-      return 1
-    fi
-  fi
+	local offset=0
+	if [ -n "${cursor}" ]; then
+		if ! offset="$(mcp_prompts_decode_cursor "${cursor}" "${MCP_PROMPTS_REGISTRY_HASH}")"; then
+			mcp_prompts_error -32602 "Invalid cursor"
+			return 1
+		fi
+	fi
 
-  local result_json
-  if ! result_json="$(
-    REGISTRY="${MCP_PROMPTS_REGISTRY_JSON}" OFFSET="${offset}" LIMIT="${numeric_limit}" PYTHONIOENCODING="utf-8" "${py}" <<'PY'
+	local result_json
+	if ! result_json="$(
+		REGISTRY="${MCP_PROMPTS_REGISTRY_JSON}" OFFSET="${offset}" LIMIT="${numeric_limit}" PYTHONIOENCODING="utf-8" "${py}" <<'PY'
 import json, os, base64, sys
 registry = json.loads(os.environ["REGISTRY"])
 items = registry.get("items", [])
@@ -328,22 +328,22 @@ if offset + limit < len(items):
     result["nextCursor"] = encoded
 print(json.dumps(result, ensure_ascii=False, separators=(',', ':')))
 PY
-  )"; then
-    mcp_prompts_error -32603 "Unable to paginate prompts"
-    return 1
-  fi
+	)"; then
+		mcp_prompts_error -32603 "Unable to paginate prompts"
+		return 1
+	fi
 
-  printf '%s' "${result_json}"
+	printf '%s' "${result_json}"
 }
 
 mcp_prompts_metadata_for_name() {
-  local name="$1"
-  mcp_prompts_refresh_registry || return 1
-  local py
-  py="$(mcp_prompts_python)" || return 1
-  local metadata
-  if ! metadata="$(
-    REGISTRY="${MCP_PROMPTS_REGISTRY_JSON}" TARGET="${name}" "${py}" <<'PY'
+	local name="$1"
+	mcp_prompts_refresh_registry || return 1
+	local py
+	py="$(mcp_prompts_python)" || return 1
+	local metadata
+	if ! metadata="$(
+		REGISTRY="${MCP_PROMPTS_REGISTRY_JSON}" TARGET="${name}" "${py}" <<'PY'
 import json, os, sys
 registry = json.loads(os.environ["REGISTRY"])
 target = os.environ["TARGET"]
@@ -353,20 +353,20 @@ for item in registry.get("items", []):
         sys.exit(0)
 sys.exit(1)
 PY
-  )"; then
-    return 1
-  fi
-  printf '%s' "${metadata}"
+	)"; then
+		return 1
+	fi
+	printf '%s' "${metadata}"
 }
 
 mcp_prompts_render() {
-  local metadata="$1"
-  local args_json="$2"
-  local py
-  py="$(mcp_prompts_python)" || return 1
-  local sanitized_args
-  sanitized_args="$(
-    JSON_PAYLOAD="${args_json}" "${py}" <<'PY'
+	local metadata="$1"
+	local args_json="$2"
+	local py
+	py="$(mcp_prompts_python)" || return 1
+	local sanitized_args
+	sanitized_args="$(
+		JSON_PAYLOAD="${args_json}" "${py}" <<'PY'
 import json, os, sys
 def quoted(value):
     if isinstance(value, str):
@@ -390,23 +390,23 @@ print(json.dumps({
     "templateArgs": template_args
 }, ensure_ascii=False, separators=(',', ':')))
 PY
-  )"
-  local safe_args_json raw_args_json
-  safe_args_json="$(
-    INFO="${sanitized_args}" "${py}" <<'PY'
+	)"
+	local safe_args_json raw_args_json
+	safe_args_json="$(
+		INFO="${sanitized_args}" "${py}" <<'PY'
 import json, os
 print(json.loads(os.environ["INFO"]).get("templateArgs", {}))
 PY
-  )"
-  raw_args_json="$(
-    INFO="${sanitized_args}" "${py}" <<'PY'
+	)"
+	raw_args_json="$(
+		INFO="${sanitized_args}" "${py}" <<'PY'
 import json, os
 print(json.dumps(json.loads(os.environ["INFO"]).get("arguments", {}), ensure_ascii=False, separators=(',', ':')))
 PY
-  )"
-  local result
-  if ! result="$(
-    TEMPLATE_DIR="${MCPBASH_ROOT}" METADATA="${metadata}" SAFE_ARGS="${safe_args_json}" RAW_ARGS="${raw_args_json}" "${py}" <<'PY'
+	)"
+	local result
+	if ! result="$(
+		TEMPLATE_DIR="${MCPBASH_ROOT}" METADATA="${metadata}" SAFE_ARGS="${safe_args_json}" RAW_ARGS="${raw_args_json}" "${py}" <<'PY'
 import json, os
 from string import Template
 meta = json.loads(os.environ["METADATA"])
@@ -426,17 +426,17 @@ except OSError:
 text = template.safe_substitute(args)
 print(json.dumps({"text": text, "arguments": raw_args}, ensure_ascii=False, separators=(',', ':')))
 PY
-  )"; then
-    return 1
-  fi
-  printf '%s' "${result}"
+	)"; then
+		return 1
+	fi
+	printf '%s' "${result}"
 }
 
 mcp_prompts_consume_notification() {
-  if [ "${MCP_PROMPTS_CHANGED}" = true ]; then
-    MCP_PROMPTS_CHANGED=false
-    printf '{"jsonrpc":"2.0","method":"notifications/prompts/list_changed","params":{}}'
-  else
-    printf ''
-  fi
+	if [ "${MCP_PROMPTS_CHANGED}" = true ]; then
+		MCP_PROMPTS_CHANGED=false
+		printf '{"jsonrpc":"2.0","method":"notifications/prompts/list_changed","params":{}}'
+	else
+		printf ''
+	fi
 }

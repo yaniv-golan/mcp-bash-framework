@@ -10,563 +10,563 @@ MCP_JSON_CACHE_ID=""
 MCP_JSON_CACHE_HAS_ID="false"
 
 mcp_json_normalize_line() {
-  local line="$1"
-  line="$(mcp_json_strip_bom "${line}")"
-  line="$(mcp_json_trim "${line}")"
+	local line="$1"
+	line="$(mcp_json_strip_bom "${line}")"
+	line="$(mcp_json_trim "${line}")"
 
-  if [ -z "${line}" ]; then
-    printf ''
-    return 0
-  fi
+	if [ -z "${line}" ]; then
+		printf ''
+		return 0
+	fi
 
-  if mcp_runtime_is_minimal_mode; then
-    if [ "${line#\{}" = "${line}" ] || [ "${line%\}}" = "${line}" ]; then
-      return 1
-    fi
-    # Minimal mode keeps input as-is after validation.
-    if ! mcp_json_minimal_parse "${line}"; then
-      return 1
-    fi
-    printf '%s' "${line}"
-    return 0
-  fi
+	if mcp_runtime_is_minimal_mode; then
+		if [ "${line#\{}" = "${line}" ] || [ "${line%\}}" = "${line}" ]; then
+			return 1
+		fi
+		# Minimal mode keeps input as-is after validation.
+		if ! mcp_json_minimal_parse "${line}"; then
+			return 1
+		fi
+		printf '%s' "${line}"
+		return 0
+	fi
 
-  case "${MCPBASH_JSON_TOOL}" in
-    gojq | jq)
-      mcp_json_normalize_with_jq "${line}"
-      ;;
-    python)
-      mcp_json_normalize_with_python "${line}"
-      ;;
-    *)
-      return 1
-      ;;
-  esac
+	case "${MCPBASH_JSON_TOOL}" in
+	gojq | jq)
+		mcp_json_normalize_with_jq "${line}"
+		;;
+	python)
+		mcp_json_normalize_with_python "${line}"
+		;;
+	*)
+		return 1
+		;;
+	esac
 }
 
 mcp_json_normalize_with_jq() {
-  local line="$1"
-  local compact
-  if ! compact="$(printf '%s' "${line}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.' 2>/dev/null)"; then
-    return 1
-  fi
-  printf '%s' "${compact}"
+	local line="$1"
+	local compact
+	if ! compact="$(printf '%s' "${line}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.' 2>/dev/null)"; then
+		return 1
+	fi
+	printf '%s' "${compact}"
 }
 
 mcp_json_normalize_with_python() {
-  local line="$1"
-  local compact
-  if ! compact="$(printf '%s' "${line}" | "${MCPBASH_JSON_TOOL_BIN}" -c 'import json,sys; obj=json.load(sys.stdin); sys.stdout.write(json.dumps(obj,separators=(\",\",\":\")))' 2>/dev/null)"; then
-    return 1
-  fi
-  printf '%s' "${compact}"
+	local line="$1"
+	local compact
+	if ! compact="$(printf '%s' "${line}" | "${MCPBASH_JSON_TOOL_BIN}" -c 'import json,sys; obj=json.load(sys.stdin); sys.stdout.write(json.dumps(obj,separators=(\",\",\":\")))' 2>/dev/null)"; then
+		return 1
+	fi
+	printf '%s' "${compact}"
 }
 
 mcp_json_strip_bom() {
-  local value="$1"
-  case "${value}" in
-    "${MCP_JSON_BOM}"*)
-      printf '%s' "${value#"${MCP_JSON_BOM}"}"
-      ;;
-    *)
-      printf '%s' "${value}"
-      ;;
-  esac
+	local value="$1"
+	case "${value}" in
+	"${MCP_JSON_BOM}"*)
+		printf '%s' "${value#"${MCP_JSON_BOM}"}"
+		;;
+	*)
+		printf '%s' "${value}"
+		;;
+	esac
 }
 
 mcp_json_trim() {
-  local value="$1"
-  while [ -n "${value}" ]; do
-    case "${value}" in
-      $'\r'* | $'\n'* | $'\t'* | ' '*)
-        value="${value#?}"
-        ;;
-      *)
-        break
-        ;;
-    esac
-  done
+	local value="$1"
+	while [ -n "${value}" ]; do
+		case "${value}" in
+		$'\r'* | $'\n'* | $'\t'* | ' '*)
+			value="${value#?}"
+			;;
+		*)
+			break
+			;;
+		esac
+	done
 
-  while [ -n "${value}" ]; do
-    case "${value}" in
-      *$'\r' | *$'\n' | *$'\t' | *' ')
-        value="${value%?}"
-        ;;
-      *)
-        break
-        ;;
-    esac
-  done
+	while [ -n "${value}" ]; do
+		case "${value}" in
+		*$'\r' | *$'\n' | *$'\t' | *' ')
+			value="${value%?}"
+			;;
+		*)
+			break
+			;;
+		esac
+	done
 
-  printf '%s' "${value}"
+	printf '%s' "${value}"
 }
 
 mcp_json_is_array() {
-  case "$1" in
-    \[*)
-      return 0
-      ;;
-    *)
-      return 1
-      ;;
-  esac
+	case "$1" in
+	\[*)
+		return 0
+		;;
+	*)
+		return 1
+		;;
+	esac
 }
 
 mcp_json_extract_method() {
-  local json="$1"
-  if mcp_runtime_is_minimal_mode; then
-    if ! mcp_json_minimal_parse "${json}"; then
-      return 1
-    fi
-    if [ -z "${MCP_JSON_CACHE_METHOD}" ]; then
-      return 1
-    fi
-    printf '%s' "${MCP_JSON_CACHE_METHOD}"
-    return 0
-  fi
+	local json="$1"
+	if mcp_runtime_is_minimal_mode; then
+		if ! mcp_json_minimal_parse "${json}"; then
+			return 1
+		fi
+		if [ -z "${MCP_JSON_CACHE_METHOD}" ]; then
+			return 1
+		fi
+		printf '%s' "${MCP_JSON_CACHE_METHOD}"
+		return 0
+	fi
 
-  case "${MCPBASH_JSON_TOOL}" in
-    gojq | jq)
-      if ! printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -er '.method | strings' 2>/dev/null; then
-        return 1
-      fi
-      ;;
-    python)
-      if ! printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -c 'import json,sys; obj=json.load(sys.stdin); m=obj.get("method");\nif not isinstance(m,str): raise SystemExit(1)\nsys.stdout.write(m)' 2>/dev/null; then
-        return 1
-      fi
-      ;;
-    *)
-      return 1
-      ;;
-  esac
+	case "${MCPBASH_JSON_TOOL}" in
+	gojq | jq)
+		if ! printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -er '.method | strings' 2>/dev/null; then
+			return 1
+		fi
+		;;
+	python)
+		if ! printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -c 'import json,sys; obj=json.load(sys.stdin); m=obj.get("method");\nif not isinstance(m,str): raise SystemExit(1)\nsys.stdout.write(m)' 2>/dev/null; then
+			return 1
+		fi
+		;;
+	*)
+		return 1
+		;;
+	esac
 }
 
 mcp_json_extract_id() {
-  local json="$1"
-  if mcp_runtime_is_minimal_mode; then
-    if ! mcp_json_minimal_parse "${json}"; then
-      return 1
-    fi
-    if [ "${MCP_JSON_CACHE_HAS_ID}" = "true" ]; then
-      printf '%s' "${MCP_JSON_CACHE_ID}"
-    fi
-    return 0
-  fi
+	local json="$1"
+	if mcp_runtime_is_minimal_mode; then
+		if ! mcp_json_minimal_parse "${json}"; then
+			return 1
+		fi
+		if [ "${MCP_JSON_CACHE_HAS_ID}" = "true" ]; then
+			printf '%s' "${MCP_JSON_CACHE_ID}"
+		fi
+		return 0
+	fi
 
-  case "${MCPBASH_JSON_TOOL}" in
-    gojq | jq)
-      if ! printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.id' 2>/dev/null; then
-        return 1
-      fi
-      ;;
-    python)
-      if ! printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -c 'import json,sys; obj=json.load(sys.stdin); val=obj.get("id", None); sys.stdout.write(json.dumps(val))' 2>/dev/null; then
-        return 1
-      fi
-      ;;
-    *)
-      return 1
-      ;;
-  esac
+	case "${MCPBASH_JSON_TOOL}" in
+	gojq | jq)
+		if ! printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.id' 2>/dev/null; then
+			return 1
+		fi
+		;;
+	python)
+		if ! printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -c 'import json,sys; obj=json.load(sys.stdin); val=obj.get("id", None); sys.stdout.write(json.dumps(val))' 2>/dev/null; then
+			return 1
+		fi
+		;;
+	*)
+		return 1
+		;;
+	esac
 }
 
 mcp_json_minimal_parse() {
-  local json="$1"
+	local json="$1"
 
-  if [ "${MCP_JSON_CACHE_LINE}" = "${json}" ]; then
-    return 0
-  fi
+	if [ "${MCP_JSON_CACHE_LINE}" = "${json}" ]; then
+		return 0
+	fi
 
-  MCP_JSON_CACHE_LINE="${json}"
-  MCP_JSON_CACHE_METHOD=""
-  MCP_JSON_CACHE_ID=""
-  MCP_JSON_CACHE_HAS_ID="false"
+	MCP_JSON_CACHE_LINE="${json}"
+	MCP_JSON_CACHE_METHOD=""
+	MCP_JSON_CACHE_ID=""
+	MCP_JSON_CACHE_HAS_ID="false"
 
-  local len=${#json}
-  if [ "${len}" -lt 2 ]; then
-    return 1
-  fi
+	local len=${#json}
+	if [ "${len}" -lt 2 ]; then
+		return 1
+	fi
 
-  if [ "${json:0:1}" != "{" ] || [ "${json:len-1:1}" != "}" ]; then
-    return 1
-  fi
+	if [ "${json:0:1}" != "{" ] || [ "${json:len-1:1}" != "}" ]; then
+		return 1
+	fi
 
-  local content="${json:1:len-2}"
-  local pairs
-  if ! pairs="$(mcp_json_minimal_split_pairs "${content}")"; then
-    return 1
-  fi
+	local content="${json:1:len-2}"
+	local pairs
+	if ! pairs="$(mcp_json_minimal_split_pairs "${content}")"; then
+		return 1
+	fi
 
-  local IFS=$'\n'
-  local pair
-  local found_method=false
-  for pair in ${pairs}; do
-    [ -z "${pair}" ] && continue
-    if ! mcp_json_minimal_process_pair "${pair}"; then
-      return 1
-    fi
-    if [ -n "${MCP_JSON_CACHE_METHOD}" ]; then
-      found_method=true
-    fi
-  done
-  IFS=$' \t\n'
+	local IFS=$'\n'
+	local pair
+	local found_method=false
+	for pair in ${pairs}; do
+		[ -z "${pair}" ] && continue
+		if ! mcp_json_minimal_process_pair "${pair}"; then
+			return 1
+		fi
+		if [ -n "${MCP_JSON_CACHE_METHOD}" ]; then
+			found_method=true
+		fi
+	done
+	IFS=$' \t\n'
 
-  if [ "${found_method}" != "true" ]; then
-    return 1
-  fi
+	if [ "${found_method}" != "true" ]; then
+		return 1
+	fi
 
-  return 0
+	return 0
 }
 
 mcp_json_minimal_split_pairs() {
-  local content="$1"
-  local length=${#content}
-  local i=0
-  local char
-  local depth=0
-  local in_string=0
-  local escape=0
-  local current=""
-  local result=""
+	local content="$1"
+	local length=${#content}
+	local i=0
+	local char
+	local depth=0
+	local in_string=0
+	local escape=0
+	local current=""
+	local result=""
 
-  while [ "${i}" -lt "${length}" ]; do
-    char="${content:i:1}"
-    if [ "${escape}" = "1" ]; then
-      current="${current}${char}"
-      escape=0
-      i=$((i + 1))
-      continue
-    fi
-    # shellcheck disable=SC1003 # manual escape handling keeps parser dependency-free
-    case "${char}" in
-      '\\')
-        current="${current}${char}"
-        escape=1
-        ;;
-      '"')
-        current="${current}${char}"
-        if [ "${in_string}" = "1" ]; then
-          in_string=0
-        else
-          in_string=1
-        fi
-        ;;
-      '{' | '[')
-        current="${current}${char}"
-        if [ "${in_string}" = "0" ]; then
-          depth=$((depth + 1))
-        fi
-        ;;
-      '}' | ']')
-        current="${current}${char}"
-        if [ "${in_string}" = "0" ]; then
-          depth=$((depth - 1))
-          if [ "${depth}" -lt 0 ]; then
-            return 1
-          fi
-        fi
-        ;;
-      ',')
-        if [ "${in_string}" = "0" ] && [ "${depth}" -eq 0 ]; then
-          result="${result}$(mcp_json_trim "${current}")"$'\n'
-          current=""
-        else
-          current="${current}${char}"
-        fi
-        ;;
-      *)
-        current="${current}${char}"
-        ;;
-    esac
-    i=$((i + 1))
-  done
+	while [ "${i}" -lt "${length}" ]; do
+		char="${content:i:1}"
+		if [ "${escape}" = "1" ]; then
+			current="${current}${char}"
+			escape=0
+			i=$((i + 1))
+			continue
+		fi
+		# shellcheck disable=SC1003 # manual escape handling keeps parser dependency-free
+		case "${char}" in
+		'\\')
+			current="${current}${char}"
+			escape=1
+			;;
+		'"')
+			current="${current}${char}"
+			if [ "${in_string}" = "1" ]; then
+				in_string=0
+			else
+				in_string=1
+			fi
+			;;
+		'{' | '[')
+			current="${current}${char}"
+			if [ "${in_string}" = "0" ]; then
+				depth=$((depth + 1))
+			fi
+			;;
+		'}' | ']')
+			current="${current}${char}"
+			if [ "${in_string}" = "0" ]; then
+				depth=$((depth - 1))
+				if [ "${depth}" -lt 0 ]; then
+					return 1
+				fi
+			fi
+			;;
+		',')
+			if [ "${in_string}" = "0" ] && [ "${depth}" -eq 0 ]; then
+				result="${result}$(mcp_json_trim "${current}")"$'\n'
+				current=""
+			else
+				current="${current}${char}"
+			fi
+			;;
+		*)
+			current="${current}${char}"
+			;;
+		esac
+		i=$((i + 1))
+	done
 
-  if [ "${escape}" = "1" ] || [ "${in_string}" = "1" ] || [ "${depth}" -ne 0 ]; then
-    return 1
-  fi
+	if [ "${escape}" = "1" ] || [ "${in_string}" = "1" ] || [ "${depth}" -ne 0 ]; then
+		return 1
+	fi
 
-  result="${result}$(mcp_json_trim "${current}")"
-  printf '%s' "${result}"
+	result="${result}$(mcp_json_trim "${current}")"
+	printf '%s' "${result}"
 }
 
 mcp_json_minimal_process_pair() {
-  local pair="$1"
-  if [ -z "${pair}" ]; then
-    return 0
-  fi
+	local pair="$1"
+	if [ -z "${pair}" ]; then
+		return 0
+	fi
 
-  local colon_index
-  colon_index="$(mcp_json_minimal_find_colon "${pair}")" || return 1
-  if [ "${colon_index}" -lt 0 ]; then
-    return 1
-  fi
+	local colon_index
+	colon_index="$(mcp_json_minimal_find_colon "${pair}")" || return 1
+	if [ "${colon_index}" -lt 0 ]; then
+		return 1
+	fi
 
-  local key="${pair:0:colon_index}"
-  local value="${pair:colon_index+1}"
-  key="$(mcp_json_trim "${key}")"
-  value="$(mcp_json_trim "${value}")"
+	local key="${pair:0:colon_index}"
+	local value="${pair:colon_index+1}"
+	key="$(mcp_json_trim "${key}")"
+	value="$(mcp_json_trim "${value}")"
 
-  if [ "${key:0:1}" != "\"" ] || [ "${key:${#key}-1:1}" != "\"" ]; then
-    return 1
-  fi
+	if [ "${key:0:1}" != "\"" ] || [ "${key:${#key}-1:1}" != "\"" ]; then
+		return 1
+	fi
 
-  local key_name="${key:1:${#key}-2}"
+	local key_name="${key:1:${#key}-2}"
 
-  if [ "${key_name}" = "method" ]; then
-    local unquoted
-    if ! unquoted="$(mcp_json_minimal_unquote "${value}")"; then
-      return 1
-    fi
-    if [ -z "${unquoted}" ]; then
-      return 1
-    fi
-    MCP_JSON_CACHE_METHOD="${unquoted}"
-    return 0
-  fi
+	if [ "${key_name}" = "method" ]; then
+		local unquoted
+		if ! unquoted="$(mcp_json_minimal_unquote "${value}")"; then
+			return 1
+		fi
+		if [ -z "${unquoted}" ]; then
+			return 1
+		fi
+		MCP_JSON_CACHE_METHOD="${unquoted}"
+		return 0
+	fi
 
-  if [ "${key_name}" = "id" ]; then
-    if ! mcp_json_minimal_validate_id "${value}"; then
-      return 1
-    fi
-    MCP_JSON_CACHE_ID="${value}"
-    MCP_JSON_CACHE_HAS_ID="true"
-    return 0
-  fi
+	if [ "${key_name}" = "id" ]; then
+		if ! mcp_json_minimal_validate_id "${value}"; then
+			return 1
+		fi
+		MCP_JSON_CACHE_ID="${value}"
+		MCP_JSON_CACHE_HAS_ID="true"
+		return 0
+	fi
 
-  return 0
+	return 0
 }
 
 mcp_json_minimal_find_colon() {
-  local text="$1"
-  local length=${#text}
-  local i=0
-  local char
-  local depth=0
-  local in_string=0
-  local escape=0
+	local text="$1"
+	local length=${#text}
+	local i=0
+	local char
+	local depth=0
+	local in_string=0
+	local escape=0
 
-  while [ "${i}" -lt "${length}" ]; do
-    char="${text:i:1}"
-    if [ "${escape}" = "1" ]; then
-      escape=0
-      i=$((i + 1))
-      continue
-    fi
-    # shellcheck disable=SC1003 # manual escape handling keeps parser dependency-free
-    case "${char}" in
-      '\\')
-        escape=1
-        ;;
-      '"')
-        if [ "${in_string}" = "1" ]; then
-          in_string=0
-        else
-          in_string=1
-        fi
-        ;;
-      '{' | '[')
-        if [ "${in_string}" = "0" ]; then
-          depth=$((depth + 1))
-        fi
-        ;;
-      '}' | ']')
-        if [ "${in_string}" = "0" ]; then
-          depth=$((depth - 1))
-          if [ "${depth}" -lt 0 ]; then
-            return 1
-          fi
-        fi
-        ;;
-      ':')
-        if [ "${in_string}" = "0" ] && [ "${depth}" -eq 0 ]; then
-          printf '%s' "${i}"
-          return 0
-        fi
-        ;;
-      *) ;;
-    esac
-    i=$((i + 1))
-  done
+	while [ "${i}" -lt "${length}" ]; do
+		char="${text:i:1}"
+		if [ "${escape}" = "1" ]; then
+			escape=0
+			i=$((i + 1))
+			continue
+		fi
+		# shellcheck disable=SC1003 # manual escape handling keeps parser dependency-free
+		case "${char}" in
+		'\\')
+			escape=1
+			;;
+		'"')
+			if [ "${in_string}" = "1" ]; then
+				in_string=0
+			else
+				in_string=1
+			fi
+			;;
+		'{' | '[')
+			if [ "${in_string}" = "0" ]; then
+				depth=$((depth + 1))
+			fi
+			;;
+		'}' | ']')
+			if [ "${in_string}" = "0" ]; then
+				depth=$((depth - 1))
+				if [ "${depth}" -lt 0 ]; then
+					return 1
+				fi
+			fi
+			;;
+		':')
+			if [ "${in_string}" = "0" ] && [ "${depth}" -eq 0 ]; then
+				printf '%s' "${i}"
+				return 0
+			fi
+			;;
+		*) ;;
+		esac
+		i=$((i + 1))
+	done
 
-  printf '%s' "-1"
-  return 0
+	printf '%s' "-1"
+	return 0
 }
 
 mcp_json_minimal_unquote() {
-  local value="$1"
-  local length=${#value}
-  if [ "${length}" -lt 2 ]; then
-    return 1
-  fi
-  if [ "${value:0:1}" != "\"" ] || [ "${value:length-1:1}" != "\"" ]; then
-    return 1
-  fi
-  local body="${value:1:length-2}"
-  # shellcheck disable=SC1003 # checking for literal backslashes within quoted JSON
-  case "${body}" in
-    *'\\'*)
-      return 1
-      ;;
-  esac
-  printf '%s' "${body}"
+	local value="$1"
+	local length=${#value}
+	if [ "${length}" -lt 2 ]; then
+		return 1
+	fi
+	if [ "${value:0:1}" != "\"" ] || [ "${value:length-1:1}" != "\"" ]; then
+		return 1
+	fi
+	local body="${value:1:length-2}"
+	# shellcheck disable=SC1003 # checking for literal backslashes within quoted JSON
+	case "${body}" in
+	*'\\'*)
+		return 1
+		;;
+	esac
+	printf '%s' "${body}"
 }
 
 mcp_json_minimal_validate_id() {
-  local value="$1"
-  # shellcheck disable=SC1003 # minimal parser exploits literal patterns
-  case "${value}" in
-    \"*\"*)
-      if ! mcp_json_minimal_unquote "${value}" >/dev/null; then
-        return 1
-      fi
-      return 0
-      ;;
-    null)
-      return 0
-      ;;
-  esac
+	local value="$1"
+	# shellcheck disable=SC1003 # minimal parser exploits literal patterns
+	case "${value}" in
+	\"*\"*)
+		if ! mcp_json_minimal_unquote "${value}" >/dev/null; then
+			return 1
+		fi
+		return 0
+		;;
+	null)
+		return 0
+		;;
+	esac
 
-  if mcp_json_minimal_is_number "${value}"; then
-    return 0
-  fi
+	if mcp_json_minimal_is_number "${value}"; then
+		return 0
+	fi
 
-  return 1
+	return 1
 }
 
 mcp_json_minimal_is_number() {
-  local num="$1"
-  local len=${#num}
-  local i=0
-  local char
-  local seen_decimal=0
-  local seen_exponent=0
+	local num="$1"
+	local len=${#num}
+	local i=0
+	local char
+	local seen_decimal=0
+	local seen_exponent=0
 
-  if [ "${len}" -eq 0 ]; then
-    return 1
-  fi
+	if [ "${len}" -eq 0 ]; then
+		return 1
+	fi
 
-  if [ "${num:0:1}" = "-" ]; then
-    num="${num:1}"
-    len=${#num}
-    if [ "${len}" -eq 0 ]; then
-      return 1
-    fi
-  fi
+	if [ "${num:0:1}" = "-" ]; then
+		num="${num:1}"
+		len=${#num}
+		if [ "${len}" -eq 0 ]; then
+			return 1
+		fi
+	fi
 
-  while [ "${i}" -lt "${len}" ]; do
-    char="${num:i:1}"
-    case "${char}" in
-      [0-9]) ;;
-      .)
-        if [ "${seen_decimal}" -eq 1 ] || [ "${seen_exponent}" -eq 1 ]; then
-          return 1
-        fi
-        seen_decimal=1
-        ;;
-      e | E)
-        if [ "${seen_exponent}" -eq 1 ]; then
-          return 1
-        fi
-        seen_exponent=1
-        i=$((i + 1))
-        if [ "${i}" -ge "${len}" ]; then
-          return 1
-        fi
-        char="${num:i:1}"
-        if [ "${char}" = "+" ] || [ "${char}" = "-" ]; then
-          i=$((i + 1))
-          if [ "${i}" -ge "${len}" ]; then
-            return 1
-          fi
-        fi
-        continue
-        ;;
-      *)
-        return 1
-        ;;
-    esac
-    i=$((i + 1))
-  done
+	while [ "${i}" -lt "${len}" ]; do
+		char="${num:i:1}"
+		case "${char}" in
+		[0-9]) ;;
+		.)
+			if [ "${seen_decimal}" -eq 1 ] || [ "${seen_exponent}" -eq 1 ]; then
+				return 1
+			fi
+			seen_decimal=1
+			;;
+		e | E)
+			if [ "${seen_exponent}" -eq 1 ]; then
+				return 1
+			fi
+			seen_exponent=1
+			i=$((i + 1))
+			if [ "${i}" -ge "${len}" ]; then
+				return 1
+			fi
+			char="${num:i:1}"
+			if [ "${char}" = "+" ] || [ "${char}" = "-" ]; then
+				i=$((i + 1))
+				if [ "${i}" -ge "${len}" ]; then
+					return 1
+				fi
+			fi
+			continue
+			;;
+		*)
+			return 1
+			;;
+		esac
+		i=$((i + 1))
+	done
 
-  return 0
+	return 0
 }
 
 mcp_json_extract_cancel_id() {
-  local json="$1"
+	local json="$1"
 
-  if mcp_runtime_is_minimal_mode; then
-    printf ''
-    return 1
-  fi
+	if mcp_runtime_is_minimal_mode; then
+		printf ''
+		return 1
+	fi
 
-  case "${MCPBASH_JSON_TOOL}" in
-    gojq | jq)
-      if ! printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -er '.params.requestId // .params.id' 2>/dev/null; then
-        return 1
-      fi
-      ;;
-    python)
-      if ! printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -c 'import json,sys
+	case "${MCPBASH_JSON_TOOL}" in
+	gojq | jq)
+		if ! printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -er '.params.requestId // .params.id' 2>/dev/null; then
+			return 1
+		fi
+		;;
+	python)
+		if ! printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -c 'import json,sys
 data=json.load(sys.stdin)
 params=data.get("params", {})
 value=params.get("requestId", params.get("id"))
 if value is None:
     raise SystemExit(1)
 sys.stdout.write(json.dumps(value))' 2>/dev/null; then
-        return 1
-      fi
-      ;;
-    *)
-      return 1
-      ;;
-  esac
+			return 1
+		fi
+		;;
+	*)
+		return 1
+		;;
+	esac
 }
 
 mcp_json_extract_protocol_version() {
-  local json="$1"
+	local json="$1"
 
-  if mcp_runtime_is_minimal_mode; then
-    printf ''
-    return 0
-  fi
+	if mcp_runtime_is_minimal_mode; then
+		printf ''
+		return 0
+	fi
 
-  case "${MCPBASH_JSON_TOOL}" in
-    gojq | jq)
-      if ! printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -er '.params.protocolVersion // empty' 2>/dev/null; then
-        printf ''
-      fi
-      ;;
-    python)
-      if ! printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -c 'import json,sys
+	case "${MCPBASH_JSON_TOOL}" in
+	gojq | jq)
+		if ! printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -er '.params.protocolVersion // empty' 2>/dev/null; then
+			printf ''
+		fi
+		;;
+	python)
+		if ! printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -c 'import json,sys
 data=json.load(sys.stdin)
 params=data.get("params", {})
 value=params.get("protocolVersion")
 if value is None:
     raise SystemExit(1)
 sys.stdout.write(str(value))' 2>/dev/null; then
-        printf ''
-      fi
-      ;;
-    *)
-      printf ''
-      ;;
-  esac
+			printf ''
+		fi
+		;;
+	*)
+		printf ''
+		;;
+	esac
 }
 
 mcp_json_extract_limit() {
-  local json="$1"
-  if mcp_runtime_is_minimal_mode; then
-    printf ''
-    return 0
-  fi
+	local json="$1"
+	if mcp_runtime_is_minimal_mode; then
+		printf ''
+		return 0
+	fi
 
-  case "${MCPBASH_JSON_TOOL}" in
-    gojq | jq)
-      printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.params.limit? // ""' 2>/dev/null
-      ;;
-    python)
-      printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -c 'import json,sys
+	case "${MCPBASH_JSON_TOOL}" in
+	gojq | jq)
+		printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.params.limit? // ""' 2>/dev/null
+		;;
+	python)
+		printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -c 'import json,sys
 data=json.load(sys.stdin)
 params=data.get("params", {})
 value=params.get("limit")
@@ -574,26 +574,26 @@ if value is None:
     print("")
 else:
     print(value)' 2>/dev/null
-      ;;
-    *)
-      printf ''
-      ;;
-  esac
+		;;
+	*)
+		printf ''
+		;;
+	esac
 }
 
 mcp_json_extract_cursor() {
-  local json="$1"
-  if mcp_runtime_is_minimal_mode; then
-    printf ''
-    return 0
-  fi
+	local json="$1"
+	if mcp_runtime_is_minimal_mode; then
+		printf ''
+		return 0
+	fi
 
-  case "${MCPBASH_JSON_TOOL}" in
-    gojq | jq)
-      printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.params.cursor? // ""' 2>/dev/null
-      ;;
-    python)
-      printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -c 'import json,sys
+	case "${MCPBASH_JSON_TOOL}" in
+	gojq | jq)
+		printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.params.cursor? // ""' 2>/dev/null
+		;;
+	python)
+		printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -c 'import json,sys
 data=json.load(sys.stdin)
 params=data.get("params", {})
 value=params.get("cursor")
@@ -601,26 +601,26 @@ if value is None:
     print("")
 else:
     print(value)' 2>/dev/null
-      ;;
-    *)
-      printf ''
-      ;;
-  esac
+		;;
+	*)
+		printf ''
+		;;
+	esac
 }
 
 mcp_json_extract_tool_name() {
-  local json="$1"
-  if mcp_runtime_is_minimal_mode; then
-    printf ''
-    return 0
-  fi
+	local json="$1"
+	if mcp_runtime_is_minimal_mode; then
+		printf ''
+		return 0
+	fi
 
-  case "${MCPBASH_JSON_TOOL}" in
-    gojq | jq)
-      printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.params.name? // ""' 2>/dev/null
-      ;;
-    python)
-      printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -c 'import json,sys
+	case "${MCPBASH_JSON_TOOL}" in
+	gojq | jq)
+		printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.params.name? // ""' 2>/dev/null
+		;;
+	python)
+		printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -c 'import json,sys
 data=json.load(sys.stdin)
 params=data.get("params", {})
 value=params.get("name")
@@ -628,56 +628,56 @@ if value is None:
     print("")
 else:
     print(value)' 2>/dev/null
-      ;;
-    *)
-      printf ''
-      ;;
-  esac
+		;;
+	*)
+		printf ''
+		;;
+	esac
 }
 
 mcp_json_extract_arguments() {
-  local json="$1"
-  if mcp_runtime_is_minimal_mode; then
-    printf '{}'
-    return 0
-  fi
+	local json="$1"
+	if mcp_runtime_is_minimal_mode; then
+		printf '{}'
+		return 0
+	fi
 
-  case "${MCPBASH_JSON_TOOL}" in
-    gojq | jq)
-      if ! printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -ec '.params.arguments // {}' 2>/dev/null; then
-        printf '{}'
-      fi
-      ;;
-    python)
-      if ! printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -c 'import json,sys
+	case "${MCPBASH_JSON_TOOL}" in
+	gojq | jq)
+		if ! printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -ec '.params.arguments // {}' 2>/dev/null; then
+			printf '{}'
+		fi
+		;;
+	python)
+		if ! printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -c 'import json,sys
 data=json.load(sys.stdin)
 params=data.get("params", {})
 value=params.get("arguments")
 if value is None:
     value = {}
 print(json.dumps(value, separators=(",", ":")))' 2>/dev/null; then
-        printf '{}'
-      fi
-      ;;
-    *)
-      printf '{}'
-      ;;
-  esac
+			printf '{}'
+		fi
+		;;
+	*)
+		printf '{}'
+		;;
+	esac
 }
 
 mcp_json_extract_timeout_override() {
-  local json="$1"
-  if mcp_runtime_is_minimal_mode; then
-    printf ''
-    return 0
-  fi
+	local json="$1"
+	if mcp_runtime_is_minimal_mode; then
+		printf ''
+		return 0
+	fi
 
-  case "${MCPBASH_JSON_TOOL}" in
-    gojq | jq)
-      printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.params.timeoutSecs? // ""' 2>/dev/null
-      ;;
-    python)
-      printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -c 'import json,sys
+	case "${MCPBASH_JSON_TOOL}" in
+	gojq | jq)
+		printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.params.timeoutSecs? // ""' 2>/dev/null
+		;;
+	python)
+		printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -c 'import json,sys
 data=json.load(sys.stdin)
 params=data.get("params", {})
 value=params.get("timeoutSecs")
@@ -685,26 +685,26 @@ if value is None:
     print("")
 else:
     print(value)' 2>/dev/null
-      ;;
-    *)
-      printf ''
-      ;;
-  esac
+		;;
+	*)
+		printf ''
+		;;
+	esac
 }
 
 mcp_json_extract_resource_name() {
-  local json="$1"
-  if mcp_runtime_is_minimal_mode; then
-    printf ''
-    return 0
-  fi
+	local json="$1"
+	if mcp_runtime_is_minimal_mode; then
+		printf ''
+		return 0
+	fi
 
-  case "${MCPBASH_JSON_TOOL}" in
-    gojq | jq)
-      printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.params.name? // ""' 2>/dev/null
-      ;;
-    python)
-      printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -c 'import json,sys
+	case "${MCPBASH_JSON_TOOL}" in
+	gojq | jq)
+		printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.params.name? // ""' 2>/dev/null
+		;;
+	python)
+		printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -c 'import json,sys
 data=json.load(sys.stdin)
 params=data.get("params", {})
 value=params.get("name")
@@ -712,26 +712,26 @@ if value is None:
     print("")
 else:
     print(value)' 2>/dev/null
-      ;;
-    *)
-      printf ''
-      ;;
-  esac
+		;;
+	*)
+		printf ''
+		;;
+	esac
 }
 
 mcp_json_extract_resource_uri() {
-  local json="$1"
-  if mcp_runtime_is_minimal_mode; then
-    printf ''
-    return 0
-  fi
+	local json="$1"
+	if mcp_runtime_is_minimal_mode; then
+		printf ''
+		return 0
+	fi
 
-  case "${MCPBASH_JSON_TOOL}" in
-    gojq | jq)
-      printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.params.uri? // ""' 2>/dev/null
-      ;;
-    python)
-      printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -c 'import json,sys
+	case "${MCPBASH_JSON_TOOL}" in
+	gojq | jq)
+		printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.params.uri? // ""' 2>/dev/null
+		;;
+	python)
+		printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -c 'import json,sys
 data=json.load(sys.stdin)
 params=data.get("params", {})
 value=params.get("uri")
@@ -739,26 +739,26 @@ if value is None:
     print("")
 else:
     print(value)' 2>/dev/null
-      ;;
-    *)
-      printf ''
-      ;;
-  esac
+		;;
+	*)
+		printf ''
+		;;
+	esac
 }
 
 mcp_json_extract_subscription_id() {
-  local json="$1"
-  if mcp_runtime_is_minimal_mode; then
-    printf ''
-    return 0
-  fi
+	local json="$1"
+	if mcp_runtime_is_minimal_mode; then
+		printf ''
+		return 0
+	fi
 
-  case "${MCPBASH_JSON_TOOL}" in
-    gojq | jq)
-      printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.params.subscriptionId? // ""' 2>/dev/null
-      ;;
-    python)
-      printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -c 'import json,sys
+	case "${MCPBASH_JSON_TOOL}" in
+	gojq | jq)
+		printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.params.subscriptionId? // ""' 2>/dev/null
+		;;
+	python)
+		printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -c 'import json,sys
 data=json.load(sys.stdin)
 params=data.get("params", {})
 value=params.get("subscriptionId")
@@ -766,26 +766,26 @@ if value is None:
     print("")
 else:
     print(value)' 2>/dev/null
-      ;;
-    *)
-      printf ''
-      ;;
-  esac
+		;;
+	*)
+		printf ''
+		;;
+	esac
 }
 
 mcp_json_extract_progress_token() {
-  local json="$1"
-  if mcp_runtime_is_minimal_mode; then
-    printf ''
-    return 0
-  fi
+	local json="$1"
+	if mcp_runtime_is_minimal_mode; then
+		printf ''
+		return 0
+	fi
 
-  case "${MCPBASH_JSON_TOOL}" in
-    gojq | jq)
-      printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.params._meta.progressToken? // ""' 2>/dev/null
-      ;;
-    python)
-      printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -c 'import json,sys
+	case "${MCPBASH_JSON_TOOL}" in
+	gojq | jq)
+		printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.params._meta.progressToken? // ""' 2>/dev/null
+		;;
+	python)
+		printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -c 'import json,sys
 data=json.load(sys.stdin)
 params=data.get("params", {})
 meta=params.get("_meta", {})
@@ -794,26 +794,26 @@ if value is None:
     print("")
 else:
     print(value)' 2>/dev/null
-      ;;
-    *)
-      printf ''
-      ;;
-  esac
+		;;
+	*)
+		printf ''
+		;;
+	esac
 }
 
 mcp_json_extract_completion_name() {
-  local json="$1"
-  if mcp_runtime_is_minimal_mode; then
-    printf ''
-    return 0
-  fi
+	local json="$1"
+	if mcp_runtime_is_minimal_mode; then
+		printf ''
+		return 0
+	fi
 
-  case "${MCPBASH_JSON_TOOL}" in
-    gojq | jq)
-      printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.params.name? // ""' 2>/dev/null
-      ;;
-    python)
-      printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -c 'import json,sys
+	case "${MCPBASH_JSON_TOOL}" in
+	gojq | jq)
+		printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.params.name? // ""' 2>/dev/null
+		;;
+	python)
+		printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -c 'import json,sys
 data=json.load(sys.stdin)
 params=data.get("params", {})
 value=params.get("name")
@@ -821,26 +821,26 @@ if value is None:
     print("")
 else:
     print(value)' 2>/dev/null
-      ;;
-    *)
-      printf ''
-      ;;
-  esac
+		;;
+	*)
+		printf ''
+		;;
+	esac
 }
 
 mcp_json_extract_log_level() {
-  local json="$1"
-  if mcp_runtime_is_minimal_mode; then
-    printf ''
-    return 0
-  fi
+	local json="$1"
+	if mcp_runtime_is_minimal_mode; then
+		printf ''
+		return 0
+	fi
 
-  case "${MCPBASH_JSON_TOOL}" in
-    gojq | jq)
-      printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.params.level? // ""' 2>/dev/null
-      ;;
-    python)
-      printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -c 'import json,sys
+	case "${MCPBASH_JSON_TOOL}" in
+	gojq | jq)
+		printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.params.level? // ""' 2>/dev/null
+		;;
+	python)
+		printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -c 'import json,sys
 data=json.load(sys.stdin)
 params=data.get("params", {})
 value=params.get("level")
@@ -848,56 +848,56 @@ if value is None:
     print("")
 else:
     print(str(value))' 2>/dev/null
-      ;;
-    *)
-      printf ''
-      ;;
-  esac
+		;;
+	*)
+		printf ''
+		;;
+	esac
 }
 
 mcp_json_extract_completion_arguments() {
-  local json="$1"
-  if mcp_runtime_is_minimal_mode; then
-    printf '{}'
-    return 0
-  fi
+	local json="$1"
+	if mcp_runtime_is_minimal_mode; then
+		printf '{}'
+		return 0
+	fi
 
-  case "${MCPBASH_JSON_TOOL}" in
-    gojq | jq)
-      if ! printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -ec '.params.arguments // {}' 2>/dev/null; then
-        printf '{}'
-      fi
-      ;;
-    python)
-      if ! printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -c 'import json,sys
+	case "${MCPBASH_JSON_TOOL}" in
+	gojq | jq)
+		if ! printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -ec '.params.arguments // {}' 2>/dev/null; then
+			printf '{}'
+		fi
+		;;
+	python)
+		if ! printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -c 'import json,sys
 data=json.load(sys.stdin)
 params=data.get("params", {})
 value=params.get("arguments")
 if value is None:
     value = {}
 print(json.dumps(value, separators=(",", ":")))' 2>/dev/null; then
-        printf '{}'
-      fi
-      ;;
-    *)
-      printf '{}'
-      ;;
-  esac
+			printf '{}'
+		fi
+		;;
+	*)
+		printf '{}'
+		;;
+	esac
 }
 
 mcp_json_extract_prompt_name() {
-  local json="$1"
-  if mcp_runtime_is_minimal_mode; then
-    printf ''
-    return 0
-  fi
+	local json="$1"
+	if mcp_runtime_is_minimal_mode; then
+		printf ''
+		return 0
+	fi
 
-  case "${MCPBASH_JSON_TOOL}" in
-    gojq | jq)
-      printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.params.name? // ""' 2>/dev/null
-      ;;
-    python)
-      printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -c 'import json,sys
+	case "${MCPBASH_JSON_TOOL}" in
+	gojq | jq)
+		printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.params.name? // ""' 2>/dev/null
+		;;
+	python)
+		printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -c 'import json,sys
 data=json.load(sys.stdin)
 params=data.get("params", {})
 value=params.get("name")
@@ -905,39 +905,39 @@ if value is None:
     print("")
 else:
     print(value)' 2>/dev/null
-      ;;
-    *)
-      printf ''
-      ;;
-  esac
+		;;
+	*)
+		printf ''
+		;;
+	esac
 }
 
 mcp_json_extract_prompt_arguments() {
-  local json="$1"
-  if mcp_runtime_is_minimal_mode; then
-    printf '{}'
-    return 0
-  fi
+	local json="$1"
+	if mcp_runtime_is_minimal_mode; then
+		printf '{}'
+		return 0
+	fi
 
-  case "${MCPBASH_JSON_TOOL}" in
-    gojq | jq)
-      if ! printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -ec '.params.arguments // {}' 2>/dev/null; then
-        printf '{}'
-      fi
-      ;;
-    python)
-      if ! printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -c 'import json,sys
+	case "${MCPBASH_JSON_TOOL}" in
+	gojq | jq)
+		if ! printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -ec '.params.arguments // {}' 2>/dev/null; then
+			printf '{}'
+		fi
+		;;
+	python)
+		if ! printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -c 'import json,sys
 data=json.load(sys.stdin)
 params=data.get("params", {})
 value=params.get("arguments")
 if value is None:
     value = {}
 print(json.dumps(value, separators=(",", ":")))' 2>/dev/null; then
-        printf '{}'
-      fi
-      ;;
-    *)
-      printf '{}'
-      ;;
-  esac
+			printf '{}'
+		fi
+		;;
+	*)
+		printf '{}'
+		;;
+	esac
 }

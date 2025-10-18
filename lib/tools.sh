@@ -20,46 +20,45 @@ MCP_TOOLS_MANUAL_BUFFER=""
 MCP_TOOLS_MANUAL_DELIM=$'\036'
 
 mcp_tools_manual_begin() {
-  MCP_TOOLS_MANUAL_ACTIVE=true
-  MCP_TOOLS_MANUAL_BUFFER=""
+	MCP_TOOLS_MANUAL_ACTIVE=true
+	MCP_TOOLS_MANUAL_BUFFER=""
 }
 
 mcp_tools_manual_abort() {
-  MCP_TOOLS_MANUAL_ACTIVE=false
-  MCP_TOOLS_MANUAL_BUFFER=""
+	MCP_TOOLS_MANUAL_ACTIVE=false
+	MCP_TOOLS_MANUAL_BUFFER=""
 }
 
 mcp_tools_register_manual() {
-  local payload="$1"
-  if [ "${MCP_TOOLS_MANUAL_ACTIVE}" != "true" ]; then
-    printf '%s\n' 'mcp_register_tool called outside manual registration window' >&2
-    return 1
-  fi
-  if [ -z "${payload}" ]; then
-    return 0
-  fi
-  if [ -n "${MCP_TOOLS_MANUAL_BUFFER}" ]; then
-    MCP_TOOLS_MANUAL_BUFFER="${MCP_TOOLS_MANUAL_BUFFER}${MCP_TOOLS_MANUAL_DELIM}${payload}"
-  else
-    MCP_TOOLS_MANUAL_BUFFER="${payload}"
-  fi
-  return 0
+	local payload="$1"
+	if [ "${MCP_TOOLS_MANUAL_ACTIVE}" != "true" ]; then
+		return 0
+	fi
+	if [ -z "${payload}" ]; then
+		return 0
+	fi
+	if [ -n "${MCP_TOOLS_MANUAL_BUFFER}" ]; then
+		MCP_TOOLS_MANUAL_BUFFER="${MCP_TOOLS_MANUAL_BUFFER}${MCP_TOOLS_MANUAL_DELIM}${payload}"
+	else
+		MCP_TOOLS_MANUAL_BUFFER="${payload}"
+	fi
+	return 0
 }
 
 mcp_tools_manual_finalize() {
-  if [ "${MCP_TOOLS_MANUAL_ACTIVE}" != "true" ]; then
-    return 0
-  fi
-  local py
-  py="$(mcp_tools_python)" || {
-    mcp_tools_manual_abort
-    mcp_tools_error -32603 "Manual registration requires python"
-    return 1
-  }
+	if [ "${MCP_TOOLS_MANUAL_ACTIVE}" != "true" ]; then
+		return 0
+	fi
+	local py
+	py="$(mcp_tools_python)" || {
+		mcp_tools_manual_abort
+		mcp_tools_error -32603 "Manual registration requires python"
+		return 1
+	}
 
-  local registry_json
-  if ! registry_json="$(
-    ITEMS="${MCP_TOOLS_MANUAL_BUFFER}" ROOT="${MCPBASH_ROOT}" DELIM="${MCP_TOOLS_MANUAL_DELIM}" "${py}" <<'PY'
+	local registry_json
+	if ! registry_json="$(
+		ITEMS="${MCP_TOOLS_MANUAL_BUFFER}" ROOT="${MCPBASH_ROOT}" DELIM="${MCP_TOOLS_MANUAL_DELIM}" "${py}" <<'PY'
 import json, os, hashlib, time, pathlib
 
 def normalize_path(entry_path, root):
@@ -130,102 +129,102 @@ registry = {
 }
 print(json.dumps(registry, ensure_ascii=False, separators=(',', ':')))
 PY
-  )"; then
-    mcp_tools_manual_abort
-    mcp_tools_error -32603 "Manual registration parsing failed"
-    return 1
-  fi
+	)"; then
+		mcp_tools_manual_abort
+		mcp_tools_error -32603 "Manual registration parsing failed"
+		return 1
+	fi
 
-  local previous_hash="${MCP_TOOLS_REGISTRY_HASH}"
-  MCP_TOOLS_REGISTRY_JSON="${registry_json}"
-  MCP_TOOLS_REGISTRY_HASH="$(
-    REGISTRY_JSON="${registry_json}" "${py}" <<'PY'
+	local previous_hash="${MCP_TOOLS_REGISTRY_HASH}"
+	MCP_TOOLS_REGISTRY_JSON="${registry_json}"
+	MCP_TOOLS_REGISTRY_HASH="$(
+		REGISTRY_JSON="${registry_json}" "${py}" <<'PY'
 import json, os
 print(json.loads(os.environ.get("REGISTRY_JSON", "{}")).get('hash', ''))
 PY
-  )"
-  MCP_TOOLS_TOTAL="$(
-    REGISTRY_JSON="${registry_json}" "${py}" <<'PY'
+	)"
+	MCP_TOOLS_TOTAL="$(
+		REGISTRY_JSON="${registry_json}" "${py}" <<'PY'
 import json, os
 print(json.loads(os.environ.get("REGISTRY_JSON", "{}")).get('total', 0))
 PY
-  )"
+	)"
 
-  if ! mcp_tools_enforce_registry_limits "${MCP_TOOLS_TOTAL}" "${registry_json}"; then
-    mcp_tools_manual_abort
-    return 1
-  fi
+	if ! mcp_tools_enforce_registry_limits "${MCP_TOOLS_TOTAL}" "${registry_json}"; then
+		mcp_tools_manual_abort
+		return 1
+	fi
 
-  MCP_TOOLS_MANUAL_ACTIVE=false
-  MCP_TOOLS_MANUAL_BUFFER=""
+	MCP_TOOLS_MANUAL_ACTIVE=false
+	MCP_TOOLS_MANUAL_BUFFER=""
 
-  MCP_TOOLS_LAST_SCAN="$(date +%s)"
-  if [ "${previous_hash}" != "${MCP_TOOLS_REGISTRY_HASH}" ]; then
-    MCP_TOOLS_CHANGED=true
-  fi
-  printf '%s' "${registry_json}" >"${MCP_TOOLS_REGISTRY_PATH}"
-  return 0
+	MCP_TOOLS_LAST_SCAN="$(date +%s)"
+	if [ "${previous_hash}" != "${MCP_TOOLS_REGISTRY_HASH}" ]; then
+		MCP_TOOLS_CHANGED=true
+	fi
+	printf '%s' "${registry_json}" >"${MCP_TOOLS_REGISTRY_PATH}"
+	return 0
 }
 
 mcp_tools_registry_max_bytes() {
-  local limit="${MCPBASH_REGISTRY_MAX_BYTES:-104857600}"
-  case "${limit}" in
-    ''|*[!0-9]*) limit=104857600 ;;
-  esac
-  printf '%s' "${limit}"
+	local limit="${MCPBASH_REGISTRY_MAX_BYTES:-104857600}"
+	case "${limit}" in
+	'' | *[!0-9]*) limit=104857600 ;;
+	esac
+	printf '%s' "${limit}"
 }
 
 mcp_tools_enforce_registry_limits() {
-  local total="$1"
-  local json_payload="$2"
-  local limit
-  local size
-  limit="$(mcp_tools_registry_max_bytes)"
-  size="$(LC_ALL=C printf '%s' "${json_payload}" | wc -c | tr -d ' ')"
-  if [ "${size}" -gt "${limit}" ]; then
-    mcp_tools_error -32603 "Tool registry exceeds ${limit} byte cap"
-    return 1
-  fi
-  if [ "${total}" -gt 500 ]; then
-    printf '%s\n' "mcp-bash WARNING: tools registry contains ${total} entries; consider manual registration (Spec §9 guardrail)." >&2
-  fi
-  return 0
+	local total="$1"
+	local json_payload="$2"
+	local limit
+	local size
+	limit="$(mcp_tools_registry_max_bytes)"
+	size="$(LC_ALL=C printf '%s' "${json_payload}" | wc -c | tr -d ' ')"
+	if [ "${size}" -gt "${limit}" ]; then
+		mcp_tools_error -32603 "Tool registry exceeds ${limit} byte cap"
+		return 1
+	fi
+	if [ "${total}" -gt 500 ]; then
+		printf '%s\n' "mcp-bash WARNING: tools registry contains ${total} entries; consider manual registration (Spec §9 guardrail)." >&2
+	fi
+	return 0
 }
 
 mcp_tools_error() {
-  MCP_TOOLS_ERROR_CODE="$1"
-  MCP_TOOLS_ERROR_MESSAGE="$2"
+	MCP_TOOLS_ERROR_CODE="$1"
+	MCP_TOOLS_ERROR_MESSAGE="$2"
 }
 
 mcp_tools_python() {
-  if command -v python3 >/dev/null 2>&1; then
-    printf 'python3'
-    return 0
-  fi
-  if command -v python >/dev/null 2>&1; then
-    printf 'python'
-    return 0
-  fi
-  return 1
+	if command -v python3 >/dev/null 2>&1; then
+		printf 'python3'
+		return 0
+	fi
+	if command -v python >/dev/null 2>&1; then
+		printf 'python'
+		return 0
+	fi
+	return 1
 }
 
 mcp_tools_init() {
-  if [ -z "${MCP_TOOLS_REGISTRY_PATH}" ]; then
-    MCP_TOOLS_REGISTRY_PATH="${MCPBASH_REGISTRY_DIR}/tools.json"
-  fi
-  mkdir -p "${MCPBASH_REGISTRY_DIR}"
+	if [ -z "${MCP_TOOLS_REGISTRY_PATH}" ]; then
+		MCP_TOOLS_REGISTRY_PATH="${MCPBASH_REGISTRY_DIR}/tools.json"
+	fi
+	mkdir -p "${MCPBASH_REGISTRY_DIR}"
 }
 
 mcp_tools_apply_manual_json() {
-  local manual_json="$1"
-  local py
-  py="$(mcp_tools_python)" || {
-    mcp_tools_error -32603 "Manual registration requires python"
-    return 1
-  }
-  local registry_json
-  if ! registry_json="$(
-    INPUT="${manual_json}" "${py}" <<'PY'
+	local manual_json="$1"
+	local py
+	py="$(mcp_tools_python)" || {
+		mcp_tools_error -32603 "Manual registration requires python"
+		return 1
+	}
+	local registry_json
+	if ! registry_json="$(
+		INPUT="${manual_json}" "${py}" <<'PY'
 import json, os, sys, hashlib, time
 data = json.loads(os.environ.get("INPUT", "{}"))
 tools = data.get("tools", [])
@@ -243,139 +242,139 @@ registry = {
 }
 print(json.dumps(registry, ensure_ascii=False, separators=(',', ':')))
 PY
-  )"; then
-    return 1
-  fi
-  local new_hash
-  new_hash="$(
-    REGISTRY_JSON="${registry_json}" "${py}" <<'PY'
+	)"; then
+		return 1
+	fi
+	local new_hash
+	new_hash="$(
+		REGISTRY_JSON="${registry_json}" "${py}" <<'PY'
 import json, os
 print(json.loads(os.environ.get("REGISTRY_JSON", "{}")).get('hash', ''))
 PY
-  )"
-  if [ "${new_hash}" != "${MCP_TOOLS_REGISTRY_HASH}" ]; then
-    MCP_TOOLS_CHANGED=true
-  fi
-  MCP_TOOLS_REGISTRY_JSON="${registry_json}"
-  MCP_TOOLS_REGISTRY_HASH="${new_hash}"
-  # shellcheck disable=SC2034
-  MCP_TOOLS_TOTAL="$(
-    REGISTRY_JSON="${registry_json}" "${py}" <<'PY'
+	)"
+	if [ "${new_hash}" != "${MCP_TOOLS_REGISTRY_HASH}" ]; then
+		MCP_TOOLS_CHANGED=true
+	fi
+	MCP_TOOLS_REGISTRY_JSON="${registry_json}"
+	MCP_TOOLS_REGISTRY_HASH="${new_hash}"
+	# shellcheck disable=SC2034
+	MCP_TOOLS_TOTAL="$(
+		REGISTRY_JSON="${registry_json}" "${py}" <<'PY'
 import json, os
 print(json.loads(os.environ.get("REGISTRY_JSON", "{}")).get('total', 0))
 PY
-  )"
-  if ! mcp_tools_enforce_registry_limits "${MCP_TOOLS_TOTAL}" "${registry_json}"; then
-    return 1
-  fi
-  MCP_TOOLS_LAST_SCAN="$(date +%s)"
-  printf '%s' "${registry_json}" >"${MCP_TOOLS_REGISTRY_PATH}"
+	)"
+	if ! mcp_tools_enforce_registry_limits "${MCP_TOOLS_TOTAL}" "${registry_json}"; then
+		return 1
+	fi
+	MCP_TOOLS_LAST_SCAN="$(date +%s)"
+	printf '%s' "${registry_json}" >"${MCP_TOOLS_REGISTRY_PATH}"
 }
 
 mcp_tools_run_manual_script() {
-  if [ ! -x "${MCPBASH_REGISTER_SCRIPT}" ]; then
-    return 1
-  fi
+	if [ ! -x "${MCPBASH_REGISTER_SCRIPT}" ]; then
+		return 1
+	fi
 
-  mcp_tools_manual_begin
+	mcp_tools_manual_begin
 
-  local script_output_file
-  script_output_file="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-tools-manual-output.XXXXXX")"
-  local script_status=0
+	local script_output_file
+	script_output_file="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-tools-manual-output.XXXXXX")"
+	local script_status=0
 
-  set +e
-  # shellcheck disable=SC1090
-  . "${MCPBASH_REGISTER_SCRIPT}" >"${script_output_file}" 2>&1
-  script_status=$?
-  set -e
+	set +e
+	# shellcheck disable=SC1090
+	. "${MCPBASH_REGISTER_SCRIPT}" >"${script_output_file}" 2>&1
+	script_status=$?
+	set -e
 
-  local script_output
-  script_output="$(cat "${script_output_file}" 2>/dev/null || true)"
-  rm -f "${script_output_file}"
+	local script_output
+	script_output="$(cat "${script_output_file}" 2>/dev/null || true)"
+	rm -f "${script_output_file}"
 
-  if [ "${script_status}" -ne 0 ]; then
-    mcp_tools_manual_abort
-    mcp_tools_error -32603 "Manual registration script failed"
-    if [ -n "${script_output}" ]; then
-      printf '%s\n' "${script_output}" >&2
-    fi
-    return 1
-  fi
+	if [ "${script_status}" -ne 0 ]; then
+		mcp_tools_manual_abort
+		mcp_tools_error -32603 "Manual registration script failed"
+		if [ -n "${script_output}" ]; then
+			printf '%s\n' "${script_output}" >&2
+		fi
+		return 1
+	fi
 
-  if [ -z "${MCP_TOOLS_MANUAL_BUFFER}" ] && [ -n "${script_output}" ]; then
-    mcp_tools_manual_abort
-    if ! mcp_tools_apply_manual_json "${script_output}"; then
-      return 1
-    fi
-    return 0
-  fi
+	if [ -z "${MCP_TOOLS_MANUAL_BUFFER}" ] && [ -n "${script_output}" ]; then
+		mcp_tools_manual_abort
+		if ! mcp_tools_apply_manual_json "${script_output}"; then
+			return 1
+		fi
+		return 0
+	fi
 
-  if [ -n "${script_output}" ]; then
-    printf '%s\n' "${script_output}" >&2
-  fi
+	if [ -n "${script_output}" ]; then
+		printf '%s\n' "${script_output}" >&2
+	fi
 
-  if ! mcp_tools_manual_finalize; then
-    return 1
-  fi
-  return 0
+	if ! mcp_tools_manual_finalize; then
+		return 1
+	fi
+	return 0
 }
 
 mcp_tools_refresh_registry() {
-  mcp_tools_init
-  if [ -x "${MCPBASH_REGISTER_SCRIPT}" ]; then
-    if mcp_tools_run_manual_script; then
-      return 0
-    fi
-    return 1
-  fi
-  local now
-  now="$(date +%s)"
-  local py
-  py="$(mcp_tools_python 2>/dev/null)" || true
-  if [ -z "${MCP_TOOLS_REGISTRY_JSON}" ] && [ -f "${MCP_TOOLS_REGISTRY_PATH}" ]; then
-    MCP_TOOLS_REGISTRY_JSON="$(cat "${MCP_TOOLS_REGISTRY_PATH}")"
-    if [ -n "${py}" ]; then
-      MCP_TOOLS_REGISTRY_HASH="$(
-        REGISTRY_JSON="${MCP_TOOLS_REGISTRY_JSON}" "${py}" <<'PY'
+	mcp_tools_init
+	if [ -x "${MCPBASH_REGISTER_SCRIPT}" ]; then
+		if mcp_tools_run_manual_script; then
+			return 0
+		fi
+		return 1
+	fi
+	local now
+	now="$(date +%s)"
+	local py
+	py="$(mcp_tools_python 2>/dev/null)" || true
+	if [ -z "${MCP_TOOLS_REGISTRY_JSON}" ] && [ -f "${MCP_TOOLS_REGISTRY_PATH}" ]; then
+		MCP_TOOLS_REGISTRY_JSON="$(cat "${MCP_TOOLS_REGISTRY_PATH}")"
+		if [ -n "${py}" ]; then
+			MCP_TOOLS_REGISTRY_HASH="$(
+				REGISTRY_JSON="${MCP_TOOLS_REGISTRY_JSON}" "${py}" <<'PY'
 import json, os
 print(json.loads(os.environ.get("REGISTRY_JSON", "{}")).get('hash', ''))
 PY
-      )"
-      MCP_TOOLS_TOTAL="$(
-        REGISTRY_JSON="${MCP_TOOLS_REGISTRY_JSON}" "${py}" <<'PY'
+			)"
+			MCP_TOOLS_TOTAL="$(
+				REGISTRY_JSON="${MCP_TOOLS_REGISTRY_JSON}" "${py}" <<'PY'
 import json, os
 print(json.loads(os.environ.get("REGISTRY_JSON", "{}")).get('total', 0))
 PY
-      )"
-      if ! mcp_tools_enforce_registry_limits "${MCP_TOOLS_TOTAL}" "${MCP_TOOLS_REGISTRY_JSON}"; then
-        return 1
-      fi
-    fi
-  fi
-  if [ -n "${MCP_TOOLS_REGISTRY_JSON}" ] && [ $((now - MCP_TOOLS_LAST_SCAN)) -lt "${MCP_TOOLS_TTL}" ]; then
-    return 0
-  fi
-  local previous_hash="${MCP_TOOLS_REGISTRY_HASH}"
-  mcp_tools_scan || return 1
-  MCP_TOOLS_LAST_SCAN="${now}"
-  if [ "${previous_hash}" != "${MCP_TOOLS_REGISTRY_HASH}" ]; then
-    MCP_TOOLS_CHANGED=true
-  fi
+			)"
+			if ! mcp_tools_enforce_registry_limits "${MCP_TOOLS_TOTAL}" "${MCP_TOOLS_REGISTRY_JSON}"; then
+				return 1
+			fi
+		fi
+	fi
+	if [ -n "${MCP_TOOLS_REGISTRY_JSON}" ] && [ $((now - MCP_TOOLS_LAST_SCAN)) -lt "${MCP_TOOLS_TTL}" ]; then
+		return 0
+	fi
+	local previous_hash="${MCP_TOOLS_REGISTRY_HASH}"
+	mcp_tools_scan || return 1
+	MCP_TOOLS_LAST_SCAN="${now}"
+	if [ "${previous_hash}" != "${MCP_TOOLS_REGISTRY_HASH}" ]; then
+		MCP_TOOLS_CHANGED=true
+	fi
 }
 
 mcp_tools_scan() {
-  local py
-  py="$(mcp_tools_python)" || {
-    MCP_TOOLS_REGISTRY_JSON='{"version":1,"generatedAt":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","items":[],"hash":"","total":0}'
-    MCP_TOOLS_REGISTRY_HASH=""
-    MCP_TOOLS_TOTAL=0
-    printf '%s' "${MCP_TOOLS_REGISTRY_JSON}" >"${MCP_TOOLS_REGISTRY_PATH}"
-    return 0
-  }
+	local py
+	py="$(mcp_tools_python)" || {
+		MCP_TOOLS_REGISTRY_JSON='{"version":1,"generatedAt":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","items":[],"hash":"","total":0}'
+		MCP_TOOLS_REGISTRY_HASH=""
+		MCP_TOOLS_TOTAL=0
+		printf '%s' "${MCP_TOOLS_REGISTRY_JSON}" >"${MCP_TOOLS_REGISTRY_PATH}"
+		return 0
+	}
 
-  local registry_json
-  registry_json="$(
-    ROOT="${MCPBASH_ROOT}" TOOLS_DIR="${MCPBASH_TOOLS_DIR}" "${py}" <<'PY'
+	local registry_json
+	registry_json="$(
+		ROOT="${MCPBASH_ROOT}" TOOLS_DIR="${MCPBASH_TOOLS_DIR}" "${py}" <<'PY'
 import os, json, sys, hashlib, time
 root = os.environ["ROOT"]
 tools_dir = os.environ["TOOLS_DIR"]
@@ -469,108 +468,108 @@ registry = {
 }
 print(json.dumps(registry, ensure_ascii=False, separators=(',', ':')))
 PY
-  )"
+	)"
 
-  MCP_TOOLS_REGISTRY_JSON="${registry_json}"
-  MCP_TOOLS_REGISTRY_HASH="$(
-    REGISTRY_JSON="${registry_json}" "${py}" <<'PY'
+	MCP_TOOLS_REGISTRY_JSON="${registry_json}"
+	MCP_TOOLS_REGISTRY_HASH="$(
+		REGISTRY_JSON="${registry_json}" "${py}" <<'PY'
 import json, os
 print(json.loads(os.environ.get("REGISTRY_JSON", "{}")).get('hash', ''))
 PY
-  )"
-  # shellcheck disable=SC2034
-  MCP_TOOLS_TOTAL="$(
-    REGISTRY_JSON="${registry_json}" "${py}" <<'PY'
+	)"
+	# shellcheck disable=SC2034
+	MCP_TOOLS_TOTAL="$(
+		REGISTRY_JSON="${registry_json}" "${py}" <<'PY'
 import json, os
 print(json.loads(os.environ.get("REGISTRY_JSON", "{}")).get('total', 0))
 PY
-  )"
-  if ! mcp_tools_enforce_registry_limits "${MCP_TOOLS_TOTAL}" "${registry_json}"; then
-    return 1
-  fi
+	)"
+	if ! mcp_tools_enforce_registry_limits "${MCP_TOOLS_TOTAL}" "${registry_json}"; then
+		return 1
+	fi
 
-  printf '%s' "${registry_json}" >"${MCP_TOOLS_REGISTRY_PATH}"
+	printf '%s' "${registry_json}" >"${MCP_TOOLS_REGISTRY_PATH}"
 }
 
 mcp_tools_consume_notification() {
-  if [ "${MCP_TOOLS_CHANGED}" = true ]; then
-    MCP_TOOLS_CHANGED=false
-    printf '{"jsonrpc":"2.0","method":"notifications/tools/list_changed","params":{}}'
-  else
-    printf ''
-  fi
+	if [ "${MCP_TOOLS_CHANGED}" = true ]; then
+		MCP_TOOLS_CHANGED=false
+		printf '{"jsonrpc":"2.0","method":"notifications/tools/list_changed","params":{}}'
+	else
+		printf ''
+	fi
 }
 
 mcp_tools_poll() {
-  if mcp_runtime_is_minimal_mode; then
-    return 0
-  fi
-  local ttl="${MCP_TOOLS_TTL:-5}"
-  case "${ttl}" in
-    '' | *[!0-9]*) ttl=5 ;;
-  esac
-  local now
-  now="$(date +%s)"
-  if [ "${MCP_TOOLS_LAST_SCAN}" -eq 0 ] || [ $((now - MCP_TOOLS_LAST_SCAN)) -ge "${ttl}" ]; then
-    mcp_tools_refresh_registry || true
-  fi
-  return 0
+	if mcp_runtime_is_minimal_mode; then
+		return 0
+	fi
+	local ttl="${MCP_TOOLS_TTL:-5}"
+	case "${ttl}" in
+	'' | *[!0-9]*) ttl=5 ;;
+	esac
+	local now
+	now="$(date +%s)"
+	if [ "${MCP_TOOLS_LAST_SCAN}" -eq 0 ] || [ $((now - MCP_TOOLS_LAST_SCAN)) -ge "${ttl}" ]; then
+		mcp_tools_refresh_registry || true
+	fi
+	return 0
 }
 
 mcp_tools_decode_cursor() {
-  local cursor="$1"
-  local hash="$2"
-  local offset
-  if ! offset="$(mcp_paginate_decode "${cursor}" "tools" "${hash}")"; then
-    return 1
-  fi
-  printf '%s' "${offset}"
+	local cursor="$1"
+	local hash="$2"
+	local offset
+	if ! offset="$(mcp_paginate_decode "${cursor}" "tools" "${hash}")"; then
+		return 1
+	fi
+	printf '%s' "${offset}"
 }
 
 mcp_tools_list() {
-  local limit="$1"
-  local cursor="$2"
-  # shellcheck disable=SC2034
-  MCP_TOOLS_ERROR_CODE=0
-  # shellcheck disable=SC2034
-  MCP_TOOLS_ERROR_MESSAGE=""
+	local limit="$1"
+	local cursor="$2"
+	# shellcheck disable=SC2034
+	MCP_TOOLS_ERROR_CODE=0
+	# shellcheck disable=SC2034
+	MCP_TOOLS_ERROR_MESSAGE=""
 
-  mcp_tools_refresh_registry || {
-    mcp_tools_error -32603 "Unable to load tool registry"
-    return 1
-  }
+	mcp_tools_refresh_registry || {
+		mcp_tools_error -32603 "Unable to load tool registry"
+		return 1
+	}
 
-  local py
-  if ! py="$(mcp_tools_python)"; then
-    mcp_tools_error -32603 "Python interpreter required for tool listing"
-    return 1
-  fi
+	local py
+	if ! py="$(mcp_tools_python)"; then
+		mcp_tools_error -32603 "Python interpreter required for tool listing"
+		return 1
+	fi
 
-  local numeric_limit
-  if [ -z "${limit}" ]; then
-    numeric_limit=50
-  else
-    case "${limit}" in
-      '' | *[!0-9]*) numeric_limit=50 ;;
-      0) numeric_limit=50 ;;
-      *) numeric_limit="${limit}" ;;
-    esac
-  fi
-  if [ "${numeric_limit}" -gt 200 ]; then
-    numeric_limit=200
-  fi
+	local numeric_limit
+	if [ -z "${limit}" ]; then
+		numeric_limit=50
+	else
+		case "${limit}" in
+		'' | *[!0-9]*) numeric_limit=50 ;;
+		0) numeric_limit=50 ;;
+		*) numeric_limit="${limit}" ;;
+		esac
+	fi
+	if [ "${numeric_limit}" -gt 200 ]; then
+		numeric_limit=200
+	fi
 
-  local offset=0
-  if [ -n "${cursor}" ]; then
-    if ! offset="$(mcp_tools_decode_cursor "${cursor}" "${MCP_TOOLS_REGISTRY_HASH}")"; then
-      mcp_tools_error -32602 "Invalid cursor"
-      return 1
-    fi
-  fi
+	local offset=0
+	if [ -n "${cursor}" ]; then
+		if ! offset="$(mcp_tools_decode_cursor "${cursor}" "${MCP_TOOLS_REGISTRY_HASH}")"; then
+			mcp_tools_error -32602 "Invalid cursor"
+			return 1
+		fi
+	fi
 
-  local result_json
-  if ! result_json="$(
-    REGISTRY="${MCP_TOOLS_REGISTRY_JSON}" OFFSET="${offset}" LIMIT="${numeric_limit}" PYTHONIOENCODING="utf-8" "${py}" <<'PY'
+	local result_json
+	if ! result_json="$(
+		REGISTRY="${MCP_TOOLS_REGISTRY_JSON}" OFFSET="${offset}" LIMIT="${numeric_limit}" PYTHONIOENCODING="utf-8" "${py}" <<'PY'
 import json, os, base64, sys
 registry = json.loads(os.environ["REGISTRY"])
 items = registry.get("items", [])
@@ -584,22 +583,22 @@ if offset + limit < len(items):
     result["nextCursor"] = encoded
 print(json.dumps(result, ensure_ascii=False, separators=(',', ':')))
 PY
-  )"; then
-    mcp_tools_error -32603 "Unable to paginate tools"
-    return 1
-  fi
+	)"; then
+		mcp_tools_error -32603 "Unable to paginate tools"
+		return 1
+	fi
 
-  printf '%s' "${result_json}"
+	printf '%s' "${result_json}"
 }
 
 mcp_tools_metadata_for_name() {
-  local name="$1"
-  mcp_tools_refresh_registry || return 1
-  local py
-  py="$(mcp_tools_python)" || return 1
-  local metadata
-  if ! metadata="$(
-    REGISTRY="${MCP_TOOLS_REGISTRY_JSON}" TARGET="${name}" "${py}" <<'PY'
+	local name="$1"
+	mcp_tools_refresh_registry || return 1
+	local py
+	py="$(mcp_tools_python)" || return 1
+	local metadata
+	if ! metadata="$(
+		REGISTRY="${MCP_TOOLS_REGISTRY_JSON}" TARGET="${name}" "${py}" <<'PY'
 import json, os, sys
 registry = json.loads(os.environ["REGISTRY"])
 target = os.environ["TARGET"]
@@ -609,37 +608,37 @@ for item in registry.get("items", []):
         sys.exit(0)
 sys.exit(1)
 PY
-  )"; then
-    return 1
-  fi
+	)"; then
+		return 1
+	fi
 
-  printf '%s' "${metadata}"
+	printf '%s' "${metadata}"
 }
 
 mcp_tools_call() {
-  local name="$1"
-  local args_json="$2"
-  local timeout_override="$3"
-  # shellcheck disable=SC2034
-  MCP_TOOLS_ERROR_CODE=0
-  # shellcheck disable=SC2034
-  MCP_TOOLS_ERROR_MESSAGE=""
+	local name="$1"
+	local args_json="$2"
+	local timeout_override="$3"
+	# shellcheck disable=SC2034
+	MCP_TOOLS_ERROR_CODE=0
+	# shellcheck disable=SC2034
+	MCP_TOOLS_ERROR_MESSAGE=""
 
-  local metadata
-  if ! metadata="$(mcp_tools_metadata_for_name "${name}")"; then
-    mcp_tools_error -32601 "Tool not found"
-    return 1
-  fi
+	local metadata
+	if ! metadata="$(mcp_tools_metadata_for_name "${name}")"; then
+		mcp_tools_error -32601 "Tool not found"
+		return 1
+	fi
 
-  local py
-  if ! py="$(mcp_tools_python)"; then
-    mcp_tools_error -32603 "Python interpreter required for tool execution"
-    return 1
-  fi
+	local py
+	if ! py="$(mcp_tools_python)"; then
+		mcp_tools_error -32603 "Python interpreter required for tool execution"
+		return 1
+	fi
 
-  local info_json
-  if ! info_json="$(
-    TOOL_METADATA="${metadata}" "${py}" <<'PY'
+	local info_json
+	if ! info_json="$(
+		TOOL_METADATA="${metadata}" "${py}" <<'PY'
 import json, os
 metadata = json.loads(os.environ["TOOL_METADATA"])
 print(json.dumps({
@@ -648,91 +647,91 @@ print(json.dumps({
     "timeoutSecs": metadata.get("timeoutSecs")
 }, ensure_ascii=False, separators=(',', ':')))
 PY
-  )"; then
-    mcp_tools_error -32603 "Unable to prepare tool metadata"
-    return 1
-  fi
+	)"; then
+		mcp_tools_error -32603 "Unable to prepare tool metadata"
+		return 1
+	fi
 
-  local tool_path
-  tool_path="$(
-    INFO="${info_json}" "${py}" <<'PY'
+	local tool_path
+	tool_path="$(
+		INFO="${info_json}" "${py}" <<'PY'
 import json, os
 info = json.loads(os.environ["INFO"])
 print(info.get("path") or "")
 PY
-  )"
+	)"
 
-  if [ -z "${tool_path}" ]; then
-    mcp_tools_error -32601 "Tool path unavailable"
-    return 1
-  fi
+	if [ -z "${tool_path}" ]; then
+		mcp_tools_error -32601 "Tool path unavailable"
+		return 1
+	fi
 
-  local absolute_path="${MCPBASH_ROOT}/${tool_path}"
-  if [ ! -x "${absolute_path}" ]; then
-    mcp_tools_error -32601 "Tool executable missing"
-    return 1
-  fi
+	local absolute_path="${MCPBASH_ROOT}/${tool_path}"
+	if [ ! -x "${absolute_path}" ]; then
+		mcp_tools_error -32601 "Tool executable missing"
+		return 1
+	fi
 
-  local metadata_timeout
-  metadata_timeout="$(
-    INFO="${info_json}" "${py}" <<'PY'
+	local metadata_timeout
+	metadata_timeout="$(
+		INFO="${info_json}" "${py}" <<'PY'
 import json, os
 info = json.loads(os.environ["INFO"])
 value = info.get("timeoutSecs")
 print("" if value is None else str(int(value)))
 PY
-  )"
+	)"
 
-  local output_schema
-  output_schema="$(
-    INFO="${info_json}" "${py}" <<'PY'
+	local output_schema
+	output_schema="$(
+		INFO="${info_json}" "${py}" <<'PY'
 import json, os
 info = json.loads(os.environ["INFO"])
 value = info.get("outputSchema")
 print("" if value is None else json.dumps(value, ensure_ascii=False, separators=(',', ':')))
 PY
-  )"
+	)"
 
-  local effective_timeout="${timeout_override}"
-  if [ -z "${effective_timeout}" ] && [ -n "${metadata_timeout}" ]; then
-    effective_timeout="${metadata_timeout}"
-  fi
+	local effective_timeout="${timeout_override}"
+	if [ -z "${effective_timeout}" ] && [ -n "${metadata_timeout}" ]; then
+		effective_timeout="${metadata_timeout}"
+	fi
 
-  local stdout_file stderr_file
-  stdout_file="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-tools-stdout.XXXXXX")"
-  stderr_file="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-tools-stderr.XXXXXX")"
+	local stdout_file stderr_file
+	stdout_file="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-tools-stdout.XXXXXX")"
+	stderr_file="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-tools-stderr.XXXXXX")"
 
-  local has_json_tool="false"
-  if [ "${MCPBASH_MODE}" != "minimal" ] && [ "${MCPBASH_JSON_TOOL}" != "none" ]; then
-    has_json_tool="true"
-  fi
+	local has_json_tool="false"
+	if [ "${MCPBASH_MODE}" != "minimal" ] && [ "${MCPBASH_JSON_TOOL}" != "none" ]; then
+		has_json_tool="true"
+	fi
 
-  local exit_code
-  (
-    cd "${MCPBASH_ROOT}" || exit 1
-    MCP_SDK="${MCPBASH_ROOT}/sdk"
-    MCP_TOOL_NAME="${name}"
-    MCP_TOOL_PATH="${absolute_path}"
-    MCP_TOOL_ARGS_JSON="${args_json}"
-    MCP_TOOL_METADATA_JSON="${metadata}"
-    export MCP_SDK MCP_TOOL_NAME MCP_TOOL_PATH MCP_TOOL_ARGS_JSON MCP_TOOL_METADATA_JSON
-    if [ -n "${effective_timeout}" ]; then
-      with_timeout "${effective_timeout}" -- "${absolute_path}"
-    else
-      "${absolute_path}"
-    fi
-  ) >"${stdout_file}" 2>"${stderr_file}" || exit_code=$?
-  exit_code=${exit_code:-0}
+	local exit_code
+	(
+		cd "${MCPBASH_ROOT}" || exit 1
+		MCP_SDK="${MCPBASH_ROOT}/sdk"
+		MCP_TOOL_NAME="${name}"
+		MCP_TOOL_PATH="${absolute_path}"
+		MCP_TOOL_ARGS_JSON="${args_json}"
+		MCP_TOOL_METADATA_JSON="${metadata}"
+		export MCP_SDK MCP_TOOL_NAME MCP_TOOL_PATH MCP_TOOL_ARGS_JSON MCP_TOOL_METADATA_JSON
+		if [ -n "${effective_timeout}" ]; then
+			with_timeout "${effective_timeout}" -- "${absolute_path}"
+		else
+			"${absolute_path}"
+		fi
+	) >"${stdout_file}" 2>"${stderr_file}" || exit_code=$?
+	exit_code=${exit_code:-0}
 
-  local stdout_content
-  stdout_content="$(cat "${stdout_file}")"
-  local stderr_content
-  stderr_content="$(cat "${stderr_file}")"
-  rm -f "${stdout_file}" "${stderr_file}"
+	local stdout_content
+	stdout_content="$(cat "${stdout_file}")"
+	local stderr_content
+	stderr_content="$(cat "${stderr_file}")"
+	rm -f "${stdout_file}" "${stderr_file}"
 
-  local result_json
-  if ! result_json="$(
-    TOOL_STDOUT="${stdout_content}" TOOL_STDERR="${stderr_content}" TOOL_METADATA="${metadata}" TOOL_ARGS_JSON="${args_json}" TOOL_NAME="${name}" OUTPUT_SCHEMA="${output_schema}" EXIT_CODE="${exit_code}" HAS_JSON_TOOL="${has_json_tool}" "${py}" <<'PY'
+	local result_json
+	if ! result_json="$(
+		TOOL_STDOUT="${stdout_content}" TOOL_STDERR="${stderr_content}" TOOL_METADATA="${metadata}" TOOL_ARGS_JSON="${args_json}" TOOL_NAME="${name}" OUTPUT_SCHEMA="${output_schema}" EXIT_CODE="${exit_code}" HAS_JSON_TOOL="${has_json_tool}" "${py}" <<'PY'
 import json, os, math, re
 
 def is_number(value):
@@ -976,10 +975,10 @@ if exit_code != 0:
 
 print(json.dumps(result, ensure_ascii=False, separators=(',', ':')))
 PY
-  )"; then
-    mcp_tools_error -32603 "Unable to format tool result"
-    return 1
-  fi
+	)"; then
+		mcp_tools_error -32603 "Unable to format tool result"
+		return 1
+	fi
 
-  printf '%s' "${result_json}"
+	printf '%s' "${result_json}"
 }

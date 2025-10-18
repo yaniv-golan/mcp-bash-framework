@@ -4,29 +4,29 @@
 set -euo pipefail
 
 mcp_paginate_python() {
-  if command -v python3 >/dev/null 2>&1; then
-    printf 'python3'
-    return 0
-  fi
-  if command -v python >/dev/null 2>&1; then
-    printf 'python'
-    return 0
-  fi
-  return 1
+	if command -v python3 >/dev/null 2>&1; then
+		printf 'python3'
+		return 0
+	fi
+	if command -v python >/dev/null 2>&1; then
+		printf 'python'
+		return 0
+	fi
+	return 1
 }
 
 mcp_paginate_encode() {
-  local collection="$1"
-  local offset="$2"
-  local hash="$3"
-  local timestamp="${4:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
-  local py
+	local collection="$1"
+	local offset="$2"
+	local hash="$3"
+	local timestamp="${4:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
+	local py
 
-  if ! py="$(mcp_paginate_python)"; then
-    return 1
-  fi
+	if ! py="$(mcp_paginate_python)"; then
+		return 1
+	fi
 
-  COLLECTION="${collection}" OFFSET="${offset}" HASH_VALUE="${hash}" TIMESTAMP="${timestamp}" "${py}" <<'PY'
+	COLLECTION="${collection}" OFFSET="${offset}" HASH_VALUE="${hash}" TIMESTAMP="${timestamp}" "${py}" <<'PY'
 import json, base64, os
 collection = os.environ["COLLECTION"]
 offset = int(os.environ["OFFSET"])
@@ -39,18 +39,18 @@ PY
 }
 
 mcp_paginate_decode() {
-  local cursor="$1"
-  local expected_collection="$2"
-  local expected_hash="$3"
-  local py
+	local cursor="$1"
+	local expected_collection="$2"
+	local expected_hash="$3"
+	local py
 
-  if ! py="$(mcp_paginate_python)"; then
-    return 1
-  fi
+	if ! py="$(mcp_paginate_python)"; then
+		return 1
+	fi
 
-  local result
-  if ! result="$(
-    CURSOR="${cursor}" EXPECTED_COLLECTION="${expected_collection}" EXPECTED_HASH="${expected_hash}" "${py}" <<'PY'
+	local result
+	if ! result="$(
+		CURSOR="${cursor}" EXPECTED_COLLECTION="${expected_collection}" EXPECTED_HASH="${expected_hash}" "${py}" <<'PY'
 import json, base64, os, sys
 cursor = os.environ["CURSOR"]
 expected_collection = os.environ["EXPECTED_COLLECTION"]
@@ -67,9 +67,9 @@ if expected_hash and payload.get('hash') != expected_hash:
 offset = payload.get('offset', 0)
 print(offset)
 PY
-  )"; then
-    return 1
-  fi
+	)"; then
+		return 1
+	fi
 
-  printf '%s' "${result}"
+	printf '%s' "${result}"
 }
