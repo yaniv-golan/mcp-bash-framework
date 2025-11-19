@@ -79,6 +79,17 @@ mcp_tools_manual_finalize() {
 		return 1
 	fi
 
+	registry_json="$(printf '%s' "${registry_json}" | jq -c '
+		def ensure_schema:
+			if (type == "object") then
+				(if ((.type // "") | length) > 0 then . else . + {type: "object"} end)
+				| (if (.properties | type) == "object" then . else . + {properties: {}} end)
+			else
+				{type: "object", properties: {}}
+			end;
+		.items |= map(.inputSchema = (.inputSchema | ensure_schema))
+	')"
+
 	local items_json
 	items_json="$(echo "${registry_json}" | jq -c '.items')"
 	local hash
@@ -111,6 +122,24 @@ mcp_tools_manual_finalize() {
 	fi
 	printf '%s' "${registry_json}" >"${MCP_TOOLS_REGISTRY_PATH}"
 	return 0
+}
+
+mcp_tools_normalize_schema() {
+	local raw="$1"
+	local normalized
+	if ! normalized="$({ printf '%s' "${raw}"; } | jq -c '
+		def ensure_schema:
+			if (type == "object") then
+				(if ((.type // "") | length) > 0 then . else . + {type: "object"} end)
+				| (if (.properties | type) == "object" then . else . + {properties: {}} end)
+			else
+				{type: "object", properties: {}}
+			end;
+		ensure_schema
+	' 2>/dev/null )"; then
+		normalized='{"type":"object","properties":{}}'
+	fi
+	printf '%s' "${normalized}"
 }
 
 mcp_tools_registry_max_bytes() {
@@ -343,9 +372,9 @@ mcp_tools_scan() {
 				header="$(head -n 10 "${path}")"
 				local mcp_line
 				mcp_line="$(echo "${header}" | grep "mcp:" | head -n 1)"
-				if [ -n "${mcp_line}" ]; then
-					local json_payload
-					json_payload="${mcp_line#*mcp:}"
+		if [ -n "${mcp_line}" ]; then
+			local json_payload
+			json_payload="${mcp_line#*mcp:}"
 					local h_name
 					h_name="$(echo "${json_payload}" | jq -r '.name // empty' 2>/dev/null)"
 					[ -n "${h_name}" ] && name="${h_name}"
@@ -355,11 +384,13 @@ mcp_tools_scan() {
 					arguments="$(echo "${json_payload}" | jq -c '.arguments // {type: "object", properties: {}}' 2>/dev/null)"
 					timeout="$(echo "${json_payload}" | jq -r '.timeoutSecs // empty' 2>/dev/null)"
 					output_schema="$(echo "${json_payload}" | jq -c '.outputSchema // null' 2>/dev/null)"
-				fi
-			fi
+		fi
+	fi
 
-			# Construct item object
-			jq -n \
+		arguments="$(mcp_tools_normalize_schema "${arguments}")"
+
+		# Construct item object
+		jq -n \
 				--arg name "$name" \
 				--arg desc "$description" \
 				--arg path "$rel_path" \
@@ -488,13 +519,12 @@ mcp_tools_list() {
 	local result_json
 	result_json="$(echo "${MCP_TOOLS_REGISTRY_JSON}" | jq -c --argjson offset "${offset}" --argjson limit "${numeric_limit}" '
 		{
-			items: .items[$offset:$offset+$limit],
-			total: .total
+			tools: .items[$offset:$offset+$limit]
 		}
 	')"
 
 	local total
-	total="$(echo "${result_json}" | jq '.total')"
+	total="$(echo "${MCP_TOOLS_REGISTRY_JSON}" | jq '.total')"
 	if [ $((offset + numeric_limit)) -lt "${total}" ]; then
 		local next_offset=$((offset + numeric_limit))
 		local cursor_payload
