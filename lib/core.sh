@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Spec §4–§6: lifecycle bootstrap, concurrency, cancellation, timeouts, stdout discipline.
+# Lifecycle bootstrap, concurrency, cancellation, timeouts, stdout discipline.
 
 set -euo pipefail
 
@@ -96,19 +96,31 @@ mcp_core_wait_for_workers() {
 }
 
 mcp_core_wait_for_one_worker() {
-	local pids pid status
+	local pids pid status first_pid
 	pids="$(jobs -p 2>/dev/null || true)"
 	if [ -z "${pids}" ]; then
 		sleep 0.01
 		return 0
 	fi
 	for pid in ${pids}; do
-		if ! wait "${pid}"; then
+		if ! kill -0 "${pid}" 2>/dev/null; then
+			if ! wait "${pid}"; then
+				status=$?
+				printf '%s\n' "mcp-bash: background worker ${pid} exited with status ${status}" >&2
+			fi
+			return 0
+		fi
+	done
+	set -- ${pids}
+	first_pid="$1"
+	if [ -n "${first_pid}" ]; then
+		if ! wait "${first_pid}"; then
 			status=$?
-			printf '%s\n' "mcp-bash: background worker ${pid} exited with status ${status}" >&2
+			printf '%s\n' "mcp-bash: background worker ${first_pid} exited with status ${status}" >&2
 		fi
 		return 0
-	done
+	fi
+	sleep 0.01
 }
 
 mcp_core_active_worker_count() {
@@ -176,16 +188,6 @@ mcp_core_process_legacy_batch() {
 	case "${tool}" in
 	gojq | jq)
 		if ! batch_output="$(printf '%s' "${array_json}" | "${bin}" -c '.[]' 2>/dev/null)"; then
-			return 1
-		fi
-		;;
-	python)
-		if ! batch_output="$(printf '%s' "${array_json}" | "${bin}" -c 'import json,sys
-data=json.load(sys.stdin)
-if not isinstance(data, list):
-    raise SystemExit(1)
-for entry in data:
-    sys.stdout.write(json.dumps(entry, separators=(",", ":")) + "\n")' 2>/dev/null)"; then
 			return 1
 		fi
 		;;
@@ -330,7 +332,8 @@ mcp_core_dispatch_object() {
 	fi
 
 	if ! id_json="$(mcp_json_extract_id "${json_line}")"; then
-		id_json=""
+		mcp_core_emit_parse_error "Invalid Request" -32600 "Unable to extract id"
+		return
 	fi
 
 	if [ "${MCPBASH_INITIALIZED}" != true ] && ! mcp_core_method_allowed_preinit "${method}"; then
@@ -480,6 +483,10 @@ mcp_core_spawn_worker() {
 	pgid="$(mcp_runtime_lookup_pgid "${pid}")"
 
 	mcp_ids_track_worker "${key}" "${pid}" "${pgid}" "${stderr_file}"
+	if [ -n "${key}" ] && ! mcp_core_process_alive "${pid}"; then
+		wait "${pid}" 2>/dev/null || true
+		mcp_ids_clear_worker "${key}"
+	fi
 }
 
 mcp_core_timeout_for_method() {
@@ -496,15 +503,6 @@ mcp_core_timeout_for_method() {
 		case "${MCPBASH_JSON_TOOL}" in
 		gojq | jq)
 			timeout_value="$(printf '%s' "${json_line}" | "${MCPBASH_JSON_TOOL_BIN}" -er '.params.timeoutSecs // empty' 2>/dev/null || true)"
-			;;
-		python)
-			timeout_value="$(printf '%s' "${json_line}" | "${MCPBASH_JSON_TOOL_BIN}" -c 'import json,sys
-data=json.load(sys.stdin)
-params=data.get("params", {})
-value=params.get("timeoutSecs")
-if value is None:
-    raise SystemExit(1)
-sys.stdout.write(str(int(value)))' 2>/dev/null || true)"
 			;;
 		*)
 			timeout_value=""
@@ -617,7 +615,7 @@ mcp_core_invoke_handler() {
 	else
 		status=$?
 	fi
-	MCPBASH_HANDLER_OUTPUT="$(cat "${tmp_file}")"
+	MCPBASH_HANDLER_OUTPUT="$(mcp_io_read_file_exact "${tmp_file}")"
 	if [ "${MCPBASH_DEBUG_PAYLOADS:-}" = "true" ] && [ -n "${MCPBASH_STATE_DIR:-}" ]; then
 		mcp_io_debug_log "handler" "${method}" "exit=${status}" "${MCPBASH_HANDLER_OUTPUT}"
 	fi
@@ -783,23 +781,8 @@ mcp_core_emit_progress_stream() {
 
 mcp_core_extract_log_level() {
 	local line="$1"
-	local py
-	if ! py="$(mcp_tools_python 2>/dev/null)"; then
-		printf 'info'
-		return 0
-	fi
 	local level
-	level="$(
-		LINE="${line}" "${py}" <<'PY'
-import json, os, sys
-try:
-    data = json.loads(os.environ["LINE"])
-    level = data.get("params", {}).get("level") or "info"
-    print(str(level).lower())
-except Exception:
-    print("info")
-PY
-	)"
+	level="$(printf '%s' "${line}" | jq -r '.params.level // "info"' 2>/dev/null | tr '[:upper:]' '[:lower:]')"
 	[ -z "${level}" ] && level="info"
 	printf '%s' "${level}"
 }

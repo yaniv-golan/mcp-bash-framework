@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Spec §9 resource provider: fetch content from HTTPS endpoints.
+# Resource provider: fetch content from HTTPS endpoints.
 
 set -euo pipefail
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Spec §8 logging handler implementation.
+# Logging handler implementation.
 
 set -euo pipefail
 

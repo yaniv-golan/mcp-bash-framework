@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Spec §18 compatibility: sanity-check handshake output expected by Inspector clients.
+# Compatibility: sanity-check handshake output expected by Inspector clients.
 
 set -euo pipefail
 
@@ -28,80 +28,105 @@ WORKSPACE="${TMP_ROOT}/workspace"
 stage_workspace "${WORKSPACE}"
 export WORKSPACE
 
-python3 <<'PY'
-import json
-import os
-import subprocess
-import sys
-import time
-
-workspace = os.environ["WORKSPACE"]
-proc = subprocess.Popen(
-    ["./bin/mcp-bash"],
-    cwd=workspace,
-    stdin=subprocess.PIPE,
-    stdout=subprocess.PIPE,
-    stderr=subprocess.PIPE,
-    text=True,
+# Bash implementation of inspector test
+(
+	cd "${WORKSPACE}"
+	
+	# Use a named pipe or coproc. coproc is bash 4+. 
+	# Let's use a simple FIFO approach which works on older bash too if needed, but coproc is cleaner.
+	# Assuming bash 4+ since we require bash 3.2+ but macOS bash 3.2 doesn't have coproc.
+	# We'll use file descriptors redirect.
+	
+	# Launch server with pipes
+	# We'll read from server_out and write to server_in
+	
+	# Create FIFOs
+	mkfifo in_pipe
+	mkfifo out_pipe
+	
+	./bin/mcp-bash <in_pipe >out_pipe 2>err_log &
+	PID=$!
+	
+	# Keep pipe open
+	exec 3>in_pipe
+	exec 4<out_pipe
+	
+	send() {
+		printf '%s\n' "$1" >&3
+	}
+	
+	recv() {
+		local line
+		if read -r line <&4; then
+			printf '%s' "${line}"
+		else
+			return 1
+		fi
+	}
+	
+	# init
+	send '{"jsonrpc": "2.0", "id": "init", "method": "initialize", "params": {}}'
+	
+	# Read until we get init response
+	got_init=false
+	while read -r line <&4; do
+		[ -z "${line}" ] && continue
+		id=$(echo "${line}" | jq -r '.id // empty')
+		if [ "${id}" = "init" ]; then
+			protocol=$(echo "${line}" | jq -r '.result.protocolVersion')
+			if [ "${protocol}" != "2025-06-18" ]; then
+				echo "unexpected protocolVersion: ${protocol}" >&2
+				kill "${PID}"
+				exit 1
+			fi
+			for cap in logging tools resources prompts completion; do
+				if ! echo "${line}" | jq -e ".result.capabilities.${cap}" >/dev/null; then
+					echo "missing capability ${cap}" >&2
+					kill "${PID}"
+					exit 1
+				fi
+			done
+			got_init=true
+			break
+		fi
+	done
+	
+	if [ "${got_init}" != "true" ]; then
+		echo "Failed to get init response" >&2
+		kill "${PID}"
+		exit 1
+	fi
+	
+	send '{"jsonrpc": "2.0", "method": "notifications/initialized"}'
+	send '{"jsonrpc": "2.0", "id": "shutdown", "method": "shutdown"}'
+	
+	got_shutdown=false
+	while read -r line <&4; do
+		[ -z "${line}" ] && continue
+		id=$(echo "${line}" | jq -r '.id // empty')
+		if [ "${id}" = "shutdown" ]; then
+			res=$(echo "${line}" | jq -r '.result')
+			if [ "${res}" != "{}" ]; then
+				echo "shutdown acknowledgement missing" >&2
+				kill "${PID}"
+				exit 1
+			fi
+			got_shutdown=true
+			break
+		fi
+	done
+	
+	if [ "${got_shutdown}" != "true" ]; then
+		echo "Failed to get shutdown response" >&2
+		kill "${PID}"
+		exit 1
+	fi
+	
+	send '{"jsonrpc": "2.0", "id": "exit", "method": "exit"}'
+	
+	# Wait for exit
+	wait "${PID}" || true
+	
+	rm in_pipe out_pipe
 )
 
-def send(obj):
-    line = json.dumps(obj, separators=(",", ":")) + "\n"
-    proc.stdin.write(line)
-    proc.stdin.flush()
-
-def next_message(deadline):
-    while True:
-        if time.time() > deadline:
-            raise SystemExit("timeout waiting for server output")
-        line = proc.stdout.readline()
-        if not line:
-            raise SystemExit("server exited unexpectedly")
-        line = line.strip()
-        if not line:
-            continue
-        return json.loads(line)
-
-def recv_expected(expected_id, deadline, allow_eof=False):
-    while True:
-        try:
-            msg = next_message(deadline)
-        except SystemExit as exc:
-            if allow_eof and "server exited unexpectedly" in str(exc):
-                return None
-            raise
-        if msg.get("id") == expected_id:
-            return msg
-
-send({"jsonrpc": "2.0", "id": "init", "method": "initialize", "params": {}})
-msg = recv_expected("init", time.time() + 5)
-result = msg.get("result") or {}
-if result.get("protocolVersion") != "2025-06-18":
-    raise SystemExit("unexpected protocolVersion")
-caps = result.get("capabilities") or {}
-for key in ("logging", "tools", "resources", "prompts", "completion"):
-    if key not in caps:
-        raise SystemExit(f"missing capability {key}")
-
-send({"jsonrpc": "2.0", "method": "notifications/initialized"})
-send({"jsonrpc": "2.0", "id": "shutdown", "method": "shutdown"})
-shutdown = recv_expected("shutdown", time.time() + 5)
-if shutdown.get("result") != {}:
-    raise SystemExit("shutdown acknowledgement missing")
-
-send({"jsonrpc": "2.0", "id": "exit", "method": "exit"})
-exit_msg = recv_expected("exit", time.time() + 5, allow_eof=True)
-if exit_msg is not None and exit_msg.get("result") != {}:
-    raise SystemExit("exit acknowledgement missing")
-
-proc.stdin.close()
-try:
-    proc.wait(timeout=2)
-except subprocess.TimeoutExpired:
-    proc.kill()
-    proc.wait()
-
-if proc.returncode not in (0, None):
-    sys.stderr.write(proc.stderr.read())
-    raise SystemExit(f"mcp-bash exited with {proc.returncode}")
-PY

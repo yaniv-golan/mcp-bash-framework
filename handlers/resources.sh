@@ -1,19 +1,11 @@
 #!/usr/bin/env bash
-# Spec §8 resources handler implementation.
+# Resources handler implementation.
 
 set -euo pipefail
 
 mcp_resources_quote() {
 	local text="$1"
-	local py
-	if py="$(mcp_resources_python 2>/dev/null)"; then
-		TEXT="${text}" "${py}" <<'PY'
-import json, os
-print(json.dumps(os.environ.get("TEXT", "")))
-PY
-	else
-		printf '"%s"' "$(printf '%s' "${text}" | sed 's/\\/\\\\/g; s/"/\\"/g')"
-	fi
+	mcp_json_quote_text "${text}"
 }
 
 mcp_handle_resources() {
@@ -93,16 +85,8 @@ mcp_handle_resources() {
 			printf '%s %s\n' "subscribe-read-ok" "${subscription_id}" >>"${MCPBASH_STATE_DIR}/resources.debug.log"
 		fi
 		local effective_uri
-		local py
-		py="$(mcp_resources_python 2>/dev/null)" || py=""
-		if [ -n "${py}" ]; then
-			effective_uri="$(
-				RESULT="${result_json}" "${py}" <<'PY'
-import json, os
-print(json.loads(os.environ["RESULT"]).get("uri", ""))
-PY
-			)"
-		else
+		effective_uri="$(printf '%s' "${result_json}" | jq -r '.uri // ""')" || effective_uri=""
+		if [ -z "${effective_uri}" ]; then
 			effective_uri="${uri}"
 		fi
 		mcp_resources_subscription_store_payload "${subscription_id}" "${name}" "${effective_uri}" "${result_json}"

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Spec §10 tool runtime SDK helpers.
+# Tool runtime SDK helpers.
 
 set -euo pipefail
 
@@ -10,18 +10,8 @@ MCP_PROGRESS_TOKEN="${MCP_PROGRESS_TOKEN:-}"
 
 __mcp_sdk_json_escape() {
 	local value="$1"
-	if command -v python3 >/dev/null 2>&1; then
-		python3 - "$value" <<'PY' 2>/dev/null
-import json, sys
-print(json.dumps(sys.argv[1]))
-PY
-		return 0
-	fi
-	if command -v python >/dev/null 2>&1; then
-		python - "$value" <<'PY' 2>/dev/null
-import json, sys
-print(json.dumps(sys.argv[1]))
-PY
+	if command -v jq >/dev/null 2>&1; then
+		jq -n --arg val "$value" '$val'
 		return 0
 	fi
 	local escaped="${value//\\/\\\\}"
@@ -35,8 +25,18 @@ __mcp_sdk_warn() {
 	printf '%s\n' "$1" >&2
 }
 
+__mcp_sdk_payload_from_env() {
+	local inline="$1"
+	local file_path="$2"
+	if [ -n "${file_path}" ] && [ -f "${file_path}" ]; then
+		cat "${file_path}"
+		return 0
+	fi
+	printf '%s' "${inline}"
+}
+
 mcp_args_raw() {
-	printf '%s' "${MCP_TOOL_ARGS_JSON:-{}}"
+	__mcp_sdk_payload_from_env "${MCP_TOOL_ARGS_JSON:-{}}" "${MCP_TOOL_ARGS_FILE:-}"
 }
 
 mcp_args_get() {
@@ -46,8 +46,10 @@ mcp_args_get() {
 		printf ''
 		return 1
 	fi
+	local payload
+	payload="$(mcp_args_raw)"
 	if command -v "${MCPBASH_JSON_TOOL_BIN:-}" >/dev/null 2>&1; then
-		printf '%s' "${MCP_TOOL_ARGS_JSON:-{}}" | "${MCPBASH_JSON_TOOL_BIN}" -c "${filter}" 2>/dev/null
+		printf '%s' "${payload}" | "${MCPBASH_JSON_TOOL_BIN}" -c "${filter}" 2>/dev/null
 	else
 		__mcp_sdk_warn "mcp_args_get: JSON tooling unavailable; use mcp_args_raw instead"
 		printf ''
@@ -126,14 +128,6 @@ mcp_emit_json() {
 			compact_json="$(printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.' 2>/dev/null || true)"
 			if [ -n "${compact_json}" ]; then
 				printf '%s' "${compact_json}"
-				return 0
-			fi
-			;;
-		python)
-			local compact_py
-			compact_py="$(printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -c "import json, sys; obj = json.load(sys.stdin); print(json.dumps(obj, separators=(',', ':')))" 2>/dev/null || true)"
-			if [ -n "${compact_py}" ]; then
-				printf '%s' "${compact_py}"
 				return 0
 			fi
 			;;

@@ -42,11 +42,11 @@ cat <<EOF_RES >"${AUTO_ROOT}/resources/beta.txt"
 beta
 EOF_RES
 
-cat <<EOF_META >"${AUTO_ROOT}/resources/alpha.meta.yaml"
+cat <<EOF_META >"${AUTO_ROOT}/resources/alpha.meta.json"
 {"name": "file.alpha", "description": "Alpha resource", "uri": "file://${AUTO_ROOT}/resources/alpha.txt", "mimeType": "text/plain"}
 EOF_META
 
-cat <<EOF_META >"${AUTO_ROOT}/resources/beta.meta.yaml"
+cat <<EOF_META >"${AUTO_ROOT}/resources/beta.meta.json"
 {"name": "file.beta", "description": "Beta resource", "uri": "file://${AUTO_ROOT}/resources/beta.txt", "mimeType": "text/plain"}
 EOF_META
 
@@ -62,35 +62,19 @@ JSON
 	./bin/mcp-bash <"requests.ndjson" >"responses.ndjson"
 )
 
-python3 - "${AUTO_ROOT}/responses.ndjson" <<'PY'
-import json, sys
-path = sys.argv[1]
-messages = [json.loads(line) for line in open(path, encoding='utf-8') if line.strip()]
-
-def by_id(msg_id):
-    for msg in messages:
-        if msg.get("id") == msg_id:
-            return msg
-    raise SystemExit(f"missing response {msg_id}")
-
-list_resp = by_id("auto-list")
-result = list_resp.get("result") or {}
-items = result.get("items") or []
-if result.get("total") != 2:
-    raise SystemExit("expected two resources discovered")
-if "nextCursor" not in result:
-    raise SystemExit("nextCursor missing for paginated resources")
-first = items[0]
-if first.get("name") not in {"file.alpha", "file.beta"}:
-    raise SystemExit("unexpected resource name")
-
-read_resp = by_id("auto-read")
-read_result = read_resp.get("result") or {}
-if read_result.get("mimeType") != "text/plain":
-    raise SystemExit("unexpected mimeType")
-if read_result.get("content") != "alpha":
-    raise SystemExit("resource content mismatch")
-PY
+jq -n --slurpfile messages "${AUTO_ROOT}/responses.ndjson" '
+	def error(msg): error(msg);
+	
+	($messages | map(select(.id == "auto-list"))[0].result) as $list |
+	($messages | map(select(.id == "auto-read"))[0].result) as $read |
+	
+	if $list.total != 2 then error("expected two resources discovered") else null end,
+	if ($list | has("nextCursor") | not) then error("nextCursor missing for paginated resources") else null end,
+	if ($list.items[0].name | IN("file.alpha", "file.beta") | not) then error("unexpected resource name") else null end,
+	
+	if $read.mimeType != "text/plain" then error("unexpected mimeType") else null end,
+	if $read.content != "alpha" then error("resource content mismatch") else null end
+' >/dev/null
 
 # --- Manual registration overrides ---
 MANUAL_ROOT="${TEST_TMPDIR}/manual"
@@ -140,31 +124,17 @@ JSON
 	./bin/mcp-bash <"requests.ndjson" >"responses.ndjson"
 )
 
-python3 - "${MANUAL_ROOT}/responses.ndjson" <<'PY'
-import json, sys
-path = sys.argv[1]
-messages = [json.loads(line) for line in open(path, encoding='utf-8') if line.strip()]
-
-def by_id(msg_id):
-    for msg in messages:
-        if msg.get("id") == msg_id:
-            return msg
-    raise SystemExit(f"missing response {msg_id}")
-
-list_resp = by_id("manual-list")
-result = list_resp.get("result") or {}
-items = result.get("items") or []
-if result.get("total") != 2:
-    raise SystemExit("manual registry should contain two resources")
-for item in items:
-    if item.get("name") not in {"manual.left", "manual.right"}:
-        raise SystemExit("unexpected resource discovered in manual registry")
-
-read_resp = by_id("manual-read")
-content = (read_resp.get("result") or {}).get("content")
-if content != "right":
-    raise SystemExit(f"manual resource content mismatch: {content!r}")
-PY
+jq -n --slurpfile messages "${MANUAL_ROOT}/responses.ndjson" '
+	def error(msg): error(msg);
+	
+	($messages | map(select(.id == "manual-list"))[0].result) as $list |
+	($messages | map(select(.id == "manual-read"))[0].result) as $read |
+	
+	if $list.total != 2 then error("manual registry should contain two resources") else null end,
+	if ($list.items[] | .name | IN("manual.left", "manual.right") | not) then error("unexpected resource discovered in manual registry") else null end,
+	
+	if $read.content != "right" then error("manual resource content mismatch: " + ($read.content|tostring)) else null end
+' >/dev/null
 
 # --- Subscription updates ---
 SUB_ROOT="${TEST_TMPDIR}/subscribe"
@@ -178,160 +148,122 @@ cat <<EOF_RES >"${SUB_ROOT}/resources/live.txt"
 original
 EOF_RES
 
-cat <<EOF_META >"${SUB_ROOT}/resources/live.meta.yaml"
+cat <<EOF_META >"${SUB_ROOT}/resources/live.meta.json"
 {"name": "file.live", "description": "Live file", "uri": "file://${SUB_ROOT}/resources/live.txt", "mimeType": "text/plain"}
 EOF_META
 
-export SUB_ROOT
-python3 <<'PY'
-import json
-import os
-import subprocess
-import sys
-import time
 
-sub_root = os.environ["SUB_ROOT"]
-trace_path = os.path.join(sub_root, "trace.log")
-log = open(trace_path, "w", encoding="utf-8")
-print(f"[resources] trace log -> {trace_path}", file=sys.stderr)
+run_subscription_test() {
+	local sub_root="$1"
+	local pipe_in="${sub_root}/pipe_in"
+	local pipe_out="${sub_root}/pipe_out"
+	
+	rm -f "$pipe_in" "$pipe_out"
+	mkfifo "$pipe_in" "$pipe_out"
+	
+	(
+		cd "$sub_root" || exit 1
+		./bin/mcp-bash <"$pipe_in" >"$pipe_out" &
+		echo $! >"${sub_root}/server.pid"
+	)
+	
+	local server_pid
+	# Wait for pid file
+	sleep 1
+	server_pid="$(cat "${sub_root}/server.pid")"
+	
+	exec 3>"$pipe_in"
+	exec 4<"$pipe_out"
+	
+	# Send init
+	echo '{"jsonrpc":"2.0","id":"init","method":"initialize","params":{}}' >&3
+	
+	# Read init
+	while read -r line <&4; do
+		local id
+		id="$(echo "$line" | jq -r '.id // empty')"
+		if [ "$id" = "init" ]; then
+			break
+		fi
+	done
+	
+	echo '{"jsonrpc":"2.0","method":"notifications/initialized"}' >&3
+	
+	# Send subscribe
+	echo '{"jsonrpc":"2.0","id":"sub","method":"resources/subscribe","params":{"name":"file.live"}}' >&3
+	
+	local sub_id=""
+	local initial_content=""
+	
+	while read -r line <&4; do
+		local id method
+		id="$(echo "$line" | jq -r '.id // empty')"
+		method="$(echo "$line" | jq -r '.method // empty')"
+		if [ "$id" = "sub" ]; then
+			sub_id="$(echo "$line" | jq -r '.result.subscriptionId // empty')"
+		elif [ "$method" = "notifications/resources/updated" ]; then
+			local sid
+			sid="$(echo "$line" | jq -r '.params.subscriptionId // empty')"
+			if [ "$sid" = "$sub_id" ]; then
+				initial_content="$(echo "$line" | jq -r '.params.content // empty')"
+				if [ "$initial_content" = "original" ]; then
+					break
+				fi
+			fi
+		fi
+	done
+	
+	if [ -z "$sub_id" ]; then
+		echo "Failed to get subscription ID" >&2
+		kill "$server_pid" 2>/dev/null || true
+		exit 1
+	fi
+	
+	# Trigger update
+	echo "updated" >"${sub_root}/resources/live.txt"
+	
+	# Send ping to ensure we process events
+	echo '{"jsonrpc":"2.0","id":"ping","method":"ping"}' >&3
+	
+	local ping_seen=false
+	local update_seen=false
+	
+	while read -t 5 -r line <&4; do
+		local id method
+		id="$(echo "$line" | jq -r '.id // empty')"
+		method="$(echo "$line" | jq -r '.method // empty')"
+		
+		if [ "$id" = "ping" ]; then
+			ping_seen=true
+		elif [ "$method" = "notifications/resources/updated" ]; then
+			local sid
+			sid="$(echo "$line" | jq -r '.params.subscriptionId // empty')"
+			if [ "$sid" = "$sub_id" ]; then
+				local content
+				content="$(echo "$line" | jq -r '.params.content // empty')"
+				if [ "$content" = "updated" ]; then
+					update_seen=true
+				fi
+			fi
+		fi
+		
+		if [ "$ping_seen" = true ] && [ "$update_seen" = true ]; then
+			break
+		fi
+	done
+	
+	if [ "$update_seen" != true ]; then
+		echo "Update not seen" >&2
+		kill "$server_pid" 2>/dev/null || true
+		exit 1
+	fi
+	
+	echo '{"jsonrpc":"2.0","id":"shutdown","method":"shutdown"}' >&3
+	echo '{"jsonrpc":"2.0","id":"exit","method":"exit"}' >&3
+	
+	wait "$server_pid"
+	rm -f "$pipe_in" "$pipe_out"
+}
 
-def trace(direction, payload):
-    log.write(json.dumps({"dir": direction, "payload": payload}) + "\n")
-    log.flush()
+run_subscription_test "${SUB_ROOT}"
 
-proc = subprocess.Popen(
-    ["./bin/mcp-bash"],
-    cwd=sub_root,
-    stdin=subprocess.PIPE,
-    stdout=subprocess.PIPE,
-    text=True,
-)
-
-
-def send(message):
-    line = json.dumps(message, separators=(",", ":")) + "\n"
-    proc.stdin.write(line)
-    proc.stdin.flush()
-    trace("send", message)
-
-
-def next_message(deadline):
-    while True:
-        remaining = deadline - time.time()
-        if remaining <= 0:
-            raise SystemExit("timeout waiting for server output")
-        line = proc.stdout.readline()
-        if not line:
-            raise SystemExit("server exited unexpectedly")
-        line = line.strip()
-        if not line:
-            continue
-        payload = json.loads(line)
-        trace("recv", payload)
-        return payload
-
-
-try:
-    send({"jsonrpc": "2.0", "id": "init", "method": "initialize", "params": {}})
-    deadline = time.time() + 10
-    while True:
-        msg = next_message(deadline)
-        if msg.get("id") == "init":
-            break
-
-    send({"jsonrpc": "2.0", "method": "notifications/initialized"})
-
-    send(
-        {
-            "jsonrpc": "2.0",
-            "id": "sub",
-            "method": "resources/subscribe",
-            "params": {"name": "file.live"},
-        }
-    )
-    subscription_id = None
-    initial_update = None
-    deadline = time.time() + 10
-    list_changed_seen = 0
-    while True:
-        msg = next_message(deadline)
-        if msg.get("id") == "sub":
-            subscription_id = msg.get("result", {}).get("subscriptionId")
-            if not subscription_id:
-                raise SystemExit("subscriptionId missing")
-        elif msg.get("method") == "notifications/resources/updated":
-            params = msg.get("params", {})
-            if params.get("subscriptionId") == subscription_id:
-                initial_update = params
-                content = params.get("content")
-                if content != "original":
-                    raise SystemExit("initial subscription content mismatch")
-                break
-        elif msg.get("method") == "notifications/resources/list_changed" and msg.get("params"):
-            # Ignore list_changed with params payload to avoid JSON parsing error in read loop
-            continue
-        elif msg.get("method") in {"notifications/resources/list_changed", "notifications/tools/list_changed"}:
-            list_changed_seen += 1
-            if list_changed_seen > 10:
-                raise SystemExit("subscribe response missing after repeated list_changed notifications")
-
-    if subscription_id is None or initial_update is None:
-        raise SystemExit("did not receive initial subscription update")
-
-    with open(
-        os.path.join(sub_root, "resources", "live.txt"), "w", encoding="utf-8"
-    ) as handle:
-        handle.write("updated\n")
-
-    send({"jsonrpc": "2.0", "id": "ping", "method": "ping"})
-    ping_seen = False
-    update_seen = False
-    deadline = time.time() + 10
-    while True:
-        try:
-            msg = next_message(deadline)
-        except SystemExit as exc:
-            raise SystemExit(f"timeout waiting for ping/update: {exc}") from None
-        if msg.get("id") == "ping":
-            ping_seen = True
-        elif msg.get("method") == "notifications/resources/updated":
-            params = msg.get("params", {})
-            if params.get("subscriptionId") == subscription_id and params.get(
-                "content"
-            ) == "updated":
-                update_seen = True
-        if ping_seen and update_seen:
-            break
-
-    if not ping_seen:
-        raise SystemExit("ping response missing after update")
-    if not update_seen:
-        raise SystemExit("subscription update not observed after change")
-
-    send(
-        {
-            "jsonrpc": "2.0",
-            "id": "unsub",
-            "method": "resources/unsubscribe",
-            "params": {"subscriptionId": subscription_id},
-        }
-    )
-    send({"jsonrpc": "2.0", "id": "shutdown", "method": "shutdown"})
-    send({"jsonrpc": "2.0", "id": "exit", "method": "exit"})
-finally:
-    trace("final", {"message": "closing"})
-    log.close()
-    if proc.stdin:
-        try:
-            proc.stdin.close()
-        except Exception:
-            pass
-    try:
-        proc.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        proc.wait(timeout=5)
-    print(f"[resources] trace log captured at {trace_path}", file=sys.stderr)
-    if proc.returncode not in (0, None):
-        raise SystemExit(f"server exited with {proc.returncode}")
-PY

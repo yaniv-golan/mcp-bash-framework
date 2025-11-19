@@ -1,0 +1,33 @@
+{
+  "name": "transcode",
+  "description": "Transcodes media files using ffmpeg with selectable presets and real-time progress reporting.",
+  "arguments": {
+    "type": "object",
+    "properties": {
+      "input": {
+        "type": "string",
+        "description": "Input filename (relative to media directory)."
+      },
+      "output": {
+        "type": "string",
+        "description": "Output filename (relative to media directory)."
+      },
+      "preset": {
+        "type": "string",
+        "enum": ["1080p", "720p", "audio-only", "gif"],
+        "description": "Transcoding preset configuration."
+      },
+      "start_time": {
+        "type": "string",
+        "description": "Start timestamp (e.g. \"00:00:10\")."
+      },
+      "duration": {
+        "type": "string",
+        "description": "Duration to process (e.g. \"5\")."
+      }
+    },
+    "required": ["input", "output", "preset"]
+  }
+}
+
+

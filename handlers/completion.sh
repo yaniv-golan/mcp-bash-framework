@@ -1,19 +1,11 @@
 #!/usr/bin/env bash
-# Spec §8 completion handler implementation.
+# Completion handler implementation.
 
 set -euo pipefail
 
 mcp_completion_quote() {
 	local text="$1"
-	local py
-	if py="$(mcp_tools_python 2>/dev/null)"; then
-		TEXT="${text}" "${py}" <<'PY'
-import json, os
-print(json.dumps(os.environ.get("TEXT", "")))
-PY
-	else
-		printf '"%s"' "$(printf '%s' "${text}" | sed 's/\\/\\\\/g; s/"/\\"/g')"
-	fi
+	mcp_json_quote_text "${text}"
 }
 
 mcp_handle_completion() {

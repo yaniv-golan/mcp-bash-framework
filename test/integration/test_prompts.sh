@@ -34,7 +34,7 @@ cat <<'EOF_PROMPT' >"${AUTO_ROOT}/prompts/alpha.txt"
 Hello ${name}!
 EOF_PROMPT
 
-cat <<'EOF_META' >"${AUTO_ROOT}/prompts/alpha.meta.yaml"
+cat <<'EOF_META' >"${AUTO_ROOT}/prompts/alpha.meta.json"
 {"name": "prompt.alpha", "description": "Alpha prompt", "arguments": {"type": "object", "properties": {"name": {"type": "string"}}}, "role": "system"}
 EOF_META
 
@@ -42,7 +42,7 @@ cat <<'EOF_PROMPT' >"${AUTO_ROOT}/prompts/beta.txt"
 Beta prompt for ${topic}
 EOF_PROMPT
 
-cat <<'EOF_META' >"${AUTO_ROOT}/prompts/beta.meta.yaml"
+cat <<'EOF_META' >"${AUTO_ROOT}/prompts/beta.meta.json"
 {"name": "prompt.beta", "description": "Beta prompt", "arguments": {"type": "object", "properties": {"topic": {"type": "string"}}}, "role": "system"}
 EOF_META
 
@@ -58,49 +58,29 @@ JSON
 	./bin/mcp-bash <"requests.ndjson" >"responses.ndjson"
 )
 
-python3 - "${AUTO_ROOT}/responses.ndjson" <<'PY'
-import json, sys
 
-path = sys.argv[1]
-messages = [json.loads(line) for line in open(path, encoding="utf-8") if line.strip()]
+# Verify auto-discovery responses with jq
+if ! jq -e '
+	select(.id == "auto-list") |
+	(.result.total == 2) and
+	(.result.items | length == 1) and
+	(.result.nextCursor != null) and
+	(.result.items[0].name != null)
+' "${AUTO_ROOT}/responses.ndjson" >/dev/null; then
+	printf '❌ auto-list response invalid\n' >&2
+	exit 1
+fi
 
-def by_id(msg_id):
-    for msg in messages:
-        if msg.get("id") == msg_id:
-            return msg
-    raise SystemExit(f"missing response for {msg_id}")
+if ! jq -e '
+	select(.id == "auto-get") |
+	(.result.text | trim == "Hello World!") and
+	(.result.messages[0].content[0].text | trim == "Hello World!") and
+	(.result.arguments == {name: "World"})
+' "${AUTO_ROOT}/responses.ndjson" >/dev/null; then
+	printf '❌ auto-get response invalid\n' >&2
+	exit 1
+fi
 
-list_resp = by_id("auto-list")
-result = list_resp.get("result") or {}
-items = result.get("items") or []
-if result.get("total") != 2:
-    raise SystemExit(f"expected 2 prompts discovered, found {result.get('total')}")
-if "nextCursor" not in result:
-    raise SystemExit("expected nextCursor for paginated prompts")
-first = items[0]
-for field in ("name", "description", "path", "arguments"):
-    if field not in first:
-        raise SystemExit(f"prompt entry missing {field}")
-
-get_resp = by_id("auto-get")
-rendered = get_resp.get("result") or {}
-text = rendered.get("text") or ""
-if text.strip() != "Hello World!":
-    raise SystemExit(f"rendered text mismatch: {text!r}")
-messages_field = rendered.get("messages")
-if not messages_field or not isinstance(messages_field, list):
-    raise SystemExit("messages array missing from prompts/get result")
-first_msg = messages_field[0]
-content = first_msg.get("content")
-if not content:
-    raise SystemExit("structured message content mismatch")
-content_text = (content[0].get("text") if content else "").strip()
-if content_text != "Hello World!":
-    raise SystemExit("structured message content mismatch")
-arguments = rendered.get("arguments")
-if arguments != {"name": "World"}:
-    raise SystemExit(f"arguments echo mismatch: {arguments!r}")
-PY
 
 # --- Manual registration overrides ---
 MANUAL_ROOT="${TEST_TMPDIR}/manual"
@@ -151,36 +131,25 @@ JSON
 	./bin/mcp-bash <"requests.ndjson" >"responses.ndjson"
 )
 
-python3 - "${MANUAL_ROOT}/responses.ndjson" <<'PY'
-import json, sys
+# Verify manual prompt responses
+if ! jq -e '
+	select(.id == "manual-list") |
+	(.result.total == 2) and
+	(.result.items | length == 2) and
+	(.result.items | map(.name) | sort == ["manual.farewell", "manual.greet"])
+' "${MANUAL_ROOT}/responses.ndjson" >/dev/null; then
+	printf '❌ manual-list response invalid\n' >&2
+	exit 1
+fi
 
-path = sys.argv[1]
-messages = [json.loads(line) for line in open(path, encoding="utf-8") if line.strip()]
-
-def by_id(msg_id):
-    for msg in messages:
-        if msg.get("id") == msg_id:
-            return msg
-    raise SystemExit(f"missing response for {msg_id}")
-
-list_resp = by_id("manual-list")
-result = list_resp.get("result") or {}
-items = result.get("items") or []
-if result.get("total") != 2:
-    raise SystemExit("manual registry should expose exactly two prompts")
-names = {item.get("name") for item in items}
-if names != {"manual.greet", "manual.farewell"}:
-    raise SystemExit(f"unexpected manual prompt names: {names}")
-
-get_resp = by_id("manual-get")
-rendered = get_resp.get("result") or {}
-text = (rendered.get("text") or "").strip()
-if text != "Goodbye Ada, see you soon.":
-    raise SystemExit("manual prompt render mismatch")
-content = (rendered.get("messages", [{}])[0].get("content", [{}])[0].get("text") or "").strip()
-if content != "Goodbye Ada, see you soon.":
-    raise SystemExit("manual prompt structured content mismatch")
-PY
+if ! jq -e '
+	select(.id == "manual-get") |
+	(.result.text | trim == "Goodbye Ada, see you soon.") and
+	(.result.messages[0].content[0].text | trim == "Goodbye Ada, see you soon.")
+' "${MANUAL_ROOT}/responses.ndjson" >/dev/null; then
+	printf '❌ manual-get response invalid\n' >&2
+	exit 1
+fi
 
 # --- TTL-driven list_changed notifications ---
 POLL_ROOT="${TEST_TMPDIR}/poll"
@@ -192,108 +161,106 @@ cat <<'EOF_PROMPT' >"${POLL_ROOT}/prompts/live.txt"
 Live version 1
 EOF_PROMPT
 
-cat <<'EOF_META' >"${POLL_ROOT}/prompts/live.meta.yaml"
+cat <<'EOF_META' >"${POLL_ROOT}/prompts/live.meta.json"
 {"name": "prompt.live", "description": "Live prompt", "arguments": {"type": "object", "properties": {}}, "role": "system"}
 EOF_META
 
 export POLL_ROOT
-python3 <<'PY'
-import json
-import os
-import subprocess
-import sys
-import time
+(
+	cd "${POLL_ROOT}" || exit 1
+	export MCP_PROMPTS_TTL="1"
+	
+	# Start server in background
+	coproc SERVER { ./bin/mcp-bash; }
+	
+	# Helper to send JSON-RPC
+	send() {
+		printf '%s\n' "$1" >&"${SERVER[1]}"
+	}
+	
+	# Helper to read JSON-RPC response
+	read_response() {
+		local line
+		if read -r -u "${SERVER[0]}" line; then
+			printf '%s' "${line}"
+		else
+			return 1
+		fi
+	}
+	
+	# Helper to wait for a specific message ID or method
+	wait_for() {
+		local match_key="$1"
+		local match_val="$2"
+		local timeout="${3:-10}"
+		local end_time=$(( $(date +%s) + timeout ))
+		
+		while [ "$(date +%s)" -lt "${end_time}" ]; do
+			local response
+			if ! response="$(read_response)"; then
+				return 1
+			fi
+			if [ -z "${response}" ]; then continue; fi
+			
+			local val
+			val="$(printf '%s' "${response}" | jq -r ".${match_key} // empty")"
+			if [ "${val}" = "${match_val}" ]; then
+				return 0
+			fi
+		done
+		return 1
+	}
 
-poll_root = os.environ["POLL_ROOT"]
-env = os.environ.copy()
-env["MCP_PROMPTS_TTL"] = "1"
-
-proc = subprocess.Popen(
-    ["./bin/mcp-bash"],
-    cwd=poll_root,
-    stdin=subprocess.PIPE,
-    stdout=subprocess.PIPE,
-    text=True,
-    env=env,
+	# Initialize
+	send '{"jsonrpc": "2.0", "id": "init", "method": "initialize", "params": {}}'
+	wait_for "id" "init" || { printf 'Init timeout\n' >&2; exit 1; }
+	
+	send '{"jsonrpc": "2.0", "method": "notifications/initialized"}'
+	
+	# Initial list
+	send '{"jsonrpc": "2.0", "id": "list", "method": "prompts/list", "params": {}}'
+	wait_for "id" "list" || { printf 'List timeout\n' >&2; exit 1; }
+	
+	# Modify prompt
+	printf 'Live version 2\n' >"prompts/live.txt"
+	
+	# Wait for update notification
+	sleep 1.2
+	send '{"jsonrpc": "2.0", "id": "ping", "method": "ping"}'
+	
+	# We expect a ping response AND a list_changed notification
+	seen_update=false
+	seen_ping=false
+	end_time=$(( $(date +%s) + 10 ))
+	
+	while [ "$(date +%s)" -lt "${end_time}" ]; do
+		if [ "${seen_update}" = "true" ] && [ "${seen_ping}" = "true" ]; then
+			break
+		fi
+		response="$(read_response)" || break
+		if [ -z "${response}" ]; then continue; fi
+		
+		id="$(printf '%s' "${response}" | jq -r '.id // empty')"
+		method="$(printf '%s' "${response}" | jq -r '.method // empty')"
+		
+		if [ "${id}" = "ping" ]; then
+			seen_ping=true
+		fi
+		if [ "${method}" = "notifications/prompts/list_changed" ]; then
+			seen_update=true
+		fi
+	done
+	
+	if [ "${seen_update}" != "true" ]; then
+		printf 'Missing prompts/list_changed notification\n' >&2
+		kill "${SERVER_PID}" 2>/dev/null || true
+		exit 1
+	fi
+	
+	send '{"jsonrpc": "2.0", "id": "shutdown", "method": "shutdown"}'
+	wait_for "id" "shutdown" || { kill "${SERVER_PID}" 2>/dev/null || true; exit 1; }
+	
+	send '{"jsonrpc": "2.0", "id": "exit", "method": "exit"}'
+	# Wait for exit? Or just kill.
+	wait "${SERVER_PID}" 2>/dev/null || true
 )
-
-def send(message):
-    line = json.dumps(message, separators=(",", ":")) + "\n"
-    proc.stdin.write(line)
-    proc.stdin.flush()
-
-def next_message(deadline):
-    while True:
-        remaining = deadline - time.time()
-        if remaining <= 0:
-            raise SystemExit("timeout waiting for server output")
-        line = proc.stdout.readline()
-        if not line:
-            raise SystemExit("server exited unexpectedly")
-        line = line.strip()
-        if not line:
-            continue
-        return json.loads(line)
-
-try:
-    send({"jsonrpc": "2.0", "id": "init", "method": "initialize", "params": {}})
-    deadline = time.time() + 10
-    while True:
-        msg = next_message(deadline)
-        if msg.get("id") == "init":
-            break
-
-    send({"jsonrpc": "2.0", "method": "notifications/initialized"})
-
-    send({"jsonrpc": "2.0", "id": "list", "method": "prompts/list", "params": {}})
-    deadline = time.time() + 10
-    while True:
-        msg = next_message(deadline)
-        if msg.get("id") == "list":
-            break
-
-    with open(os.path.join(poll_root, "prompts", "live.txt"), "w", encoding="utf-8") as handle:
-        handle.write("Live version 2\n")
-
-    time.sleep(1.2)
-    send({"jsonrpc": "2.0", "id": "ping", "method": "ping"})
-    seen_update = False
-    seen_ping = False
-    deadline = time.time() + 10
-    while not (seen_update and seen_ping):
-        msg = next_message(deadline)
-        if msg.get("id") == "ping":
-            seen_ping = True
-        if msg.get("method") == "notifications/prompts/list_changed":
-            seen_update = True
-
-    if not seen_update:
-        raise SystemExit("missing prompts/list_changed notification after modification")
-
-    send({"jsonrpc": "2.0", "id": "shutdown", "method": "shutdown"})
-    deadline = time.time() + 10
-    while True:
-        msg = next_message(deadline)
-        if msg.get("id") == "shutdown":
-            break
-
-    send({"jsonrpc": "2.0", "id": "exit", "method": "exit"})
-    deadline = time.time() + 10
-    while True:
-        msg = next_message(deadline)
-        if msg.get("id") == "exit":
-            break
-finally:
-    if proc.stdin:
-        try:
-            proc.stdin.close()
-        except Exception:
-            pass
-    try:
-        proc.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        proc.wait(timeout=5)
-    if proc.returncode not in (0, None):
-        raise SystemExit(f"server exited with code {proc.returncode}")
-PY

@@ -10,13 +10,13 @@
 
 ## 2. Target Runtime Environment
 - **Shell**: POSIX-compatible Bash 3.2 grammar; no associative arrays, no process substitution, no `wait -n`, no Bash 4+ features.
-- **Utilities**: JSON tooling detection order is `gojq` → `jq` → opportunistic `python` (stdlib `json`). When either `gojq` or `jq` is present, the server delivers the full MCP protocol surface, compacting JSON with `-c`. If neither binary exists but a Python interpreter (`python`/`python3`) is installed, the server shells out to `python -c 'import json,sys; ...'` helpers to retain the protocol surface with reduced ergonomics (SDK conveniences and JSON-Schema validation are limited). (Modern macOS releases no longer ship system Python by default, and Windows Git-Bash may not include it—operators must provision Python explicitly if they rely on this fallback.) If none of these tools are available, the core enters a **minimal mode** that only implements lifecycle, ping, and logging via the restricted tokenizer described below, loudly warns about unsupported methods, and advertises reduced capabilities. Other dependencies are ubiquitous POSIX tools (`mkdir`, `kill`, `sleep`, `base64`, `tr`).
+- **Utilities**: JSON tooling detection order is `gojq` → `jq`. When either `gojq` or `jq` is present, the server delivers the full MCP protocol surface, compacting JSON with `-c`. If neither binary exists, the core enters a **minimal mode** that only implements lifecycle, ping, and logging via the restricted tokenizer described below, loudly warns about unsupported methods, and advertises reduced capabilities. Other dependencies are ubiquitous POSIX tools (`mkdir`, `kill`, `sleep`, `base64`, `tr`).
 - **Filesystem**: Writable temp directory via `$TMPDIR` (macOS), `/tmp` (Linux, WSL), or MSYS equivalents. No special filesystems or sockets required.
 - **Encoding**: UTF-8 end-to-end; stdio framing expects newline-delimited single-line JSON messages.
 
 **Minimal mode surface (no JSON tooling available)**
 
-| Feature                    | Full Mode (`gojq`/`jq`/Python) | Minimal Mode |
+| Feature                    | Full Mode (`gojq`/`jq`)        | Minimal Mode |
 |----------------------------|-------------------------------|--------------|
 | `initialize`/lifecycle     | ✔️                            | ✔️           |
 | `ping`                     | ✔️                            | ✔️           |
@@ -151,7 +151,7 @@ During `initialize`, the server responds with:
   ```bash
   if ! result="$(mcp_args_get '.message' 2>/dev/null)"; then
     raw="$(mcp_args_raw)"
-    result="$(printf '%s' "$raw" | python3 -c 'import json,sys; print(json.load(sys.stdin)["message"])')"
+    result="$(printf '%s' "$raw" | jq -r '.message')"
   fi
   ```
 
@@ -166,7 +166,6 @@ During `initialize`, the server responds with:
 - **Signal Semantics**: Git-Bash/MSYS support `kill` for Bash-spawned processes, enabling cancellation and timeouts to function. Windows console events are not relied upon.
 - **Path Handling**: All framework code works with POSIX-style paths. Resource providers translate as needed (e.g., `providers/file.sh` can normalize Windows drive prefixes).
 - **Windows Drive Translation**: Document Git-Bash/MSYS behavior that maps `C:\foo\bar` to `/c/foo/bar` (no colon) and reference MSYS2 path conversion docs. Configuration helpers canonicalize drive-prefixed paths to POSIX form to avoid “Is a directory” errors; authors can disable conversion per-argument via `MSYS2_ARG_CONV_EXCL`.
-- **Python Fallback**: Python-based JSON helpers are executed with the system default `python`/`python3`, which is available on macOS, most Linux distributions, and Git-Bash via MSYS or the Microsoft Store. CI exercises this path alongside `gojq`/`jq` to ensure consistent behavior. When operating via the Python fallback, `mcp_args_get` is unavailable—tools should consume `mcp_args_raw` and perform their own parsing.
 - **Windows Support Caveats**: Git-Bash/MSYS signal handling (especially `SIGTERM`) and PID probing may behave inconsistently across environments. Document Windows support as **experimental**, list known limitations (e.g., unreliable `kill -TERM`, UNC paths, backslash-relative paths), and recommend additional testing before deploying to production Windows hosts. For production Windows usage, prefer running the server under Windows Subsystem for Linux (WSL) and launching via `wsl bash /path/to/mcp-bash`.
 - **State path length**: If `${TMPDIR}` produces overly long state/lock paths (approaching UNIX socket/path limits), the server hashes the base path to a shorter prefix (`mcps.<hash>`) and logs the adjustment; operators can override via `MCPBASH_STATE_DIR`.
 
@@ -260,8 +259,6 @@ test/
 │  ├─ test_resources.sh
 │  ├─ test_prompts.sh
 │  ├─ test_completion.sh
-│  ├─ test_minimal_mode.sh
-│  ├─ test_python_fallback.sh
 │  └─ run.sh
 ├─ stress/
 │  ├─ test_concurrency.sh
@@ -270,12 +267,8 @@ test/
 │  └─ run.sh
 ├─ compatibility/
 │  ├─ inspector.sh
-│  ├─ sdk_python.sh
 │  ├─ sdk_typescript.sh
 │  ├─ http_proxy.sh
-│  └─ run.sh
-├─ examples/
-│  ├─ test_examples.sh
 │  └─ run.sh
 └─ common/
    ├─ env.sh                 # exported PATH/TMPDIR helpers

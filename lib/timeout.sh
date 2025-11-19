@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Spec §6: timeout orchestration via watchdog processes.
+# Timeout orchestration via watchdog processes.
 
 set -euo pipefail
 
@@ -35,6 +35,7 @@ with_timeout() {
 	local worker_pgid=""
 	local watchdog_state=""
 	local main_pgid="${MCPBASH_MAIN_PGID:-}"
+	local watchdog_token=""
 
 	("${cmd[@]}") &
 	worker_pid=$!
@@ -44,10 +45,11 @@ with_timeout() {
 
 	if [ -n "${MCPBASH_STATE_DIR:-}" ]; then
 		watchdog_state="${MCPBASH_STATE_DIR}/watchdog.${worker_pid}.log"
-		printf '%s %s %s\n' "${worker_pid}" "${worker_pgid}" "${seconds}" >"${watchdog_state}"
+		watchdog_token="${worker_pid}.${RANDOM}.${SECONDS}"
+		printf '%s %s %s %s\n' "${worker_pid}" "${worker_pgid}" "${seconds}" "${watchdog_token}" >"${watchdog_state}"
 	fi
 
-	mcp_timeout_spawn_watchdog "${worker_pid}" "${worker_pgid}" "${seconds}" "${watchdog_state}" "${main_pgid}" &
+	mcp_timeout_spawn_watchdog "${worker_pid}" "${worker_pgid}" "${seconds}" "${watchdog_state}" "${main_pgid}" "${watchdog_token}" &
 	watchdog_pid=$!
 
 	wait "${worker_pid}"
@@ -58,8 +60,15 @@ with_timeout() {
 	fi
 	wait "${watchdog_pid}" 2>/dev/null || true
 
-	if [ -n "${watchdog_state}" ]; then
-		rm -f "${watchdog_state}"
+	if [ -n "${watchdog_state}" ] && [ -f "${watchdog_state}" ]; then
+		local current_token
+		current_token="$(awk '{print $4}' "${watchdog_state}" 2>/dev/null || true)"
+		if [ -n "${watchdog_token}" ] && [ "${current_token}" = "${watchdog_token}" ]; then
+			if grep -Fq "timeout" "${watchdog_state}" 2>/dev/null; then
+				status=124
+			fi
+			rm -f "${watchdog_state}"
+		fi
 	fi
 
 	return "${status}"
@@ -71,6 +80,7 @@ mcp_timeout_spawn_watchdog() {
 	local seconds="$3"
 	local state_file="$4"
 	local main_pgid="$5"
+	local token="$6"
 	local parent_pid="$PPID"
 	local remaining
 
@@ -82,8 +92,12 @@ mcp_timeout_spawn_watchdog() {
 			[ -n "${state_file}" ] && rm -f "${state_file}"
 			exit 0
 		fi
-		if ! kill -0 "${parent_pid}" 2>/dev/null; then
-			exit 0
+		if [ -n "${state_file}" ] && [ -n "${token}" ] && [ -f "${state_file}" ]; then
+			local current_token
+			current_token="$(awk '{print $4}' "${state_file}" 2>/dev/null || true)"
+			if [ "${current_token}" != "${token}" ]; then
+				exit 0
+			fi
 		fi
 		remaining=$((remaining - 1))
 	done
@@ -101,6 +115,12 @@ mcp_timeout_spawn_watchdog() {
 		mcp_runtime_signal_group "${worker_pgid}" KILL "${worker_pid}" "${main_pgid}"
 	fi
 
-	[ -n "${state_file}" ] && rm -f "${state_file}"
+	if [ -n "${state_file}" ] && [ -f "${state_file}" ]; then
+		local current_token
+		current_token="$(awk '{print $4}' "${state_file}" 2>/dev/null || true)"
+		if [ -z "${token}" ] || [ "${current_token}" = "${token}" ]; then
+			rm -f "${state_file}"
+		fi
+	fi
 	exit 0
 }

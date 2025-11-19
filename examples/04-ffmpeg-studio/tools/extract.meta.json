@@ -1,0 +1,24 @@
+{
+  "name": "extract_frame",
+  "description": "Extracts a single video frame as an image at a specific timestamp.",
+  "arguments": {
+    "type": "object",
+    "properties": {
+      "input": {
+        "type": "string",
+        "description": "Input video filename."
+      },
+      "time": {
+        "type": "string",
+        "description": "Timestamp (e.g. \"00:00:05\" or seconds)."
+      },
+      "output": {
+        "type": "string",
+        "description": "Output image filename (e.g. \"frame.png\")."
+      }
+    },
+    "required": ["input", "time", "output"]
+  }
+}
+
+

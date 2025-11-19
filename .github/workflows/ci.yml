@@ -3,32 +3,53 @@ name: CI
 on:
   push:
   pull_request:
+  schedule:
+    - cron: '0 6 * * 1'
 
 jobs:
-  lint-test:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest]
+  lint:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.x'
-      - name: Install tools
-        run: |
-          if ! command -v shellcheck >/dev/null 2>&1; then
-            if [[ "${{ runner.os }}" == "Linux" ]]; then sudo apt-get update && sudo apt-get install -y shellcheck; fi
-            if [[ "${{ runner.os }}" == "macOS" ]]; then brew install shellcheck; fi
-          fi
-          if ! command -v shfmt >/dev/null 2>&1; then
-            if [[ "${{ runner.os }}" == "Linux" ]]; then sudo apt-get update && sudo apt-get install -y shfmt; fi
-            if [[ "${{ runner.os }}" == "macOS" ]]; then brew install shfmt; fi
-          fi
-      - name: shellcheck
-        run: find . -name '*.sh' -print0 | xargs -0 shellcheck
-      - name: shfmt
-        run: shfmt -d -i 2 -ci $(find . -name '*.sh')
+      - name: Lint
+        run: test/lint.sh
+
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Unit tests
+        run: test/unit/run.sh
+
+  integration:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
       - name: Smoke tests
-        run: ./test/examples/test_examples.sh
+        run: test/smoke.sh
+      - name: Integration suite
+        run: test/integration/run.sh
+      - name: Examples suite
+        run: test/examples/run.sh
+
+  stress:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Stress suite
+        run: test/stress/run.sh
+
+  compatibility:
+    runs-on: ubuntu-latest
+    needs: integration
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compatibility suite
+        run: test/compatibility/run.sh

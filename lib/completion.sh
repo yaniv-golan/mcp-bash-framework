@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Spec §§8/10/11: completion router helpers (manual registry, cursor management, script dispatch).
+# Completion router helpers (manual registry, cursor management, script dispatch).
 
 set -euo pipefail
 
@@ -33,6 +33,99 @@ MCP_COMPLETION_PROVIDER_RESULT_ERROR=""
 MCP_COMPLETION_CURSOR_OFFSET=0
 MCP_COMPLETION_CURSOR_SCRIPT_KEY=""
 
+mcp_completion_hash_string() {
+	local value="$1"
+	if command -v sha256sum >/dev/null 2>&1; then
+		printf '%s' "${value}" | sha256sum | awk '{print $1}'
+		return 0
+	fi
+	if command -v shasum >/dev/null 2>&1; then
+		printf '%s' "${value}" | shasum -a 256 | awk '{print $1}'
+		return 0
+	fi
+	printf '%s' "${value}" | cksum | awk '{print $1}'
+}
+
+mcp_completion_hash_json() {
+	local json_payload="$1"
+	local compact
+	if ! compact="$(printf '%s' "${json_payload}" | jq -c '.' 2>/dev/null)"; then
+		compact="{}"
+	fi
+	mcp_completion_hash_string "${compact}"
+}
+
+mcp_completion_resolve_script_path() {
+	local raw_path="$1"
+	local root="${MCPBASH_ROOT%/}"
+	local candidate=""
+	if [ -z "${raw_path}" ]; then
+		return 1
+	fi
+	if [ "${raw_path#/}" != "${raw_path}" ]; then
+		candidate="${raw_path}"
+	else
+		candidate="${root}/${raw_path}"
+	fi
+	local dir base abs
+	dir="$(dirname -- "${candidate}")"
+	base="$(basename -- "${candidate}")"
+	if ! dir="$(cd "${dir}" 2>/dev/null && pwd -P)"; then
+		return 1
+	fi
+	abs="${dir}/${base}"
+	case "${abs}" in
+	"${root}" | "${root}/"*) ;;
+	*) return 1 ;;
+	esac
+	if [ ! -f "${abs}" ]; then
+		return 1
+	fi
+	printf '%s' "${abs#${root}/}"
+}
+
+mcp_completion_base64_urlencode() {
+	tr '+/' '-_' | tr -d '='
+}
+
+mcp_completion_base64_urldecode() {
+	local input="$1"
+	if [ -z "${input}" ]; then
+		return 1
+	fi
+	local converted="${input//-/+}"
+	converted="${converted//_/\/}"
+	local remainder=$(( ${#converted} % 4 ))
+	if [ "${remainder}" -ne 0 ]; then
+		local pad=$((4 - remainder))
+		case "${pad}" in
+		1) converted="${converted}=" ;;
+		2) converted="${converted}==" ;;
+		3) converted="${converted}===" ;;
+		esac
+	fi
+	local decoded
+	if decoded="$(printf '%s' "${converted}" | base64 --decode 2>/dev/null)"; then
+		printf '%s' "${decoded}"
+		return 0
+	fi
+	if decoded="$(printf '%s' "${converted}" | base64 -d 2>/dev/null)"; then
+		printf '%s' "${decoded}"
+		return 0
+	fi
+	if decoded="$(printf '%s' "${converted}" | base64 -D 2>/dev/null)"; then
+		printf '%s' "${decoded}"
+		return 0
+	fi
+	if command -v openssl >/dev/null 2>&1; then
+		if decoded="$(printf '%s' "${converted}" | openssl base64 -d -A 2>/dev/null)"; then
+			printf '%s' "${decoded}"
+			return 0
+		fi
+	fi
+	return 1
+}
+
 mcp_completion_manual_begin() {
 	MCP_COMPLETION_MANUAL_ACTIVE=true
 	MCP_COMPLETION_MANUAL_BUFFER=""
@@ -61,78 +154,92 @@ mcp_completion_register_manual() {
 
 mcp_completion_apply_manual_json() {
 	local manual_json="$1"
-	local py
-	py="$(mcp_tools_python)" || {
-		MCP_COMPLETION_MANUAL_REGISTRY_JSON=""
-		return 1
-	}
-	local registry_json
-	if ! registry_json="$(
-		INPUT="${manual_json}" ROOT="${MCPBASH_ROOT}" "${py}" <<'PY'
-import json, os, hashlib, time, pathlib
+	local tmp_file
+	tmp_file="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-completions-manual.XXXXXX")"
+	local seen_names=""
+	local error=""
 
-def normalize_entries(entries, root):
-    results = []
-    seen = set()
-    root_path = pathlib.Path(root).resolve()
-    for raw in entries:
-        data = json.loads(raw) if isinstance(raw, str) else raw
-        name = str(data.get("name") or "").strip()
-        if not name:
-            raise ValueError("Completion entry missing name")
-        if name in seen:
-            raise ValueError(f"Duplicate completion name {name!r} in manual registration")
-        seen.add(name)
-        path = str(data.get("path") or "").strip()
-        if not path:
-            raise ValueError(f"Completion {name!r} missing path")
-        candidate = pathlib.Path(path)
-        if candidate.is_absolute():
-            resolved = candidate.resolve()
-        else:
-            resolved = (root_path / candidate).resolve()
-        try:
-            rel = resolved.relative_to(root_path)
-        except ValueError:
-            raise ValueError(f"Completion path {path!r} must be inside server root")
-        if not resolved.is_file():
-            raise ValueError(f"Completion script {path!r} not found")
-        entry = {
-            "name": name,
-            "path": str(rel).replace("\\", "/")
-        }
-        timeout = data.get("timeoutSecs")
-        if timeout is not None:
-            try:
-                entry["timeoutSecs"] = int(timeout)
-            except Exception:
-                pass
-        entry["kind"] = "shell"
-        results.append(entry)
-    results.sort(key=lambda x: x["name"])
-    return results
-
-data = json.loads(os.environ.get("INPUT", "{}"))
-root = os.environ.get("ROOT", "")
-items = data.get("completions", [])
-if not isinstance(items, list):
-    items = []
-entries = normalize_entries(items, root)
-hash_source = json.dumps(entries, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
-hash_value = hashlib.sha256(hash_source.encode('utf-8')).hexdigest()
-registry = {
-    "version": 1,
-    "generatedAt": time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
-    "items": entries,
-    "hash": hash_value,
-    "total": len(entries)
-}
-print(json.dumps(registry, ensure_ascii=False, separators=(',', ':')))
-PY
-	)"; then
+	local completion_entries
+	if ! completion_entries="$(printf '%s' "${manual_json}" | jq -c '.completions // [] | .[]' 2>/dev/null)"; then
+		rm -f "${tmp_file}"
 		return 1
 	fi
-	MCP_COMPLETION_MANUAL_REGISTRY_JSON="${registry_json}"
+
+	while IFS= read -r entry || [ -n "${entry}" ]; do
+		[ -z "${entry}" ] && continue
+		local name path timeout rel_path
+		if ! name="$(printf '%s' "${entry}" | jq -r '.name // ""' 2>/dev/null)"; then
+			error="Completion entry missing name"
+			break
+		fi
+		name="${name//[[:space:]]/ }"
+		name="${name#"${name%%[![:space:]]*}"}"
+		name="${name%"${name##*[![:space:]]}"}"
+		if [ -z "${name}" ]; then
+			error="Completion entry missing name"
+			break
+		fi
+		if printf '%s\n' "${seen_names}" | grep -Fxq "${name}"; then
+			error="Duplicate completion name ${name}"
+			break
+		fi
+		if ! path="$(printf '%s' "${entry}" | jq -r '.path // ""' 2>/dev/null)"; then
+			error="Completion ${name} missing path"
+			break
+		fi
+		if ! rel_path="$(mcp_completion_resolve_script_path "${path}")"; then
+			error="Completion path ${path} invalid or outside server root"
+			break
+		fi
+		timeout="$(printf '%s' "${entry}" | jq -r '.timeoutSecs // ""' 2>/dev/null || printf '')"
+		local timeout_arg=""
+		if [ -n "${timeout}" ] && [[ "${timeout}" =~ ^-?[0-9]+$ ]]; then
+			timeout_arg="true"
+		else
+			timeout=""
+		fi
+		if ! jq -n \
+			--arg name "${name}" \
+			--arg path "${rel_path}" \
+			--arg timeout "${timeout}" \
+			--arg timeout_flag "${timeout_arg}" \
+			'{
+				name: $name,
+				path: $path,
+				kind: "shell"
+			}
+			+ (if $timeout_flag == "true" then {timeoutSecs: ($timeout|tonumber)} else {} end)' >>"${tmp_file}"; then
+			error="Unable to build completion entry"
+			break
+		fi
+		seen_names="${seen_names}
+${name}"
+	done <<<"${completion_entries}"
+
+	if [ -n "${error}" ]; then
+		rm -f "${tmp_file}"
+		mcp_logging_error "${MCP_COMPLETION_LOGGER}" "${error}"
+		return 1
+	fi
+
+	local items_json
+	items_json="$(jq -s 'sort_by(.name)' "${tmp_file}")" || {
+		rm -f "${tmp_file}"
+		return 1
+	}
+	rm -f "${tmp_file}"
+
+	local timestamp hash total
+	timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+	hash="$(mcp_completion_hash_string "${items_json}")"
+	total="$(printf '%s' "${items_json}" | jq 'length')"
+
+	MCP_COMPLETION_MANUAL_REGISTRY_JSON="$(jq -n \
+		--arg ts "${timestamp}" \
+		--arg hash "${hash}" \
+		--argjson items "${items_json}" \
+		--argjson total "${total}" \
+		'{version: 1, generatedAt: $ts, items: $items, hash: $hash, total: $total}')"
 	MCP_COMPLETION_MANUAL_LOADED=true
 	return 0
 }
@@ -141,26 +248,16 @@ mcp_completion_manual_finalize() {
 	if [ "${MCP_COMPLETION_MANUAL_ACTIVE}" != "true" ]; then
 		return 0
 	fi
-	local py
-	py="$(mcp_tools_python)" || {
-		mcp_completion_manual_abort
-		return 1
-	}
 	local manual_json
-	if ! manual_json="$(
-		ITEMS="${MCP_COMPLETION_MANUAL_BUFFER}" DELIM="${MCP_COMPLETION_MANUAL_DELIM}" "${py}" <<'PY'
-import json, os
-items = os.environ.get("ITEMS", "")
-delimiter = os.environ.get("DELIM", "\x1e")
-if delimiter:
-    raw_entries = [entry for entry in items.split(delimiter) if entry]
-else:
-    raw_entries = [items] if items else []
-print(json.dumps({"completions": [json.loads(entry) for entry in raw_entries]}, ensure_ascii=False, separators=(',', ':')))
-PY
-	)"; then
-		mcp_completion_manual_abort
-		return 1
+	if [ -z "${MCP_COMPLETION_MANUAL_BUFFER}" ]; then
+		manual_json='{"completions":[]}'
+	else
+		local manual_entries
+		manual_entries="$(printf '%s' "${MCP_COMPLETION_MANUAL_BUFFER}" | tr "${MCP_COMPLETION_MANUAL_DELIM}" '\n')"
+		if ! manual_json="$(printf '%s' "${manual_entries}" | jq -s '{completions: .}' 2>/dev/null)"; then
+			mcp_completion_manual_abort
+			return 1
+		fi
 	fi
 	if ! mcp_completion_apply_manual_json "${manual_json}"; then
 		mcp_completion_manual_abort
@@ -240,45 +337,22 @@ mcp_completion_lookup_manual() {
 	if [ -z "${MCP_COMPLETION_MANUAL_REGISTRY_JSON}" ]; then
 		return 1
 	fi
-	local py
-	py="$(mcp_tools_python)" || return 1
 	local entry
-	if ! entry="$(
-		REGISTRY="${MCP_COMPLETION_MANUAL_REGISTRY_JSON}" TARGET="${name}" "${py}" <<'PY'
-import json, os, sys
-registry = json.loads(os.environ.get("REGISTRY", "{}"))
-target = os.environ.get("TARGET")
-for item in registry.get("items", []):
-    if item.get("name") == target:
-        print(json.dumps(item, ensure_ascii=False, separators=(',', ':')))
-        sys.exit(0)
-sys.exit(1)
-PY
-	)"; then
+	if ! entry="$(printf '%s' "${MCP_COMPLETION_MANUAL_REGISTRY_JSON}" | jq -c --arg name "${name}" '.items[] | select(.name == $name)' | head -n 1)"; then
 		return 1
 	fi
+	[ -z "${entry}" ] && return 1
 	printf '%s' "${entry}"
 	return 0
 }
 
 mcp_completion_args_hash() {
 	local args_json="$1"
-	local py
-	py="$(mcp_tools_python)" || {
-		printf ''
-		return 1
-	}
-	printf '%s' "$(
-		ARGS="${args_json:-{}}" "${py}" <<'PY'
-import hashlib, json, os
-try:
-    data = json.loads(os.environ.get("ARGS", "{}"))
-except Exception:
-    data = {}
-payload = json.dumps(data, sort_keys=True, separators=(',', ':')).encode('utf-8')
-print(hashlib.sha256(payload).hexdigest())
-PY
-	)"
+	local normalized
+	if ! normalized="$(printf '%s' "${args_json:-{}}" | jq -S -c '.' 2>/dev/null)"; then
+		normalized="{}"
+	fi
+	mcp_completion_hash_string "${normalized}"
 }
 
 mcp_completion_encode_cursor() {
@@ -286,63 +360,50 @@ mcp_completion_encode_cursor() {
 	local args_hash="$2"
 	local offset="$3"
 	local script_key="$4"
-	local py
-	py="$(mcp_tools_python)" || {
-		printf ''
+	local offset_value="${offset:-0}"
+	case "${offset_value}" in
+	'' | *[!0-9]*) offset_value=0 ;;
+	esac
+	local payload
+	if ! payload="$(jq -n \
+		--arg name "${name}" \
+		--arg hash "${args_hash}" \
+		--argjson offset "${offset_value}" \
+		--arg script "${script_key}" \
+		'{ver: 1, kind: "completion", name: $name, args: $hash, offset: ($offset|tonumber), script: $script}')"; then
 		return 1
-	}
-	printf '%s' "$(
-		NAME="${name}" HASH="${args_hash}" OFFSET="${offset}" SCRIPT="${script_key}" "${py}" <<'PY'
-import base64, json, os
-cursor = {
-    "ver": 1,
-    "kind": "completion",
-    "name": os.environ.get("NAME", ""),
-    "args": os.environ.get("HASH", ""),
-    "offset": int(os.environ.get("OFFSET", "0") or 0),
-    "script": os.environ.get("SCRIPT", "")
-}
-payload = json.dumps(cursor, separators=(',', ':')).encode('utf-8')
-print(base64.urlsafe_b64encode(payload).decode('utf-8').rstrip('='))
-PY
-	)"
+	fi
+	printf '%s' "${payload}" | base64 | tr -d '\n' | mcp_completion_base64_urlencode
 }
 
 mcp_completion_decode_cursor() {
 	local cursor="$1"
 	local expected_name="$2"
 	local expected_hash="$3"
-	local py
-	py="$(mcp_tools_python)" || return 1
-	local decoded
-	if ! decoded="$(
-		CURSOR_VALUE="${cursor}" EXPECTED_NAME="${expected_name}" EXPECTED_HASH="${expected_hash}" "${py}" <<'PY'
-import base64, json, os, sys
-cursor_value = os.environ.get("CURSOR_VALUE", "")
-if not cursor_value:
-    sys.exit(1)
-padding = '=' * (-len(cursor_value) % 4)
-try:
-    data = json.loads(base64.urlsafe_b64decode(cursor_value + padding).decode('utf-8'))
-except Exception:
-    sys.exit(1)
-if data.get("ver") != 1 or data.get("name") != os.environ.get("EXPECTED_NAME"):
-    sys.exit(1)
-if data.get("args") != os.environ.get("EXPECTED_HASH"):
-    sys.exit(1)
-offset = data.get("offset")
-if not isinstance(offset, int) or offset < 0:
-    sys.exit(1)
-script = data.get("script") or ""
-print(f"{offset}|{script}")
-PY
-	)"; then
+	local decoded payload offset script hash name
+	if ! decoded="$(mcp_completion_base64_urldecode "${cursor}")"; then
 		return 1
 	fi
+	if ! payload="$(printf '%s' "${decoded}" | jq -c '.' 2>/dev/null)"; then
+		return 1
+	fi
+	name="$(printf '%s' "${payload}" | jq -r '.name // empty')" || return 1
+	hash="$(printf '%s' "${payload}" | jq -r '.args // empty')" || return 1
+	if [ -z "${name}" ] || [ "${name}" != "${expected_name}" ]; then
+		return 1
+	fi
+	if [ -n "${expected_hash}" ] && [ "${hash}" != "${expected_hash}" ]; then
+		return 1
+	fi
+	offset="$(printf '%s' "${payload}" | jq -r '.offset // 0')" || return 1
+	if ! [[ "${offset}" =~ ^[0-9]+$ ]]; then
+		return 1
+	fi
+	script="$(printf '%s' "${payload}" | jq -r '.script // ""')" || script=""
 	# shellcheck disable=SC2034
-	MCP_COMPLETION_CURSOR_OFFSET="${decoded%%|*}"
+	MCP_COMPLETION_CURSOR_OFFSET="${offset}"
 	# shellcheck disable=SC2034
-	MCP_COMPLETION_CURSOR_SCRIPT_KEY="${decoded#*|}"
+	MCP_COMPLETION_CURSOR_SCRIPT_KEY="${script}"
 	return 0
 }
 
@@ -366,15 +427,8 @@ mcp_completion_candidates_for_path() {
 
 mcp_completion_prompt_script() {
 	local metadata="$1"
-	local py
-	py="$(mcp_tools_python)" || return 1
 	local rel_path
-	if ! rel_path="$(
-		METADATA="${metadata}" "${py}" <<'PY'
-import json, os
-print(json.loads(os.environ.get("METADATA", "{}")).get("path") or "")
-PY
-	)"; then
+	if ! rel_path="$(printf '%s' "${metadata}" | jq -r '.path // ""' 2>/dev/null)"; then
 		return 1
 	fi
 	local candidate
@@ -390,15 +444,8 @@ PY
 
 mcp_completion_resource_script() {
 	local metadata="$1"
-	local py
-	py="$(mcp_tools_python)" || return 1
 	local rel_path
-	if ! rel_path="$(
-		METADATA="${metadata}" "${py}" <<'PY'
-import json, os
-print(json.loads(os.environ.get("METADATA", "{}")).get("path") or "")
-PY
-	)"; then
+	if ! rel_path="$(printf '%s' "${metadata}" | jq -r '.path // ""' 2>/dev/null)"; then
 		return 1
 	fi
 	local candidate
@@ -431,53 +478,23 @@ mcp_completion_select_provider() {
 	local entry metadata script_rel
 
 	if entry="$(mcp_completion_lookup_manual "${name}")"; then
-		local py
-		py="$(mcp_tools_python)" || return 1
-		if ! script_rel="$(
-			ENTRY="${entry}" "${py}" <<'PY'
-import json, os
-entry = json.loads(os.environ.get("ENTRY", "{}"))
-path = entry.get("path")
-if not path:
-    raise SystemExit(1)
-print(path)
-PY
-		)"; then
+		if ! script_rel="$(printf '%s' "${entry}" | jq -r '.path // ""' 2>/dev/null)"; then
 			return 1
 		fi
+		[ -z "${script_rel}" ] && return 1
 		MCP_COMPLETION_PROVIDER_TYPE="manual"
 		MCP_COMPLETION_PROVIDER_SCRIPT="${script_rel}"
 		MCP_COMPLETION_PROVIDER_SCRIPT_KEY="manual:${script_rel}"
-		MCP_COMPLETION_PROVIDER_TIMEOUT="$(
-			ENTRY="${entry}" "${py}" <<'PY'
-import json, os
-entry = json.loads(os.environ.get("ENTRY", "{}"))
-timeout = entry.get("timeoutSecs")
-if timeout is None:
-    print("")
-else:
-    try:
-        print(str(int(timeout)))
-    except Exception:
-        print("")
-PY
-		)"
+		MCP_COMPLETION_PROVIDER_TIMEOUT="$(printf '%s' "${entry}" | jq -r '.timeoutSecs // ""' 2>/dev/null)"
 		return 0
 	fi
 
 	if metadata="$(mcp_prompts_metadata_for_name "${name}")"; then
 		if script_rel="$(mcp_completion_prompt_script "${metadata}")"; then
-			local py
-			py="$(mcp_tools_python)" || return 1
 			MCP_COMPLETION_PROVIDER_TYPE="prompt"
 			MCP_COMPLETION_PROVIDER_METADATA="${metadata}"
 			MCP_COMPLETION_PROVIDER_SCRIPT="${script_rel}"
-			MCP_COMPLETION_PROVIDER_PROMPT_TEMPLATE="$(
-				METADATA="${metadata}" "${py}" <<'PY'
-import json, os
-print(json.loads(os.environ.get("METADATA", "{}")).get("path") or "")
-PY
-			)"
+			MCP_COMPLETION_PROVIDER_PROMPT_TEMPLATE="$(printf '%s' "${metadata}" | jq -r '.path // ""' 2>/dev/null)"
 			MCP_COMPLETION_PROVIDER_SCRIPT_KEY="prompt:${script_rel}"
 			return 0
 		fi
@@ -485,29 +502,12 @@ PY
 
 	if metadata="$(mcp_resources_metadata_for_name "${name}")"; then
 		if script_rel="$(mcp_completion_resource_script "${metadata}")"; then
-			local py
-			py="$(mcp_tools_python)" || return 1
 			MCP_COMPLETION_PROVIDER_TYPE="resource"
 			MCP_COMPLETION_PROVIDER_METADATA="${metadata}"
 			MCP_COMPLETION_PROVIDER_SCRIPT="${script_rel}"
-			MCP_COMPLETION_PROVIDER_RESOURCE_PATH="$(
-				METADATA="${metadata}" "${py}" <<'PY'
-import json, os
-print(json.loads(os.environ.get("METADATA", "{}")).get("path") or "")
-PY
-			)"
-			MCP_COMPLETION_PROVIDER_RESOURCE_URI="$(
-				METADATA="${metadata}" "${py}" <<'PY'
-import json, os
-print(json.loads(os.environ.get("METADATA", "{}")).get("uri") or "")
-PY
-			)"
-			MCP_COMPLETION_PROVIDER_RESOURCE_PROVIDER="$(
-				METADATA="${metadata}" "${py}" <<'PY'
-import json, os
-print(json.loads(os.environ.get("METADATA", "{}")).get("provider") or "")
-PY
-			)"
+			MCP_COMPLETION_PROVIDER_RESOURCE_PATH="$(printf '%s' "${metadata}" | jq -r '.path // ""' 2>/dev/null)"
+			MCP_COMPLETION_PROVIDER_RESOURCE_URI="$(printf '%s' "${metadata}" | jq -r '.uri // ""' 2>/dev/null)"
+			MCP_COMPLETION_PROVIDER_RESOURCE_PROVIDER="$(printf '%s' "${metadata}" | jq -r '.provider // ""' 2>/dev/null)"
 			MCP_COMPLETION_PROVIDER_SCRIPT_KEY="resource:${script_rel}"
 			return 0
 		fi
@@ -521,89 +521,87 @@ PY
 
 mcp_completion_normalize_output() {
 	local script_output="$1"
-	local limit="$2"
-	local start="$3"
-	local py
-	py="$(mcp_tools_python)" || return 1
+	local limit="${2:-5}"
+	local start="${3:-0}"
 	printf '%s' "$(
-		OUTPUT="${script_output}" LIMIT="${limit}" START="${start}" "${py}" <<'PY'
-import json, os
+		jq -n \
+			--arg raw "${script_output}" \
+			--argjson limit "${limit}" \
+			--argjson start "${start}" '
+				def parse($text):
+					if ($text | length) == 0 then null
+					else (try ($text | fromjson) catch null)
+					end;
+				def bool($value):
+					if ($value | type) == "boolean" then $value else false end;
+				def numeric_or_null($value):
+					try ($value | tonumber) catch null end;
 
-raw = os.environ.get("OUTPUT", "").strip()
-limit = int(os.environ.get("LIMIT", "5") or 5)
-start = int(os.environ.get("START", "0") or 0)
-
-suggestions = []
-has_more = False
-next_index = None
-cursor = None
-
-if raw:
-    parsed = json.loads(raw)
-    if isinstance(parsed, list):
-        suggestions = parsed
-    elif isinstance(parsed, dict):
-        suggestions = parsed.get("suggestions", [])
-        has_more = bool(parsed.get("hasMore"))
-        next_candidate = parsed.get("next")
-        if isinstance(next_candidate, int):
-            next_index = next_candidate
-        custom_cursor = parsed.get("cursor")
-        if isinstance(custom_cursor, str):
-            cursor = custom_cursor
-    else:
-        suggestions = []
-
-limited = suggestions[:limit]
-if len(suggestions) > limit:
-    has_more = True
-
-if next_index is None:
-    if has_more:
-        next_index = start + len(limited)
-    else:
-        next_index = None
-
-print(json.dumps({
-    "suggestions": limited,
-    "hasMore": has_more,
-    "next": next_index,
-    "cursor": cursor
-}, ensure_ascii=False, separators=(',', ':')))
-PY
+				(parse($raw)) as $payload
+				| if $payload == null then
+					{suggestions: [], hasMore: false, next: null, cursor: ""}
+				elif ($payload | type) == "array" then
+					{suggestions: $payload, hasMore: false, next: null, cursor: ""}
+				else
+					{
+						suggestions: ($payload.suggestions // []),
+						hasMore: bool($payload.hasMore),
+						next: $payload.next,
+						cursor: ($payload.cursor // "")
+					}
+				end
+				| .suggestions as $all
+				| ($all | length) as $total
+				| (.suggestions = $all[0:$limit])
+				| (.hasMore = (bool(.hasMore) or ($total > $limit)))
+				| (.next = (
+					if .next == null then
+						if .hasMore then ($start + (.suggestions | length)) else null end
+					else
+						numeric_or_null(.next)
+					end))
+				| (.cursor = (if (.cursor | type) == "string" then .cursor else "" end))
+			'
 	)"
 }
 
 mcp_completion_builtin_generate() {
 	local name="$1"
 	local args_json="$2"
-	local limit="$3"
-	local offset="$4"
-	local py
-	py="$(mcp_tools_python)" || return 1
+	local limit="${3:-5}"
+	local offset="${4:-0}"
+	local parsed_args
+	if ! parsed_args="$(printf '%s' "${args_json:-{}}" | jq -c '.' 2>/dev/null)"; then
+		parsed_args="{}"
+	fi
 	printf '%s' "$(
-		NAME="${name}" ARGS="${args_json}" LIMIT="${limit}" OFFSET="${offset}" "${py}" <<'PY'
-import json, os
+		jq -n \
+			--arg name "${name}" \
+			--argjson args "${parsed_args}" \
+			--argjson limit "${limit}" \
+			--argjson offset "${offset}" '
+				def trim($s):
+					$s | gsub("^[[:space:]]+";"") | gsub("[[:space:]]+$";"");
 
-name = os.environ.get("NAME", "")
-try:
-    args = json.loads(os.environ.get("ARGS", "{}"))
-except Exception:
-    args = {}
-limit = int(os.environ.get("LIMIT", "5") or 5)
-offset = int(os.environ.get("OFFSET", "0") or 0)
-query = (args.get("query") or args.get("prefix") or "").strip()
-base = query or name.strip() or "suggestion"
-candidates = [
-    {"type": "text", "text": base},
-    {"type": "text", "text": f"{base} snippet"},
-    {"type": "text", "text": f"{base} example"}
-]
-limited = candidates[offset:offset + limit]
-has_more = offset + limit < len(candidates)
-next_index = offset + len(limited) if has_more else None
-print(json.dumps({"suggestions": limited, "hasMore": has_more, "next": next_index}, ensure_ascii=False, separators=(',', ':')))
-PY
+				($args.query // $args.prefix // "") as $query
+				| (trim($query | tostring)) as $trimmed_query
+				| (trim($name | tostring)) as $trimmed_name
+				| ($trimmed_query | if . == "" then $trimmed_name else . end) as $base_candidate
+				| ($base_candidate | if . == "" then "suggestion" else . end) as $base
+				| [
+					{type: "text", text: $base},
+					{type: "text", text: ($base + " snippet")},
+					{type: "text", text: ($base + " example")}
+				] as $candidates
+				| ($candidates[$offset:$offset+$limit]) as $limited
+				| ($limited | length) as $count
+				| ($offset + $limit < ($candidates | length)) as $has_more
+				| {
+					suggestions: $limited,
+					hasMore: $has_more,
+					next: (if $has_more then $offset + $count else null end)
+				}
+			'
 	)"
 }
 
@@ -620,17 +618,11 @@ mcp_completion_run_provider() {
 	MCP_COMPLETION_PROVIDER_RESULT_CURSOR=""
 	MCP_COMPLETION_PROVIDER_RESULT_ERROR=""
 
-	local normalized py script_output stderr_output status abs_script
-
-	py="$(mcp_tools_python)" || {
-		MCP_COMPLETION_PROVIDER_RESULT_ERROR="Python interpreter required for completion handling"
-		return 1
-	}
+	local normalized script_output stderr_output status abs_script
 
 	case "${MCP_COMPLETION_PROVIDER_TYPE}" in
 	builtin)
 		if ! normalized="$(mcp_completion_builtin_generate "${name}" "${args_json}" "${limit}" "${offset}")"; then
-			# shellcheck disable=SC2034
 			MCP_COMPLETION_PROVIDER_RESULT_ERROR="Builtin completion generator failed"
 			return 1
 		fi
@@ -641,18 +633,12 @@ mcp_completion_run_provider() {
 			MCP_COMPLETION_PROVIDER_RESULT_ERROR="Completion script not defined"
 			return 1
 		fi
-		case "${MCP_COMPLETION_PROVIDER_TYPE}" in
-		manual | prompt | resource)
-			abs_script="${MCPBASH_ROOT}/${abs_script}"
-			;;
-		esac
+		abs_script="${MCPBASH_ROOT}/${abs_script}"
 		if [ ! -f "${abs_script}" ]; then
-			# shellcheck disable=SC2034
 			MCP_COMPLETION_PROVIDER_RESULT_ERROR="Completion script not found"
 			return 1
 		fi
 		if [ ! -x "${abs_script}" ]; then
-			# shellcheck disable=SC2034
 			MCP_COMPLETION_PROVIDER_RESULT_ERROR="Completion script not executable"
 			return 1
 		fi
@@ -668,7 +654,6 @@ mcp_completion_run_provider() {
 			fi
 			(
 				cd "${MCPBASH_ROOT}" || exit 1
-				# shellcheck disable=SC2030,SC2031
 				export \
 					MCP_COMPLETION_NAME="${name}" \
 					MCP_COMPLETION_ARGS_JSON="${args_json}" \
@@ -692,7 +677,6 @@ mcp_completion_run_provider() {
 			fi
 			(
 				cd "${MCPBASH_ROOT}" || exit 1
-				# shellcheck disable=SC2030,SC2031
 				export \
 					MCP_COMPLETION_NAME="${name}" \
 					MCP_COMPLETION_ARGS_JSON="${args_json}" \
@@ -713,7 +697,6 @@ mcp_completion_run_provider() {
 		else
 			(
 				cd "${MCPBASH_ROOT}" || exit 1
-				# shellcheck disable=SC2030,SC2031
 				export \
 					MCP_COMPLETION_NAME="${name}" \
 					MCP_COMPLETION_ARGS_JSON="${args_json}" \
@@ -732,12 +715,10 @@ mcp_completion_run_provider() {
 		stderr_output="$(cat "${tmp_err}" 2>/dev/null || true)"
 		rm -f "${tmp_out}" "${tmp_err}"
 		if [ "${status}" -ne 0 ]; then
-			# shellcheck disable=SC2034
 			MCP_COMPLETION_PROVIDER_RESULT_ERROR="${stderr_output:-Completion provider failed}"
 			return 1
 		fi
 		if ! normalized="$(mcp_completion_normalize_output "${script_output}" "${limit}" "${offset}")"; then
-			# shellcheck disable=SC2034
 			MCP_COMPLETION_PROVIDER_RESULT_ERROR="Completion provider emitted invalid JSON"
 			return 1
 		fi
@@ -749,59 +730,24 @@ mcp_completion_run_provider() {
 	esac
 
 	local suggestions_json has_more_flag next_index cursor_value
-	if ! suggestions_json="$(
-		NORMALIZED="${normalized}" "${py}" <<'PY'
-import json, os
-data = json.loads(os.environ.get("NORMALIZED", "{}"))
-print(json.dumps(data.get("suggestions", []), ensure_ascii=False, separators=(',', ':')))
-PY
-	)"; then
-		# shellcheck disable=SC2034
+	if ! suggestions_json="$(printf '%s' "${normalized}" | jq -c '.suggestions // []' 2>/dev/null)"; then
 		MCP_COMPLETION_PROVIDER_RESULT_ERROR="Unable to parse completion suggestions"
 		return 1
 	fi
-	if ! has_more_flag="$(
-		NORMALIZED="${normalized}" "${py}" <<'PY'
-import json, os
-data = json.loads(os.environ.get("NORMALIZED", "{}"))
-print("true" if data.get("hasMore") else "false")
-PY
-	)"; then
-		# shellcheck disable=SC2034
+	if ! has_more_flag="$(printf '%s' "${normalized}" | jq -r '.hasMore // false' 2>/dev/null)"; then
 		MCP_COMPLETION_PROVIDER_RESULT_ERROR="Unable to parse completion hasMore flag"
 		return 1
 	fi
-	if ! next_index="$(
-		NORMALIZED="${normalized}" "${py}" <<'PY'
-import json, os
-data = json.loads(os.environ.get("NORMALIZED", "{}"))
-value = data.get("next")
-if value is None:
-    print("")
-else:
-    print(str(int(value)))
-PY
-	)"; then
+	if ! next_index="$(printf '%s' "${normalized}" | jq -r '.next // ""' 2>/dev/null)"; then
 		next_index=""
 	fi
-	if ! cursor_value="$(
-		NORMALIZED="${normalized}" "${py}" <<'PY'
-import json, os
-data = json.loads(os.environ.get("NORMALIZED", "{}"))
-cursor = data.get("cursor")
-print(cursor if isinstance(cursor, str) else "")
-PY
-	)"; then
+	if ! cursor_value="$(printf '%s' "${normalized}" | jq -r '.cursor // ""' 2>/dev/null)"; then
 		cursor_value=""
 	fi
 
-	# shellcheck disable=SC2034
 	MCP_COMPLETION_PROVIDER_RESULT_SUGGESTIONS="${suggestions_json}"
-	# shellcheck disable=SC2034
 	MCP_COMPLETION_PROVIDER_RESULT_HAS_MORE="${has_more_flag}"
-	# shellcheck disable=SC2034
 	MCP_COMPLETION_PROVIDER_RESULT_NEXT="${next_index}"
-	# shellcheck disable=SC2034
 	MCP_COMPLETION_PROVIDER_RESULT_CURSOR="${cursor_value}"
 	return 0
 }
@@ -813,92 +759,59 @@ mcp_completion_reset() {
 }
 
 mcp_completion_suggestions_count() {
-	local py
-	if ! py="$(mcp_tools_python 2>/dev/null)"; then
-		printf '0'
-		return 0
+	local count
+	if ! count="$(printf '%s' "${mcp_completion_suggestions}" | jq 'length' 2>/dev/null)"; then
+		count=0
 	fi
-	printf '%s' "$(
-		SUGGESTIONS="${mcp_completion_suggestions}" "${py}" <<'PY'
-import json, os
-try:
-    print(len(json.loads(os.environ.get("SUGGESTIONS", "[]"))))
-except Exception:
-    print(0)
-PY
-	)"
+	printf '%s' "${count}"
 }
 
 mcp_completion_add_text() {
 	local text="$1"
-	local py
 	local count
 	count="$(mcp_completion_suggestions_count)"
 	if [ "${count}" -ge 100 ]; then
 		mcp_completion_has_more=true
 		return 1
 	fi
-	if ! py="$(mcp_tools_python 2>/dev/null)"; then
+	if ! mcp_completion_suggestions="$(printf '%s' "${mcp_completion_suggestions}" | jq -c --arg text "${text}" '. + [{type: "text", text: $text}]' 2>/dev/null)"; then
 		mcp_completion_suggestions="[]"
 		return 1
 	fi
-	mcp_completion_suggestions="$(
-		SUGGESTIONS="${mcp_completion_suggestions}" TEXT="${text}" "${py}" <<'PY'
-import json, os
-suggestions = json.loads(os.environ.get("SUGGESTIONS", "[]"))
-text = os.environ.get("TEXT", "")
-suggestions.append({"type": "text", "text": text})
-print(json.dumps(suggestions, ensure_ascii=False, separators=(',', ':')))
-PY
-	)"
 	return 0
 }
 
 mcp_completion_add_json() {
 	local json_payload="$1"
-	local py
 	local count
 	count="$(mcp_completion_suggestions_count)"
 	if [ "${count}" -ge 100 ]; then
 		mcp_completion_has_more=true
 		return 1
 	fi
-	if ! py="$(mcp_tools_python 2>/dev/null)"; then
+	if ! mcp_completion_suggestions="$(printf '%s' "${mcp_completion_suggestions}" | jq -c --argjson payload "${json_payload:-{}}" '. + [$payload]' 2>/dev/null)"; then
 		mcp_completion_suggestions="[]"
 		return 1
 	fi
-	mcp_completion_suggestions="$(
-		SUGGESTIONS="${mcp_completion_suggestions}" PAYLOAD="${json_payload}" "${py}" <<'PY'
-import json, os
-suggestions = json.loads(os.environ.get("SUGGESTIONS", "[]"))
-payload = json.loads(os.environ.get("PAYLOAD", "{}"))
-suggestions.append(payload)
-print(json.dumps(suggestions, ensure_ascii=False, separators=(',', ':')))
-PY
-	)"
 	return 0
 }
 
 mcp_completion_finalize() {
-	local py
-	if ! py="$(mcp_tools_python 2>/dev/null)"; then
-		printf '{"suggestions":[],"hasMore":false}'
-		return 0
-	fi
 	local has_more_json="false"
 	if [ "${mcp_completion_has_more}" = true ]; then
 		has_more_json="true"
 	fi
+	local cursor="${mcp_completion_cursor}"
 	printf '%s' "$(
-		SUGGESTIONS="${mcp_completion_suggestions}" HAS_MORE="${has_more_json}" CURSOR="${mcp_completion_cursor}" "${py}" <<'PY'
-import json, os
-suggestions = json.loads(os.environ.get("SUGGESTIONS", "[]"))
-has_more = os.environ.get("HAS_MORE", "false") == "true"
-cursor = os.environ.get("CURSOR", "")
-result = {"suggestions": suggestions, "hasMore": has_more}
-if cursor:
-    result["cursor"] = cursor
-print(json.dumps(result, ensure_ascii=False, separators=(',', ':')))
-PY
+		jq -n \
+			--argjson suggestions "${mcp_completion_suggestions}" \
+			--argjson has_more "${has_more_json}" \
+			--arg cursor "${cursor}" '
+				{
+					suggestions: $suggestions,
+					hasMore: ($has_more == true)
+				}
+				+ (if $cursor != "" then {cursor: $cursor} else {} end)
+			'
 	)"
 }

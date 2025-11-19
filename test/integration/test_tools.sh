@@ -41,7 +41,7 @@ chmod -x "${AUTO_ROOT}/server.d/register.sh"
 mkdir -p "${AUTO_ROOT}/tools"
 cp -a "${MCPBASH_ROOT}/examples/00-hello-tool/tools/." "${AUTO_ROOT}/tools/"
 
-cat <<'METADATA' >"${AUTO_ROOT}/tools/world.meta.yaml"
+cat <<'METADATA' >"${AUTO_ROOT}/tools/world.meta.json"
 {
   "name": "world",
   "description": "Structured world tool",
@@ -74,44 +74,27 @@ JSON
 
 run_server "${AUTO_ROOT}" "${AUTO_ROOT}/requests.ndjson" "${AUTO_ROOT}/responses.ndjson"
 
-python3 - "${AUTO_ROOT}/responses.ndjson" <<'PY'
-import json, sys
+list_resp="$(grep '"id":"auto-list"' "${AUTO_ROOT}/responses.ndjson" | head -n1)"
+total="$(echo "$list_resp" | jq '.result.total // 0')"
+next_cursor="$(echo "$list_resp" | jq -r '.result.nextCursor // empty')"
 
-path = sys.argv[1]
-messages = []
-with open(path, "r", encoding="utf-8") as handle:
-    for line in handle:
-        line = line.strip()
-        if not line:
-            continue
-        messages.append(json.loads(line))
+if [ "$total" -lt 2 ]; then
+	test_fail "expected at least two tools discovered"
+fi
+if [ -z "$next_cursor" ]; then
+	test_fail "expected nextCursor for pagination"
+fi
 
-def by_id(message_id):
-    for msg in messages:
-        if msg.get("id") == message_id:
-            return msg
-    raise SystemExit(f"missing response {message_id}")
+call_resp="$(grep '"id":"auto-call"' "${AUTO_ROOT}/responses.ndjson" | head -n1)"
+message="$(echo "$call_resp" | jq -r '.result.structuredContent.message // empty')"
+text="$(echo "$call_resp" | jq -r '.result.content[] | select(.type=="text") | .text' | head -n1)"
+exit_code="$(echo "$call_resp" | jq -r '.result._meta.exitCode // empty')"
 
-list_resp = by_id("auto-list")
-result = list_resp.get("result") or {}
-items = result.get("items") or []
-if result.get("total") < 2:
-    raise SystemExit("expected at least two tools discovered")
-if "nextCursor" not in result:
-    raise SystemExit("expected nextCursor for pagination")
-
-call_resp = by_id("auto-call")
-call_result = call_resp.get("result") or {}
-structured = call_result.get("structuredContent")
-if not structured or structured.get("message") != "world":
-    raise SystemExit("tool structuredContent missing expected payload")
-texts = [entry.get("text") for entry in call_result.get("content", []) if entry.get("type") == "text"]
-if not texts or "world" not in texts[0]:
-    raise SystemExit("tool text fallback missing expected output")
-meta = call_result.get("_meta", {})
-if meta.get("exitCode") != 0:
-    raise SystemExit("tool exitCode should be 0")
-PY
+test_assert_eq "$message" "world"
+if [[ "$text" != *"world"* ]]; then
+	test_fail "tool text fallback missing expected output"
+fi
+test_assert_eq "$exit_code" "0"
 
 # --- Manual registration overrides ---
 MANUAL_ROOT="${TEST_TMPDIR}/manual"
@@ -166,43 +149,25 @@ JSON
 
 run_server "${MANUAL_ROOT}" "${MANUAL_ROOT}/requests.ndjson" "${MANUAL_ROOT}/responses.ndjson"
 
-python3 - "${MANUAL_ROOT}/responses.ndjson" <<'PY'
-import json, sys
+list_resp="$(grep '"id":"manual-list"' "${MANUAL_ROOT}/responses.ndjson" | head -n1)"
+total="$(echo "$list_resp" | jq '.result.total // 0')"
+next_cursor="$(echo "$list_resp" | jq -r '.result.nextCursor // empty')"
+names="$(echo "$list_resp" | jq -r '.result.items[].name')"
 
-path = sys.argv[1]
-messages = []
-with open(path, "r", encoding="utf-8") as handle:
-    for line in handle:
-        line = line.strip()
-        if not line:
-            continue
-        messages.append(json.loads(line))
+test_assert_eq "$total" "2"
+if [ -z "$next_cursor" ]; then
+	test_fail "manual registry should provide nextCursor for pagination"
+fi
+if [[ "$names" != *"manual-alpha"* ]]; then
+	test_fail "manual-alpha missing from manual registry"
+fi
+if [[ "$names" == *"hello"* ]]; then
+	test_fail "auto-discovered tools should not appear when manual registry is active"
+fi
 
-def by_id(message_id):
-    for msg in messages:
-        if msg.get("id") == message_id:
-            return msg
-    raise SystemExit(f"missing response {message_id}")
+call_resp="$(grep '"id":"manual-call"' "${MANUAL_ROOT}/responses.ndjson" | head -n1)"
+alpha="$(echo "$call_resp" | jq -r '.result.structuredContent.alpha // empty')"
+exit_code="$(echo "$call_resp" | jq -r '.result._meta.exitCode // empty')"
 
-list_resp = by_id("manual-list")
-result = list_resp.get("result") or {}
-items = result.get("items") or []
-if result.get("total") != 2:
-    raise SystemExit("manual registry should expose exactly two tools")
-if "nextCursor" not in result:
-    raise SystemExit("manual registry should provide nextCursor for pagination")
-names = {item.get("name") for item in items}
-if "manual-alpha" not in names:
-    raise SystemExit("manual-alpha missing from manual registry")
-if any(name == "hello" for name in names):
-    raise SystemExit("auto-discovered tools should not appear when manual registry is active")
-
-call_resp = by_id("manual-call")
-call_result = call_resp.get("result") or {}
-structured = call_result.get("structuredContent")
-if not structured or structured.get("alpha") != "one":
-    raise SystemExit("manual tool structuredContent missing")
-meta = call_result.get("_meta", {})
-if meta.get("exitCode") != 0:
-    raise SystemExit("manual tool exitCode should be 0")
-PY
+test_assert_eq "$alpha" "one"
+test_assert_eq "$exit_code" "0"

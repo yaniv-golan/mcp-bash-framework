@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Manual registration script; invoked when executable (Spec §9 manual overrides).
+# Manual registration script; invoked when executable (manual overrides).
 
 set -euo pipefail
 
-# Use mcp_register_tool/resource/prompt helpers (Spec §9 Manual Overrides).
+# Use mcp_register_tool/resource/prompt helpers (manual overrides).
 # Example:
 # mcp_register_tool '{
 #   "name": "manual-hello",

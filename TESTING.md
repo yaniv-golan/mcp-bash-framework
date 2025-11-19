@@ -1,7 +1,7 @@
 # Testing Guide
 
 ## Linting
-Run shell lint/format checks:
+Run shell lint/format checks (requires `shellcheck` and `shfmt` on PATH):
 ```
 find . -name '*.sh' -print0 | xargs -0 shellcheck
 shfmt -d -i 2 -ci $(find . -name '*.sh')

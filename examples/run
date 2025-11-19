@@ -32,5 +32,8 @@ cp -a "${SCRIPT_DIR}/../tools" "${TMPDIR}/" 2>/dev/null || true
 cp -a "${SCRIPT_DIR}/../prompts" "${TMPDIR}/" 2>/dev/null || true
 cp -a "${EXAMPLE_DIR}/"* "${TMPDIR}/" 2>/dev/null || true
 
+# Debug: List tools dir
+ls -la "${TMPDIR}/tools" >&2
+
 cd "${TMPDIR}" || exit 1
 exec "${TMPDIR}/bin/mcp-bash"

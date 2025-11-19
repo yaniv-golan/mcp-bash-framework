@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
-# Spec §18.2: orchestrate unit-layer scripts with TAP-style status output.
+# Orchestrate unit-layer scripts with TAP-style status output.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-mapfile -t UNIT_TESTS < <(find "${SCRIPT_DIR}" -maxdepth 1 -type f -name '*.sh' ! -name 'run.sh' -print | sort)
+UNIT_TESTS=()
+while IFS= read -r path; do
+	UNIT_TESTS+=("${path}")
+done < <(find "${SCRIPT_DIR}" -maxdepth 1 -type f -name '*.bats' -print | sort)
 
 if [ "${#UNIT_TESTS[@]}" -eq 0 ]; then
 	printf '%s\n' "No unit tests discovered under ${SCRIPT_DIR}" >&2

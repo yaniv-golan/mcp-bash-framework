@@ -1,19 +1,11 @@
 #!/usr/bin/env bash
-# Spec §8 prompts handler implementation.
+# Prompts handler implementation.
 
 set -euo pipefail
 
 mcp_prompts_quote() {
 	local text="$1"
-	local py
-	if py="$(mcp_prompts_python 2>/dev/null)"; then
-		TEXT="${text}" "${py}" <<'PY'
-import json, os
-print(json.dumps(os.environ.get("TEXT", "")))
-PY
-	else
-		printf '"%s"' "$(printf '%s' "${text}" | sed 's/\\/\\\\/g; s/"/\\"/g')"
-	fi
+	mcp_json_quote_text "${text}"
 }
 
 mcp_handle_prompts() {

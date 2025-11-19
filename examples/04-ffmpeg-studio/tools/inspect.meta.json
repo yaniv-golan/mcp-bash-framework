@@ -1,0 +1,16 @@
+{
+  "name": "inspect_media",
+  "description": "Inspects a media file to retrieve metadata (codec, duration, resolution) using ffprobe.",
+  "arguments": {
+    "type": "object",
+    "properties": {
+      "path": {
+        "type": "string",
+        "description": "The relative path to the media file within the media directory."
+      }
+    },
+    "required": ["path"]
+  }
+}
+
+

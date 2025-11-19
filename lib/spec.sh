@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Spec §7: capability negotiation helpers.
+# Capability negotiation helpers.
 
 set -euo pipefail
 
 mcp_spec_supported_protocols() {
-	# Spec §7: default protocol 2025-06-18 with explicit back-compat for 2025-03-26.
+	# Default protocol 2025-06-18 with explicit back-compat for 2025-03-26.
 	printf '%s' "2025-06-18 2025-03-26"
 }
 
@@ -34,7 +34,7 @@ EOF
 }
 
 mcp_spec_capabilities_backport_20250326() {
-	# Spec §7: older protocol maintains core surface but omits listChanged flags added in 2025-06-18.
+	# Older protocol maintains core surface but omits listChanged flags added in 2025-06-18.
 	cat <<'EOF'
 {"logging":{},"tools":{},"resources":{"subscribe":true},"prompts":{},"completion":{}}
 EOF

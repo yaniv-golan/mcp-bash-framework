@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Spec §13: logging level management and stream processing.
+# Logging level management and stream processing.
 
 set -euo pipefail
 
@@ -39,29 +39,9 @@ mcp_logging_is_enabled() {
 	return 0
 }
 
-mcp_logging_python() {
-	if command -v python3 >/dev/null 2>&1; then
-		printf 'python3'
-		return 0
-	fi
-	if command -v python >/dev/null 2>&1; then
-		printf 'python'
-		return 0
-	fi
-	return 1
-}
-
 mcp_logging_quote() {
 	local text="$1"
-	local py
-	if py="$(mcp_logging_python 2>/dev/null)"; then
-		TEXT="${text}" "${py}" <<'PY'
-import json, os
-print(json.dumps(os.environ.get("TEXT", "")))
-PY
-		return 0
-	fi
-	printf '"%s"' "$(printf '%s' "${text}" | sed 's/\\/\\\\/g; s/"/\\"/g')"
+	mcp_json_quote_text "${text}"
 }
 
 mcp_logging_emit() {

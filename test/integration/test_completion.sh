@@ -24,26 +24,15 @@ if ! grep -q '"id":"2"' "${TMP}/responses.ndjson"; then
 	test_fail "completion/complete response missing"
 fi
 
-python3 - "${TMP}/responses.ndjson" <<'PY'
-import json, sys
-path = sys.argv[1]
-with open(path, 'r', encoding='utf-8') as fh:
-    responses = [json.loads(line) for line in fh if line.strip()]
-resp = next((item for item in responses if item.get('id') == '2'), None)
-if resp is None:
-    raise SystemExit("completion response missing")
-result = resp.get('result')
-if not result:
-    raise SystemExit("missing result field")
-suggestions = result.get('suggestions', [])
-if len(suggestions) != 1:
-    raise SystemExit(f"expected 1 suggestion, got {len(suggestions)}")
-item = suggestions[0]
-if item.get('type') != 'text':
-    raise SystemExit(f"unexpected suggestion type: {item}")
-text = item.get('text', '')
-if 'plan roadmap' not in text:
-    raise SystemExit(f"suggestion text mismatch: {text!r}")
-if not result.get('hasMore'):
-    raise SystemExit("hasMore should be true when limit truncates")
-PY
+resp_json="$(grep '"id":"2"' "${TMP}/responses.ndjson" | head -n1)"
+suggestions_len="$(echo "$resp_json" | jq '.result.suggestions | length')"
+suggestion_type="$(echo "$resp_json" | jq -r '.result.suggestions[0].type')"
+suggestion_text="$(echo "$resp_json" | jq -r '.result.suggestions[0].text')"
+has_more="$(echo "$resp_json" | jq '.result.hasMore')"
+
+test_assert_eq "$suggestions_len" "1"
+test_assert_eq "$suggestion_type" "text"
+if [[ "$suggestion_text" != *"plan roadmap"* ]]; then
+	test_fail "suggestion text mismatch: $suggestion_text"
+fi
+test_assert_eq "$has_more" "true"

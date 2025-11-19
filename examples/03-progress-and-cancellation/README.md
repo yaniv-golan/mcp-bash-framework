@@ -21,4 +21,4 @@ Watch for `notifications/progress` and the tool’s final cancellation outcome.
 
 ## Tips
 - Remove the cancellation request to see the tool finish and respond with text.
-- Adjust `timeoutSecs` in `slow.meta.yaml` to exercise watchdog behaviour.
+- Adjust `timeoutSecs` in `slow.meta.json` to exercise watchdog behaviour.

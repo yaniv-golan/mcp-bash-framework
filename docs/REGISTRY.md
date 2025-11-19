@@ -1,8 +1,6 @@
 # Registry JSON Contracts
 
-> Specification alignment: [Internal Spec §9 “Auto-Discovery Pipeline”, item 2](internal/mcp-bash-technical-spec.md#9-auto-discovery-pipeline).
->
-> The registries are generated automatically at runtime and cached under `registry/*.json` to accelerate pagination and reactive notifications. Each registry shares a common envelope and differs only in the shape of the `items` array.
+The registries are generated automatically at runtime and cached under `registry/*.json` to accelerate pagination and reactive notifications. Each registry shares a common envelope and differs only in the shape of the `items` array.
 
 ## Common Envelope
 
@@ -24,7 +22,7 @@ All registries adhere to the same top-level structure:
 - `hash`: SHA-256 hash of the canonicalised `items` array; changed hashes trigger `notifications/*/list_changed`.
 - `total`: Count of `items`.
 
-Guardrails (Spec §9 item 7) are enforced for all registries:
+Guardrails are enforced for all registries:
 
 - When `total > 500`, the server logs a warning suggesting manual registration.
 - If the serialised registry exceeds `MCPBASH_REGISTRY_MAX_BYTES` (default 100 MB), the scan aborts with `-32603`.
@@ -61,8 +59,8 @@ Each entry describes an executable tool.
 }
 ```
 
-Metadata precedence (Spec §9 item 1):
-1. `<tool>.meta.yaml`
+Metadata precedence order:
+1. `<tool>.meta.json`
 2. Inline `# mcp:` annotations (JSON payload)
 3. Defaults (empty `arguments`, no `outputSchema`)
 
@@ -96,8 +94,8 @@ Entries describe resource templates and providers.
 }
 ```
 
-- Metadata that cannot be parsed (missing `uri`, unsupported `provider`, non-object `arguments`, unreadable `.meta.yaml`) is skipped and logged as a warning through the structured logging subsystem, per Spec §16 “Metadata errors”.
-- When no `provider` is specified, the scanner infers one from the URI scheme (`file://`, `git://`, `https://`); unrecognised schemes default to `file` and are rejected if the provider script is unavailable (Spec §§8–9).
+- Metadata that cannot be parsed (missing `uri`, unsupported `provider`, non-object `arguments`, unreadable `.meta.json`) is skipped and logged as a warning through the structured logging subsystem.
+- When no `provider` is specified, the scanner infers one from the URI scheme (`file://`, `git://`, `https://`); unrecognised schemes default to `file` and are rejected if the provider script is unavailable.
 
 ## `registry/prompts.json`
 
@@ -128,13 +126,13 @@ Entries reference prompt templates and metadata.
 }
 ```
 
-- Malformed prompt metadata (e.g., unreadable `.meta.yaml`, non-object `arguments`, unsupported `metadata` fields) is skipped and surfaced via structured warnings through the logging subsystem, per Spec §16.
+- Malformed prompt metadata (e.g., unreadable `.meta.json`, non-object `arguments`, unsupported `metadata` fields) is skipped and surfaced via structured warnings through the logging subsystem.
 - Optional `role` and `metadata` properties discovered during scanning are preserved for downstream rendering.
 
 ## TTL and Regeneration
 
-- TTL defaults to five seconds (`MCP_TOOLS_TTL`, etc.) as noted in Spec §9 item 6.
+- TTL defaults to five seconds (`MCP_TOOLS_TTL`, etc.).
 - Registry files refresh when TTL expires or when hashes change; manual overrides (`server.d/register.sh`) can replace the auto-discovery results entirely.
 - Cached files are ignored if their size exceeds the configured limit or if JSON parsing fails, forcing a rescan on next access.
 
-Refer to the primary specification for additional discovery rules (depth limits, hidden directory exclusion, manual registration hooks).
+Additional discovery rules (depth limits, hidden directory exclusion, manual registration hooks) live with the discovery scripts and comments inside this repository.

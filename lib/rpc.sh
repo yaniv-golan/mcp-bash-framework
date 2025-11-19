@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Spec §4: ensure single-line JSON emission with stdout discipline.
+# Ensure single-line JSON emission with stdout discipline.
 
 set -euo pipefail
 

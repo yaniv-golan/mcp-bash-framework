@@ -1,7 +1,16 @@
 #!/usr/bin/env bash
-# Helpers for staging temporary workspaces.
+# Helpers for staging temporary workspaces (fixtures).
 
 set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+
+# shellcheck source=test/common/env.sh
+# shellcheck disable=SC1091
+. "${REPO_ROOT}/test/common/env.sh"
+# shellcheck source=test/common/assert.sh
+# shellcheck disable=SC1091
+. "${REPO_ROOT}/test/common/assert.sh"
 
 test_stage_example() {
 	local example_id="$1"

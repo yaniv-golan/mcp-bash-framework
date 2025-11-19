@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Spec §3/§8 lifecycle handler: initialize/initialized/shutdown workflow.
+# Lifecycle handler: initialize/initialized/shutdown workflow.
 
 set -euo pipefail
 
@@ -30,7 +30,7 @@ mcp_handle_lifecycle() {
 		MCPBASH_NEGOTIATED_PROTOCOL_VERSION="${negotiated_version}"
 
 		if [ -n "${requested_version}" ] && [ "${requested_version}" != "${negotiated_version}" ]; then
-			printf '%s\n' "Degraded protocol to ${negotiated_version} per client request (Spec §7)." >&2
+			printf '%s\n' "Degraded protocol to ${negotiated_version} per client request." >&2
 		fi
 
 		local capabilities

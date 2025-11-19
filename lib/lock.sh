@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Spec §5/§12: portable lock-dir primitives for stdout serialization and state coordination.
+# Portable lock-dir primitives for stdout serialization and state coordination.
 
 set -euo pipefail
 
@@ -22,12 +22,17 @@ mcp_lock_acquire() {
 	local path
 	path="$(mcp_lock_path "${name}")"
 
-	while ! mkdir "${path}" 2>/dev/null; do
-		mcp_lock_try_reap "${path}"
-		sleep "${MCPBASH_LOCK_POLL_INTERVAL}"
+	while :; do
+		if mkdir "${path}" 2>/dev/null; then
+			if printf '%s' "${BASHPID:-$$}" >"${path}/pid" 2>/dev/null; then
+				break
+			fi
+			rm -rf "${path}" 2>/dev/null || true
+		else
+			mcp_lock_try_reap "${path}"
+			sleep "${MCPBASH_LOCK_POLL_INTERVAL}"
+		fi
 	done
-
-	printf '%s' "${BASHPID:-$$}" >"${path}/pid"
 }
 
 mcp_lock_release() {
@@ -42,7 +47,12 @@ mcp_lock_release() {
 mcp_lock_try_reap() {
 	local path="$1"
 	local owner
+	local current
+	if [ ! -d "${path}" ]; then
+		return
+	fi
 	if [ ! -f "${path}/pid" ]; then
+		rm -rf "${path}"
 		return
 	fi
 
@@ -52,7 +62,14 @@ mcp_lock_try_reap() {
 		return
 	fi
 
-	if ! kill -0 "${owner}" 2>/dev/null; then
-		rm -rf "${path}"
+	if kill -0 "${owner}" 2>/dev/null; then
+		return
 	fi
+
+	current="$(cat "${path}/pid" 2>/dev/null || true)"
+	if [ "${current}" != "${owner}" ]; then
+		return
+	fi
+
+	rm -rf "${path}"
 }

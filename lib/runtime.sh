@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Spec §2 (Target Runtime Environment): JSON tooling detection, minimal-mode controls, and compatibility flags.
+# Target Runtime Environment: JSON tooling detection, minimal-mode controls, and compatibility flags.
 
 # shellcheck disable=SC2034
 MCPBASH_JSON_TOOL=""
@@ -29,7 +29,7 @@ mcp_runtime_init_paths() {
 	fi
 
 	if [ -z "${MCPBASH_STATE_SEED}" ]; then
-		MCPBASH_STATE_SEED="${RANDOM}" # Spec §5: STATE_SEED initialized once per boot.
+		MCPBASH_STATE_SEED="${RANDOM}" # STATE_SEED initialized once per boot.
 	fi
 
 	if [ -z "${MCPBASH_STATE_DIR}" ]; then
@@ -67,21 +67,38 @@ mcp_runtime_cleanup() {
 	mcp_io_log_corruption_summary
 
 	if [ -n "${MCPBASH_STATE_DIR}" ] && [ -d "${MCPBASH_STATE_DIR}" ]; then
-		rm -rf "${MCPBASH_STATE_DIR}"
+		mcp_runtime_safe_rmrf "${MCPBASH_STATE_DIR}"
 	fi
 
 	if [ -n "${MCPBASH_LOCK_ROOT}" ] && [ -d "${MCPBASH_LOCK_ROOT}" ]; then
-		rm -rf "${MCPBASH_LOCK_ROOT}"
+		mcp_runtime_safe_rmrf "${MCPBASH_LOCK_ROOT}"
 	fi
 }
 
+mcp_runtime_safe_rmrf() {
+	local target="$1"
+	if [ -z "${target}" ] || [ "${target}" = "/" ]; then
+		printf '%s\n' "mcp-bash: refusing to remove unsafe path '${target:-/}'" >&2
+		return 1
+	fi
+	case "${target}" in
+		"${MCPBASH_TMP_ROOT}"/mcpbash.state.* | "${MCPBASH_TMP_ROOT}"/mcpbash.locks*)
+			rm -rf "${target}"
+			;;
+		*)
+			printf '%s\n' "mcp-bash: refusing to remove '${target}' outside TMP root" >&2
+			return 1
+			;;
+	esac
+}
+
 mcp_runtime_detect_json_tool() {
-	# Spec §2: detection order is gojq → jq → python interpreter.
+	# JSON tool detection: detection order is gojq → jq.
 	if mcp_runtime_force_minimal_mode_requested; then
 		MCPBASH_MODE="minimal"
 		MCPBASH_JSON_TOOL="none"
 		MCPBASH_JSON_TOOL_BIN=""
-		printf '%s\n' 'Minimal mode forced via MCPBASH_FORCE_MINIMAL=true; JSON tooling disabled (Spec §2).' >&2
+		printf '%s\n' 'Minimal mode forced via MCPBASH_FORCE_MINIMAL=true; JSON tooling disabled.' >&2
 		return 0
 	fi
 
@@ -92,7 +109,7 @@ mcp_runtime_detect_json_tool() {
 		MCPBASH_JSON_TOOL="gojq"
 		MCPBASH_JSON_TOOL_BIN="${candidate}"
 		MCPBASH_MODE="full"
-		printf '%s\n' "Detected gojq at ${candidate}; full protocol surface enabled (Spec §2)." >&2
+		printf '%s\n' "Detected gojq at ${candidate}; full protocol surface enabled." >&2
 		return 0
 	fi
 
@@ -101,16 +118,7 @@ mcp_runtime_detect_json_tool() {
 		MCPBASH_JSON_TOOL="jq"
 		MCPBASH_JSON_TOOL_BIN="${candidate}"
 		MCPBASH_MODE="full"
-		printf '%s\n' "Detected jq at ${candidate}; full protocol surface enabled (Spec §2)." >&2
-		return 0
-	fi
-
-	candidate="$(mcp_runtime_locate_python)"
-	if [ -n "${candidate}" ]; then
-		MCPBASH_JSON_TOOL="python"
-		MCPBASH_JSON_TOOL_BIN="${candidate}"
-		MCPBASH_MODE="full"
-		printf '%s\n' "Detected Python JSON fallback via ${candidate}; degraded ergonomics but full protocol surface (Spec §2)." >&2
+		printf '%s\n' "Detected jq at ${candidate}; full protocol surface enabled." >&2
 		return 0
 	fi
 
@@ -119,20 +127,8 @@ mcp_runtime_detect_json_tool() {
 	# shellcheck disable=SC2034
 	MCPBASH_JSON_TOOL_BIN=""
 	MCPBASH_MODE="minimal"
-	printf '%s\n' 'No gojq/jq/Python found; entering minimal mode with reduced capabilities (Spec §2 minimal-mode table).' >&2
+	printf '%s\n' 'No gojq/jq found; entering minimal mode with reduced capabilities.' >&2
 	return 0
-}
-
-mcp_runtime_locate_python() {
-	# Spec §2: opportunistic python fallback via system python/python3.
-	local binary=""
-	for binary in python3 python; do
-		if command -v "${binary}" >/dev/null 2>&1; then
-			printf '%s' "$(command -v "${binary}")"
-			return 0
-		fi
-	done
-	printf ''
 }
 
 mcp_runtime_force_minimal_mode_requested() {
@@ -140,13 +136,13 @@ mcp_runtime_force_minimal_mode_requested() {
 }
 
 mcp_runtime_batches_enabled() {
-	# Spec §2 Legacy batch compatibility toggle.
+	# Legacy batch compatibility toggle.
 	[ "${MCPBASH_COMPAT_BATCHES:-false}" = "true" ]
 }
 
 mcp_runtime_log_batch_mode() {
 	if mcp_runtime_batches_enabled; then
-		printf '%s\n' 'Legacy batch compatibility enabled (MCPBASH_COMPAT_BATCHES=true); requests framed as arrays will be processed as independent items (Spec §2).' >&2
+		printf '%s\n' 'Legacy batch compatibility enabled (MCPBASH_COMPAT_BATCHES=true); requests framed as arrays will be processed as independent items.' >&2
 	fi
 }
 
@@ -155,7 +151,7 @@ mcp_runtime_is_minimal_mode() {
 }
 
 mcp_runtime_enable_job_control() {
-	# Spec §5: enable job-control fallback so background workers receive dedicated process groups.
+	# Enable job-control fallback so background workers receive dedicated process groups.
 	if [ "${MCPBASH_JOB_CONTROL_ENABLED}" = "true" ]; then
 		return 0
 	fi
@@ -165,31 +161,9 @@ mcp_runtime_enable_job_control() {
 }
 
 mcp_runtime_set_process_group() {
-	# Spec §5: isolate worker processes so cancellation and timeouts can target entire trees.
+	# Isolate worker processes so cancellation and timeouts can target entire trees.
 	local pid="$1"
 	[ -n "${pid}" ] || return 1
-
-	if command -v python3 >/dev/null 2>&1; then
-		python3 - "$pid" <<'PY' >/dev/null 2>&1 && return 0
-import os, sys
-pid = int(sys.argv[1])
-try:
-    os.setpgid(pid, pid)
-except Exception:
-    pass
-PY
-	fi
-
-	if command -v python >/dev/null 2>&1; then
-		python - "$pid" <<'PY' >/dev/null 2>&1 && return 0
-import os, sys
-pid = int(sys.argv[1])
-try:
-    os.setpgid(pid, pid)
-except Exception:
-    pass
-PY
-	fi
 
 	if command -v perl >/dev/null 2>&1; then
 		perl -MPOSIX -e "POSIX::setpgid($pid,$pid)" >/dev/null 2>&1 && return 0
@@ -206,7 +180,7 @@ PY
 
 	if [ "${MCPBASH_PROCESS_GROUP_WARNED}" != "true" ]; then
 		MCPBASH_PROCESS_GROUP_WARNED="true"
-		printf '%s\n' 'mcp-bash: unable to assign dedicated process groups; cancellation may be less effective (Spec §5).' >&2
+		printf '%s\n' 'mcp-bash: unable to assign dedicated process groups; cancellation may be less effective.' >&2
 	fi
 	return 1
 }
@@ -215,32 +189,6 @@ mcp_runtime_lookup_pgid() {
 	local pid="$1"
 	local pgid=""
 	[ -n "${pid}" ] || return 1
-
-	if command -v python3 >/dev/null 2>&1; then
-		pgid="$(
-			python3 - "$pid" <<'PY'
-import os, sys
-pid = int(sys.argv[1])
-try:
-    print(os.getpgid(pid))
-except Exception:
-    pass
-PY
-		)"
-	fi
-
-	if [ -z "${pgid}" ] && command -v python >/dev/null 2>&1; then
-		pgid="$(
-			python - "$pid" <<'PY'
-import os, sys
-pid = int(sys.argv[1])
-try:
-    print(os.getpgid(pid))
-except Exception:
-    pass
-PY
-		)"
-	fi
 
 	if [ -z "${pgid}" ] && command -v perl >/dev/null 2>&1; then
 		pgid="$(perl -MPOSIX -e "print POSIX::getpgid($pid)" 2>/dev/null)"
@@ -262,7 +210,7 @@ PY
 }
 
 mcp_runtime_signal_group() {
-	# Send signals to a process group when available (Spec §5/§6 escalations).
+	# Send signals to a process group when available.
 	local pgid="$1"
 	local signal="$2"
 	local fallback_pid="$3"

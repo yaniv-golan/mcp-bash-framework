@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Spec §8/§12 default file provider.
+# Default file provider.
 
 set -euo pipefail
 
@@ -19,27 +19,13 @@ fi
 
 normalize_path() {
 	local target="$1"
-	if command -v python3 >/dev/null 2>&1; then
-		python3 - "$target" <<'PY'
-import os, sys
-print(os.path.realpath(sys.argv[1]))
-PY
-		return
-	fi
-	if command -v python >/dev/null 2>&1; then
-		python - "$target" <<'PY'
-import os, sys
-print(os.path.realpath(sys.argv[1]))
-PY
-		return
-	fi
 	if command -v realpath >/dev/null 2>&1; then
 		realpath "${target}"
 		return
 	fi
 	(
 		cd "$(dirname "${target}")" 2>/dev/null || exit 1
-		printf '%s/%s\n' "$(pwd)" "$(basename "${target}")"
+		printf '%s/%s\n' "$(pwd -P)" "$(basename "${target}")"
 	)
 }
 

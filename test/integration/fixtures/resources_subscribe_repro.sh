@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Spec §8 resources handler & §18.1 fixture guidance: minimal subscribe handshake reproducer.
+# Resources handler & fixture guidance: minimal subscribe handshake reproducer.
 
 set -euo pipefail
 
@@ -33,76 +33,88 @@ cat <<EOF >"${WORKSPACE}/resources/live.txt"
 original
 EOF
 
-cat <<EOF >"${WORKSPACE}/resources/live.meta.yaml"
+cat <<EOF >"${WORKSPACE}/resources/live.meta.json"
 {"name": "file.live", "description": "Live file", "uri": "file://${WORKSPACE}/resources/live.txt", "mimeType": "text/plain"}
 EOF
 
 printf 'Repro workspace: %s\n' "${WORKSPACE}"
 printf 'Enable payload logging via MCPBASH_DEBUG_PAYLOADS=true for stdout traces.\n'
 
-python3 <<'PY'
-import json
-import os
-import subprocess
-import sys
-import time
-
-workspace = os.environ["WORKSPACE"]
-env = os.environ.copy()
-proc = subprocess.Popen(
-    ["./bin/mcp-bash"],
-    cwd=workspace,
-    stdin=subprocess.PIPE,
-    stdout=subprocess.PIPE,
-    stderr=subprocess.PIPE,
-    text=True,
-    env=env,
+(
+	cd "${WORKSPACE}" || exit 1
+	
+	# Start server
+	coproc SERVER { ./bin/mcp-bash; }
+	
+	# Capture PID
+	SERVER_PID="${SERVER_PID}"
+	
+	send() {
+		local payload="$1"
+		printf '%s\n' "${payload}" >&"${SERVER[1]}"
+		printf '>> %s\n' "${payload}"
+	}
+	
+	read_response() {
+		local line
+		if read -r -u "${SERVER[0]}" line; then
+			printf '<< %s\n' "${line}"
+			printf '%s' "${line}"
+		else
+			return 1
+		fi
+	}
+	
+	wait_for() {
+		local match_key="$1"
+		local match_val="$2"
+		local timeout="${3:-5}"
+		local end_time=$(( $(date +%s) + timeout ))
+		
+		while [ "$(date +%s)" -lt "${end_time}" ]; do
+			local response
+			if ! response="$(read_response)"; then
+				return 1
+			fi
+			if [ -z "${response}" ]; then continue; fi
+			
+			local val
+			val="$(printf '%s' "${response}" | jq -r ".${match_key} // empty")"
+			if [ "${val}" = "${match_val}" ]; then
+				return 0
+			fi
+		done
+		return 1
+	}
+	
+	send '{"jsonrpc": "2.0", "id": "init", "method": "initialize", "params": {}}'
+	wait_for "id" "init" || { printf 'Init timeout\n' >&2; exit 1; }
+	
+	send '{"jsonrpc": "2.0", "method": "notifications/initialized"}'
+	
+	send '{"jsonrpc": "2.0", "id": "sub", "method": "resources/subscribe", "params": {"name": "file.live"}}'
+	wait_for "id" "sub" || { printf 'Subscribe timeout\n' >&2; exit 1; }
+	
+	# Expect update notification
+	end_time=$(( $(date +%s) + 5 ))
+	seen_update=false
+	while [ "$(date +%s)" -lt "${end_time}" ]; do
+		response="$(read_response)" || break
+		if [ -z "${response}" ]; then continue; fi
+		
+		method="$(printf '%s' "${response}" | jq -r '.method // empty')"
+		if [ "${method}" = "notifications/resources/updated" ]; then
+			seen_update=true
+			break
+		fi
+	done
+	
+	if [ "${seen_update}" != "true" ]; then
+		printf 'Missing update notification\n' >&2
+		kill "${SERVER_PID}" 2>/dev/null || true
+		exit 1
+	fi
+	
+	kill "${SERVER_PID}" 2>/dev/null || true
+	wait "${SERVER_PID}" 2>/dev/null || true
 )
-
-def send(obj):
-    line = json.dumps(obj, separators=(",", ":")) + "\n"
-    proc.stdin.write(line)
-    proc.stdin.flush()
-    print(">>", line.strip())
-
-def recv(deadline):
-    while True:
-        if time.time() > deadline:
-            raise SystemExit("timeout waiting for server output")
-        line = proc.stdout.readline()
-        if not line:
-            raise SystemExit("server exited unexpectedly")
-        line = line.strip()
-        if not line:
-            continue
-        print("<<", line)
-        return json.loads(line)
-
-send({"jsonrpc": "2.0", "id": "init", "method": "initialize", "params": {}})
-deadline = time.time() + 5
-while True:
-    msg = recv(deadline)
-    if msg.get("id") == "init":
-        break
-
-send({"jsonrpc": "2.0", "method": "notifications/initialized"})
-send({"jsonrpc": "2.0", "id": "sub", "method": "resources/subscribe", "params": {"name": "file.live"}})
-deadline = time.time() + 5
-while True:
-    msg = recv(deadline)
-    if msg.get("id") == "sub":
-        break
-
-recv(time.time() + 5)
-
-proc.stdin.close()
-try:
-    proc.wait(timeout=2)
-except subprocess.TimeoutExpired:
-    proc.kill()
-    proc.wait()
-
-if proc.returncode not in (0, None):
-    sys.stderr.write(f"mcp-bash exited with {proc.returncode}\n")
-    sys.stderr.write(proc.stderr.read())
-PY

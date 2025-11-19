@@ -2,7 +2,7 @@
 
 ## Prerequisites
 - Bash 3.2+
-- Optional: jq/gojq for richer JSON tooling (falls back to python/stdout)
+- Optional: jq/gojq for richer JSON tooling
 
 ## Run
 ```
@@ -23,4 +23,4 @@ printf '{"jsonrpc":"2.0","id":"1","method":"initialize","params":{}}\n{"jsonrpc"
 
 ## Troubleshooting
 - Ensure the example directory is executable: `chmod +x examples/run`.
-- If you see minimal-mode warnings, install `jq` or `python3`.
+- If you see minimal-mode warnings, install `jq`.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Spec §5: stdout serialization, UTF-8 validation, and cancellation-aware emission.
+# Stdout serialization, UTF-8 validation, and cancellation-aware emission.
 
 set -euo pipefail
 
@@ -41,6 +41,20 @@ mcp_io_log_corruption_summary() {
 	threshold="${MCPBASH_CORRUPTION_THRESHOLD:-3}"
 	printf '%s\n' "mcp-bash corruption summary: ${count} event(s) recorded within the last ${window}s (threshold ${threshold}, allow override ${MCPBASH_ALLOW_CORRUPT_STDOUT})." >&2
 	return 0
+}
+
+mcp_io_read_file_exact() {
+	local path="$1"
+	local marker=$'\037MCPBASH_EOF\037'
+	local data
+	if [ -z "${path}" ] || [ ! -f "${path}" ]; then
+		printf '%s' ''
+		return 0
+	fi
+	if ! data="$(cat "${path}" 2>/dev/null; printf '%s' "${marker}")"; then
+		return 1
+	fi
+	printf '%s' "${data%"${marker}"}"
 }
 
 mcp_io_handle_corruption() {
@@ -97,7 +111,7 @@ mcp_io_handle_corruption() {
 	fi
 
 	if [ $((count + 1)) -ge "${threshold}" ]; then
-		printf '%s\n' 'mcp-bash: exiting due to repeated stdout corruption (Spec §16).' >&2
+		printf '%s\n' 'mcp-bash: exiting due to repeated stdout corruption.' >&2
 		exit 2
 	fi
 
@@ -218,7 +232,7 @@ mcp_io_write_payload() {
 	esac
 
 	if ! mcp_io_validate_utf8 "${normalized}"; then
-		printf '%s\n' 'mcp-bash: dropping non-UTF8 payload to preserve stdout contract (Spec §5).' >&2
+		printf '%s\n' 'mcp-bash: dropping non-UTF8 payload to preserve stdout contract.' >&2
 		mcp_io_handle_corruption "invalid UTF-8" "${key}" "${category}" "${normalized}"
 		return 1
 	fi

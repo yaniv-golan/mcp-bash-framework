@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Spec §5: request id encoding, pid registry, and cancellation markers.
+# Request id encoding, pid registry, and cancellation markers.
 
 set -euo pipefail
 
@@ -53,8 +53,8 @@ mcp_ids_sha256() {
 	elif command -v openssl >/dev/null 2>&1; then
 		printf '%s' "${raw}" | openssl dgst -sha256 | awk '{print $NF}'
 	else
-		# Fallback: simple POSIX checksum (less collision resistant but better than nothing)
-		printf '%s' "${raw}" | cksum | awk '{print $1}'
+		# Fallback: include checksum and length to lessen collisions.
+		printf '%s' "${raw}" | cksum | awk '{printf "%s-%s", $1, $2}'
 	fi
 }
 

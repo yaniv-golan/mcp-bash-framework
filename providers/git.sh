@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Spec §9 resource provider: fetch files from git:// repositories.
+# Resource provider: fetch files from git:// repositories.
 
 set -euo pipefail
 

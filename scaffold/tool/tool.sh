@@ -2,27 +2,17 @@
 set -euo pipefail
 
 if [ -z "${MCP_SDK:-}" ] || [ ! -f "${MCP_SDK}/tool-sdk.sh" ]; then
-	printf 'mcp: SDK helpers not found (expected $MCP_SDK/tool-sdk.sh)\\n' >&2
+	printf 'mcp: SDK helpers not found (expected %s/tool-sdk.sh)\n' "${MCP_SDK:-<unset>}" >&2
 	exit 1
 fi
 
-# shellcheck source=../../sdk/tool-sdk.sh
+# shellcheck source=../../sdk/tool-sdk.sh disable=SC1091
 . "${MCP_SDK}/tool-sdk.sh"
 
 json_escape() {
 	local value="$1"
-	if command -v python3 >/dev/null 2>&1; then
-		python3 - "$value" <<'PY' 2>/dev/null
-import json, sys
-print(json.dumps(sys.argv[1]))
-PY
-		return 0
-	fi
-	if command -v python >/dev/null 2>&1; then
-		python - "$value" <<'PY' 2>/dev/null
-import json, sys
-print(json.dumps(sys.argv[1]))
-PY
+	if command -v jq >/dev/null 2>&1; then
+		jq -n --arg val "$value" '$val'
 		return 0
 	fi
 	local escaped="${value//\\/\\\\}"
@@ -33,14 +23,6 @@ PY
 }
 
 name="$(mcp_args_get '.name // empty' 2>/dev/null || true)"
-if [ -z "${name}" ]; then
-	raw="$(mcp_args_raw)"
-	if command -v python3 >/dev/null 2>&1; then
-		name="$(printf '%s' "${raw}" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("name",""))' 2>/dev/null || true)"
-	elif command -v python >/dev/null 2>&1; then
-		name="$(printf '%s' "${raw}" | python -c 'import json,sys; print(json.load(sys.stdin).get("name",""))' 2>/dev/null || true)"
-	fi
-fi
 if [ -z "${name}" ]; then
 	name="there"
 fi

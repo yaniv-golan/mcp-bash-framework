@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Spec §8/§9 prompts discovery and rendering.
+# Prompt discovery and rendering.
 
 set -euo pipefail
 
@@ -20,21 +20,6 @@ MCP_PROMPTS_MANUAL_ACTIVE=false
 MCP_PROMPTS_MANUAL_BUFFER=""
 MCP_PROMPTS_MANUAL_DELIM=$'\036'
 
-mcp_prompts_log_python_warnings() {
-	local warn_file="$1"
-	if [ ! -f "${warn_file}" ]; then
-		return 0
-	fi
-	if [ ! -s "${warn_file}" ]; then
-		rm -f "${warn_file}"
-		return 0
-	fi
-	while IFS= read -r warn_line || [ -n "${warn_line}" ]; do
-		[ -n "${warn_line}" ] || continue
-		mcp_logging_warning "${MCP_PROMPTS_LOGGER}" "${warn_line}"
-	done <"${warn_file}"
-	rm -f "${warn_file}"
-}
 
 mcp_prompts_manual_begin() {
 	MCP_PROMPTS_MANUAL_ACTIVE=true
@@ -62,111 +47,73 @@ mcp_prompts_register_manual() {
 	return 0
 }
 
+mcp_prompts_hash_string() {
+	local value="$1"
+	if command -v sha256sum >/dev/null 2>&1; then
+		printf '%s' "${value}" | sha256sum | awk '{print $1}'
+		return 0
+	fi
+	if command -v shasum >/dev/null 2>&1; then
+		printf '%s' "${value}" | shasum -a 256 | awk '{print $1}'
+		return 0
+	fi
+	printf '%s' "${value}" | cksum | awk '{print $1}'
+}
+
 mcp_prompts_manual_finalize() {
 	if [ "${MCP_PROMPTS_MANUAL_ACTIVE}" != "true" ]; then
 		return 0
 	fi
-	local py
-	py="$(mcp_prompts_python)" || {
-		mcp_prompts_manual_abort
-		mcp_prompts_error -32603 "Manual registration requires python"
-		return 1
-	}
 
-	local registry_json
-	if ! registry_json="$(
-		ITEMS="${MCP_PROMPTS_MANUAL_BUFFER}" ROOT="${MCPBASH_ROOT}" DELIM="${MCP_PROMPTS_MANUAL_DELIM}" "${py}" <<'PY'
-import json, os, hashlib, time, pathlib
+	local manual_entries
+	if [ -n "${MCP_PROMPTS_MANUAL_BUFFER}" ]; then
+		manual_entries="$(printf '%s' "${MCP_PROMPTS_MANUAL_BUFFER}" | tr "${MCP_PROMPTS_MANUAL_DELIM}" '\n')"
+	else
+		manual_entries=""
+	fi
 
-def normalize_path(entry_path, root):
-    if not entry_path:
-        raise ValueError("Prompt entry missing path")
-    root_path = pathlib.Path(root).resolve()
-    candidate = pathlib.Path(entry_path)
-    if candidate.is_absolute():
-        resolved = candidate.resolve()
-    else:
-        resolved = (root_path / candidate).resolve()
-    try:
-        rel = resolved.relative_to(root_path)
-    except ValueError:
-        raise ValueError(f"Prompt path {entry_path!r} must be inside server root")
-    return str(rel).replace("\\", "/")
-
-buffer = os.environ.get("ITEMS", "")
-delimiter = os.environ.get("DELIM", "\x1e")
-root = os.environ.get("ROOT", "")
-if delimiter:
-    raw_entries = [entry for entry in buffer.split(delimiter) if entry]
-else:
-    raw_entries = [buffer] if buffer else []
-items = []
-seen = set()
-for raw in raw_entries:
-    data = json.loads(raw)
-    name = str(data.get("name") or "").strip()
-    if not name:
-        raise ValueError("Prompt entry missing name")
-    if name in seen:
-        raise ValueError(f"Duplicate prompt name {name!r} in manual registration")
-    seen.add(name)
-    description = str(data.get("description") or "")
-    path = normalize_path(str(data.get("path") or ""), root)
-    arguments = data.get("arguments")
-    if not isinstance(arguments, dict):
-        arguments = {"type": "object", "properties": {}}
-    role = data.get("role")
-    if role is not None:
-        role = str(role)
-    metadata = data.get("metadata")
-    if metadata is not None and not isinstance(metadata, dict):
-        metadata = None
-    entry = dict(data)
-    entry["name"] = name
-    entry["description"] = description
-    entry["path"] = path
-    entry["arguments"] = arguments
-    if role is not None:
-        entry["role"] = role
-    if metadata is not None:
-        entry["metadata"] = metadata
-    items.append(entry)
-
-items.sort(key=lambda x: x.get("name", ""))
-
-hash_source = json.dumps(items, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
-hash_value = hashlib.sha256(hash_source.encode('utf-8')).hexdigest()
-registry = {
-    "version": 1,
-    "generatedAt": time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
-    "items": items,
-    "hash": hash_value,
-    "total": len(items)
-}
-print(json.dumps(registry, ensure_ascii=False, separators=(',', ':')))
-PY
-	)"; then
+	local items_json
+	if ! items_json="$(printf '%s' "${manual_entries}" | jq -s '
+		map(select(.name and .path)) |
+		unique_by(.name) |
+		map({
+			name: .name,
+			description: (.description // ""),
+			path: .path,
+			arguments: (.arguments // {type: "object", properties: {}}),
+			role: (.role // null),
+			metadata: (.metadata // null)
+		}) |
+		sort_by(.name)
+	')"; then
 		mcp_prompts_manual_abort
 		mcp_prompts_error -32603 "Manual registration parsing failed"
 		return 1
 	fi
 
-	local previous_hash="${MCP_PROMPTS_REGISTRY_HASH}"
-	MCP_PROMPTS_REGISTRY_JSON="${registry_json}"
-	MCP_PROMPTS_REGISTRY_HASH="$(
-		REGISTRY_JSON="${registry_json}" "${py}" <<'PY'
-import json, os
-print(json.loads(os.environ.get("REGISTRY_JSON", "{}")).get('hash', ''))
-PY
-	)"
-	MCP_PROMPTS_TOTAL="$(
-		REGISTRY_JSON="${registry_json}" "${py}" <<'PY'
-import json, os
-print(json.loads(os.environ.get("REGISTRY_JSON", "{}")).get('total', 0))
-PY
-	)"
+	local hash
+	hash="$(mcp_prompts_hash_string "${items_json}")"
+	local total
+	total="$(printf '%s' "${items_json}" | jq 'length')"
 
-	if ! mcp_prompts_enforce_registry_limits "${MCP_PROMPTS_TOTAL}" "${registry_json}"; then
+	MCP_PROMPTS_REGISTRY_JSON="$(jq -n \
+		--arg hash "${hash}" \
+		--argjson items "${items_json}" \
+		--argjson total "${total}" \
+		'{
+			version: 1,
+			generatedAt: (now | todate),
+			items: $items,
+			total: $total,
+			hash: $hash
+		}
+	')"
+
+	local previous_hash="${MCP_PROMPTS_REGISTRY_HASH}"
+	MCP_PROMPTS_REGISTRY_HASH="${hash}"
+	MCP_PROMPTS_TOTAL="${total}"
+
+	if ! mcp_prompts_enforce_registry_limits "${MCP_PROMPTS_TOTAL}" "${MCP_PROMPTS_REGISTRY_JSON}"; then
 		mcp_prompts_manual_abort
 		return 1
 	fi
@@ -175,7 +122,7 @@ PY
 	if [ "${previous_hash}" != "${MCP_PROMPTS_REGISTRY_HASH}" ]; then
 		MCP_PROMPTS_CHANGED=true
 	fi
-	printf '%s' "${registry_json}" >"${MCP_PROMPTS_REGISTRY_PATH}"
+	printf '%s' "${MCP_PROMPTS_REGISTRY_JSON}" >"${MCP_PROMPTS_REGISTRY_PATH}"
 	MCP_PROMPTS_MANUAL_ACTIVE=false
 	MCP_PROMPTS_MANUAL_BUFFER=""
 	return 0
@@ -259,17 +206,6 @@ mcp_prompts_error() {
 	MCP_PROMPTS_ERR_MESSAGE="$2"
 }
 
-mcp_prompts_python() {
-	if command -v python3 >/dev/null 2>&1; then
-		printf 'python3'
-		return 0
-	fi
-	if command -v python >/dev/null 2>&1; then
-		printf 'python'
-		return 0
-	fi
-	return 1
-}
 
 mcp_prompts_init() {
 	if [ -z "${MCP_PROMPTS_REGISTRY_PATH}" ]; then
@@ -281,56 +217,41 @@ mcp_prompts_init() {
 
 mcp_prompts_apply_manual_json() {
 	local manual_json="$1"
-	local py
-	py="$(mcp_prompts_python)" || {
-		MCP_PROMPTS_ERR_CODE=-32603
-		MCP_PROMPTS_ERR_MESSAGE="Manual registration requires python"
+	local items_json
+	if ! items_json="$(printf '%s' "${manual_json}" | jq -c '.prompts // []')"; then
 		return 1
-	}
+	fi
+
+	local hash
+	hash="$(mcp_prompts_hash_string "${items_json}")"
+	local total
+	total="$(printf '%s' "${items_json}" | jq 'length')"
+
 	local registry_json
-	if ! registry_json="$(
-		INPUT="${manual_json}" "${py}" <<'PY'
-import json, os, hashlib, time
-manual = json.loads(os.environ.get("INPUT", "{}"))
-prompts = manual.get("prompts", [])
-if not isinstance(prompts, list):
-    prompts = []
-now = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
-hash_source = json.dumps(prompts, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
-hash_value = hashlib.sha256(hash_source.encode('utf-8')).hexdigest()
-registry = {
-    "version": 1,
-    "generatedAt": now,
-    "items": prompts,
-    "hash": hash_value,
-    "total": len(prompts)
-}
-print(json.dumps(registry, ensure_ascii=False, separators=(',', ':')))
-PY
-	)"; then
+	registry_json="$(jq -n \
+		--arg hash "${hash}" \
+		--argjson items "${items_json}" \
+		--argjson total "${total}" \
+		'{
+			version: 1,
+			generatedAt: (now | todate),
+			items: $items,
+			total: $total,
+			hash: $hash
+		}
+	')"
+
+	if ! mcp_prompts_enforce_registry_limits "${total}" "${registry_json}"; then
 		return 1
 	fi
-	local new_hash
-	new_hash="$(
-		REGISTRY_JSON="${registry_json}" "${py}" <<'PY'
-import json, os
-print(json.loads(os.environ.get("REGISTRY_JSON", "{}")).get('hash', ''))
-PY
-	)"
-	if [ "${new_hash}" != "${MCP_PROMPTS_REGISTRY_HASH}" ]; then
-		MCP_PROMPTS_CHANGED=true
-	fi
+
+	local previous_hash="${MCP_PROMPTS_REGISTRY_HASH}"
 	MCP_PROMPTS_REGISTRY_JSON="${registry_json}"
-	MCP_PROMPTS_REGISTRY_HASH="${new_hash}"
-	# shellcheck disable=SC2034
-	MCP_PROMPTS_TOTAL="$(
-		REGISTRY_JSON="${registry_json}" "${py}" <<'PY'
-import json, os
-print(json.loads(os.environ.get("REGISTRY_JSON", "{}")).get('total', 0))
-PY
-	)"
-	if ! mcp_prompts_enforce_registry_limits "${MCP_PROMPTS_TOTAL}" "${registry_json}"; then
-		return 1
+	MCP_PROMPTS_REGISTRY_HASH="${hash}"
+	MCP_PROMPTS_TOTAL="${total}"
+
+	if [ "${previous_hash}" != "${MCP_PROMPTS_REGISTRY_HASH}" ]; then
+		MCP_PROMPTS_CHANGED=true
 	fi
 	MCP_PROMPTS_LAST_SCAN="$(date +%s)"
 	printf '%s' "${registry_json}" >"${MCP_PROMPTS_REGISTRY_PATH}"
@@ -347,26 +268,17 @@ mcp_prompts_refresh_registry() {
 	fi
 	local now
 	now="$(date +%s)"
-	local py
-	py="$(mcp_prompts_python 2>/dev/null)" || true
+
 	if [ -z "${MCP_PROMPTS_REGISTRY_JSON}" ] && [ -f "${MCP_PROMPTS_REGISTRY_PATH}" ]; then
 		MCP_PROMPTS_REGISTRY_JSON="$(cat "${MCP_PROMPTS_REGISTRY_PATH}")"
-		if [ -n "${py}" ]; then
-			MCP_PROMPTS_REGISTRY_HASH="$(
-				REGISTRY_JSON="${MCP_PROMPTS_REGISTRY_JSON}" "${py}" <<'PY'
-import json, os
-print(json.loads(os.environ.get("REGISTRY_JSON", "{}")).get('hash', ''))
-PY
-			)"
-			MCP_PROMPTS_TOTAL="$(
-				REGISTRY_JSON="${MCP_PROMPTS_REGISTRY_JSON}" "${py}" <<'PY'
-import json, os
-print(json.loads(os.environ.get("REGISTRY_JSON", "{}")).get('total', 0))
-PY
-			)"
+		if echo "${MCP_PROMPTS_REGISTRY_JSON}" | jq . >/dev/null 2>&1; then
+			MCP_PROMPTS_REGISTRY_HASH="$(echo "${MCP_PROMPTS_REGISTRY_JSON}" | jq -r '.hash // empty')"
+			MCP_PROMPTS_TOTAL="$(echo "${MCP_PROMPTS_REGISTRY_JSON}" | jq '.total // 0')"
 			if ! mcp_prompts_enforce_registry_limits "${MCP_PROMPTS_TOTAL}" "${MCP_PROMPTS_REGISTRY_JSON}"; then
 				return 1
 			fi
+		else
+			MCP_PROMPTS_REGISTRY_JSON=""
 		fi
 	fi
 	if [ -n "${MCP_PROMPTS_REGISTRY_JSON}" ] && [ $((now - MCP_PROMPTS_LAST_SCAN)) -lt "${MCP_PROMPTS_TTL}" ]; then
@@ -381,138 +293,85 @@ PY
 }
 
 mcp_prompts_scan() {
-	local py
-	py="$(mcp_prompts_python)" || {
-		MCP_PROMPTS_REGISTRY_JSON='{"version":1,"generatedAt":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","items":[],"hash":"","total":0}'
-		MCP_PROMPTS_REGISTRY_HASH=""
-		MCP_PROMPTS_TOTAL=0
-		printf '%s' "${MCP_PROMPTS_REGISTRY_JSON}" >"${MCP_PROMPTS_REGISTRY_PATH}"
-		return 0
-	}
+	local prompts_dir="${MCPBASH_ROOT}/prompts"
+	local items_file
+	items_file="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-prompts-items.XXXXXX")"
 
-	local warn_file
-	warn_file="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-prompts-scan-warn.XXXXXX")"
-	local registry_json
-	if ! registry_json="$(
-		ROOT="${MCPBASH_ROOT}" PROMPTS_DIR="${MCPBASH_ROOT}/prompts" "${py}" 2>"${warn_file}" <<'PY'
-import os, json, hashlib, time, sys
-root = os.environ['ROOT']
-prompts_dir = os.environ['PROMPTS_DIR']
-items = []
-warnings = []
-try:
-    import yaml  # type: ignore
-except Exception:
-    yaml = None
-if os.path.isdir(prompts_dir):
-    for dirpath, dirnames, filenames in os.walk(prompts_dir):
-        dirnames[:] = [d for d in dirnames if not d.startswith('.')]
-        rel_depth = os.path.relpath(dirpath, prompts_dir)
-        if rel_depth != '.' and rel_depth.count(os.sep) >= 3:
-            dirnames[:] = []
-            continue
-        for filename in filenames:
-            if filename.startswith('.'):
-                continue
-            if filename.endswith('.meta.yaml'):
-                continue
-            path = os.path.join(dirpath, filename)
-            rel = os.path.relpath(path, root)
-            base = os.path.splitext(os.path.basename(path))[0]
-            meta = {}
-            meta_path = os.path.join(dirpath, f"{base}.meta.yaml")
-            text = None
-            if os.path.isfile(meta_path):
-                try:
-                    with open(meta_path, 'r', encoding='utf-8') as fh:
-                        text = fh.read()
-                except Exception as exc:
-                    warnings.append(f"{os.path.relpath(meta_path, root)}: unable to read metadata ({exc})")
-                    text = None
-            if text:
-                parsed = None
-                try:
-                    parsed = json.loads(text)
-                except Exception:
-                    parsed = None
-                if parsed is None and yaml is not None:
-                    try:
-                        parsed = yaml.safe_load(text)
-                    except Exception as exc:
-                        warnings.append(f"{os.path.relpath(meta_path, root)}: YAML parse failed ({exc})")
-                        parsed = None
-                elif parsed is None and yaml is None:
-                    warnings.append(f"{os.path.relpath(meta_path, root)}: PyYAML unavailable; metadata ignored")
-                if isinstance(parsed, dict):
-                    meta = parsed
-                elif parsed is not None:
-                    warnings.append(f"{os.path.relpath(meta_path, root)}: metadata is not an object; entry skipped")
-            name = str(meta.get('name') or base)
-            description = str(meta.get('description') or '')
-            arguments = meta.get('arguments')
-            if not isinstance(arguments, dict):
-                if arguments is not None:
-                    warnings.append(f"{name}: arguments metadata ignored; expected object")
-                arguments = {"type": "object", "properties": {}}
-            role = meta.get('role')
-            if role is not None:
-                role = str(role)
-            metadata = meta.get('metadata')
-            if metadata is not None and not isinstance(metadata, dict):
-                warnings.append(f"{name}: metadata field ignored; expected object")
-                metadata = None
-            safe_rel = rel.replace('\\', '/')
-            item = {
-                "name": name,
-                "description": description,
-                "path": safe_rel,
-                "arguments": arguments
-            }
-            if role:
-                item["role"] = role
-            if metadata is not None:
-                item["metadata"] = metadata
-            items.append(item)
-for warning in warnings:
-    print(warning, file=sys.stderr)
-items.sort(key=lambda x: x["name"])
-hash_source = json.dumps(items, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
-hash_value = hashlib.sha256(hash_source.encode('utf-8')).hexdigest()
-registry = {
-    "version": 1,
-    "generatedAt": time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
-    "items": items,
-    "hash": hash_value,
-    "total": len(items)
-}
-print(json.dumps(registry, ensure_ascii=False, separators=(',', ':')))
-PY
-	)"; then
-		local status=$?
-		mcp_prompts_log_python_warnings "${warn_file}"
-		return "${status}"
+	if [ -d "${prompts_dir}" ]; then
+		find "${prompts_dir}" -type f ! -name ".*" ! -name "*.meta.json" 2>/dev/null | sort | while read -r path; do
+			local rel_path="${path#${MCPBASH_ROOT}/}"
+			local base_name="$(basename "${path}")"
+			local name="${base_name%.*}"
+			local dir_name="$(dirname "${path}")"
+			local meta_json="${dir_name}/${base_name}.meta.json"
+			local description=""
+			local role="user"
+			local arguments='{"type": "object", "properties": {}}'
+			local metadata="null"
+
+			if [ -f "${meta_json}" ]; then
+				local meta
+				meta="$(cat "${meta_json}")"
+				local j_name
+				j_name="$(printf '%s' "${meta}" | jq -r '.name // empty' 2>/dev/null)"
+				[ -n "${j_name}" ] && name="${j_name}"
+				description="$(printf '%s' "${meta}" | jq -r '.description // empty' 2>/dev/null)"
+				role="$(printf '%s' "${meta}" | jq -r '.role // "user"' 2>/dev/null)"
+				if printf '%s' "${meta}" | jq -e '.arguments' >/dev/null 2>&1; then
+					arguments="$(printf '%s' "${meta}" | jq -c '.arguments')"
+				fi
+				if printf '%s' "${meta}" | jq -e '.metadata' >/dev/null 2>&1; then
+					metadata="$(printf '%s' "${meta}" | jq -c '.metadata')"
+				fi
+			fi
+
+			jq -n \
+				--arg name "$name" \
+				--arg desc "$description" \
+				--arg path "$rel_path" \
+				--arg role "$role" \
+				--argjson args "$arguments" \
+				--argjson meta "$metadata" \
+				'{
+					name: $name,
+					description: $desc,
+					path: $path,
+					arguments: $args,
+					role: $role,
+					metadata: $meta
+				}' >>"${items_file}"
+		done
 	fi
-	mcp_prompts_log_python_warnings "${warn_file}"
 
-	MCP_PROMPTS_REGISTRY_JSON="${registry_json}"
-	MCP_PROMPTS_REGISTRY_HASH="$(
-		REGISTRY_JSON="${registry_json}" "${py}" <<'PY'
-import json, os
-print(json.loads(os.environ.get("REGISTRY_JSON", "{}")).get('hash', ''))
-PY
-	)"
-	# shellcheck disable=SC2034
-	MCP_PROMPTS_TOTAL="$(
-		REGISTRY_JSON="${registry_json}" "${py}" <<'PY'
-import json, os
-print(json.loads(os.environ.get("REGISTRY_JSON", "{}")).get('total', 0))
-PY
-	)"
-	if ! mcp_prompts_enforce_registry_limits "${MCP_PROMPTS_TOTAL}" "${registry_json}"; then
+	local timestamp
+	timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+	local items_json="[]"
+	if [ -s "${items_file}" ]; then
+		items_json="$(jq -s 'sort_by(.name)' "${items_file}")"
+	fi
+	rm -f "${items_file}"
+
+	local hash
+	hash="$(mcp_prompts_hash_string "${items_json}")"
+	local total
+	total="$(printf '%s' "${items_json}" | jq 'length')"
+
+	MCP_PROMPTS_REGISTRY_JSON="$(jq -n \
+		--arg ver "1" \
+		--arg ts "${timestamp}" \
+		--arg hash "${hash}" \
+		--argjson items "${items_json}" \
+		--argjson total "${total}" \
+		'{version: $ver|tonumber, generatedAt: $ts, items: $items, hash: $hash, total: $total}')"
+
+	MCP_PROMPTS_REGISTRY_HASH="${hash}"
+	MCP_PROMPTS_TOTAL="${total}"
+
+	if ! mcp_prompts_enforce_registry_limits "${MCP_PROMPTS_TOTAL}" "${MCP_PROMPTS_REGISTRY_JSON}"; then
 		return 1
 	fi
 
-	printf '%s' "${registry_json}" >"${MCP_PROMPTS_REGISTRY_PATH}"
+	printf '%s' "${MCP_PROMPTS_REGISTRY_JSON}" >"${MCP_PROMPTS_REGISTRY_PATH}"
 }
 
 mcp_prompts_decode_cursor() {
@@ -538,12 +397,6 @@ mcp_prompts_list() {
 		return 1
 	}
 
-	local py
-	if ! py="$(mcp_prompts_python)"; then
-		mcp_prompts_error -32603 "Python interpreter required for prompts listing"
-		return 1
-	fi
-
 	local numeric_limit
 	if [ -z "${limit}" ]; then
 		numeric_limit=50
@@ -567,24 +420,23 @@ mcp_prompts_list() {
 	fi
 
 	local result_json
-	if ! result_json="$(
-		REGISTRY="${MCP_PROMPTS_REGISTRY_JSON}" OFFSET="${offset}" LIMIT="${numeric_limit}" PYTHONIOENCODING="utf-8" "${py}" <<'PY'
-import json, os, base64, sys
-registry = json.loads(os.environ["REGISTRY"])
-items = registry.get("items", [])
-offset = int(os.environ["OFFSET"])
-limit = int(os.environ["LIMIT"])
-slice_items = items[offset:offset + limit]
-result = {"items": slice_items, "total": len(items)}
-if offset + limit < len(items):
-    payload = json.dumps({"ver": 1, "collection": "prompts", "offset": offset + limit, "hash": registry.get("hash", ""), "timestamp": registry.get("generatedAt")}, separators=(',', ':'))
-    encoded = base64.urlsafe_b64encode(payload.encode('utf-8')).decode('utf-8').rstrip('=')
-    result["nextCursor"] = encoded
-print(json.dumps(result, ensure_ascii=False, separators=(',', ':')))
-PY
-	)"; then
-		mcp_prompts_error -32603 "Unable to paginate prompts"
-		return 1
+	result_json="$(echo "${MCP_PROMPTS_REGISTRY_JSON}" | jq -c --argjson offset "$offset" --argjson limit "$numeric_limit" '
+		{
+			items: .items[$offset:$offset+$limit],
+			total: .total
+		}
+	')"
+
+	# Check if we have a next cursor
+	local total
+	total="$(echo "${result_json}" | jq '.total')"
+	if [ $((offset + numeric_limit)) -lt "${total}" ]; then
+		local next_offset=$((offset + numeric_limit))
+		local cursor_payload
+		cursor_payload="$(jq -n --arg ver "1" --arg col "prompts" --argjson off "$next_offset" --arg hash "${MCP_PROMPTS_REGISTRY_HASH}" '{ver: $ver|tonumber, collection: $col, offset: $off, hash: $hash}')"
+		local encoded
+		encoded="$(printf '%s' "${cursor_payload}" | base64 | tr -d '\n' | tr -d '=')"
+		result_json="$(echo "${result_json}" | jq --arg next "${encoded}" '.nextCursor = $next')"
 	fi
 
 	printf '%s' "${result_json}"
@@ -593,119 +445,77 @@ PY
 mcp_prompts_metadata_for_name() {
 	local name="$1"
 	mcp_prompts_refresh_registry || return 1
-	local py
-	py="$(mcp_prompts_python)" || return 1
 	local metadata
-	if ! metadata="$(
-		REGISTRY="${MCP_PROMPTS_REGISTRY_JSON}" TARGET="${name}" "${py}" <<'PY'
-import json, os, sys
-registry = json.loads(os.environ["REGISTRY"])
-target = os.environ["TARGET"]
-for item in registry.get("items", []):
-    if item.get("name") == target:
-        print(json.dumps(item, ensure_ascii=False, separators=(',', ':')))
-        sys.exit(0)
-sys.exit(1)
-PY
-	)"; then
+	if ! metadata="$(printf '%s' "${MCP_PROMPTS_REGISTRY_JSON}" | jq -c --arg name "${name}" '.items[] | select(.name == $name)' | head -n 1)"; then
 		return 1
 	fi
+	[ -z "${metadata}" ] && return 1
 	printf '%s' "${metadata}"
 }
 
 mcp_prompts_render() {
 	local metadata="$1"
 	local args_json="$2"
-	local py
-	py="$(mcp_prompts_python)" || return 1
-	local sanitized_args
-	sanitized_args="$(
-		JSON_PAYLOAD="${args_json}" "${py}" <<'PY'
-import json, os, sys
-def quoted(value):
-    if isinstance(value, str):
-        return value.replace("$", "$$")
-    return value
+	local path description role metadata_value
+	path="$(printf '%s' "${metadata}" | jq -r '.path // empty')"
+	description="$(printf '%s' "${metadata}" | jq -r '.description // ""')"
+	role="$(printf '%s' "${metadata}" | jq -r '.role // "system"')"
+	metadata_value="$(printf '%s' "${metadata}" | jq -c '.metadata // null')"
 
-try:
-    raw = json.loads(os.environ.get("JSON_PAYLOAD", "{}"))
-except Exception:
-    print("{}")
-    sys.exit(0)
+	if [ -z "${path}" ]; then
+		mcp_prompts_emit_render_result "" "${args_json}" "${role}" "${description}" "${metadata_value}"
+		return 0
+	fi
 
-if not isinstance(raw, dict):
-    raw_dict = {"value": raw}
-else:
-    raw_dict = raw
+	local full_path="${MCPBASH_ROOT}/${path}"
+	if [ ! -f "${full_path}" ]; then
+		mcp_prompts_emit_render_result "" "${args_json}" "${role}" "${description}" "${metadata_value}"
+		return 0
+	fi
 
-template_args = {str(key): quoted(value) for key, value in raw_dict.items()}
-print(json.dumps({
-    "arguments": raw_dict,
-    "templateArgs": template_args
-}, ensure_ascii=False, separators=(',', ':')))
-PY
-	)"
-	local safe_args_json raw_args_json
-	safe_args_json="$(
-		INFO="${sanitized_args}" "${py}" <<'PY'
-import json, os
-print(json.dumps(json.loads(os.environ["INFO"]).get("templateArgs", {}), ensure_ascii=False, separators=(',', ':')))
-PY
-	)"
-	raw_args_json="$(
-		INFO="${sanitized_args}" "${py}" <<'PY'
-import json, os
-print(json.dumps(json.loads(os.environ["INFO"]).get("arguments", {}), ensure_ascii=False, separators=(',', ':')))
-PY
-	)"
-	local result
-	if ! result="$(
-		TEMPLATE_DIR="${MCPBASH_ROOT}" METADATA="${metadata}" SAFE_ARGS="${safe_args_json}" RAW_ARGS="${raw_args_json}" "${py}" <<'PY'
-import json, os
-from string import Template
-meta = json.loads(os.environ["METADATA"])
-args = json.loads(os.environ.get("SAFE_ARGS", "{}"))
-raw_args = json.loads(os.environ.get("RAW_ARGS", "{}"))
-path = meta.get("path")
-description = str(meta.get("description") or "")
-role = str(meta.get("role") or "system")
-metadata_value = meta.get("metadata")
-if metadata_value is not None and not isinstance(metadata_value, dict):
-    metadata_value = None
-def emit(text_value):
-    result = {
-        "text": text_value,
-        "arguments": raw_args,
-        "messages": [
-            {
-                "role": role,
-                "content": [{"type": "text", "text": text_value}]
-            }
-        ]
-    }
-    if description:
-        result["description"] = description
-    if metadata_value is not None:
-        result["metadata"] = metadata_value
-    print(json.dumps(result, ensure_ascii=False, separators=(',', ':')))
-
-if not path:
-    emit("")
-    raise SystemExit(0)
-full_path = os.path.join(os.environ["TEMPLATE_DIR"], path)
-try:
-    with open(full_path, 'r', encoding='utf-8') as fh:
-        template = Template(fh.read())
-except OSError:
-    emit("")
-    raise SystemExit(0)
-text = template.safe_substitute(args)
-emit(text)
-PY
+	local text
+	# Use a subshell to isolate exported variables
+	if ! text="$(
+		set -a
+		# Parse args_json and export variables. Only alphanumeric keys are safe for envsubst.
+		# We filter keys to simple identifiers.
+		eval "$(printf '%s' "${args_json}" | jq -r '
+			to_entries | map(select(.key | test("^[a-zA-Z_][a-zA-Z0-9_]*$"))) |
+			.[] | "export \(.key)=\(@sh \(.value))"' 2>/dev/null)"
+		set +a
+		envsubst <"${full_path}"
 	)"; then
 		return 1
 	fi
-	printf '%s' "${result}"
+
+	mcp_prompts_emit_render_result "${text}" "${args_json}" "${role}" "${description}" "${metadata_value}"
+}
+
+mcp_prompts_emit_render_result() {
+	local text="$1"
+	local args_json="$2"
+	local role="$3"
+	local description="$4"
+	local metadata_value="$5"
+	
+	jq -n \
+		--arg text "${text}" \
+		--argjson args "${args_json:-{}}" \
+		--arg role "${role}" \
+		--arg desc "${description}" \
+		--argjson meta "${metadata_value}" \
+		'{
+			text: $text,
+			arguments: $args,
+			messages: [
+				{
+					role: $role,
+					content: [{type: "text", text: $text}]
+				}
+			]
+		}
+		+ (if ($desc | length) > 0 then {description: $desc} else {} end)
+		+ (if $meta != null then {metadata: $meta} else {} end)'
 }
 
 mcp_prompts_poll() {

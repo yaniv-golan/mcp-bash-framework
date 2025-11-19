@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Spec §8/§9 resources discovery and providers.
+# Resource discovery and providers.
 
 set -euo pipefail
 
@@ -20,21 +20,6 @@ MCP_RESOURCES_MANUAL_BUFFER=""
 MCP_RESOURCES_MANUAL_DELIM=$'\036'
 MCP_RESOURCES_LOGGER="${MCP_RESOURCES_LOGGER:-mcp.resources}"
 
-mcp_resources_log_python_warnings() {
-	local warn_file="$1"
-	if [ ! -f "${warn_file}" ]; then
-		return 0
-	fi
-	if [ ! -s "${warn_file}" ]; then
-		rm -f "${warn_file}"
-		return 0
-	fi
-	while IFS= read -r warn_line || [ -n "${warn_line}" ]; do
-		[ -n "${warn_line}" ] || continue
-		mcp_logging_warning "${MCP_RESOURCES_LOGGER}" "${warn_line}"
-	done <"${warn_file}"
-	rm -f "${warn_file}"
-}
 
 mcp_resources_manual_begin() {
 	MCP_RESOURCES_MANUAL_ACTIVE=true
@@ -50,102 +35,51 @@ mcp_resources_manual_finalize() {
 	if [ "${MCP_RESOURCES_MANUAL_ACTIVE}" != "true" ]; then
 		return 0
 	fi
-	local py
-	py="$(mcp_resources_python)" || {
-		mcp_resources_manual_abort
-		mcp_resources_error -32603 "Manual registration requires python"
-		return 1
-	}
 
 	local registry_json
-	if ! registry_json="$(
-		ITEMS="${MCP_RESOURCES_MANUAL_BUFFER}" ROOT="${MCPBASH_ROOT}" DELIM="${MCP_RESOURCES_MANUAL_DELIM}" "${py}" <<'PY'
-import json, os, hashlib, time, pathlib
-
-def default_provider(uri):
-    if uri.startswith("git://"):
-        return "git"
-    if uri.startswith("https://"):
-        return "https"
-    if uri.startswith("file://") or uri.startswith("file:/"):
-        return "file"
-    return "file"
-
-buffer = os.environ.get("ITEMS", "")
-delimiter = os.environ.get("DELIM", "\x1e")
-root = os.environ.get("ROOT", "")
-if delimiter:
-    raw_entries = [entry for entry in buffer.split(delimiter) if entry]
-else:
-    raw_entries = [buffer] if buffer else []
-items = []
-seen = set()
-for raw in raw_entries:
-    data = json.loads(raw)
-    name = str(data.get("name") or "").strip()
-    if not name:
-        raise ValueError("Resource entry missing name")
-    if name in seen:
-        raise ValueError(f"Duplicate resource name {name!r} in manual registration")
-    seen.add(name)
-    description = str(data.get("description") or "")
-    arguments = data.get("arguments")
-    if not isinstance(arguments, dict):
-        arguments = {"type": "object", "properties": {}}
-    uri = str(data.get("uri") or "").strip()
-    if not uri:
-        raise ValueError(f"Resource {name!r} missing uri")
-    provider = str(data.get("provider") or "").strip()
-    if not provider:
-        provider = default_provider(uri)
-    if provider not in {"file", "git", "https"}:
-        raise ValueError(f"Unsupported provider {provider!r} for resource {name!r}")
-    mime = str(data.get("mimeType") or "text/plain")
-    path = str(data.get("path") or "")
-    item = dict(data)
-    item["name"] = name
-    item["description"] = description
-    item["arguments"] = arguments
-    item["uri"] = uri
-    item["provider"] = provider
-    item["mimeType"] = mime
-    if path:
-        item["path"] = path
-    items.append(item)
-
-items.sort(key=lambda x: x.get("name", ""))
-
-hash_source = json.dumps(items, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
-hash_value = hashlib.sha256(hash_source.encode('utf-8')).hexdigest()
-registry = {
-    "version": 1,
-    "generatedAt": time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
-    "items": items,
-    "hash": hash_value,
-    "total": len(items)
-}
-print(json.dumps(registry, ensure_ascii=False, separators=(',', ':')))
-PY
-	)"; then
+	if ! registry_json="$(printf '%s' "${MCP_RESOURCES_MANUAL_BUFFER}" | awk -v RS='\036' '{if ($0 != "") print $0}' | jq -s '
+		map(select(.name and .uri)) |
+		unique_by(.name) |
+		map({
+			name: .name,
+			description: (.description // ""),
+			arguments: (.arguments // {type: "object", properties: {}}),
+			uri: .uri,
+			provider: (.provider // (
+				if .uri | startswith("git://") then "git"
+				elif .uri | startswith("https://") then "https"
+				else "file" end
+			)),
+			mimeType: (.mimeType // "text/plain"),
+			path: (.path // "")
+		}) |
+		sort_by(.name) |
+		{
+			version: 1,
+			generatedAt: (now | todate),
+			items: .,
+			total: length
+		}
+	')"; then
 		mcp_resources_manual_abort
 		mcp_resources_error -32603 "Manual registration parsing failed"
 		return 1
 	fi
 
+	local items_json
+	items_json="$(echo "${registry_json}" | jq -c '.items')"
+	local hash
+	hash="$(mcp_resources_hash_payload "${items_json}")"
+	local total
+	total="$(echo "${registry_json}" | jq '.total')"
+
+	# Update hash
+	registry_json="$(echo "${registry_json}" | jq --arg hash "${hash}" '.hash = $hash')"
+
 	local previous_hash="${MCP_RESOURCES_REGISTRY_HASH}"
 	MCP_RESOURCES_REGISTRY_JSON="${registry_json}"
-	MCP_RESOURCES_REGISTRY_HASH="$(
-		REGISTRY_JSON="${registry_json}" "${py}" <<'PY'
-import json, os
-print(json.loads(os.environ.get("REGISTRY_JSON", "{}")).get('hash', ''))
-PY
-	)"
-	MCP_RESOURCES_TOTAL="$(
-		REGISTRY_JSON="${registry_json}" "${py}" <<'PY'
-import json, os
-print(json.loads(os.environ.get("REGISTRY_JSON", "{}")).get('total', 0))
-PY
-	)"
+	MCP_RESOURCES_REGISTRY_HASH="${hash}"
+	MCP_RESOURCES_TOTAL="${total}"
 
 	if ! mcp_resources_enforce_registry_limits "${MCP_RESOURCES_TOTAL}" "${registry_json}"; then
 		mcp_resources_manual_abort
@@ -179,14 +113,6 @@ mcp_resources_register_manual() {
 
 mcp_resources_hash_payload() {
 	local payload="$1"
-	if command -v python3 >/dev/null 2>&1; then
-		python3 -c 'import hashlib, sys; sys.stdout.write(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())' <<<"${payload}"
-		return
-	fi
-	if command -v python >/dev/null 2>&1; then
-		python -c 'import hashlib, sys; sys.stdout.write(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())' <<<"${payload}"
-		return
-	fi
 	if command -v sha256sum >/dev/null 2>&1; then
 		printf '%s' "${payload}" | sha256sum | awk '{print $1}'
 		return
@@ -232,44 +158,22 @@ mcp_resources_subscription_store_error() {
 mcp_resources_emit_update() {
 	local subscription_id="$1"
 	local payload="$2"
-	local py
-	py="$(mcp_resources_python)" || return 0
 	mcp_logging_debug "${MCP_RESOURCES_LOGGER}" "Emit update subscription=${subscription_id}"
 	local enriched
-	enriched="$(
-		PAYLOAD="${payload}" SUBSCRIPTION_ID="${subscription_id}" "${py}" <<'PY'
-import json, os, sys
-data = json.loads(os.environ["PAYLOAD"])
-sub = os.environ.get("SUBSCRIPTION_ID")
-if sub:
-    data["subscriptionId"] = sub
-sys.stdout.write(json.dumps(data, ensure_ascii=False, separators=(',', ':')))
-PY
-	)"
-	local safe_enriched="${enriched//\\/\\\\}"
-	rpc_send_line_direct "$(printf '{"jsonrpc":"2.0","method":"notifications/resources/updated","params":%s}' "${safe_enriched}")"
+	enriched="$(echo "${payload}" | jq -c --arg sub "${subscription_id}" '. + {subscriptionId: $sub}')"
+	rpc_send_line_direct "$(jq -n --argjson params "${enriched}" '{"jsonrpc":"2.0","method":"notifications/resources/updated","params":$params}')"
 }
 
 mcp_resources_emit_error() {
 	local subscription_id="$1"
 	local code="$2"
 	local message="$3"
-	local py
-	py="$(mcp_resources_python)" || return 0
 	local payload
-	payload="$(
-		CODE="${code}" MESSAGE="${message}" SUBSCRIPTION_ID="${subscription_id}" "${py}" <<'PY'
-import json, os, sys
-code = int(os.environ.get("CODE", "-32603"))
-message = os.environ.get("MESSAGE", "")
-sys.stdout.write(json.dumps({
-    "subscriptionId": os.environ.get("SUBSCRIPTION_ID"),
-    "error": {"code": code, "message": message}
-}, ensure_ascii=False, separators=(',', ':')))
-PY
-	)"
-	local safe_payload="${payload//\\/\\\\}"
-	rpc_send_line_direct "$(printf '{"jsonrpc":"2.0","method":"notifications/resources/updated","params":%s}' "${safe_payload}")"
+	payload="$(jq -n --arg sub "${subscription_id}" --argjson code "${code}" --arg msg "${message}" '{
+		subscriptionId: $sub,
+		error: {code: $code, message: $msg}
+	}')"
+	rpc_send_line_direct "$(jq -n --argjson params "${payload}" '{"jsonrpc":"2.0","method":"notifications/resources/updated","params":$params}')"
 }
 
 mcp_resources_poll_subscriptions() {
@@ -342,17 +246,6 @@ mcp_resources_error() {
 	MCP_RESOURCES_ERR_MESSAGE="$2"
 }
 
-mcp_resources_python() {
-	if command -v python3 >/dev/null 2>&1; then
-		printf 'python3'
-		return 0
-	fi
-	if command -v python >/dev/null 2>&1; then
-		printf 'python'
-		return 0
-	fi
-	return 1
-}
 
 mcp_resources_init() {
 	if [ -z "${MCP_RESOURCES_REGISTRY_PATH}" ]; then
@@ -364,56 +257,42 @@ mcp_resources_init() {
 
 mcp_resources_apply_manual_json() {
 	local manual_json="$1"
-	local py
-	py="$(mcp_resources_python)" || {
-		mcp_resources_error -32603 "Manual registration requires python"
-		return 1
-	}
 	local registry_json
-	if ! registry_json="$(
-		INPUT="${manual_json}" "${py}" <<'PY'
-import json, os, sys, hashlib, time
-data = json.loads(os.environ.get("INPUT", "{}"))
-resources = data.get("resources", [])
-if not isinstance(resources, list):
-    resources = []
-now = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
-hash_source = json.dumps(resources, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
-hash_value = hashlib.sha256(hash_source.encode('utf-8')).hexdigest()
-registry = {
-    "version": 1,
-    "generatedAt": now,
-    "items": resources,
-    "hash": hash_value,
-    "total": len(resources)
-}
-print(json.dumps(registry, ensure_ascii=False, separators=(',', ':')))
-PY
-	)"; then
-		return 1
+
+	# Basic validation of input structure
+	if ! echo "${manual_json}" | jq -e '.resources | type == "array"' >/dev/null 2>&1; then
+		# If not present or not array, treat as empty
+		manual_json='{"resources":[]}'
 	fi
-	local new_hash
-	new_hash="$(
-		REGISTRY_JSON="${registry_json}" "${py}" <<'PY'
-import json, os
-print(json.loads(os.environ.get("REGISTRY_JSON", "{}")).get('hash', ''))
-PY
-	)"
+
+	local timestamp
+	timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+	# Construct registry structure
+	registry_json="$(echo "${manual_json}" | jq --arg ts "${timestamp}" '{
+		version: 1,
+		generatedAt: $ts,
+		items: .resources,
+		total: (.resources | length)
+	}')"
+
+	# Calculate hash of items
+	local items_json
+	items_json="$(echo "${registry_json}" | jq -c '.items')"
+	local hash
+	hash="$(mcp_resources_hash_payload "${items_json}")"
+
+	# Add hash to registry
+	registry_json="$(echo "${registry_json}" | jq --arg hash "${hash}" '.hash = $hash')"
+
+	local new_hash="${hash}"
 	if [ "${new_hash}" != "${MCP_RESOURCES_REGISTRY_HASH}" ]; then
 		MCP_RESOURCES_CHANGED=true
 	fi
 	MCP_RESOURCES_REGISTRY_JSON="${registry_json}"
 	MCP_RESOURCES_REGISTRY_HASH="${new_hash}"
-	# shellcheck disable=SC2034
-	# shellcheck disable=SC2034
-	# shellcheck disable=SC2034
-	# shellcheck disable=SC2034
-	MCP_RESOURCES_TOTAL="$(
-		REGISTRY_JSON="${registry_json}" "${py}" <<'PY'
-import json, os
-print(json.loads(os.environ.get("REGISTRY_JSON", "{}")).get('total', 0))
-PY
-	)"
+	MCP_RESOURCES_TOTAL="$(echo "${registry_json}" | jq '.total')"
+
 	if ! mcp_resources_enforce_registry_limits "${MCP_RESOURCES_TOTAL}" "${registry_json}"; then
 		return 1
 	fi
@@ -483,26 +362,19 @@ mcp_resources_refresh_registry() {
 	fi
 	local now
 	now="$(date +%s)"
-	local py
-	py="$(mcp_resources_python 2>/dev/null)" || true
+
 	if [ -z "${MCP_RESOURCES_REGISTRY_JSON}" ] && [ -f "${MCP_RESOURCES_REGISTRY_PATH}" ]; then
 		MCP_RESOURCES_REGISTRY_JSON="$(cat "${MCP_RESOURCES_REGISTRY_PATH}")"
-		if [ -n "${py}" ]; then
-			MCP_RESOURCES_REGISTRY_HASH="$(
-				REGISTRY_JSON="${MCP_RESOURCES_REGISTRY_JSON}" "${py}" <<'PY'
-import json, os
-print(json.loads(os.environ.get("REGISTRY_JSON", "{}")).get('hash', ''))
-PY
-			)"
-			MCP_RESOURCES_TOTAL="$(
-				REGISTRY_JSON="${MCP_RESOURCES_REGISTRY_JSON}" "${py}" <<'PY'
-import json, os
-print(json.loads(os.environ.get("REGISTRY_JSON", "{}")).get('total', 0))
-PY
-			)"
+		# Validate and extract meta
+		if echo "${MCP_RESOURCES_REGISTRY_JSON}" | jq . >/dev/null 2>&1; then
+			MCP_RESOURCES_REGISTRY_HASH="$(echo "${MCP_RESOURCES_REGISTRY_JSON}" | jq -r '.hash // empty')"
+			MCP_RESOURCES_TOTAL="$(echo "${MCP_RESOURCES_REGISTRY_JSON}" | jq '.total // 0')"
 			if ! mcp_resources_enforce_registry_limits "${MCP_RESOURCES_TOTAL}" "${MCP_RESOURCES_REGISTRY_JSON}"; then
 				return 1
 			fi
+		else
+			# Corrupt cache, ignore
+			MCP_RESOURCES_REGISTRY_JSON=""
 		fi
 	fi
 	if [ -n "${MCP_RESOURCES_REGISTRY_JSON}" ] && [ $((now - MCP_RESOURCES_LAST_SCAN)) -lt "${MCP_RESOURCES_TTL}" ]; then
@@ -519,148 +391,106 @@ PY
 }
 
 mcp_resources_scan() {
-	local py
-	py="$(mcp_resources_python)" || {
-		MCP_RESOURCES_REGISTRY_JSON='{"version":1,"generatedAt":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","items":[],"hash":"","total":0}'
-		MCP_RESOURCES_REGISTRY_HASH=""
-		MCP_RESOURCES_TOTAL=0
-		printf '%s' "${MCP_RESOURCES_REGISTRY_JSON}" >"${MCP_RESOURCES_REGISTRY_PATH}"
-		return 0
-	}
+	local resources_dir="${MCPBASH_ROOT}/resources"
+	local items_file
+	items_file="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-resources-items.XXXXXX")"
 
-	local warn_file
-	warn_file="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-resources-scan-warn.XXXXXX")"
-	local registry_json
-	if ! registry_json="$(
-		ROOT="${MCPBASH_ROOT}" RES_DIR="${MCPBASH_ROOT}/resources" "${py}" 2>"${warn_file}" <<'PY'
-import os, json, sys, hashlib, time
-warnings = []
-root = os.environ["ROOT"]
-resources_dir = os.environ["RES_DIR"]
-allowed_providers = {"file", "git", "https"}
-try:
-    import yaml  # type: ignore
-except Exception:
-    yaml = None
-items = []
-if os.path.isdir(resources_dir):
-    for dirpath, dirnames, filenames in os.walk(resources_dir):
-        dirnames[:] = [d for d in dirnames if not d.startswith('.')]
-        rel_depth = os.path.relpath(dirpath, resources_dir)
-        if rel_depth != '.' and rel_depth.count(os.sep) >= 3:
-            dirnames[:] = []
-            continue
-        for filename in filenames:
-            if filename.startswith('.'):
-                continue
-            if filename.endswith('.meta.yaml'):
-                continue
-            path = os.path.join(dirpath, filename)
-            rel = os.path.relpath(path, root)
-            base = os.path.splitext(os.path.basename(path))[0]
-            meta = {}
-            meta_path = os.path.join(dirpath, f"{base}.meta.yaml")
-            text = None
-            if os.path.isfile(meta_path):
-                try:
-                    with open(meta_path, 'r', encoding='utf-8') as fh:
-                        text = fh.read()
-                except Exception as exc:
-                    text = None
-                    warnings.append(f"{os.path.relpath(meta_path, root)}: unable to read metadata ({exc})")
-            if text:
-                parsed = None
-                try:
-                    parsed = json.loads(text)
-                except Exception:
-                    parsed = None
-                if parsed is None and yaml is not None:
-                    try:
-                        parsed = yaml.safe_load(text)
-                    except Exception as exc:
-                        parsed = None
-                        warnings.append(f"{os.path.relpath(meta_path, root)}: YAML parse failed ({exc})")
-                elif parsed is None and yaml is None:
-                    warnings.append(f"{os.path.relpath(meta_path, root)}: PyYAML unavailable; metadata ignored")
-                if isinstance(parsed, dict):
-                    meta = parsed
-                elif parsed is not None:
-                    warnings.append(f"{os.path.relpath(meta_path, root)}: metadata is not an object; entry skipped")
-            name = str(meta.get('name') or base)
-            description = str(meta.get('description') or '')
-            uri = str(meta.get('uri') or '')
-            mime = str(meta.get('mimeType') or 'text/plain')
-            if not uri:
-                warnings.append(f"{name}: missing uri; entry skipped")
-                continue
-            provider = meta.get('provider')
-            if provider:
-                provider = str(provider)
-            if not provider:
-                provider = "file"
-                lower_uri = uri.lower()
-                if lower_uri.startswith("https://"):
-                    provider = "https"
-                elif lower_uri.startswith("git://"):
-                    provider = "git"
-            if provider not in allowed_providers:
-                warnings.append(f"{name}: unsupported provider {provider!r}; entry skipped")
-                continue
-            arguments = meta.get('arguments')
-            if not isinstance(arguments, dict):
-                if arguments is not None:
-                    warnings.append(f"{name}: arguments metadata ignored; expected object")
-                arguments = {"type": "object", "properties": {}}
-            item = {
-                "name": name,
-                "description": description,
-                "path": rel,
-                "provider": provider,
-                "uri": uri,
-                "mimeType": mime,
-                "arguments": arguments
-            }
-            items.append(item)
-items.sort(key=lambda x: x["name"])
-hash_source = json.dumps(items, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
-hash_value = hashlib.sha256(hash_source.encode('utf-8')).hexdigest()
-registry = {
-    "version": 1,
-    "generatedAt": time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
-    "items": items,
-    "hash": hash_value,
-    "total": len(items)
-}
-for warning in warnings:
-    print(warning, file=sys.stderr)
-print(json.dumps(registry, ensure_ascii=False, separators=(',', ':')))
-PY
-	)"; then
-		local status=$?
-		mcp_resources_log_python_warnings "${warn_file}"
-		return "${status}"
+	if [ -d "${resources_dir}" ]; then
+		find "${resources_dir}" -type f ! -name ".*" ! -name "*.meta.json" 2>/dev/null | sort | while read -r path; do
+			local rel_path="${path#${MCPBASH_ROOT}/}"
+			local base_name="$(basename "${path}")"
+			local name="${base_name%.*}"
+			local dir_name="$(dirname "${path}")"
+			local meta_json="${dir_name}/${base_name}.meta.json"
+			local description=""
+			local uri=""
+			local mime="text/plain"
+			local provider=""
+
+			if [ -f "${meta_json}" ]; then
+				local meta
+				meta="$(cat "${meta_json}")"
+				local j_name
+				j_name="$(printf '%s' "${meta}" | jq -r '.name // empty' 2>/dev/null)"
+				[ -n "${j_name}" ] && name="${j_name}"
+				description="$(printf '%s' "${meta}" | jq -r '.description // empty' 2>/dev/null)"
+				uri="$(printf '%s' "${meta}" | jq -r '.uri // empty' 2>/dev/null)"
+				mime="$(printf '%s' "${meta}" | jq -r '.mimeType // "text/plain"' 2>/dev/null)"
+				provider="$(printf '%s' "${meta}" | jq -r '.provider // empty' 2>/dev/null)"
+			fi
+
+			if [ -z "${uri}" ]; then
+				local header
+				header="$(head -n 10 "${path}")"
+				local mcp_line
+				mcp_line="$(echo "${header}" | grep "mcp:" | head -n 1)"
+				if [ -n "${mcp_line}" ]; then
+					local json_payload
+					json_payload="$(echo "${mcp_line}" | sed 's/.*mcp://')"
+					local h_name
+					h_name="$(echo "${json_payload}" | jq -r '.name // empty' 2>/dev/null)"
+					[ -n "${h_name}" ] && name="${h_name}"
+					local h_uri
+					h_uri="$(echo "${json_payload}" | jq -r '.uri // empty' 2>/dev/null)"
+					[ -n "${h_uri}" ] && uri="${h_uri}"
+					local h_desc
+					h_desc="$(echo "${json_payload}" | jq -r '.description // empty' 2>/dev/null)"
+					[ -n "${h_desc}" ] && description="${h_desc}"
+				fi
+			fi
+
+			if [ -z "${uri}" ]; then
+				continue
+			fi
+
+			if [ -z "${provider}" ]; then
+				provider="file"
+				case "${uri}" in
+				https://*) provider="https" ;;
+				git://*) provider="git" ;;
+				esac
+			fi
+
+			jq -n \
+				--arg name "$name" \
+				--arg desc "$description" \
+				--arg path "$rel_path" \
+				--arg uri "$uri" \
+				--arg mime "$mime" \
+				--arg provider "$provider" \
+				'{name: $name, description: $desc, path: $path, uri: $uri, mimeType: $mime, provider: $provider}' >>"${items_file}"
+		done
 	fi
-	mcp_resources_log_python_warnings "${warn_file}"
 
-	MCP_RESOURCES_REGISTRY_JSON="${registry_json}"
-	MCP_RESOURCES_REGISTRY_HASH="$(
-		REGISTRY_JSON="${registry_json}" "${py}" <<'PY'
-import json, os
-print(json.loads(os.environ.get("REGISTRY_JSON", "{}")).get('hash', ''))
-PY
-	)"
-	# shellcheck disable=SC2034
-	MCP_RESOURCES_TOTAL="$(
-		REGISTRY_JSON="${registry_json}" "${py}" <<'PY'
-import json, os
-print(json.loads(os.environ.get("REGISTRY_JSON", "{}")).get('total', 0))
-PY
-	)"
-	if ! mcp_resources_enforce_registry_limits "${MCP_RESOURCES_TOTAL}" "${registry_json}"; then
+	local timestamp
+	timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+	local items_json="[]"
+	if [ -s "${items_file}" ]; then
+		items_json="$(jq -s '.' "${items_file}")"
+	fi
+	rm -f "${items_file}"
+
+	local hash
+	hash="$(mcp_resources_hash_payload "${items_json}")"
+	local total
+	total="$(printf '%s' "${items_json}" | jq 'length')"
+
+	MCP_RESOURCES_REGISTRY_JSON="$(jq -n \
+		--arg ver "1" \
+		--arg ts "${timestamp}" \
+		--arg hash "${hash}" \
+		--argjson items "${items_json}" \
+		--argjson total "${total}" \
+		'{version: $ver|tonumber, generatedAt: $ts, items: $items, hash: $hash, total: $total}')"
+
+	MCP_RESOURCES_REGISTRY_HASH="${hash}"
+	MCP_RESOURCES_TOTAL="${total}"
+
+	if ! mcp_resources_enforce_registry_limits "${MCP_RESOURCES_TOTAL}" "${MCP_RESOURCES_REGISTRY_JSON}"; then
 		return 1
 	fi
 
-	printf '%s' "${registry_json}" >"${MCP_RESOURCES_REGISTRY_PATH}"
+	printf '%s' "${MCP_RESOURCES_REGISTRY_JSON}" >"${MCP_RESOURCES_REGISTRY_PATH}"
 }
 
 mcp_resources_decode_cursor() {
@@ -686,12 +516,6 @@ mcp_resources_list() {
 		return 1
 	}
 
-	local py
-	if ! py="$(mcp_resources_python)"; then
-		mcp_resources_error -32603 "Python interpreter required for resources listing"
-		return 1
-	fi
-
 	local numeric_limit
 	if [ -z "${limit}" ]; then
 		numeric_limit=50
@@ -715,24 +539,23 @@ mcp_resources_list() {
 	fi
 
 	local result_json
-	if ! result_json="$(
-		REGISTRY="${MCP_RESOURCES_REGISTRY_JSON}" OFFSET="${offset}" LIMIT="${numeric_limit}" PYTHONIOENCODING="utf-8" "${py}" <<'PY'
-import json, os, base64, sys
-registry = json.loads(os.environ["REGISTRY"])
-items = registry.get("items", [])
-offset = int(os.environ["OFFSET"])
-limit = int(os.environ["LIMIT"])
-slice_items = items[offset:offset + limit]
-result = {"items": slice_items, "total": len(items)}
-if offset + limit < len(items):
-    payload = json.dumps({"ver": 1, "collection": "resources", "offset": offset + limit, "hash": registry.get("hash", ""), "timestamp": registry.get("generatedAt")}, separators=(',', ':'))
-    encoded = base64.urlsafe_b64encode(payload.encode('utf-8')).decode('utf-8').rstrip('=')
-    result["nextCursor"] = encoded
-print(json.dumps(result, ensure_ascii=False, separators=(',', ':')))
-PY
-	)"; then
-		mcp_resources_error -32603 "Unable to paginate resources"
-		return 1
+	result_json="$(echo "${MCP_RESOURCES_REGISTRY_JSON}" | jq -c --argjson offset "$offset" --argjson limit "$numeric_limit" '
+		{
+			items: .items[$offset:$offset+$limit],
+			total: .total
+		}
+	')"
+
+	# Check if we have a next cursor
+	local total
+	total="$(echo "${result_json}" | jq '.total')"
+	if [ $((offset + numeric_limit)) -lt "${total}" ]; then
+		local next_offset=$((offset + numeric_limit))
+		local cursor_payload
+		cursor_payload="$(jq -n --arg ver "1" --arg col "resources" --argjson off "$next_offset" --arg hash "${MCP_RESOURCES_REGISTRY_HASH}" '{ver: $ver|tonumber, collection: $col, offset: $off, hash: $hash}')"
+		local encoded
+		encoded="$(printf '%s' "${cursor_payload}" | base64 | tr -d '\n' | tr -d '=')"
+		result_json="$(echo "${result_json}" | jq --arg next "${encoded}" '.nextCursor = $next')"
 	fi
 
 	printf '%s' "${result_json}"
@@ -766,21 +589,11 @@ mcp_resources_poll() {
 mcp_resources_metadata_for_name() {
 	local name="$1"
 	mcp_resources_refresh_registry || return 1
-	local py
-	py="$(mcp_resources_python)" || return 1
 	local metadata
-	if ! metadata="$(
-		REGISTRY="${MCP_RESOURCES_REGISTRY_JSON}" TARGET="${name}" "${py}" <<'PY'
-import json, os, sys
-registry = json.loads(os.environ["REGISTRY"])
-target = os.environ["TARGET"]
-for item in registry.get("items", []):
-    if item.get("name") == target:
-        print(json.dumps(item, ensure_ascii=False, separators=(',', ':')))
-        sys.exit(0)
-sys.exit(1)
-PY
-	)"; then
+	if ! metadata="$(echo "${MCP_RESOURCES_REGISTRY_JSON}" | jq -c --arg name "${name}" '.items[] | select(.name == $name)' | head -n 1)"; then
+		return 1
+	fi
+	if [ -z "${metadata}" ]; then
 		return 1
 	fi
 	printf '%s' "${metadata}"
@@ -891,53 +704,22 @@ mcp_resources_read() {
 		return 1
 	}
 	local metadata
-	if ! metadata="$(mcp_resources_metadata_for_name "${name}")"; then
+	metadata="$(mcp_resources_metadata_for_name "${name}" 2>/dev/null || echo "{}")"
+	if [ -z "${metadata}" ] || [ "${metadata}" = "{}" ]; then
 		if [ -z "${explicit_uri}" ]; then
 			mcp_resources_error -32601 "Resource not found"
 			return 1
 		fi
 		metadata='{}'
 	fi
-	local py
-	py="$(mcp_resources_python)" || return 1
+
 	mcp_logging_debug "${MCP_RESOURCES_LOGGER}" "Metadata resolved for name=${name:-<direct>} uri=${explicit_uri}"
-	local info_json
-	info_json="$(
-		METADATA="${metadata}" URI_OVERRIDE="${explicit_uri}" "${py}" <<'PY'
-import json, os
-metadata = json.loads(os.environ.get("METADATA", "{}"))
-uri = os.environ.get("URI_OVERRIDE") or metadata.get("uri") or ""
-provider = metadata.get("provider", "file")
-mime = metadata.get("mimeType", "text/plain")
-print(json.dumps({
-    "uri": uri,
-    "provider": provider,
-    "mimeType": mime
-}, ensure_ascii=False, separators=(',', ':')))
-PY
-	)"
+
 	local uri provider mime
-	uri="$(
-		INFO="${info_json}" "${py}" <<'PY'
-import json, os
-info = json.loads(os.environ["INFO"])
-print(info.get("uri") or "")
-PY
-	)"
-	provider="$(
-		INFO="${info_json}" "${py}" <<'PY'
-import json, os
-info = json.loads(os.environ["INFO"])
-print(info.get("provider") or "file")
-PY
-	)"
-	mime="$(
-		INFO="${info_json}" "${py}" <<'PY'
-import json, os
-info = json.loads(os.environ["INFO"])
-print(info.get("mimeType") or "text/plain")
-PY
-	)"
+	uri="$(echo "${metadata}" | jq -r --arg explicit "${explicit_uri}" 'if $explicit != "" then $explicit else .uri // "" end')"
+	provider="$(echo "${metadata}" | jq -r '.provider // "file"')"
+	mime="$(echo "${metadata}" | jq -r '.mimeType // "text/plain"')"
+
 	if [ -z "${uri}" ]; then
 		mcp_resources_error -32602 "Resource URI missing"
 		return 1
@@ -969,19 +751,11 @@ PY
 		return 1
 	fi
 	local result
-	result="$(
-		CONTENT="${content}" MIME="${mime}" URI="${uri}" "${py}" <<'PY'
-import json, os, sys
-content = os.environ.get("CONTENT", "")
-mime = os.environ.get("MIME", "text/plain")
-sys.stdout.write(json.dumps({
-    "uri": os.environ.get("URI"),
-    "mimeType": mime,
-    "base64": False,
-    "content": content
-}, ensure_ascii=False, separators=(',', ':')))
-PY
-	)"
-	local safe_result="${result//\\/\\\\}"
-	printf '%s' "${safe_result}"
+	result="$(jq -n --arg uri "${uri}" --arg mime "${mime}" --arg content "${content}" '{
+		uri: $uri,
+		mimeType: $mime,
+		base64: false,
+		content: $content
+	}')"
+	printf '%s' "${result}"
 }

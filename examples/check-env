@@ -8,6 +8,3 @@ fi
 if command -v gojq >/dev/null 2>&1; then
   printf 'gojq available: %s\n' "$(gojq --version | head -n1)"
 fi
-if command -v python3 >/dev/null 2>&1; then
-  printf 'python3 available\n'
-fi

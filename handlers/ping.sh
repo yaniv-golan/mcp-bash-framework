@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Spec §3/§8 ping handler.
+# Ping handler.
 
 set -euo pipefail
 

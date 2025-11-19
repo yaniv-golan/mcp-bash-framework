@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Placeholder for future resource providers (Spec §19 roadmap).
+# Placeholder for future resource providers.
 
 set -euo pipefail
 

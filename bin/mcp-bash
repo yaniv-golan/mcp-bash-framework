@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Spec §1 bullet 1: mcp-bash must execute on Bash ≥3.2 across macOS/Linux/WSL without edits.
-# Spec §1 bullet 3: core targets MCP protocol version 2025-06-18 and maintains stdout discipline.
-# Spec §1 bullet 6: transport scope is limited to stdio; no alternative transports are supported.
+# mcp-bash must execute on Bash ≥3.2 across macOS/Linux/WSL without edits.
+# Core targets MCP protocol version 2025-06-18 and maintains stdout discipline.
+# Transport scope is limited to stdio; no alternative transports are supported.
 
 set -euo pipefail
 
@@ -49,7 +49,7 @@ mcp_scaffold_tool() {
 	mkdir -p "${target_dir}"
 	mcp_template_render "${scaffold_dir}/tool.sh" "${target_dir}/${name}.sh" "__NAME__=${name}"
 	chmod +x "${target_dir}/${name}.sh"
-	mcp_template_render "${scaffold_dir}/tool.meta.yaml" "${target_dir}/${name}.meta.yaml" "__NAME__=${name}"
+	mcp_template_render "${scaffold_dir}/tool.meta.json" "${target_dir}/${name}.meta.json" "__NAME__=${name}"
 	mcp_template_render "${scaffold_dir}/README.md" "${target_dir}/README.md" "__NAME__=${name}"
 	printf 'Scaffolded tool at %s\n' "${target_dir}"
 	exit 0
@@ -74,7 +74,7 @@ mcp_scaffold_prompt() {
 	fi
 	mkdir -p "${target_dir}"
 	mcp_template_render "${scaffold_dir}/prompt.txt" "${target_dir}/${name}.txt" "__NAME__=${name}"
-	mcp_template_render "${scaffold_dir}/prompt.meta.yaml" "${target_dir}/${name}.meta.yaml" "__NAME__=${name}"
+	mcp_template_render "${scaffold_dir}/prompt.meta.json" "${target_dir}/${name}.meta.json" "__NAME__=${name}"
 	mcp_template_render "${scaffold_dir}/README.md" "${target_dir}/README.md" "__NAME__=${name}"
 	printf 'Scaffolded prompt at %s\n' "${target_dir}"
 	exit 0
@@ -101,34 +101,25 @@ mcp_scaffold_resource() {
 	mcp_template_render "${scaffold_dir}/resource.txt" "${target_dir}/${name}.txt" "__NAME__=${name}"
 	local resource_abs_path="${MCPBASH_ROOT}/resources/${name}/${name}.txt"
 	local resource_uri=""
-	if command -v python3 >/dev/null 2>&1; then
-		resource_uri="$(
-			python3 - "$resource_abs_path" <<'PY'
-import pathlib, sys
-print(pathlib.Path(sys.argv[1]).resolve().as_uri())
-PY
-			2>/dev/null
-		)"
-	elif command -v python >/dev/null 2>&1; then
-		resource_uri="$(
-			python - "$resource_abs_path" <<'PY'
-import pathlib, sys
-print(pathlib.Path(sys.argv[1]).resolve().as_uri())
-PY
-			2>/dev/null
-		)"
+	
+	if [ -f "${resource_abs_path}" ]; then
+		local dir base
+		dir="$(dirname "${resource_abs_path}")"
+		base="$(basename "${resource_abs_path}")"
+		dir="$(cd "${dir}" >/dev/null 2>&1 && pwd)"
+		resource_abs_path="${dir}/${base}"
 	fi
-	if [ -z "${resource_uri}" ]; then
-		resource_uri="file://${resource_abs_path}"
-		resource_uri="${resource_uri// /%20}"
-	fi
-	mcp_template_render "${scaffold_dir}/resource.meta.yaml" "${target_dir}/${name}.meta.yaml" "__NAME__=${name}" "__RESOURCE_URI__=${resource_uri}"
+	
+	resource_uri="file://${resource_abs_path}"
+	resource_uri="${resource_uri// /%20}"
+	
+	mcp_template_render "${scaffold_dir}/resource.meta.json" "${target_dir}/${name}.meta.json" "__NAME__=${name}" "__RESOURCE_URI__=${resource_uri}"
 	mcp_template_render "${scaffold_dir}/README.md" "${target_dir}/README.md" "__NAME__=${name}"
 	printf 'Scaffolded resource at %s\n' "${target_dir}"
 	exit 0
 }
 
-# Spec §1 bullet 2: keep a stable, versioned core separated from extension directories.
+# Keep a stable, versioned core separated from extension directories.
 MCPBASH_SERVER_NAME="mcp-bash"
 MCPBASH_SERVER_TITLE="MCP Bash Server"
 MCPBASH_SERVER_VERSION="0.1.0"
@@ -151,7 +142,7 @@ require_bash_runtime() {
 	fi
 }
 
-# Spec §1 bullet 2 and Spec §2 filesystem expectations: establish project root and source runtime detection helpers.
+# Establish project root and source runtime detection helpers.
 initialize_runtime_paths() {
 	local script_dir=""
 
@@ -163,7 +154,7 @@ initialize_runtime_paths() {
 
 	for lib in ${required_libs}; do
 		if [ ! -r "${MCPBASH_ROOT}/lib/${lib}.sh" ]; then
-			printf '%s\n' "Missing required library at ${MCPBASH_ROOT}/lib/${lib}.sh (Spec §4 bootstrap prerequisites)." >&2
+			printf '%s\n' "Missing required library at ${MCPBASH_ROOT}/lib/${lib}.sh (bootstrap prerequisites)." >&2
 			exit 1
 		fi
 	done
@@ -199,14 +190,14 @@ initialize_runtime_paths() {
 }
 
 mcp_verify_stdout_target() {
-	# Spec §4: reject configurations where stdout is not connected to a pipe or terminal.
+	# Reject configurations where stdout is not connected to a pipe or terminal.
 	if [ -t 1 ]; then
 		return 0
 	fi
 
 	# macOS/Linux expose /dev/stdout as a character device even when piped; fall back to a write probe.
 	if ! { : >&1; } 2>/dev/null; then
-		printf '%s\n' 'mcp-bash requires stdout to be connected to an active pipe or terminal (Spec §4).' >&2
+		printf '%s\n' 'mcp-bash requires stdout to be connected to an active pipe or terminal (stdout must be connected).' >&2
 		exit 1
 	fi
 }
@@ -221,11 +212,11 @@ main() {
 	trap 'mcp_runtime_cleanup' EXIT INT TERM
 
 	if mcp_runtime_is_minimal_mode; then
-		# Spec §2 minimal mode table: warn about reduced capability surface.
-		printf '%s\n' 'Operating in minimal mode: only lifecycle, ping, and logging handlers are exposed until JSON tooling becomes available (Spec §2).' >&2
+		# Warn about reduced capability surface.
+		printf '%s\n' 'Operating in minimal mode: only lifecycle, ping, and logging handlers are exposed until JSON tooling becomes available (JSON tooling needed).' >&2
 	fi
 
-	# Spec §4 bootstrap: begin primary lifecycle loop.
+	# Bootstrap: begin primary lifecycle loop.
 	mcp_core_run
 }
 

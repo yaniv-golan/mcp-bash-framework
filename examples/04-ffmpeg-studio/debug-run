@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Wrapper to log stdin for debugging
+tee "${MCPBASH_TMP_ROOT:-/tmp}/mcp-debug-stdin.log" | ./examples/04-ffmpeg-studio/run
+
+
