@@ -29,6 +29,53 @@ mcp_template_render() {
 	printf '%s' "${content}" >"${output}"
 }
 
+mcp_url_encode() {
+	local value="$1"
+	if command -v python3 >/dev/null 2>&1; then
+		PYTHONUTF8=1 python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=":/"))' "${value}"
+		return 0
+	fi
+	local output=""
+	local i
+	local char
+	local hex
+	local LC_ALL=C
+	for ((i = 0; i < ${#value}; i++)); do
+		char="${value:i:1}"
+		case "${char}" in
+		[a-zA-Z0-9.~_-] | / | :)
+			output+="${char}"
+			;;
+		*)
+			printf -v hex '%02X' "'${char}"
+			output+="%${hex}"
+			;;
+		esac
+	done
+	printf '%s' "${output}"
+}
+
+mcp_file_uri_from_path() {
+	local path="$1"
+	if command -v python3 >/dev/null 2>&1; then
+		if PYTHONUTF8=1 python3 - "$path" <<'PY'; then
+import pathlib, sys
+print(pathlib.Path(sys.argv[1]).resolve().as_uri())
+PY
+			return 0
+		fi
+	fi
+	local dir
+	if ! dir="$(cd "$(dirname "${path}")" >/dev/null 2>&1 && pwd)"; then
+		printf 'Unable to resolve resource path %s\n' "${path}" >&2
+		return 1
+	fi
+	local base
+	base="$(basename "${path}")"
+	local abs_path="${dir}/${base}"
+	mcp_url_encode "file://${abs_path}"
+}
+
 mcp_scaffold_tool() {
 	local name="$1"
 	if [ -z "${name}" ]; then
@@ -101,7 +148,7 @@ mcp_scaffold_resource() {
 	mcp_template_render "${scaffold_dir}/resource.txt" "${target_dir}/${name}.txt" "__NAME__=${name}"
 	local resource_abs_path="${MCPBASH_ROOT}/resources/${name}/${name}.txt"
 	local resource_uri=""
-	
+
 	if [ -f "${resource_abs_path}" ]; then
 		local dir base
 		dir="$(dirname "${resource_abs_path}")"
@@ -109,10 +156,12 @@ mcp_scaffold_resource() {
 		dir="$(cd "${dir}" >/dev/null 2>&1 && pwd)"
 		resource_abs_path="${dir}/${base}"
 	fi
-	
-	resource_uri="file://${resource_abs_path}"
-	resource_uri="${resource_uri// /%20}"
-	
+
+	if ! resource_uri="$(mcp_file_uri_from_path "${resource_abs_path}")"; then
+		printf 'Unable to build resource URI\n' >&2
+		exit 1
+	fi
+
 	mcp_template_render "${scaffold_dir}/resource.meta.json" "${target_dir}/${name}.meta.json" "__NAME__=${name}" "__RESOURCE_URI__=${resource_uri}"
 	mcp_template_render "${scaffold_dir}/README.md" "${target_dir}/README.md" "__NAME__=${name}"
 	printf 'Scaffolded resource at %s\n' "${target_dir}"

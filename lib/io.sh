@@ -51,7 +51,10 @@ mcp_io_read_file_exact() {
 		printf '%s' ''
 		return 0
 	fi
-	if ! data="$(cat "${path}" 2>/dev/null; printf '%s' "${marker}")"; then
+	if ! data="$(
+		cat "${path}" 2>/dev/null
+		printf '%s' "${marker}"
+	)"; then
 		return 1
 	fi
 	printf '%s' "${data%"${marker}"}"

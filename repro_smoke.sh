@@ -2,8 +2,10 @@
 set -euo pipefail
 set -x
 
-export MCPBASH_ROOT="$(pwd)"
-export MCPBASH_TMP_ROOT="$(mktemp -d)"
+MCPBASH_ROOT="$(pwd)"
+export MCPBASH_ROOT
+MCPBASH_TMP_ROOT="$(mktemp -d)"
+export MCPBASH_TMP_ROOT
 export MCPBASH_REGISTRY_DIR="${MCPBASH_TMP_ROOT}/registry"
 
 mkdir -p "${MCPBASH_REGISTRY_DIR}"
@@ -18,7 +20,7 @@ echo "ROOT: ${MCPBASH_ROOT}"
 
 # Create a dummy tool
 mkdir -p "${MCPBASH_TMP_ROOT}/tools"
-cat <<'EOF' > "${MCPBASH_TMP_ROOT}/tools/smoke.sh"
+cat <<'EOF' >"${MCPBASH_TMP_ROOT}/tools/smoke.sh"
 #!/bin/bash
 echo "Hello from smoke tool"
 EOF
@@ -39,14 +41,14 @@ MCP_TOOLS_REGISTRY_HASH="dummy"
 # Let's make the tool inside the workspace.
 
 mkdir -p tools
-cat <<'EOF' > tools/smoke.sh
+cat <<'EOF' >tools/smoke.sh
 #!/bin/bash
 echo "Hello from smoke tool"
 EOF
 chmod +x tools/smoke.sh
 
 mcp_tools_metadata_for_name() {
-    echo "{\"name\":\"smoke.echo\",\"path\":\"tools/smoke.sh\",\"inputSchema\":{},\"timeoutSecs\":null}"
+	echo "{\"name\":\"smoke.echo\",\"path\":\"tools/smoke.sh\",\"inputSchema\":{},\"timeoutSecs\":null}"
 }
 
 # Call it

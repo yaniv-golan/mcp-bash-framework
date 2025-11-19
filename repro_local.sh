@@ -8,8 +8,10 @@ set -euo pipefail
 . handlers/tools.sh # Source handler
 
 # Setup minimal environment
-export MCPBASH_ROOT="$(pwd)"
-export MCPBASH_TMP_ROOT="$(mktemp -d)"
+MCPBASH_ROOT="$(pwd)"
+export MCPBASH_ROOT
+MCPBASH_TMP_ROOT="$(mktemp -d)"
+export MCPBASH_TMP_ROOT
 export MCPBASH_REGISTRY_DIR="${MCPBASH_TMP_ROOT}/registry"
 export MCPBASH_TOOLS_DIR="${MCPBASH_TMP_ROOT}/tools"
 mkdir -p "${MCPBASH_REGISTRY_DIR}"
@@ -25,7 +27,7 @@ mcp_lock_release() { :; }
 
 # Create dummy tool
 TOOL_PATH="${MCPBASH_TOOLS_DIR}/smoke.sh"
-cat <<'EOF' > "${TOOL_PATH}"
+cat <<'EOF' >"${TOOL_PATH}"
 #!/bin/bash
 echo "Hello from smoke tool"
 EOF

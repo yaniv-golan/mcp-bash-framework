@@ -152,32 +152,31 @@ cat <<EOF_META >"${SUB_ROOT}/resources/live.meta.json"
 {"name": "file.live", "description": "Live file", "uri": "file://${SUB_ROOT}/resources/live.txt", "mimeType": "text/plain"}
 EOF_META
 
-
 run_subscription_test() {
 	local sub_root="$1"
 	local pipe_in="${sub_root}/pipe_in"
 	local pipe_out="${sub_root}/pipe_out"
-	
+
 	rm -f "$pipe_in" "$pipe_out"
 	mkfifo "$pipe_in" "$pipe_out"
-	
+
 	(
 		cd "$sub_root" || exit 1
 		./bin/mcp-bash <"$pipe_in" >"$pipe_out" &
 		echo $! >"${sub_root}/server.pid"
 	)
-	
+
 	local server_pid
 	# Wait for pid file
 	sleep 1
 	server_pid="$(cat "${sub_root}/server.pid")"
-	
+
 	exec 3>"$pipe_in"
 	exec 4<"$pipe_out"
-	
+
 	# Send init
 	echo '{"jsonrpc":"2.0","id":"init","method":"initialize","params":{}}' >&3
-	
+
 	# Read init
 	while read -r line <&4; do
 		local id
@@ -186,15 +185,15 @@ run_subscription_test() {
 			break
 		fi
 	done
-	
+
 	echo '{"jsonrpc":"2.0","method":"notifications/initialized"}' >&3
-	
+
 	# Send subscribe
 	echo '{"jsonrpc":"2.0","id":"sub","method":"resources/subscribe","params":{"name":"file.live"}}' >&3
-	
+
 	local sub_id=""
 	local initial_content=""
-	
+
 	while read -r line <&4; do
 		local id method
 		id="$(echo "$line" | jq -r '.id // empty')"
@@ -212,27 +211,27 @@ run_subscription_test() {
 			fi
 		fi
 	done
-	
+
 	if [ -z "$sub_id" ]; then
 		echo "Failed to get subscription ID" >&2
 		kill "$server_pid" 2>/dev/null || true
 		exit 1
 	fi
-	
+
 	# Trigger update
 	echo "updated" >"${sub_root}/resources/live.txt"
-	
+
 	# Send ping to ensure we process events
 	echo '{"jsonrpc":"2.0","id":"ping","method":"ping"}' >&3
-	
+
 	local ping_seen=false
 	local update_seen=false
-	
+
 	while read -t 5 -r line <&4; do
 		local id method
 		id="$(echo "$line" | jq -r '.id // empty')"
 		method="$(echo "$line" | jq -r '.method // empty')"
-		
+
 		if [ "$id" = "ping" ]; then
 			ping_seen=true
 		elif [ "$method" = "notifications/resources/updated" ]; then
@@ -246,24 +245,23 @@ run_subscription_test() {
 				fi
 			fi
 		fi
-		
+
 		if [ "$ping_seen" = true ] && [ "$update_seen" = true ]; then
 			break
 		fi
 	done
-	
+
 	if [ "$update_seen" != true ]; then
 		echo "Update not seen" >&2
 		kill "$server_pid" 2>/dev/null || true
 		exit 1
 	fi
-	
+
 	echo '{"jsonrpc":"2.0","id":"shutdown","method":"shutdown"}' >&3
 	echo '{"jsonrpc":"2.0","id":"exit","method":"exit"}' >&3
-	
+
 	wait "$server_pid"
 	rm -f "$pipe_in" "$pipe_out"
 }
 
 run_subscription_test "${SUB_ROOT}"
-

@@ -10,6 +10,7 @@ MCPBASH_INITIALIZE_HANDSHAKE_DONE=false
 MCPBASH_HANDLER_OUTPUT=""
 MCPBASH_SHUTDOWN_WATCHDOG_PID=""
 MCPBASH_EXIT_REQUESTED=false
+MCPBASH_PROGRESS_FLUSHER_PID=""
 
 mcp_register_tool() {
 	local payload="$1"
@@ -68,6 +69,9 @@ mcp_core_bootstrap_state() {
 	MCP_LOG_STREAM="${MCPBASH_STATE_DIR}/logs.ndjson"
 	: >"${MCP_PROGRESS_STREAM}"
 	: >"${MCP_LOG_STREAM}"
+	if [ "${MCPBASH_ENABLE_LIVE_PROGRESS:-false}" = "true" ]; then
+		mcp_core_start_progress_flusher
+	fi
 }
 
 mcp_core_read_loop() {
@@ -111,8 +115,8 @@ mcp_core_wait_for_one_worker() {
 			return 0
 		fi
 	done
-	set -- ${pids}
-	first_pid="$1"
+	local first_pid
+	first_pid="$(printf '%s\n' "${pids}" | head -n1)"
 	if [ -n "${first_pid}" ]; then
 		if ! wait "${first_pid}"; then
 			status=$?
@@ -279,7 +283,7 @@ mcp_core_handle_line() {
 	local method
 
 	normalized_line="$(mcp_json_normalize_line "${raw_line}")" || {
-		mcp_core_emit_parse_error "Invalid Request" -32600 "Failed to normalize input"
+		mcp_core_emit_parse_error "Parse error" -32700 "Failed to normalize input"
 		return
 	}
 
@@ -293,7 +297,7 @@ mcp_core_handle_line() {
 			return
 		fi
 		if ! mcp_core_process_legacy_batch "${normalized_line}"; then
-			mcp_core_emit_parse_error "Invalid Request" -32600 "Unable to process batch array"
+			mcp_core_emit_parse_error "Parse error" -32700 "Unable to process batch array"
 		fi
 		return
 	fi
@@ -564,11 +568,13 @@ mcp_core_worker_entry() {
 		mcp_core_emit_progress_stream "${key}" "${progress_stream}"
 		rm -f "${progress_stream}"
 		rm -f "${MCPBASH_STATE_DIR}/rate.progress.${key}.log"
+		rm -f "${progress_stream}.offset"
 	fi
 	if [ -n "${log_stream}" ]; then
 		mcp_core_emit_log_stream "${key}" "${log_stream}"
 		rm -f "${log_stream}"
 		rm -f "${MCPBASH_STATE_DIR}/rate.log.${key}.log"
+		rm -f "${log_stream}.offset"
 	fi
 }
 
@@ -590,6 +596,8 @@ mcp_core_worker_cleanup() {
 		mcp_ids_clear_worker "${key}"
 		rm -f "${MCPBASH_STATE_DIR}/rate.progress.${key}.log"
 		rm -f "${MCPBASH_STATE_DIR}/rate.log.${key}.log"
+		rm -f "${MCPBASH_STATE_DIR}/progress.${key}.ndjson.offset"
+		rm -f "${MCPBASH_STATE_DIR}/logs.${key}.ndjson.offset"
 	fi
 
 	if [ -n "${stderr_file}" ] && [ -f "${stderr_file}" ]; then
@@ -782,7 +790,7 @@ mcp_core_emit_progress_stream() {
 mcp_core_extract_log_level() {
 	local line="$1"
 	local level
-	level="$(printf '%s' "${line}" | jq -r '.params.level // "info"' 2>/dev/null | tr '[:upper:]' '[:lower:]')"
+	level="$(mcp_json_extract_log_level "${line}" | tr '[:upper:]' '[:lower:]')"
 	[ -z "${level}" ] && level="info"
 	printf '%s' "${level}"
 }
@@ -822,4 +830,73 @@ mcp_core_emit_registry_notifications() {
 		rpc_send_line "${note}"
 	fi
 	mcp_resources_poll_subscriptions
+}
+
+mcp_core_flush_stream() {
+	local key="$1"
+	local kind="$2"
+	local stream="${MCPBASH_STATE_DIR}/${kind}.${key}.ndjson"
+	local offset_file="${stream}.offset"
+	[ -f "${stream}" ] || return 0
+	local last_offset=0
+	if [ -f "${offset_file}" ]; then
+		last_offset="$(cat "${offset_file}")"
+	fi
+	local size
+	size="$(wc -c <"${stream}" 2>/dev/null || echo 0)"
+	if [ "${size}" -lt "${last_offset}" ]; then
+		last_offset=0
+	fi
+	if [ "${size}" -eq "${last_offset}" ]; then
+		return 0
+	fi
+	tail -c +$((last_offset + 1)) "${stream}" 2>/dev/null \
+		| while IFS= read -r line || [ -n "${line}" ]; do
+			[ -z "${line}" ] && continue
+			if [ "${kind}" = "log" ]; then
+				local level
+				level="$(mcp_core_extract_log_level "${line}")"
+				if ! mcp_logging_is_enabled "${level}"; then
+					continue
+				fi
+			fi
+			if mcp_core_rate_limit "${key}" "${kind}"; then
+				rpc_send_line "${line}"
+			fi
+		done
+	echo "${size}" >"${offset_file}"
+}
+
+mcp_core_flush_worker_streams_once() {
+	local listing key
+	listing="$(mcp_ids_list_active_workers 2>/dev/null || true)"
+	[ -z "${listing}" ] && return 0
+	while IFS= read -r key || [ -n "${key}" ]; do
+		[ -z "${key}" ] && continue
+		mcp_core_flush_stream "${key}" "progress"
+		mcp_core_flush_stream "${key}" "log"
+	done <<<"${listing}"
+}
+
+mcp_core_start_progress_flusher() {
+	if [ -n "${MCPBASH_PROGRESS_FLUSHER_PID:-}" ]; then
+		return 0
+	fi
+	(
+		while :; do
+			mcp_core_flush_worker_streams_once
+			sleep "${MCPBASH_PROGRESS_FLUSH_INTERVAL:-0.5}"
+		done
+	) &
+	MCPBASH_PROGRESS_FLUSHER_PID=$!
+}
+
+mcp_core_stop_progress_flusher() {
+	if [ -z "${MCPBASH_PROGRESS_FLUSHER_PID:-}" ]; then
+		return 0
+	fi
+	if kill "${MCPBASH_PROGRESS_FLUSHER_PID}" 2>/dev/null; then
+		wait "${MCPBASH_PROGRESS_FLUSHER_PID}" 2>/dev/null || true
+	fi
+	MCPBASH_PROGRESS_FLUSHER_PID=""
 }

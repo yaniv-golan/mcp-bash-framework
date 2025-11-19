@@ -3,6 +3,14 @@
 
 set -euo pipefail
 
+mcp_resources_generate_subscription_id() {
+	if command -v uuidgen >/dev/null 2>&1; then
+		printf '%s' "sub-$(uuidgen 2>/dev/null | tr '[:upper:]' '[:lower:]')"
+		return
+	fi
+	printf 'sub-%s-%04d%04d' "$(date +%s)" "$RANDOM" "$RANDOM"
+}
+
 mcp_resources_quote() {
 	local text="$1"
 	mcp_json_quote_text "${text}"
@@ -71,7 +79,7 @@ mcp_handle_resources() {
 			printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32602,"message":%s}}' "${id}" "${message}"
 			return 0
 		fi
-		subscription_id="sub-$(uuidgen 2>/dev/null || date +%s%N)"
+		subscription_id="$(mcp_resources_generate_subscription_id)"
 		if ! result_json="$(mcp_resources_read "${name}" "${uri}")"; then
 			mcp_logging_error "${logger}" "Initial read failed code=${MCP_RESOURCES_ERR_CODE:-?} msg=${MCP_RESOURCES_ERR_MESSAGE:-?}"
 			local code="${MCP_RESOURCES_ERR_CODE:- -32603}"

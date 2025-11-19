@@ -14,6 +14,8 @@ if ! command -v git >/dev/null 2>&1; then
 	exit 4
 fi
 
+export GIT_TERMINAL_PROMPT=0
+
 spec="${uri#git://}"
 repo="git://${spec}"
 ref="HEAD"
@@ -46,12 +48,33 @@ cleanup() {
 }
 trap cleanup EXIT
 
-if ! git clone --depth 1 --branch "${ref}" "${repo}" "${workdir}/repo" >/dev/null 2>&1; then
-	printf '%s\n' "Failed to clone ${repo} @ ${ref}" >&2
-	exit 5
+repo_dir="${workdir}/repo"
+sha_regex='^[0-9a-fA-F]{7,64}$'
+if [[ "${ref}" =~ ${sha_regex} ]]; then
+	if ! git init -q "${repo_dir}" >/dev/null 2>&1; then
+		printf '%s\n' "Failed to initialize git repository" >&2
+		exit 5
+	fi
+	if ! git -C "${repo_dir}" remote add origin "${repo}" >/dev/null 2>&1; then
+		printf '%s\n' "Failed to add remote ${repo}" >&2
+		exit 5
+	fi
+	if ! git -C "${repo_dir}" fetch --quiet --depth 1 origin "${ref}" >/dev/null 2>&1; then
+		printf '%s\n' "Failed to fetch commit ${ref}" >&2
+		exit 5
+	fi
+	if ! git -C "${repo_dir}" checkout --quiet FETCH_HEAD >/dev/null 2>&1; then
+		printf '%s\n' "Failed to checkout commit ${ref}" >&2
+		exit 5
+	fi
+else
+	if ! git clone --depth 1 --branch "${ref}" "${repo}" "${repo_dir}" >/dev/null 2>&1; then
+		printf '%s\n' "Failed to clone ${repo} @ ${ref}" >&2
+		exit 5
+	fi
 fi
 
-target="${workdir}/repo/${path}"
+target="${repo_dir}/${path}"
 if [ ! -f "${target}" ]; then
 	printf '%s\n' "File ${path} not found in repository" >&2
 	exit 3

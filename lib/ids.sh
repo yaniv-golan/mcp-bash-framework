@@ -129,3 +129,17 @@ mcp_ids_worker_info() {
 	fi
 	cat "${pid_path}"
 }
+
+mcp_ids_list_active_workers() {
+	local path
+	local found=0
+	for path in "${MCPBASH_STATE_DIR}"/pid.*; do
+		[ -f "${path}" ] || continue
+		found=1
+		printf '%s\n' "${path##*.}"
+	done
+	if [ "${found}" -eq 0 ]; then
+		return 1
+	fi
+	return 0
+}

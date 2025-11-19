@@ -81,7 +81,6 @@ mcp_timeout_spawn_watchdog() {
 	local state_file="$4"
 	local main_pgid="$5"
 	local token="$6"
-	local parent_pid="$PPID"
 	local remaining
 
 	remaining="${seconds}"

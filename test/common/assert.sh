@@ -46,4 +46,3 @@ assert_json_lines() {
 		fi
 	done <"${path}"
 }
-

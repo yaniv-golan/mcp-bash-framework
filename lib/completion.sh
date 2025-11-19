@@ -15,6 +15,14 @@ MCP_COMPLETION_MANUAL_DELIM=$'\036'
 MCP_COMPLETION_MANUAL_REGISTRY_JSON=""
 MCP_COMPLETION_MANUAL_LOADED=false
 
+mcp_completion_manual_buffer_limit() {
+	local limit="${MCPBASH_MANUAL_BUFFER_MAX_BYTES:-1048576}"
+	case "${limit}" in
+	'' | *[!0-9]*) limit=1048576 ;;
+	esac
+	printf '%s' "${limit}"
+}
+
 MCP_COMPLETION_PROVIDER_TYPE=""
 MCP_COMPLETION_PROVIDER_SCRIPT=""
 MCP_COMPLETION_PROVIDER_METADATA=""
@@ -24,10 +32,15 @@ MCP_COMPLETION_PROVIDER_PROMPT_TEMPLATE=""
 MCP_COMPLETION_PROVIDER_RESOURCE_PATH=""
 MCP_COMPLETION_PROVIDER_RESOURCE_URI=""
 MCP_COMPLETION_PROVIDER_RESOURCE_PROVIDER=""
+# shellcheck disable=SC2034
 MCP_COMPLETION_PROVIDER_RESULT_SUGGESTIONS="[]"
+# shellcheck disable=SC2034
 MCP_COMPLETION_PROVIDER_RESULT_HAS_MORE="false"
+# shellcheck disable=SC2034
 MCP_COMPLETION_PROVIDER_RESULT_NEXT=""
+# shellcheck disable=SC2034
 MCP_COMPLETION_PROVIDER_RESULT_CURSOR=""
+# shellcheck disable=SC2034
 MCP_COMPLETION_PROVIDER_RESULT_ERROR=""
 
 MCP_COMPLETION_CURSOR_OFFSET=0
@@ -81,7 +94,7 @@ mcp_completion_resolve_script_path() {
 	if [ ! -f "${abs}" ]; then
 		return 1
 	fi
-	printf '%s' "${abs#${root}/}"
+	printf '%s' "${abs#"${root}"/}"
 }
 
 mcp_completion_base64_urlencode() {
@@ -95,7 +108,7 @@ mcp_completion_base64_urldecode() {
 	fi
 	local converted="${input//-/+}"
 	converted="${converted//_/\/}"
-	local remainder=$(( ${#converted} % 4 ))
+	local remainder=$((${#converted} % 4))
 	if [ "${remainder}" -ne 0 ]; then
 		local pad=$((4 - remainder))
 		case "${pad}" in
@@ -144,11 +157,20 @@ mcp_completion_register_manual() {
 	if [ -z "${payload}" ]; then
 		return 0
 	fi
+	local new_buffer
 	if [ -n "${MCP_COMPLETION_MANUAL_BUFFER}" ]; then
-		MCP_COMPLETION_MANUAL_BUFFER="${MCP_COMPLETION_MANUAL_BUFFER}${MCP_COMPLETION_MANUAL_DELIM}${payload}"
+		new_buffer="${MCP_COMPLETION_MANUAL_BUFFER}${MCP_COMPLETION_MANUAL_DELIM}${payload}"
 	else
-		MCP_COMPLETION_MANUAL_BUFFER="${payload}"
+		new_buffer="${payload}"
 	fi
+	local limit
+	limit="$(mcp_completion_manual_buffer_limit)"
+	if [ "${limit}" -gt 0 ] && [ "${#new_buffer}" -gt "${limit}" ]; then
+		mcp_completion_manual_abort
+		mcp_logging_error "${MCP_COMPLETION_LOGGER}" "Manual completion buffer exceeded ${limit} bytes"
+		return 1
+	fi
+	MCP_COMPLETION_MANUAL_BUFFER="${new_buffer}"
 	return 0
 }
 
@@ -279,10 +301,28 @@ mcp_completion_run_manual_script() {
 	script_output_file="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-completion-manual-output.XXXXXX")"
 	local script_status=0
 
+	local timeout="${MCPBASH_MANUAL_REGISTER_TIMEOUT:-10}"
 	set +e
-	# shellcheck disable=SC1090
-	. "${MCPBASH_REGISTER_SCRIPT}" >"${script_output_file}" 2>&1
-	script_status=$?
+	(
+		set -euo pipefail
+		# shellcheck disable=SC1090
+		. "${MCPBASH_REGISTER_SCRIPT}"
+	) >"${script_output_file}" 2>&1 &
+	local script_pid=$!
+	local script_status=0
+	if [ "${timeout}" -gt 0 ]; then
+		if mcp_completion_wait_for_pid "${script_pid}" "${timeout}"; then
+			wait "${script_pid}"
+			script_status=$?
+		else
+			kill "${script_pid}" 2>/dev/null || true
+			wait "${script_pid}" 2>/dev/null || true
+			script_status=124
+		fi
+	else
+		wait "${script_pid}"
+		script_status=$?
+	fi
 	set -e
 
 	local script_output
@@ -652,6 +692,7 @@ mcp_completion_run_provider() {
 			if [ -n "${prompt_rel}" ]; then
 				prompt_abs="${MCPBASH_ROOT}/${prompt_rel}"
 			fi
+			# shellcheck disable=SC2030,SC2031
 			(
 				cd "${MCPBASH_ROOT}" || exit 1
 				export \
@@ -675,6 +716,7 @@ mcp_completion_run_provider() {
 			if [ -n "${res_rel}" ]; then
 				res_abs="${MCPBASH_ROOT}/${res_rel}"
 			fi
+			# shellcheck disable=SC2030,SC2031
 			(
 				cd "${MCPBASH_ROOT}" || exit 1
 				export \
@@ -695,6 +737,7 @@ mcp_completion_run_provider() {
 				fi
 			) >"${tmp_out}" 2>"${tmp_err}"
 		else
+			# shellcheck disable=SC2030,SC2031
 			(
 				cd "${MCPBASH_ROOT}" || exit 1
 				export \
@@ -715,15 +758,18 @@ mcp_completion_run_provider() {
 		stderr_output="$(cat "${tmp_err}" 2>/dev/null || true)"
 		rm -f "${tmp_out}" "${tmp_err}"
 		if [ "${status}" -ne 0 ]; then
+			# shellcheck disable=SC2034
 			MCP_COMPLETION_PROVIDER_RESULT_ERROR="${stderr_output:-Completion provider failed}"
 			return 1
 		fi
 		if ! normalized="$(mcp_completion_normalize_output "${script_output}" "${limit}" "${offset}")"; then
+			# shellcheck disable=SC2034
 			MCP_COMPLETION_PROVIDER_RESULT_ERROR="Completion provider emitted invalid JSON"
 			return 1
 		fi
 		;;
 	*)
+		# shellcheck disable=SC2034
 		MCP_COMPLETION_PROVIDER_RESULT_ERROR="Unknown completion provider"
 		return 1
 		;;
@@ -731,10 +777,12 @@ mcp_completion_run_provider() {
 
 	local suggestions_json has_more_flag next_index cursor_value
 	if ! suggestions_json="$(printf '%s' "${normalized}" | jq -c '.suggestions // []' 2>/dev/null)"; then
+		# shellcheck disable=SC2034
 		MCP_COMPLETION_PROVIDER_RESULT_ERROR="Unable to parse completion suggestions"
 		return 1
 	fi
 	if ! has_more_flag="$(printf '%s' "${normalized}" | jq -r '.hasMore // false' 2>/dev/null)"; then
+		# shellcheck disable=SC2034
 		MCP_COMPLETION_PROVIDER_RESULT_ERROR="Unable to parse completion hasMore flag"
 		return 1
 	fi
@@ -745,9 +793,13 @@ mcp_completion_run_provider() {
 		cursor_value=""
 	fi
 
+	# shellcheck disable=SC2034
 	MCP_COMPLETION_PROVIDER_RESULT_SUGGESTIONS="${suggestions_json}"
+	# shellcheck disable=SC2034
 	MCP_COMPLETION_PROVIDER_RESULT_HAS_MORE="${has_more_flag}"
+	# shellcheck disable=SC2034
 	MCP_COMPLETION_PROVIDER_RESULT_NEXT="${next_index}"
+	# shellcheck disable=SC2034
 	MCP_COMPLETION_PROVIDER_RESULT_CURSOR="${cursor_value}"
 	return 0
 }
@@ -814,4 +866,17 @@ mcp_completion_finalize() {
 				+ (if $cursor != "" then {cursor: $cursor} else {} end)
 			'
 	)"
+}
+mcp_completion_wait_for_pid() {
+	local pid="$1"
+	local timeout="$2"
+	local waited=0
+	while kill -0 "${pid}" 2>/dev/null; do
+		if [ "${timeout}" -gt 0 ] && [ "${waited}" -ge "${timeout}" ]; then
+			return 1
+		fi
+		sleep 1
+		waited=$((waited + 1))
+	done
+	return 0
 }

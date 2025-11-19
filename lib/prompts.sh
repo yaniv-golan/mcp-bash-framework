@@ -20,7 +20,6 @@ MCP_PROMPTS_MANUAL_ACTIVE=false
 MCP_PROMPTS_MANUAL_BUFFER=""
 MCP_PROMPTS_MANUAL_DELIM=$'\036'
 
-
 mcp_prompts_manual_begin() {
 	MCP_PROMPTS_MANUAL_ACTIVE=true
 	MCP_PROMPTS_MANUAL_BUFFER=""
@@ -206,7 +205,6 @@ mcp_prompts_error() {
 	MCP_PROMPTS_ERR_MESSAGE="$2"
 }
 
-
 mcp_prompts_init() {
 	if [ -z "${MCP_PROMPTS_REGISTRY_PATH}" ]; then
 		MCP_PROMPTS_REGISTRY_PATH="${MCPBASH_REGISTRY_DIR}/prompts.json"
@@ -270,14 +268,21 @@ mcp_prompts_refresh_registry() {
 	now="$(date +%s)"
 
 	if [ -z "${MCP_PROMPTS_REGISTRY_JSON}" ] && [ -f "${MCP_PROMPTS_REGISTRY_PATH}" ]; then
-		MCP_PROMPTS_REGISTRY_JSON="$(cat "${MCP_PROMPTS_REGISTRY_PATH}")"
-		if echo "${MCP_PROMPTS_REGISTRY_JSON}" | jq . >/dev/null 2>&1; then
-			MCP_PROMPTS_REGISTRY_HASH="$(echo "${MCP_PROMPTS_REGISTRY_JSON}" | jq -r '.hash // empty')"
-			MCP_PROMPTS_TOTAL="$(echo "${MCP_PROMPTS_REGISTRY_JSON}" | jq '.total // 0')"
-			if ! mcp_prompts_enforce_registry_limits "${MCP_PROMPTS_TOTAL}" "${MCP_PROMPTS_REGISTRY_JSON}"; then
-				return 1
+		local tmp_json=""
+		if tmp_json="$(cat "${MCP_PROMPTS_REGISTRY_PATH}")"; then
+			if echo "${tmp_json}" | jq . >/dev/null 2>&1; then
+				MCP_PROMPTS_REGISTRY_JSON="${tmp_json}"
+				MCP_PROMPTS_REGISTRY_HASH="$(echo "${MCP_PROMPTS_REGISTRY_JSON}" | jq -r '.hash // empty')"
+				MCP_PROMPTS_TOTAL="$(echo "${MCP_PROMPTS_REGISTRY_JSON}" | jq '.total // 0')"
+				if ! mcp_prompts_enforce_registry_limits "${MCP_PROMPTS_TOTAL}" "${MCP_PROMPTS_REGISTRY_JSON}"; then
+					return 1
+				fi
+			else
+				mcp_logging_warn "${MCP_PROMPTS_LOGGER}" "Discarding invalid prompt registry cache"
+				MCP_PROMPTS_REGISTRY_JSON=""
 			fi
 		else
+			mcp_logging_warn "${MCP_PROMPTS_LOGGER}" "Failed to read prompt registry cache ${MCP_PROMPTS_REGISTRY_PATH}"
 			MCP_PROMPTS_REGISTRY_JSON=""
 		fi
 	fi
@@ -299,10 +304,12 @@ mcp_prompts_scan() {
 
 	if [ -d "${prompts_dir}" ]; then
 		find "${prompts_dir}" -type f ! -name ".*" ! -name "*.meta.json" 2>/dev/null | sort | while read -r path; do
-			local rel_path="${path#${MCPBASH_ROOT}/}"
-			local base_name="$(basename "${path}")"
+			local rel_path="${path#"${MCPBASH_ROOT}"/}"
+			local base_name
+			base_name="$(basename "${path}")"
 			local name="${base_name%.*}"
-			local dir_name="$(dirname "${path}")"
+			local dir_name
+			dir_name="$(dirname "${path}")"
 			local meta_json="${dir_name}/${base_name}.meta.json"
 			local description=""
 			local role="user"
@@ -497,7 +504,7 @@ mcp_prompts_emit_render_result() {
 	local role="$3"
 	local description="$4"
 	local metadata_value="$5"
-	
+
 	jq -n -c \
 		--arg text "${text}" \
 		--argjson args "${args_json:-{}}" \

@@ -9,7 +9,19 @@ case "${path}" in
 [A-Za-z]:/*)
 	drive="${path%%:*}"
 	rest="${path#*:}"
-	path="/${drive,,}${rest}"
+	if [ -n "${BASH_VERSINFO:-}" ] && [ "${BASH_VERSINFO[0]}" -ge 4 ]; then
+		path="/${drive,,}${rest}"
+	else
+		case "${drive}" in
+		[A-Z])
+			lower_drive=$(printf '%s' "${drive}" | tr '[:upper:]' '[:lower:]')
+			path="/${lower_drive}${rest}"
+			;;
+		*)
+			path="/${drive}${rest}"
+			;;
+		esac
+	fi
 	;;
 esac
 path="${path//\\//}"
@@ -30,9 +42,10 @@ normalize_path() {
 }
 
 path="$(normalize_path "${path}")"
-roots="${MCP_RESOURCES_ROOTS:-${MCPBASH_ROOT}}"
+roots_input="${MCP_RESOURCES_ROOTS:-${MCPBASH_ROOT}}"
 allowed=false
-for root in ${roots}; do
+while IFS= read -r root; do
+	[ -z "${root}" ] && continue
 	check_root="$(normalize_path "${root}")"
 	case "${path}" in
 	"${check_root}" | "${check_root}"/*)
@@ -40,7 +53,7 @@ for root in ${roots}; do
 		break
 		;;
 	esac
-done
+done <<<"$(printf '%s\n' "${roots_input}" | tr ':' '\n')"
 if [ "${allowed}" != true ]; then
 	printf '%s' "" >&2
 	exit 2

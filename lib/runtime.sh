@@ -63,6 +63,9 @@ mcp_runtime_cleanup() {
 		return
 	fi
 	MCPBASH_CLEANUP_REGISTERED="true"
+	if declare -f mcp_core_stop_progress_flusher >/dev/null 2>&1; then
+		mcp_core_stop_progress_flusher
+	fi
 
 	mcp_io_log_corruption_summary
 
@@ -82,13 +85,13 @@ mcp_runtime_safe_rmrf() {
 		return 1
 	fi
 	case "${target}" in
-		"${MCPBASH_TMP_ROOT}"/mcpbash.state.* | "${MCPBASH_TMP_ROOT}"/mcpbash.locks*)
-			rm -rf "${target}"
-			;;
-		*)
-			printf '%s\n' "mcp-bash: refusing to remove '${target}' outside TMP root" >&2
-			return 1
-			;;
+	"${MCPBASH_TMP_ROOT}"/mcpbash.state.* | "${MCPBASH_TMP_ROOT}"/mcpbash.locks*)
+		rm -rf "${target}"
+		;;
+	*)
+		printf '%s\n' "mcp-bash: refusing to remove '${target}' outside TMP root" >&2
+		return 1
+		;;
 	esac
 }
 

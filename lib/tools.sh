@@ -143,7 +143,6 @@ mcp_tools_error() {
 	MCP_TOOLS_ERROR_MESSAGE="$2"
 }
 
-
 mcp_tools_init() {
 	if [ -z "${MCP_TOOLS_REGISTRY_PATH}" ]; then
 		MCP_TOOLS_REGISTRY_PATH="${MCPBASH_REGISTRY_DIR}/tools.json"
@@ -270,12 +269,17 @@ mcp_tools_refresh_registry() {
 	now="$(date +%s)"
 
 	if [ -z "${MCP_TOOLS_REGISTRY_JSON}" ] && [ -f "${MCP_TOOLS_REGISTRY_PATH}" ]; then
-		MCP_TOOLS_REGISTRY_JSON="$(cat "${MCP_TOOLS_REGISTRY_PATH}")"
-		if echo "${MCP_TOOLS_REGISTRY_JSON}" | jq . >/dev/null 2>&1; then
-			MCP_TOOLS_REGISTRY_HASH="$(echo "${MCP_TOOLS_REGISTRY_JSON}" | jq -r '.hash // empty')"
-			MCP_TOOLS_TOTAL="$(echo "${MCP_TOOLS_REGISTRY_JSON}" | jq '.total // 0')"
-			if ! mcp_tools_enforce_registry_limits "${MCP_TOOLS_TOTAL}" "${MCP_TOOLS_REGISTRY_JSON}"; then
-				return 1
+		local tmp_json=""
+		if tmp_json="$(cat "${MCP_TOOLS_REGISTRY_PATH}")"; then
+			if echo "${tmp_json}" | jq . >/dev/null 2>&1; then
+				MCP_TOOLS_REGISTRY_JSON="${tmp_json}"
+				MCP_TOOLS_REGISTRY_HASH="$(echo "${MCP_TOOLS_REGISTRY_JSON}" | jq -r '.hash // empty')"
+				MCP_TOOLS_TOTAL="$(echo "${MCP_TOOLS_REGISTRY_JSON}" | jq '.total // 0')"
+				if ! mcp_tools_enforce_registry_limits "${MCP_TOOLS_TOTAL}" "${MCP_TOOLS_REGISTRY_JSON}"; then
+					return 1
+				fi
+			else
+				MCP_TOOLS_REGISTRY_JSON=""
 			fi
 		else
 			MCP_TOOLS_REGISTRY_JSON=""
@@ -299,12 +303,14 @@ mcp_tools_scan() {
 	if [ -d "${MCPBASH_TOOLS_DIR}" ]; then
 		find "${MCPBASH_TOOLS_DIR}" -type f ! -name ".*" ! -name "*.meta.json" 2>/dev/null | sort | while read -r path; do
 			if [ ! -x "${path}" ]; then
-            continue
+				continue
 			fi
-			local rel_path="${path#${MCPBASH_ROOT}/}"
-			local base_name="$(basename "${path}")"
+			local rel_path="${path#"${MCPBASH_ROOT}"/}"
+			local base_name
+			base_name="$(basename "${path}")"
 			local name="${base_name%.*}"
-			local dir_name="$(dirname "${path}")"
+			local dir_name
+			dir_name="$(dirname "${path}")"
 			local meta_json="${dir_name}/${base_name}.meta.json"
 			local description=""
 			local arguments="{}"
@@ -330,7 +336,7 @@ mcp_tools_scan() {
 				mcp_line="$(echo "${header}" | grep "mcp:" | head -n 1)"
 				if [ -n "${mcp_line}" ]; then
 					local json_payload
-					json_payload="$(echo "${mcp_line}" | sed 's/.*mcp://')"
+					json_payload="${mcp_line#*mcp:}"
 					local h_name
 					h_name="$(echo "${json_payload}" | jq -r '.name // empty' 2>/dev/null)"
 					[ -n "${h_name}" ] && name="${h_name}"
@@ -648,7 +654,7 @@ mcp_tools_call() {
 	stdout_content="${stdout_file}"
 
 	case "${exit_code}" in
-	124|137)
+	124 | 137)
 		# shellcheck disable=SC2034
 		MCP_TOOLS_ERROR_CODE=-32002
 		# shellcheck disable=SC2034
@@ -665,13 +671,14 @@ mcp_tools_call() {
 	esac
 
 	local result_json
-	result_json="$(jq -n -c \
-		--arg name "${name}" \
-		--rawfile stdout "${stdout_content}" \
-		--rawfile stderr "${stderr_content}" \
-		--argjson exit_code "${exit_code}" \
-		--arg has_json "${has_json_tool}" \
-		'
+	result_json="$(
+		jq -n -c \
+			--arg name "${name}" \
+			--rawfile stdout "${stdout_content}" \
+			--rawfile stderr "${stderr_content}" \
+			--argjson exit_code "${exit_code}" \
+			--arg has_json "${has_json_tool}" \
+			'
 		{
 			name: $name,
 			content: [],

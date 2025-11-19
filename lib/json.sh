@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # JSON normalization, tokenizer fallbacks, and field extraction.
 
+# shellcheck disable=SC1003
 set -euo pipefail
 
 MCP_JSON_BOM=$'\xEF\xBB\xBF'
@@ -8,6 +9,8 @@ MCP_JSON_CACHE_LINE=""
 MCP_JSON_CACHE_METHOD=""
 MCP_JSON_CACHE_ID=""
 MCP_JSON_CACHE_HAS_ID="false"
+MCP_JSON_CACHE_PARAMS=""
+MCP_JSON_CACHE_HAS_PARAMS="false"
 
 mcp_json_quote_text() {
 	local input="$1"
@@ -209,6 +212,8 @@ mcp_json_minimal_parse() {
 	MCP_JSON_CACHE_METHOD=""
 	MCP_JSON_CACHE_ID=""
 	MCP_JSON_CACHE_HAS_ID="false"
+	MCP_JSON_CACHE_PARAMS=""
+	MCP_JSON_CACHE_HAS_PARAMS="false"
 
 	local len=${#json}
 	if [ "${len}" -lt 2 ]; then
@@ -361,7 +366,61 @@ mcp_json_minimal_process_pair() {
 		return 0
 	fi
 
+	if [ "${key_name}" = "params" ]; then
+		MCP_JSON_CACHE_PARAMS="${value}"
+		MCP_JSON_CACHE_HAS_PARAMS="true"
+		return 0
+	fi
+
 	return 0
+}
+
+mcp_json_minimal_extract_param_string() {
+	local param_key="$1"
+	if [ "${MCP_JSON_CACHE_HAS_PARAMS}" != "true" ]; then
+		return 1
+	fi
+	local payload="${MCP_JSON_CACHE_PARAMS}"
+	local len=${#payload}
+	if [ "${len}" -lt 2 ] || [ "${payload:0:1}" != "{" ] || [ "${payload:len-1:1}" != "}" ]; then
+		return 1
+	fi
+	local inner="${payload:1:len-2}"
+	local pairs
+	if ! pairs="$(mcp_json_minimal_split_pairs "${inner}")"; then
+		return 1
+	fi
+	local IFS=$'\n'
+	local pair
+	for pair in ${pairs}; do
+		[ -z "${pair}" ] && continue
+		local colon_index
+		colon_index="$(mcp_json_minimal_find_colon "${pair}")" || {
+			IFS=$' \t\n'
+			return 1
+		}
+		[ "${colon_index}" -lt 0 ] && continue
+		local key="${pair:0:colon_index}"
+		local value="${pair:colon_index+1}"
+		key="$(mcp_json_trim "${key}")"
+		value="$(mcp_json_trim "${value}")"
+		if [ "${key:0:1}" != '"' ] || [ "${key:${#key}-1:1}" != '"' ]; then
+			continue
+		fi
+		local name="${key:1:${#key}-2}"
+		if [ "${name}" = "${param_key}" ]; then
+			local unquoted
+			if ! unquoted="$(mcp_json_minimal_unquote "${value}")"; then
+				IFS=$' \t\n'
+				return 1
+			fi
+			IFS=$' \t\n'
+			printf '%s' "${unquoted}"
+			return 0
+		fi
+	done
+	IFS=$' \t\n'
+	return 1
 }
 
 mcp_json_minimal_find_colon() {
@@ -445,7 +504,7 @@ mcp_json_minimal_unquote() {
 			fi
 			escape="${body:i:1}"
 			case "${escape}" in
-			"\""|"/"|\\)
+			"\"" | "/" | \\)
 				result+="${escape}"
 				;;
 			b)
@@ -546,6 +605,13 @@ mcp_json_extract_protocol_version() {
 	local json="$1"
 
 	if mcp_runtime_is_minimal_mode; then
+		if ! mcp_json_minimal_parse "${json}"; then
+			printf ''
+			return 1
+		fi
+		if mcp_json_minimal_extract_param_string "protocolVersion"; then
+			return 0
+		fi
 		printf ''
 		return 0
 	fi
@@ -737,6 +803,13 @@ mcp_json_extract_completion_name() {
 mcp_json_extract_log_level() {
 	local json="$1"
 	if mcp_runtime_is_minimal_mode; then
+		if ! mcp_json_minimal_parse "${json}"; then
+			printf ''
+			return 1
+		fi
+		if mcp_json_minimal_extract_param_string "level"; then
+			return 0
+		fi
 		printf ''
 		return 0
 	fi

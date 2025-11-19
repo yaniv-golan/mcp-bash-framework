@@ -20,7 +20,6 @@ MCP_RESOURCES_MANUAL_BUFFER=""
 MCP_RESOURCES_MANUAL_DELIM=$'\036'
 MCP_RESOURCES_LOGGER="${MCP_RESOURCES_LOGGER:-mcp.resources}"
 
-
 mcp_resources_manual_begin() {
 	MCP_RESOURCES_MANUAL_ACTIVE=true
 	MCP_RESOURCES_MANUAL_BUFFER=""
@@ -246,7 +245,6 @@ mcp_resources_error() {
 	MCP_RESOURCES_ERR_MESSAGE="$2"
 }
 
-
 mcp_resources_init() {
 	if [ -z "${MCP_RESOURCES_REGISTRY_PATH}" ]; then
 		MCP_RESOURCES_REGISTRY_PATH="${MCPBASH_REGISTRY_DIR}/resources.json"
@@ -364,16 +362,21 @@ mcp_resources_refresh_registry() {
 	now="$(date +%s)"
 
 	if [ -z "${MCP_RESOURCES_REGISTRY_JSON}" ] && [ -f "${MCP_RESOURCES_REGISTRY_PATH}" ]; then
-		MCP_RESOURCES_REGISTRY_JSON="$(cat "${MCP_RESOURCES_REGISTRY_PATH}")"
-		# Validate and extract meta
-		if echo "${MCP_RESOURCES_REGISTRY_JSON}" | jq . >/dev/null 2>&1; then
-			MCP_RESOURCES_REGISTRY_HASH="$(echo "${MCP_RESOURCES_REGISTRY_JSON}" | jq -r '.hash // empty')"
-			MCP_RESOURCES_TOTAL="$(echo "${MCP_RESOURCES_REGISTRY_JSON}" | jq '.total // 0')"
-			if ! mcp_resources_enforce_registry_limits "${MCP_RESOURCES_TOTAL}" "${MCP_RESOURCES_REGISTRY_JSON}"; then
-				return 1
+		local tmp_json=""
+		if tmp_json="$(cat "${MCP_RESOURCES_REGISTRY_PATH}")"; then
+			if echo "${tmp_json}" | jq . >/dev/null 2>&1; then
+				MCP_RESOURCES_REGISTRY_JSON="${tmp_json}"
+				MCP_RESOURCES_REGISTRY_HASH="$(echo "${MCP_RESOURCES_REGISTRY_JSON}" | jq -r '.hash // empty')"
+				MCP_RESOURCES_TOTAL="$(echo "${MCP_RESOURCES_REGISTRY_JSON}" | jq '.total // 0')"
+				if ! mcp_resources_enforce_registry_limits "${MCP_RESOURCES_TOTAL}" "${MCP_RESOURCES_REGISTRY_JSON}"; then
+					return 1
+				fi
+			else
+				mcp_logging_warn "${MCP_RESOURCES_LOGGER}" "Discarding invalid resource registry cache"
+				MCP_RESOURCES_REGISTRY_JSON=""
 			fi
 		else
-			# Corrupt cache, ignore
+			mcp_logging_warn "${MCP_RESOURCES_LOGGER}" "Failed to read resource registry cache ${MCP_RESOURCES_REGISTRY_PATH}"
 			MCP_RESOURCES_REGISTRY_JSON=""
 		fi
 	fi
@@ -397,10 +400,12 @@ mcp_resources_scan() {
 
 	if [ -d "${resources_dir}" ]; then
 		find "${resources_dir}" -type f ! -name ".*" ! -name "*.meta.json" 2>/dev/null | sort | while read -r path; do
-			local rel_path="${path#${MCPBASH_ROOT}/}"
-			local base_name="$(basename "${path}")"
+			local rel_path="${path#"${MCPBASH_ROOT}"/}"
+			local base_name
+			base_name="$(basename "${path}")"
 			local name="${base_name%.*}"
-			local dir_name="$(dirname "${path}")"
+			local dir_name
+			dir_name="$(dirname "${path}")"
 			local meta_json="${dir_name}/${base_name}.meta.json"
 			local description=""
 			local uri=""
@@ -426,7 +431,7 @@ mcp_resources_scan() {
 				mcp_line="$(echo "${header}" | grep "mcp:" | head -n 1)"
 				if [ -n "${mcp_line}" ]; then
 					local json_payload
-					json_payload="$(echo "${mcp_line}" | sed 's/.*mcp://')"
+					json_payload="${mcp_line#*mcp:}"
 					local h_name
 					h_name="$(echo "${json_payload}" | jq -r '.name // empty' 2>/dev/null)"
 					[ -n "${h_name}" ] && name="${h_name}"
@@ -440,7 +445,7 @@ mcp_resources_scan() {
 			fi
 
 			if [ -z "${uri}" ]; then
-            continue
+				continue
 			fi
 
 			if [ -z "${provider}" ]; then
