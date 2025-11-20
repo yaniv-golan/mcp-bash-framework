@@ -136,7 +136,7 @@ mcp_tools_normalize_schema() {
 				{type: "object", properties: {}}
 			end;
 		ensure_schema
-	' 2>/dev/null )"; then
+	' 2>/dev/null)"; then
 		normalized='{"type":"object","properties":{}}'
 	fi
 	printf '%s' "${normalized}"
@@ -372,9 +372,9 @@ mcp_tools_scan() {
 				header="$(head -n 10 "${path}")"
 				local mcp_line
 				mcp_line="$(echo "${header}" | grep "mcp:" | head -n 1)"
-		if [ -n "${mcp_line}" ]; then
-			local json_payload
-			json_payload="${mcp_line#*mcp:}"
+				if [ -n "${mcp_line}" ]; then
+					local json_payload
+					json_payload="${mcp_line#*mcp:}"
 					local h_name
 					h_name="$(echo "${json_payload}" | jq -r '.name // empty' 2>/dev/null)"
 					[ -n "${h_name}" ] && name="${h_name}"
@@ -384,13 +384,13 @@ mcp_tools_scan() {
 					arguments="$(echo "${json_payload}" | jq -c '.arguments // {type: "object", properties: {}}' 2>/dev/null)"
 					timeout="$(echo "${json_payload}" | jq -r '.timeoutSecs // empty' 2>/dev/null)"
 					output_schema="$(echo "${json_payload}" | jq -c '.outputSchema // null' 2>/dev/null)"
-		fi
-	fi
+				fi
+			fi
 
-		arguments="$(mcp_tools_normalize_schema "${arguments}")"
+			arguments="$(mcp_tools_normalize_schema "${arguments}")"
 
-		# Construct item object
-		jq -n \
+			# Construct item object
+			jq -n \
 				--arg name "$name" \
 				--arg desc "$description" \
 				--arg path "$rel_path" \
