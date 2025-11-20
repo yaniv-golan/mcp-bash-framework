@@ -1,0 +1,8 @@
+{
+  "roots": [
+    {
+      "path": "./media",
+      "mode": "rw"
+    }
+  ]
+}
