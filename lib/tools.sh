@@ -518,8 +518,11 @@ mcp_tools_list() {
 
 	local result_json
 	result_json="$(echo "${MCP_TOOLS_REGISTRY_JSON}" | jq -c --argjson offset "${offset}" --argjson limit "${numeric_limit}" '
-		{
-			tools: .items[$offset:$offset+$limit]
+		.items[$offset:$offset+$limit] as $page
+		| {
+			items: $page,
+			tools: $page,
+			total: .total
 		}
 	')"
 
