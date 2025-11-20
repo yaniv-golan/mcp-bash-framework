@@ -11,6 +11,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Install gojq
+        run: |
+          go install github.com/itchyny/gojq/cmd/gojq@v0.12.16
+          echo "$HOME/go/bin" >> "$GITHUB_PATH"
       - name: Install lint dependencies
         run: |
           sudo apt-get update
@@ -22,6 +26,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Install gojq
+        run: |
+          go install github.com/itchyny/gojq/cmd/gojq@v0.12.16
+          echo "$HOME/go/bin" >> "$GITHUB_PATH"
       - name: Unit tests
         run: test/unit/run.sh
 
@@ -35,6 +43,10 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v4
+      - name: Install gojq
+        run: |
+          go install github.com/itchyny/gojq/cmd/gojq@v0.12.16
+          echo "$HOME/go/bin" >> "$GITHUB_PATH"
       - name: Smoke tests
         run: test/smoke.sh
       - name: Integration suite
@@ -47,6 +59,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Install gojq
+        run: |
+          go install github.com/itchyny/gojq/cmd/gojq@v0.12.16
+          echo "$HOME/go/bin" >> "$GITHUB_PATH"
       - name: Stress suite
         run: test/stress/run.sh
 
@@ -55,5 +71,9 @@ jobs:
     needs: integration
     steps:
       - uses: actions/checkout@v4
+      - name: Install gojq
+        run: |
+          go install github.com/itchyny/gojq/cmd/gojq@v0.12.16
+          echo "$HOME/go/bin" >> "$GITHUB_PATH"
       - name: Compatibility suite
         run: test/compatibility/run.sh

@@ -10,6 +10,22 @@ MCPBASH_TEST_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 export MCPBASH_ROOT="${MCPBASH_TEST_ROOT}"
 export PATH="${MCPBASH_ROOT}/bin:${PATH}"
 
+# Prefer gojq for cross-platform determinism, falling back to jq.
+TEST_JSON_TOOL_BIN=""
+if command -v gojq >/dev/null 2>&1; then
+	TEST_JSON_TOOL_BIN="$(command -v gojq)"
+elif command -v jq >/dev/null 2>&1; then
+	TEST_JSON_TOOL_BIN="$(command -v jq)"
+else
+	printf 'Required command "jq" (or gojq) not found in PATH\n' >&2
+	exit 1
+fi
+
+# Shell function shim so every test invocation of jq uses the preferred binary.
+jq() {
+	"${TEST_JSON_TOOL_BIN}" "$@"
+}
+
 # Ensure TMPDIR exists (macOS sets it, but GitHub runners may not).
 if [ -z "${TMPDIR:-}" ] || [ ! -d "${TMPDIR}" ]; then
 	TMPDIR="/tmp"
