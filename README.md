@@ -6,37 +6,75 @@
 [![MCP Protocol](https://img.shields.io/badge/MCP-2025--06--18-blue)](https://spec.modelcontextprotocol.io/)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)](#runtime-requirements)
 
-**mcp-bash** is a professional-grade Model Context Protocol (MCP) server implementation written in pure Bash. It allows you to instantly expose shell scripts, binaries, and system commands as secure, AI-ready tools.
+**mcp-bash** is a professional-grade Model Context Protocol (MCP) server framework written in pure Bash. It allows you to instantly expose shell scripts, binaries, and system commands as secure, AI-ready tools.
 
 - **Zero-Dependency Core**: Runs on standard Bash 3.2+ (macOS default) without heavy runtimes.
 - **Production Ready**: Supports concurrency, timeouts, structured logging, and cancellation out of the box.
-- **Developer Friendly**: built-in scaffolding generators to write code for you.
+- **Developer Friendly**: Built-in scaffolding generators and clean separation between framework and your code.
+- **Upgrade-Safe**: Framework and project are separate—upgrade the engine without touching your tools.
 
 ## Quick Start
 
-### 1. Configure Your Client
-To use mcp-bash with Claude Desktop, add the following to your `claude_desktop_config.json`:
+### 1. Install the Framework
+
+Clone or install `mcp-bash` to a permanent location (it's the engine, not your code):
+
+```bash
+git clone https://github.com/yaniv-golan/mcp-bash.git /opt/mcp-bash
+```
+
+### 2. Create Your Project
+
+Your server code lives in a separate project directory:
+
+```bash
+mkdir ~/my-mcp-server
+cd ~/my-mcp-server
+export MCPBASH_PROJECT_ROOT=$(pwd)
+```
+
+### 3. Scaffold Your First Tool
+
+```bash
+/opt/mcp-bash/bin/mcp-bash scaffold tool check-disk
+```
+
+This creates `tools/check-disk/tool.sh` and `tools/check-disk/tool.meta.json` in your project. Edit the script to add your logic.
+
+### 4. Configure Your MCP Client
+
+Add to your `claude_desktop_config.json`:
 
 ```json
 {
   "mcpServers": {
-    "bash": {
-      "command": "/absolute/path/to/mcp-bash/bin/mcp-bash",
-      "args": []
+    "my-server": {
+      "command": "/opt/mcp-bash/bin/mcp-bash",
+      "env": {
+        "MCPBASH_PROJECT_ROOT": "/Users/you/my-mcp-server"
+      }
     }
   }
 }
 ```
 
-### 2. Create Your First Tool
-Don't write boilerplate. Use the scaffold command:
+Restart Claude Desktop. Your tool is now available!
 
-```bash
-# Generate a new tool named "check-disk"
-./bin/mcp-bash scaffold tool check-disk
+## Project Structure
+
+```
+Framework (Install Once)          Your Project (Version Control This)
+/opt/mcp-bash/                    ~/my-mcp-server/
+├── bin/mcp-bash                  ├── tools/
+├── lib/                          │   └── check-disk/
+├── handlers/                     │       ├── tool.sh
+└── ...                           │       └── tool.meta.json
+                                  ├── prompts/
+                                  ├── resources/
+                                  └── .registry/ (auto-generated)
 ```
 
-This creates `tools/check-disk/` with a ready-to-run script and metadata. Edit `tools/check-disk/tool.sh` to add your logic, and it will automatically appear in your MCP client on the next restart.
+See [**Project Structure Guide**](docs/PROJECT-STRUCTURE.md) for detailed layouts, Docker deployment, and multi-environment setups.
 
 ## Learn by Example
 
@@ -52,21 +90,33 @@ We provide a comprehensive suite of examples in the [`examples/`](examples/) dir
 
 ## Features at a Glance
 
-- **Auto-Discovery**: Simply place scripts in `tools/`, `resources/`, or `prompts/`, and the server finds them.
-- **Scaffolding**: Generates compliant tool, resource, and prompt templates (`bin/mcp-bash scaffold <type> <name>`).
+- **Auto-Discovery**: Place scripts in your project's `tools/`, `resources/`, or `prompts/` directories—the framework finds them automatically.
+- **Scaffolding**: Generate compliant tool, resource, and prompt templates (`mcp-bash scaffold <type> <name>`).
 - **Stdio Transport**: Safe, standard-input/output communication model.
-- **Graceful Degradation**: Automatically detects available JSON tools (`gojq`, `jq`) or falls back to a minimal mode if none are present.
+- **Framework/Project Separation**: Install the framework once, create unlimited projects.
+- **Graceful Degradation**: Automatically detects available JSON tools (`gojq`, `jq`) or falls back to minimal mode if none are present.
 
 ## Configuration
 
-The server supports several environment variables to control behavior and debugging:
+### Required Configuration
+
+| Variable | Description |
+|----------|-------------|
+| `MCPBASH_PROJECT_ROOT` | **Required.** Path to your project directory containing `tools/`, `prompts/`, `resources/`. |
+
+### Optional Configuration
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MCPBASH_LOG_LEVEL` | `info` | Sets the initial log level. Use `debug` to see discovery/subscription traces. |
+| `MCPBASH_TOOLS_DIR` | `$MCPBASH_PROJECT_ROOT/tools` | Override tools location. |
+| `MCPBASH_RESOURCES_DIR` | `$MCPBASH_PROJECT_ROOT/resources` | Override resources location. |
+| `MCPBASH_PROMPTS_DIR` | `$MCPBASH_PROJECT_ROOT/prompts` | Override prompts location. |
+| `MCPBASH_SERVER_DIR` | `$MCPBASH_PROJECT_ROOT/server.d` | Override server hooks location. |
+| `MCPBASH_REGISTRY_DIR` | `$MCPBASH_PROJECT_ROOT/.registry` | Override registry cache location. |
+| `MCPBASH_LOG_LEVEL` | `info` | Log level. Use `debug` to see path resolution and discovery traces. |
 | `MCPBASH_DEBUG_PAYLOADS` | (unset) | Set to `true` to write full message payloads to `${TMPDIR}/mcpbash.state.*`. |
-| `MCPBASH_FORCE_MINIMAL` | (unset) | Set to `true` to force "Minimal Mode" (Ping/Lifecycle only) even if JSON tools are present. |
-| `MCPBASH_COMPAT_BATCHES` | (unset) | Set to `true` to enable legacy batch request support (decomposes batches into serial requests). |
+| `MCPBASH_FORCE_MINIMAL` | (unset) | Set to `true` to force "Minimal Mode" (Ping/Lifecycle only). |
+| `MCPBASH_COMPAT_BATCHES` | (unset) | Set to `true` to enable legacy batch request support. |
 
 ## Requirements
 
@@ -80,12 +130,15 @@ If you plan to contribute to the core framework, see [CONTRIBUTING.md](CONTRIBUT
 
 ---
 
-## Architecture & Deep Dive
+## Documentation
 
-For detailed documentation on the internal architecture, lifecycle loop, and concurrency model, please see:
+### Getting Started
+- [**Project Structure Guide**](docs/PROJECT-STRUCTURE.md) - Layouts, Docker deployment, multi-environment setups.
+- [**Examples**](examples/) - Learn by example: hello-world, args, logging, progress, real-world video processing.
 
-- [**Architecture Guide**](docs/ARCHITECTURE.md) - Deep dive into how the server works internally.
-- [**Protocol Compliance**](SPEC-COMPLIANCE.md) - Detailed breakdown of MCP protocol support.
+### Deep Dive
+- [**Architecture Guide**](docs/ARCHITECTURE.md) - Internal architecture, lifecycle loop, concurrency model.
+- [**Protocol Compliance**](SPEC-COMPLIANCE.md) - Detailed MCP protocol support breakdown.
 - [**Security Policy**](docs/SECURITY.md) - Input validation and execution safety.
 - [**Windows Support**](docs/WINDOWS.md) - Running on Git Bash/WSL.
 
