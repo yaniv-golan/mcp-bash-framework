@@ -11,6 +11,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
       - name: Install gojq
         run: |
           go install github.com/itchyny/gojq/cmd/gojq@v0.12.16
@@ -26,6 +30,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
       - name: Install gojq
         run: |
           go install github.com/itchyny/gojq/cmd/gojq@v0.12.16
@@ -43,6 +51,10 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v4
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
       - name: Install gojq
         run: |
           go install github.com/itchyny/gojq/cmd/gojq@v0.12.16
@@ -59,6 +71,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
       - name: Install gojq
         run: |
           go install github.com/itchyny/gojq/cmd/gojq@v0.12.16
@@ -71,6 +87,10 @@ jobs:
     needs: integration
     steps:
       - uses: actions/checkout@v4
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
       - name: Install gojq
         run: |
           go install github.com/itchyny/gojq/cmd/gojq@v0.12.16
