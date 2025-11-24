@@ -1,5 +1,11 @@
 # mcp-bash
 
+[![CI](https://img.shields.io/github/actions/workflow/status/yaniv-golan/mcp-bash-framework/ci.yml?branch=master&label=CI)](https://github.com/yaniv-golan/mcp-bash-framework/actions)
+[![License](https://img.shields.io/github/license/yaniv-golan/mcp-bash-framework)](LICENSE)
+[![Bash](https://img.shields.io/badge/bash-%3E%3D3.2-green.svg)](https://www.gnu.org/software/bash/)
+[![MCP Protocol](https://img.shields.io/badge/MCP-2025--06--18-blue)](https://spec.modelcontextprotocol.io/)
+[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)](#developer-prerequisites)
+
 ## Scope and Goals
 - Bash-only Model Context Protocol server verified on macOS Bash 3.2, Linux Bash ≥3.2, and experimental Git-Bash/WSL environments.
 - Stable, versioned core under `bin/`, `lib/`, `handlers/`, `providers/`, and `sdk/` with extension hooks in `tools/`, `resources/`, `prompts/`, and `server.d/`.
