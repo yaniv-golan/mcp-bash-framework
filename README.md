@@ -57,6 +57,17 @@ We provide a comprehensive suite of examples in the [`examples/`](examples/) dir
 - **Stdio Transport**: Safe, standard-input/output communication model.
 - **Graceful Degradation**: Automatically detects available JSON tools (`gojq`, `jq`) or falls back to a minimal mode if none are present.
 
+## Configuration
+
+The server supports several environment variables to control behavior and debugging:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MCPBASH_LOG_LEVEL` | `info` | Sets the initial log level. Use `debug` to see discovery/subscription traces. |
+| `MCPBASH_DEBUG_PAYLOADS` | (unset) | Set to `true` to write full message payloads to `${TMPDIR}/mcpbash.state.*`. |
+| `MCPBASH_FORCE_MINIMAL` | (unset) | Set to `true` to force "Minimal Mode" (Ping/Lifecycle only) even if JSON tools are present. |
+| `MCPBASH_COMPAT_BATCHES` | (unset) | Set to `true` to enable legacy batch request support (decomposes batches into serial requests). |
+
 ## Requirements
 
 ### Runtime Requirements
@@ -65,52 +76,23 @@ We provide a comprehensive suite of examples in the [`examples/`](examples/) dir
     *   *Note*: If no JSON tool is found, the server runs in "Minimal Mode" (Lifecycle & Ping only).
 
 ### Development Requirements
-If you plan to contribute to the core framework or run the test suite:
-*   `shellcheck`: For static analysis.
-*   `shfmt`: For code formatting.
+If you plan to contribute to the core framework, see [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions (linting, tests, etc).
 
 ---
 
 ## Architecture & Deep Dive
 
+For detailed documentation on the internal architecture, lifecycle loop, and concurrency model, please see:
+
+- [**Architecture Guide**](docs/ARCHITECTURE.md) - Deep dive into how the server works internally.
+- [**Protocol Compliance**](SPEC-COMPLIANCE.md) - Detailed breakdown of MCP protocol support.
+- [**Security Policy**](docs/SECURITY.md) - Input validation and execution safety.
+- [**Windows Support**](docs/WINDOWS.md) - Running on Git Bash/WSL.
+
 ### Scope and Goals
 - Bash-only Model Context Protocol server verified on macOS Bash 3.2, Linux Bash ≥3.2, and experimental Git-Bash/WSL environments.
-- Stable, versioned core under `bin/`, `lib/`, `handlers/`, `providers/`, and `sdk/` with extension hooks in `tools/`, `resources/`, `prompts/`, and `server.d/`.
-- Targets MCP protocol version `2025-06-18` while supporting negotiated downgrades; stdout MUST emit exactly one JSON object per line.
-- Repository deliverables include the full codebase, documentation, examples, and CI assets required to operate the server—no omissions.
-- Transport support is limited to stdio; HTTP/SSE/OAuth transports remain out of scope for mcp-bash.
-
-### Runtime Detection
-- JSON tooling detection order: `gojq` → `jq`. The first match enables the full protocol surface.
-- Operators can set `MCPBASH_FORCE_MINIMAL=true` to deliberately enter the minimal capability tier even when tooling is present for diagnostics or compatibility checks.
-- When no tooling is found, the core downgrades to minimal mode, exposing lifecycle, ping, and logging only.
-- Legacy JSON-RPC batch arrays may be tolerated when `MCPBASH_COMPAT_BATCHES=true`, decomposing batches into individual requests prior to dispatch.
-
-### Diagnostics & Logging
-- The server honours the `MCPBASH_LOG_LEVEL` environment variable at startup (default `info`). Set `MCPBASH_LOG_LEVEL=debug` before launching `bin/mcp-bash` to surface discovery and subscription traces.
-- Clients can still adjust verbosity dynamically via `logging/setLevel`; both the environment variable and client requests flow through the same log-level gate.
-- Deep payload tracing remains opt-in: `MCPBASH_DEBUG_PAYLOADS=true` writes per-message payload logs under `${TMPDIR}/mcpbash.state.*`.
-- All diagnostics route through the logging capability instead of raw `stderr`.
-
-### Repository Layout
-```
-mcp-bash/
-├─ bin/mcp-bash       # Entry point
-├─ lib/               # Core libraries (JSON, RPC, concurrency)
-├─ handlers/          # Protocol method handlers
-├─ providers/         # Resource providers
-├─ registry/          # Auto-generated registry caches
-├─ tools/             # User-defined tools
-├─ resources/         # User-defined resources
-├─ prompts/           # User-defined prompts
-└─ examples/          # Usage examples
-```
-
-### Concurrency Model
-- Asynchronous requests (`tools/*`, `resources/*`, `prompts/get`, `completion/complete`) spawn background workers with request-aware state files.
-- `lib/ids.sh` encodes JSON-RPC ids using base64url.
-- `lib/lock.sh` and `lib/io.sh` provide mkdir-based stdout locking to ensure responses write exactly one JSON line even under concurrency.
-- `lib/timeout.sh` implements `with_timeout <seconds>` watchdogs for all worker processes.
+- Targets MCP protocol version `2025-06-18` while supporting negotiated downgrades.
+- Transport support is limited to stdio; HTTP/SSE/OAuth transports remain out of scope.
 
 ### Protocol Version Compatibility
 This server targets MCP protocol version `2025-06-18` (the current stable specification) and supports negotiated downgrades during `initialize`.
@@ -120,9 +102,3 @@ This server targets MCP protocol version `2025-06-18` (the current stable specif
 | `2025-06-18` | ✅ Fully supported (default) |
 | `2025-03-26` | ✅ Supported |
 | `2024-11-05` | ❌ **Not supported** |
-
-For more details, see:
-- [`docs/ERRORS.md`](docs/ERRORS.md)
-- [`docs/SECURITY.md`](docs/SECURITY.md)
-- [`docs/LIMITS.md`](docs/LIMITS.md)
-- [`TESTING.md`](TESTING.md)
