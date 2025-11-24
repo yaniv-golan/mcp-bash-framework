@@ -270,7 +270,13 @@ run_subscription_test() {
 	done
 	exec 4<&-
 	wait "$server_pid" 2>/dev/null || true
-	rm -f "$pipe_in" "$pipe_out"
+	# Ensure server is gone; Windows sometimes keeps pipes busy.
+	kill "$server_pid" 2>/dev/null || true
+	# Retry pipe cleanup without failing the test on Windows "busy" errors.
+	for _i in 1 2 3; do
+		rm -f "$pipe_in" "$pipe_out" 2>/dev/null && break
+		sleep 1
+	done
 }
 
 run_subscription_test "${SUB_ROOT}"
