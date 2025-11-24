@@ -1,0 +1,4 @@
+# Shellcheck configuration for mcp-bash
+# Disable SC2016: jq expressions in single quotes are correct - we don't want bash expansion
+disable=SC2016
+
