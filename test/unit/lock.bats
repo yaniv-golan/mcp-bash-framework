@@ -21,6 +21,8 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 test_create_tmpdir
 MCPBASH_TMP_ROOT="${TEST_TMPDIR}"
+# Unit tests require a project root; point it at the temp workspace.
+export MCPBASH_PROJECT_ROOT="${TEST_TMPDIR}"
 mcp_runtime_init_paths
 
 printf ' -> lock initialization\n'

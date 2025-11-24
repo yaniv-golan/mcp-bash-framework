@@ -44,7 +44,7 @@ set -euo pipefail
 mcp_register_tool '{
   "name": "smoke.echo",
   "description": "Return fixed message",
-  "path": "tools/smoke.sh",
+  "path": "smoke.sh",
   "arguments": {"type": "object", "properties": {}}
 }'
 REG

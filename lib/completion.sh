@@ -306,6 +306,7 @@ mcp_completion_run_manual_script() {
 	(
 		set -euo pipefail
 		# shellcheck disable=SC1090
+		# shellcheck disable=SC1091  # register.sh lives in project; optional for callers
 		. "${MCPBASH_SERVER_DIR}/register.sh"
 	) >"${script_output_file}" 2>&1 &
 	local script_pid=$!
@@ -682,8 +683,8 @@ mcp_completion_run_provider() {
 		# - prompt: paths are relative to PROMPTS_DIR
 		# - resource: paths are relative to RESOURCES_DIR
 		case "${MCP_COMPLETION_PROVIDER_TYPE}" in
-		manual)   abs_script="${MCPBASH_PROJECT_ROOT}/${abs_script}" ;;
-		prompt)   abs_script="${MCPBASH_PROMPTS_DIR}/${abs_script}" ;;
+		manual) abs_script="${MCPBASH_PROJECT_ROOT}/${abs_script}" ;;
+		prompt) abs_script="${MCPBASH_PROMPTS_DIR}/${abs_script}" ;;
 		resource) abs_script="${MCPBASH_RESOURCES_DIR}/${abs_script}" ;;
 		esac
 		if [ ! -f "${abs_script}" ]; then

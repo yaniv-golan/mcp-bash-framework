@@ -243,6 +243,7 @@ mcp_tools_run_manual_script() {
 
 	set +e
 	# shellcheck disable=SC1090
+	# shellcheck disable=SC1091  # register.sh lives in project; optional for callers
 	. "${MCPBASH_SERVER_DIR}/register.sh" >"${script_output_file}" 2>&1
 	script_status=$?
 	set -e

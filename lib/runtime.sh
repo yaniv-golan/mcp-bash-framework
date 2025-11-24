@@ -122,6 +122,7 @@ mcp_runtime_init_paths() {
 # Log all resolved paths when MCPBASH_LOG_LEVEL=debug
 mcp_runtime_log_resolved_paths() {
 	if [ "${MCPBASH_LOG_LEVEL:-info}" = "debug" ]; then
+		# shellcheck disable=SC2153  # Logging the resolved values intentionally
 		cat >&2 <<EOF
 mcp-bash: Resolved paths:
   MCPBASH_HOME=${MCPBASH_HOME}
