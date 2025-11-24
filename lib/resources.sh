@@ -553,23 +553,21 @@ mcp_resources_list() {
 	fi
 
 	local result_json
-	result_json="$(echo "${MCP_RESOURCES_REGISTRY_JSON}" | jq -c --argjson offset "$offset" --argjson limit "$numeric_limit" '
+	result_json="$(echo "${MCP_RESOURCES_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -c --argjson offset "$offset" --argjson limit "$numeric_limit" '
 		{
-			items: .items[$offset:$offset+$limit],
-			total: .total
+			resources: .items[$offset:$offset+$limit]
 		}
 	')"
 
 	# Check if we have a next cursor
-	local total
-	total="$(echo "${result_json}" | jq '.total')"
+	local total="${MCP_RESOURCES_TOTAL}"
 	if [ $((offset + numeric_limit)) -lt "${total}" ]; then
 		local next_offset=$((offset + numeric_limit))
 		local cursor_payload
-		cursor_payload="$(jq -n --arg ver "1" --arg col "resources" --argjson off "$next_offset" --arg hash "${MCP_RESOURCES_REGISTRY_HASH}" '{ver: $ver|tonumber, collection: $col, offset: $off, hash: $hash}')"
+		cursor_payload="$("${MCPBASH_JSON_TOOL_BIN}" -n --arg ver "1" --arg col "resources" --argjson off "$next_offset" --arg hash "${MCP_RESOURCES_REGISTRY_HASH}" '{ver: $ver|tonumber, collection: $col, offset: $off, hash: $hash}')"
 		local encoded
 		encoded="$(printf '%s' "${cursor_payload}" | base64 | tr -d '\n' | tr -d '=')"
-		result_json="$(echo "${result_json}" | jq -c --arg next "${encoded}" '.nextCursor = $next')"
+		result_json="$(echo "${result_json}" | "${MCPBASH_JSON_TOOL_BIN}" -c --arg next "${encoded}" '.nextCursor = $next')"
 	fi
 
 	printf '%s' "${result_json}"

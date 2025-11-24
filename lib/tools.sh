@@ -331,8 +331,12 @@ mcp_tools_scan() {
 
 	if [ -d "${MCPBASH_TOOLS_DIR}" ]; then
 		find "${MCPBASH_TOOLS_DIR}" -type f ! -name ".*" ! -name "*.meta.json" 2>/dev/null | sort | while read -r path; do
+			# On Windows (Git Bash/MSYS), -x test is unreliable. Check for shebang or .sh extension as fallback.
 			if [ ! -x "${path}" ]; then
-				continue
+				# Fallback: check if file has shebang or is .sh/.bash
+				if [[ ! "${path}" =~ \.(sh|bash)$ ]] && ! head -n1 "${path}" 2>/dev/null | grep -q '^#!'; then
+					continue
+				fi
 			fi
 			local rel_path="${path#"${MCPBASH_ROOT}"/}"
 			local base_name

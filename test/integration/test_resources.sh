@@ -62,11 +62,12 @@ JSON
 	./bin/mcp-bash <"requests.ndjson" >"responses.ndjson"
 )
 
-jq -n --slurpfile messages "${AUTO_ROOT}/responses.ndjson" '
+# Use jq -s instead of --slurpfile for better gojq compatibility on Windows
+cat "${AUTO_ROOT}/responses.ndjson" | jq -s '
 	def error(msg): error(msg);
 	
-	($messages | map(select(.id == "auto-list"))[0].result) as $list |
-	($messages | map(select(.id == "auto-read"))[0].result) as $read |
+	(map(select(.id == "auto-list"))[0].result) as $list |
+	(map(select(.id == "auto-read"))[0].result) as $read |
 	
 	if $list.total != 2 then error("expected two resources discovered") else null end,
 	if ($list | has("nextCursor") | not) then error("nextCursor missing for paginated resources") else null end,
@@ -124,11 +125,12 @@ JSON
 	./bin/mcp-bash <"requests.ndjson" >"responses.ndjson"
 )
 
-jq -n --slurpfile messages "${MANUAL_ROOT}/responses.ndjson" '
+# Use jq -s instead of --slurpfile for better gojq compatibility on Windows
+cat "${MANUAL_ROOT}/responses.ndjson" | jq -s '
 	def error(msg): error(msg);
 	
-	($messages | map(select(.id == "manual-list"))[0].result) as $list |
-	($messages | map(select(.id == "manual-read"))[0].result) as $read |
+	(map(select(.id == "manual-list"))[0].result) as $list |
+	(map(select(.id == "manual-read"))[0].result) as $read |
 	
 	if $list.total != 2 then error("manual registry should contain two resources") else null end,
 	if ($list.items[] | .name | IN("manual.left", "manual.right") | not) then error("unexpected resource discovered in manual registry") else null end,
