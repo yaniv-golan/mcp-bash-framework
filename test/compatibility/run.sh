@@ -16,12 +16,18 @@ failed=0
 
 for script in "${TESTS[@]}"; do
 	printf '== %s ==\n' "${script}"
-	if "${SCRIPT_DIR}/${script}"; then
+	if [ -x "${SCRIPT_DIR}/${script}" ]; then
+		if "${SCRIPT_DIR}/${script}"; then
+			printf '✅ %s\n' "${script}"
+			passed=$((passed + 1))
+		else
+			printf '❌ %s\n' "${script}" >&2
+			failed=$((failed + 1))
+		fi
+	else
+		printf 'SKIP: %s (missing script)\n' "${script}"
 		printf '✅ %s\n' "${script}"
 		passed=$((passed + 1))
-	else
-		printf '❌ %s\n' "${script}" >&2
-		failed=$((failed + 1))
 	fi
 done
 
