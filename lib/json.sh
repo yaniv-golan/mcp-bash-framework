@@ -270,12 +270,14 @@ mcp_json_minimal_split_pairs() {
 			i=$((i + 1))
 			continue
 		fi
-		# shellcheck disable=SC1003 # manual escape handling keeps parser dependency-free
-		case "${char}" in
-		'\\')
+		if [ "${char}" = "\\" ]; then
 			current="${current}${char}"
 			escape=1
-			;;
+			i=$((i + 1))
+			continue
+		fi
+		# shellcheck disable=SC1003 # manual escape handling keeps parser dependency-free
+		case "${char}" in
 		'"')
 			current="${current}${char}"
 			if [ "${in_string}" = "1" ]; then
@@ -439,11 +441,13 @@ mcp_json_minimal_find_colon() {
 			i=$((i + 1))
 			continue
 		fi
+		if [ "${char}" = "\\" ]; then
+			escape=1
+			i=$((i + 1))
+			continue
+		fi
 		# shellcheck disable=SC1003 # manual escape handling keeps parser dependency-free
 		case "${char}" in
-		'\\')
-			escape=1
-			;;
 		'"')
 			if [ "${in_string}" = "1" ]; then
 				in_string=0

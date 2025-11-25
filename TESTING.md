@@ -20,6 +20,7 @@ shfmt -d -i 2 -ci $(find . -name '*.sh')
 ## Integration Tests
 ```
 ./test/integration/test_capabilities.sh
+./test/integration/test_minimal_mode.sh
 ```
 
 These commands align with the CI workflow under `.github/workflows/ci.yml`.
