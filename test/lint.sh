@@ -16,6 +16,9 @@ test_require_command shfmt
 
 existing_files=()
 while IFS= read -r -d '' path; do
+	case "${path}" in
+	*.orig) continue ;;
+	esac
 	if [ -f "${path}" ]; then
 		existing_files+=("${path}")
 	fi
