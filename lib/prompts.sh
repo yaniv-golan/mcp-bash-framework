@@ -587,7 +587,7 @@ mcp_prompts_poll() {
 mcp_prompts_consume_notification() {
 	if [ "${MCP_PROMPTS_CHANGED}" = true ]; then
 		MCP_PROMPTS_CHANGED=false
-		printf '{"jsonrpc":"2.0","method":"notifications/prompts/list_changed","params":{}}'
+		printf '{"jsonrpc":"2.0","method":"notifications/prompts/listChanged","params":{}}'
 	else
 		printf ''
 	fi

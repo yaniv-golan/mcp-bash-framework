@@ -144,6 +144,9 @@ mcp_runtime_cleanup() {
 	if declare -f mcp_core_stop_progress_flusher >/dev/null 2>&1; then
 		mcp_core_stop_progress_flusher
 	fi
+	if declare -f mcp_core_stop_resource_poll >/dev/null 2>&1; then
+		mcp_core_stop_resource_poll
+	fi
 
 	mcp_io_log_corruption_summary
 

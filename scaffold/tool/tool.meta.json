@@ -1,5 +1,5 @@
 {
-  "name": "tool.__NAME__",
+  "name": "__NAME__",
   "description": "One-line summary for __NAME__ tool",
   "arguments": {
     "type": "object",

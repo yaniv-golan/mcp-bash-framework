@@ -19,7 +19,7 @@ All registries adhere to the same top-level structure:
 - `version`: Schema version (currently `1`).
 - `generatedAt`: UTC timestamp when the scan completed.
 - `items`: Array containing the discovered entities.
-- `hash`: SHA-256 hash of the canonicalised `items` array; changed hashes trigger `notifications/*/list_changed`.
+- `hash`: SHA-256 hash of the canonicalised `items` array; changed hashes trigger `notifications/*/listChanged`.
 - `total`: Count of `items`.
 
 Guardrails are enforced for all registries:

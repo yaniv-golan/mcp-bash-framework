@@ -47,7 +47,7 @@ This guide distils hands-on recommendations for designing, building, and operati
 ### Troubleshooting keywords
 - **Minimal mode** – server only exposes lifecycle/ping/logging; often triggered by missing `jq`/`gojq` or forced via `MCPBASH_FORCE_MINIMAL`.
 - **Compatibility toggles** – `MCPBASH_COMPAT_BATCHES` re-enables legacy JSON-RPC batch arrays for older clients.
-- **Discovery churn** – `notifications/*/list_changed` loops may indicate fast TTLs or manual registry overrides; inspect `.registry/*.json`.
+- **Discovery churn** – `notifications/*/listChanged` loops may indicate fast TTLs or manual registry overrides; inspect `.registry/*.json`.
 - **Cancellation** – `mcp_is_cancelled` returning true mid-tool (see `examples/03-progress-and-cancellation/tools/slow.sh:5`) highlights clients timing out; revisit tool timeouts and progress cadence.
 - **Progress throttling** – hitting the 100/minute default triggers warning logs and truncated progress; adjust `MCPBASH_MAX_PROGRESS_PER_MIN` when high-frequency updates matter.
 

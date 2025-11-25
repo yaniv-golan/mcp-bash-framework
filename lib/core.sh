@@ -11,6 +11,7 @@ MCPBASH_HANDLER_OUTPUT=""
 MCPBASH_SHUTDOWN_WATCHDOG_PID=""
 MCPBASH_EXIT_REQUESTED=false
 MCPBASH_PROGRESS_FLUSHER_PID=""
+MCPBASH_RESOURCE_POLL_PID=""
 
 mcp_register_tool() {
 	local payload="$1"
@@ -63,6 +64,7 @@ mcp_core_bootstrap_state() {
 	MCPBASH_DEFAULT_SUBSCRIBE_TIMEOUT="${MCPBASH_DEFAULT_SUBSCRIBE_TIMEOUT:-120}"
 	MCPBASH_SHUTDOWN_TIMEOUT="${MCPBASH_SHUTDOWN_TIMEOUT:-5}"
 	MCPBASH_SHUTDOWN_TIMER_STARTED=false
+	MCPBASH_RESOURCE_POLL_PID=""
 
 	# setup SDK notification streams
 	MCP_PROGRESS_STREAM="${MCPBASH_STATE_DIR}/progress.ndjson"
@@ -70,6 +72,7 @@ mcp_core_bootstrap_state() {
 	: >"${MCP_PROGRESS_STREAM}"
 	: >"${MCP_LOG_STREAM}"
 	mcp_core_start_progress_flusher
+	mcp_core_start_resource_poll
 }
 
 mcp_core_read_loop() {
@@ -107,6 +110,9 @@ mcp_core_list_worker_pids() {
 	filtered=""
 	for pid in ${pids}; do
 		if [ -n "${MCPBASH_PROGRESS_FLUSHER_PID:-}" ] && [ "${pid}" = "${MCPBASH_PROGRESS_FLUSHER_PID}" ]; then
+			continue
+		fi
+		if [ -n "${MCPBASH_RESOURCE_POLL_PID:-}" ] && [ "${pid}" = "${MCPBASH_RESOURCE_POLL_PID}" ]; then
 			continue
 		fi
 		if [ -z "${filtered}" ]; then
@@ -905,7 +911,6 @@ mcp_core_start_progress_flusher() {
 			if [ "${MCPBASH_ENABLE_LIVE_PROGRESS:-false}" = "true" ]; then
 				mcp_core_flush_worker_streams_once
 			fi
-			mcp_resources_poll_subscriptions
 			sleep "${MCPBASH_PROGRESS_FLUSH_INTERVAL:-0.5}"
 		done
 	) &
@@ -920,4 +925,40 @@ mcp_core_stop_progress_flusher() {
 		wait "${MCPBASH_PROGRESS_FLUSHER_PID}" 2>/dev/null || true
 	fi
 	MCPBASH_PROGRESS_FLUSHER_PID=""
+}
+
+mcp_core_start_resource_poll() {
+	local interval="${MCPBASH_RESOURCES_POLL_INTERVAL_SECS:-2}"
+	case "${interval}" in
+	'' | *[!0-9]*) interval=2 ;;
+	esac
+
+	if [ "${interval}" -le 0 ]; then
+		return 0
+	fi
+	if mcp_runtime_is_minimal_mode; then
+		return 0
+	fi
+
+	if [ -n "${MCPBASH_RESOURCE_POLL_PID:-}" ] && kill -0 "${MCPBASH_RESOURCE_POLL_PID}" 2>/dev/null; then
+		return 0
+	fi
+
+	(
+		while :; do
+			mcp_resources_poll_subscriptions
+			sleep "${interval}"
+		done
+	) &
+	MCPBASH_RESOURCE_POLL_PID=$!
+}
+
+mcp_core_stop_resource_poll() {
+	if [ -z "${MCPBASH_RESOURCE_POLL_PID:-}" ]; then
+		return 0
+	fi
+	if kill "${MCPBASH_RESOURCE_POLL_PID}" 2>/dev/null; then
+		wait "${MCPBASH_RESOURCE_POLL_PID}" 2>/dev/null || true
+	fi
+	MCPBASH_RESOURCE_POLL_PID=""
 }

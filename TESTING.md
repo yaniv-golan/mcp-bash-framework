@@ -1,27 +1,48 @@
 # Testing Guide
 
 ## Linting
-Run shell lint/format checks (requires `shellcheck` and `shfmt` on PATH):
+
 ```
 ./test/lint.sh
 ```
 
 ## Smoke Tests
+
 ```
-./test/examples/test_examples.sh
+./test/smoke.sh
 ```
 
 ## Unit Tests
+
 ```
-./test/unit/lock.bats
+./test/unit/run.sh
 ```
 
 ## Integration Tests
+
 ```
-./test/integration/test_capabilities.sh
-./test/integration/test_minimal_mode.sh
+./test/integration/run.sh
 ```
 
-These commands align with the CI workflow under `.github/workflows/ci.yml`.
+## Examples Suite
 
-Last verified locally: 2025-10-17 using `shellcheck`, `shfmt`, `test/unit/lock.bats`, `test/integration/test_capabilities.sh`, and `test/examples/test_examples.sh`.
+```
+./test/examples/run.sh
+```
+
+## Compatibility Suite
+
+```
+./test/compatibility/run.sh
+```
+
+## Stress Suite
+
+```
+./test/stress/run.sh
+```
+
+Regenerate this file with:
+```
+scripts/generate-testing-docs.sh > TESTING.md
+```

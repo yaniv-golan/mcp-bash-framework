@@ -153,6 +153,7 @@ We provide a comprehensive suite of examples in the [`examples/`](examples/) dir
 | `MCPBASH_REGISTRY_DIR` | `$MCPBASH_PROJECT_ROOT/.registry` | Override registry cache location. |
 | `MCPBASH_MAX_CONCURRENT_REQUESTS` | `16` | Cap concurrent worker slots. |
 | `MCPBASH_LOG_LEVEL` | `info` | Log level. Use `debug` to see path resolution and discovery traces. |
+| `MCPBASH_RESOURCES_POLL_INTERVAL_SECS` | `2` | Background polling interval for resource subscriptions; set to `0` to disable. |
 | `MCPBASH_DEBUG_PAYLOADS` | (unset) | Set to `true` to write full message payloads to `${TMPDIR}/mcpbash.state.*`. |
 | `MCPBASH_FORCE_MINIMAL` | (unset) | Set to `true` to force "Minimal Mode" (Ping/Lifecycle only). |
 | `MCPBASH_COMPAT_BATCHES` | (unset) | Set to `true` to enable legacy batch request support. |

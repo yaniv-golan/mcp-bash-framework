@@ -153,7 +153,11 @@ mcp_resources_emit_update() {
 	# Extract uri from payload contents for the notification
 	local uri
 	uri="$(echo "${payload}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.contents[0].uri // ""')"
-	rpc_send_line_direct "$("${MCPBASH_JSON_TOOL_BIN}" -n -c --arg uri "${uri}" '{"jsonrpc":"2.0","method":"notifications/resources/updated","params":{uri: $uri}}')"
+	local params
+	if ! params="$("${MCPBASH_JSON_TOOL_BIN}" -n -c --arg uri "${uri}" --argjson payload "${payload}" '($payload + {uri: $uri})' 2>/dev/null)"; then
+		params="$("${MCPBASH_JSON_TOOL_BIN}" -n -c --arg uri "${uri}" '{uri: $uri}')" || params='{"uri":""}'
+	fi
+	rpc_send_line_direct "$("${MCPBASH_JSON_TOOL_BIN}" -n -c --argjson params "${params}" '{"jsonrpc":"2.0","method":"notifications/resources/updated","params":$params}')"
 }
 
 mcp_resources_emit_error() {
@@ -569,7 +573,7 @@ mcp_resources_list() {
 mcp_resources_consume_notification() {
 	if [ "${MCP_RESOURCES_CHANGED}" = true ]; then
 		MCP_RESOURCES_CHANGED=false
-		printf '{"jsonrpc":"2.0","method":"notifications/resources/list_changed","params":{}}'
+		printf '{"jsonrpc":"2.0","method":"notifications/resources/listChanged","params":{}}'
 	else
 		printf ''
 	fi

@@ -448,7 +448,7 @@ mcp_tools_scan() {
 mcp_tools_consume_notification() {
 	if [ "${MCP_TOOLS_CHANGED}" = true ]; then
 		MCP_TOOLS_CHANGED=false
-		printf '{"jsonrpc":"2.0","method":"notifications/tools/list_changed","params":{}}'
+		printf '{"jsonrpc":"2.0","method":"notifications/tools/listChanged","params":{}}'
 	else
 		printf ''
 	fi

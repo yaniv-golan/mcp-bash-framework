@@ -246,8 +246,9 @@ run_subscription_test() {
 		if [ "$id" = "ping" ]; then
 			ping_seen=true
 		elif [ "$method" = "notifications/resources/updated" ]; then
-			# The notification contains uri, not content - just seeing the notification is enough
-			update_seen=true
+			if [ "$(echo "$line" | jq -r '.params.contents[0].text // empty')" = "updated" ]; then
+				update_seen=true
+			fi
 		fi
 
 		if [ "$ping_seen" = true ] && [ "$update_seen" = true ]; then

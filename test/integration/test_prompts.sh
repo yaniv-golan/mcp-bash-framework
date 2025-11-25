@@ -157,7 +157,7 @@ if ! jq -e '
 	exit 1
 fi
 
-# --- TTL-driven list_changed notifications ---
+# --- TTL-driven listChanged notifications ---
 POLL_ROOT="${TEST_TMPDIR}/poll"
 stage_workspace "${POLL_ROOT}"
 # Remove register.sh to force auto-discovery (chmod -x doesn't work on Windows)
@@ -247,7 +247,7 @@ printf 'Live version 2\n' >"${POLL_ROOT}/prompts/live.txt"
 sleep  1.2
 send  '{"jsonrpc": "2.0", "id": "ping", "method": "ping"}'
 
-# We expect a ping response AND a list_changed notification
+# We expect a ping response AND a listChanged notification
 seen_update=false
 seen_ping=false
 end_time=$(($( date +%s) + 10))
@@ -265,13 +265,13 @@ while  [ "$(date +%s)" -lt "${end_time}" ]; do
 	if [ "${id}" = "ping" ]; then
 		seen_ping=true
 	fi
-	if [ "${method}" = "notifications/prompts/list_changed" ]; then
+	if [ "${method}" = "notifications/prompts/listChanged" ]; then
 		seen_update=true
 	fi
 done
 
 if  [ "${seen_update}" != "true" ]; then
-	printf 'Missing prompts/list_changed notification\n' >&2
+	printf 'Missing prompts/listChanged notification\n' >&2
 	result=1
 else
 	result=0

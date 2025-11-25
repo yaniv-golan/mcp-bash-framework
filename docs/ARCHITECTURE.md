@@ -77,7 +77,7 @@ This structure keeps the stable core modules under `bin/` and `lib/`, protocol h
 - `handlers/resources.sh` supports `resources/list`, `resources/read`, and `resources/subscribe`/`unsubscribe`, returning capability errors when minimal mode is active.
 - `lib/resources.sh` auto-discovers entries under `resources/`, honours metadata precedence, writes `registry/resources.json`, and uses portable allow-listed file providers with path normalization.
 - Pagination reuse mirrors tools using `lib/paginate.sh`, providing deterministic cursors and `nextCursor` results while tracking registry hashes for listChanged notifications.
-- `resources/read` resolves URIs via providers (baseline `providers/file.sh`) enforcing roots allow lists, returning MIME type hints and `_meta` diagnostics; subscriptions emit an immediate `notifications/resources/updated` snapshot and can be cancelled to clean state.
+- `resources/read` resolves URIs via providers (baseline `providers/file.sh`) enforcing roots allow lists, returning MIME type hints and `_meta` diagnostics; subscriptions emit an immediate `notifications/resources/updated` payload containing the latest `contents` (and `uri`) and can be cancelled to clean state. Optional background polling (`MCPBASH_RESOURCES_POLL_INTERVAL_SECS`, default `2s`, set `0` to disable) pushes updates without waiting for new requests.
 - Windows notes: file providers translate `C:\` drive prefixes into Git-Bash/MSYS `/c/...` form and honour `MSYS2_ARG_CONV_EXCL` so operators can opt out when needed.
 - Future built-ins: git/https providers are stubbed for follow-up implementations.
 - Manual overrides: executable `server.d/register.sh` can emit JSON `{ "tools": [...], "resources": [...], "prompts": [...] }` to bypass auto-discovery.
