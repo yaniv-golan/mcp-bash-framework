@@ -48,15 +48,7 @@ mcp_prompts_register_manual() {
 
 mcp_prompts_hash_string() {
 	local value="$1"
-	if command -v sha256sum >/dev/null 2>&1; then
-		printf '%s' "${value}" | sha256sum | awk '{print $1}'
-		return 0
-	fi
-	if command -v shasum >/dev/null 2>&1; then
-		printf '%s' "${value}" | shasum -a 256 | awk '{print $1}'
-		return 0
-	fi
-	printf '%s' "${value}" | cksum | awk '{print $1}'
+	mcp_hash_string "${value}"
 }
 
 mcp_prompts_manual_finalize() {
@@ -279,11 +271,11 @@ mcp_prompts_refresh_registry() {
 					return 1
 				fi
 			else
-				mcp_logging_warn "${MCP_PROMPTS_LOGGER}" "Discarding invalid prompt registry cache"
+				mcp_logging_warning "${MCP_PROMPTS_LOGGER}" "Discarding invalid prompt registry cache"
 				MCP_PROMPTS_REGISTRY_JSON=""
 			fi
 		else
-			mcp_logging_warn "${MCP_PROMPTS_LOGGER}" "Failed to read prompt registry cache ${MCP_PROMPTS_REGISTRY_PATH}"
+			mcp_logging_warning "${MCP_PROMPTS_LOGGER}" "Failed to read prompt registry cache ${MCP_PROMPTS_REGISTRY_PATH}"
 			MCP_PROMPTS_REGISTRY_JSON=""
 		fi
 	fi

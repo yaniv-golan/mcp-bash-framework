@@ -48,24 +48,14 @@ MCP_COMPLETION_CURSOR_SCRIPT_KEY=""
 
 mcp_completion_hash_string() {
 	local value="$1"
-	if command -v sha256sum >/dev/null 2>&1; then
-		printf '%s' "${value}" | sha256sum | awk '{print $1}'
-		return 0
-	fi
-	if command -v shasum >/dev/null 2>&1; then
-		printf '%s' "${value}" | shasum -a 256 | awk '{print $1}'
-		return 0
-	fi
-	printf '%s' "${value}" | cksum | awk '{print $1}'
+	mcp_hash_string "${value}"
 }
 
 mcp_completion_hash_json() {
 	local json_payload="$1"
 	local compact
-	if ! compact="$(printf '%s' "${json_payload}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.' 2>/dev/null)"; then
-		compact="{}"
-	fi
-	mcp_completion_hash_string "${compact}"
+	compact="$(printf '%s' "${json_payload}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.' 2>/dev/null || printf '{}')"
+	mcp_hash_json_payload "${compact}"
 }
 
 mcp_completion_resolve_script_path() {

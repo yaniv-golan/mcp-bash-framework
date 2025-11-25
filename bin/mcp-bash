@@ -242,7 +242,7 @@ initialize_runtime_paths() {
 	script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 	MCPBASH_HOME="$(cd "${script_dir}/.." && pwd)"
 
-	local required_libs="runtime json ids lock io paginate logging spec tools resources prompts completion timeout rpc core"
+	local required_libs="runtime json hash ids lock io paginate logging spec tools resources prompts completion timeout rpc core"
 	local lib
 
 	for lib in ${required_libs}; do
@@ -256,6 +256,8 @@ initialize_runtime_paths() {
 	. "${MCPBASH_HOME}/lib/runtime.sh"
 	# shellcheck disable=SC1090
 	. "${MCPBASH_HOME}/lib/json.sh"
+	# shellcheck disable=SC1090
+	. "${MCPBASH_HOME}/lib/hash.sh"
 	# shellcheck disable=SC1090
 	. "${MCPBASH_HOME}/lib/ids.sh"
 	# shellcheck disable=SC1090

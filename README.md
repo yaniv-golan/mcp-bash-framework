@@ -151,6 +151,7 @@ We provide a comprehensive suite of examples in the [`examples/`](examples/) dir
 | `MCPBASH_PROMPTS_DIR` | `$MCPBASH_PROJECT_ROOT/prompts` | Override prompts location. |
 | `MCPBASH_SERVER_DIR` | `$MCPBASH_PROJECT_ROOT/server.d` | Override server hooks location. |
 | `MCPBASH_REGISTRY_DIR` | `$MCPBASH_PROJECT_ROOT/.registry` | Override registry cache location. |
+| `MCPBASH_MAX_CONCURRENT_REQUESTS` | `16` | Cap concurrent worker slots. |
 | `MCPBASH_LOG_LEVEL` | `info` | Log level. Use `debug` to see path resolution and discovery traces. |
 | `MCPBASH_DEBUG_PAYLOADS` | (unset) | Set to `true` to write full message payloads to `${TMPDIR}/mcpbash.state.*`. |
 | `MCPBASH_FORCE_MINIMAL` | (unset) | Set to `true` to force "Minimal Mode" (Ping/Lifecycle only). |
@@ -178,6 +179,7 @@ If you plan to contribute to the core framework, see [CONTRIBUTING.md](CONTRIBUT
 - [**Architecture Guide**](docs/ARCHITECTURE.md) - Internal architecture, lifecycle loop, concurrency model.
 - [**Protocol Compliance**](SPEC-COMPLIANCE.md) - Detailed MCP protocol support breakdown.
 - [**Security Policy**](docs/SECURITY.md) - Input validation and execution safety.
+- [**Changelog**](CHANGELOG.md) - Notable changes between releases.
 - [**Windows Support**](docs/WINDOWS.md) - Running on Git Bash/WSL.
 
 ### Scope and Goals

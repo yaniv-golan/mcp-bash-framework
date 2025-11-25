@@ -38,9 +38,16 @@ mcp_lock_acquire() {
 mcp_lock_release() {
 	local name="$1"
 	local path
+	local owner=""
+	local current_pid="${BASHPID:-$$}"
 	path="$(mcp_lock_path "${name}")"
 	if [ -d "${path}" ]; then
-		rm -rf "${path}"
+		owner="$(cat "${path}/pid" 2>/dev/null || true)"
+		if [ -z "${owner}" ] || [ "${owner}" = "${current_pid}" ] || ! kill -0 "${owner}" 2>/dev/null; then
+			rm -rf "${path}"
+		else
+			printf '%s\n' "mcp-lock: refusing to release lock ${name} owned by pid ${owner}" >&2
+		fi
 	fi
 }
 

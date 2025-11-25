@@ -30,7 +30,7 @@ mcp_handle_tools() {
 		cursor="$(mcp_json_extract_cursor "${json_payload}")"
 		local list_json
 		if ! list_json="$(mcp_tools_list "${limit}" "${cursor}")"; then
-			local code="${MCP_TOOLS_ERROR_CODE:- -32603}"
+			local code="${MCP_TOOLS_ERROR_CODE:--32603}"
 			local message
 			message=$(mcp_tools_quote "${MCP_TOOLS_ERROR_MESSAGE:-Unable to list tools}")
 			printf '{"jsonrpc":"2.0","id":%s,"error":{"code":%s,"message":%s}}' "${id}" "${code}" "${message}"
@@ -51,7 +51,7 @@ mcp_handle_tools() {
 		timeout_override="$(mcp_json_extract_timeout_override "${json_payload}")"
 		local result_json
 		if ! result_json="$(mcp_tools_call "${name}" "${args_json}" "${timeout_override}")"; then
-			local code="${MCP_TOOLS_ERROR_CODE:- -32603}"
+			local code="${MCP_TOOLS_ERROR_CODE:--32603}"
 			local message
 			message=$(mcp_tools_quote "${MCP_TOOLS_ERROR_MESSAGE:-Tool execution failed}")
 			printf '{"jsonrpc":"2.0","id":%s,"error":{"code":%s,"message":%s}}' "${id}" "${code}" "${message}"

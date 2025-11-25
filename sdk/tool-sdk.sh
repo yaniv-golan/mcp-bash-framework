@@ -111,7 +111,7 @@ mcp_log() {
 	fi
 	local logger_json
 	logger_json="$(__mcp_sdk_json_escape "${logger}")"
-	printf '{"jsonrpc":"2.0","method":"notifications/log","params":{"level":"%s","logger":%s,"message":%s}}\n' "${normalized_level}" "${logger_json}" "${json_payload}" >>"${MCP_LOG_STREAM}" 2>/dev/null || true
+	printf '{"jsonrpc":"2.0","method":"notifications/message","params":{"level":"%s","logger":%s,"message":%s}}\n' "${normalized_level}" "${logger_json}" "${json_payload}" >>"${MCP_LOG_STREAM}" 2>/dev/null || true
 }
 
 mcp_emit_text() {

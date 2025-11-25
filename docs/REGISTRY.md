@@ -40,7 +40,7 @@ Each entry describes an executable tool. Paths are relative to `MCPBASH_TOOLS_DI
       "name": "example.hello",
       "description": "Return a friendly greeting",
       "path": "hello/hello.sh",
-      "arguments": {
+      "inputSchema": {
         "type": "object",
         "properties": {}
       },
@@ -77,7 +77,7 @@ Entries describe resource templates and providers. Paths are relative to `MCPBAS
       "name": "file.readme",
       "description": "Serve README fragments",
       "path": "readme/readme.sh",
-      "arguments": {
+      "inputSchema": {
         "type": "object",
         "properties": {
           "section": {
@@ -110,7 +110,7 @@ Entries reference prompt templates and metadata. Paths are relative to `MCPBASH_
       "name": "summarise.notes",
       "description": "Summarise meeting notes",
       "path": "summarise/summarise.txt",
-      "arguments": {
+      "inputSchema": {
         "type": "object",
         "required": ["notes"],
         "properties": {

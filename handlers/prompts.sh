@@ -29,7 +29,7 @@ mcp_handle_prompts() {
 		limit="$(mcp_json_extract_limit "${json_payload}")"
 		cursor="$(mcp_json_extract_cursor "${json_payload}")"
 		if ! list_json="$(mcp_prompts_list "${limit}" "${cursor}")"; then
-			local code="${MCP_PROMPTS_ERR_CODE:- -32603}"
+			local code="${MCP_PROMPTS_ERR_CODE:--32603}"
 			local message
 			message=$(mcp_prompts_quote "${MCP_PROMPTS_ERR_MESSAGE:-Unable to list prompts}")
 			printf '{"jsonrpc":"2.0","id":%s,"error":{"code":%s,"message":%s}}' "${id}" "${code}" "${message}"

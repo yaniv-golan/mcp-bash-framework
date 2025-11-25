@@ -15,6 +15,9 @@ mcp-bash/
 │  ├─ paginate.sh
 │  ├─ progress.sh
 │  ├─ logging.sh
+│  ├─ runtime.sh
+│  ├─ completion.sh
+│  ├─ resource_providers.sh
 │  └─ spec.sh
 ├─ handlers/
 │  ├─ lifecycle.sh
@@ -25,18 +28,17 @@ mcp-bash/
 │  ├─ prompts.sh
 │  └─ completion.sh
 ├─ providers/
-├─ sdk/tool-sdk.sh
+├─ sdk/
 ├─ server.d/
 │  ├─ env.sh
 │  └─ register.sh
-├─ registry/
-├─ tools/
-├─ resources/
-├─ prompts/
+├─ scaffold/
+├─ examples/
+├─ docs/
 ├─ test/
-└─ docs/
+└─ .registry/ (generated caches, typically gitignored in projects)
 ```
-This structure ensures the stable core modules live under `bin/` and `lib/`, protocol handlers sit in `handlers/`, extension points reside in `tools/`, `resources/`, `prompts/`, and `server.d/`, and runtime-generated registries remain isolated under `registry/` for exclusion from version control.
+This structure keeps the stable core modules under `bin/` and `lib/`, protocol handlers in `handlers/`, and development assets under `scaffold/` and `examples/`. Project-specific extension points (tools/resources/prompts) live in your project tree, and runtime-generated registries are written to `.registry/` (gitignored by default).
 
 ## Lifecycle Loop
 - `bin/mcp-bash` sources the runtime, JSON, RPC, and core libraries, confirms stdout targets a terminal or pipe, and enters `mcp_core_run` for the main bootstrap loop.

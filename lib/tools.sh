@@ -93,13 +93,7 @@ mcp_tools_manual_finalize() {
 	local items_json
 	items_json="$(echo "${registry_json}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.items')"
 	local hash
-	if command -v sha256sum >/dev/null 2>&1; then
-		hash="$(printf '%s' "${items_json}" | sha256sum | awk '{print $1}')"
-	elif command -v shasum >/dev/null 2>&1; then
-		hash="$(printf '%s' "${items_json}" | shasum -a 256 | awk '{print $1}')"
-	else
-		hash="$(printf '%s' "${items_json}" | cksum | awk '{print $1}')"
-	fi
+	hash="$(mcp_hash_string "${items_json}")"
 
 	registry_json="$(echo "${registry_json}" | "${MCPBASH_JSON_TOOL_BIN}" --arg hash "${hash}" '.hash = $hash')"
 

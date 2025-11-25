@@ -27,7 +27,7 @@ This guide distils hands-on recommendations for designing, building, and operati
 | `bin/mcp-bash scaffold prompt <name>` | Generate prompt template + `.meta.json` | [§4.1](#41-scaffold-workflow) |
 | `bin/mcp-bash scaffold resource <name>` | Produce resource boilerplate wired to the file provider | [§4.1](#41-scaffold-workflow) |
 | `./test/lint.sh` | Run shellcheck + shfmt gates; wraps commands from [TESTING.md](../TESTING.md) | [§5.2](#52-local-workflow) |
-| `./test/unit/test_paginate.sh` | Validate pagination helpers (`lib/paginate.sh`) | [§5.1](#51-test-pyramid) |
+| `./test/unit/lock.bats` | Validate lock/serialization primitives (`lib/lock.sh`) | [§5.1](#51-test-pyramid) |
 | `./test/integration/test_capabilities.sh` | End-to-end lifecycle/capability checks | [§5.3](#53-ci-triage-matrix) |
 | `./test/examples/test_examples.sh` | Smoke runner ensuring scaffolds/examples stay healthy | [§5.1](#51-test-pyramid) |
 | `MCPBASH_LOG_LEVEL=debug bin/mcp-bash` | Start server with verbose diagnostics ([README.md](../README.md#diagnostics--logging)) | [§6.3](#63-monitoring-and-health) |
@@ -38,7 +38,8 @@ This guide distils hands-on recommendations for designing, building, and operati
 | `MCPBASH_FORCE_MINIMAL` | Forces the minimal capability tier even when JSON tooling is available | Useful for testing degraded mode per [README.md](../README.md#runtime-detection) |
 | `MCPBASH_LOG_LEVEL` / `MCPBASH_LOG_LEVEL_DEFAULT` | Sets startup log verbosity (`info` default) | Harmonises with `logging/setLevel` requests; see [§6.2](#62-logging-tracing-and-metrics) |
 | `MCPBASH_DEBUG_PAYLOADS` | Persists per-message payload logs under `${TMPDIR}/mcpbash.state.*` | Enable only during targeted debugging (storage heavy) |
-| `MAX_CONCURRENT_REQUESTS` | Caps worker count (default 16 per [docs/LIMITS.md](LIMITS.md)) | Right-size before shipping to resource-constrained hosts |
+| `MCPBASH_MAX_CONCURRENT_REQUESTS` | Caps worker count (default 16 per [docs/LIMITS.md](LIMITS.md)) | Right-size before shipping to resource-constrained hosts |
+| `MCPBASH_MAX_PROGRESS_PER_MIN` / `MCPBASH_MAX_LOGS_PER_MIN` | Throttle progress/log notifications per request | Raise with caution to avoid client overload |
 | `MCP_TOOLS_TTL`, `MCP_RESOURCES_TTL`, `MCP_PROMPTS_TTL` | Control registry cache lifetime ([docs/REGISTRY.md](REGISTRY.md#ttl-and-regeneration)) | Lower values increase IO load |
 | `MCP_RESOURCES_ROOTS` | Restricts file/resource providers to approved roots ([docs/SECURITY.md](SECURITY.md)) | Mandatory for multi-tenant deployments |
 | `MCPBASH_REGISTRY_MAX_BYTES` | Hard stop for registry cache size | Keep aligned with operator storage policies |
@@ -46,9 +47,9 @@ This guide distils hands-on recommendations for designing, building, and operati
 ### Troubleshooting keywords
 - **Minimal mode** – server only exposes lifecycle/ping/logging; often triggered by missing `jq`/`gojq` or forced via `MCPBASH_FORCE_MINIMAL`.
 - **Compatibility toggles** – `MCPBASH_COMPAT_BATCHES` re-enables legacy JSON-RPC batch arrays for older clients.
-- **Discovery churn** – `notifications/*/list_changed` loops may indicate fast TTLs or manual registry overrides; inspect `registry/*.json`.
+- **Discovery churn** – `notifications/*/list_changed` loops may indicate fast TTLs or manual registry overrides; inspect `.registry/*.json`.
 - **Cancellation** – `mcp_is_cancelled` returning true mid-tool (see `examples/03-progress-and-cancellation/tools/slow.sh:5`) highlights clients timing out; revisit tool timeouts and progress cadence.
-- **Progress throttling** – hitting the 100/minute default triggers warning logs and truncated progress; adjust `MAX_PROGRESS_PER_MIN` when high-frequency updates matter.
+- **Progress throttling** – hitting the 100/minute default triggers warning logs and truncated progress; adjust `MCPBASH_MAX_PROGRESS_PER_MIN` when high-frequency updates matter.
 
 ## 1. Introduction
 - **Protocol alignment** – Every practice references the corresponding guarantees tracked in [SPEC-COMPLIANCE.md](../SPEC-COMPLIANCE.md). Use this guide for actionable advice; use the coverage matrix to confirm parity with the protocol.
@@ -60,7 +61,7 @@ This guide distils hands-on recommendations for designing, building, and operati
   ```
   printf '{"jsonrpc":"2.0","id":1,"method":"ping"}\n' | bin/mcp-bash
   ```
-  A healthy install responds with `{"jsonrpc":"2.0","id":1,"result":{"ok":true}}`.
+  A healthy install responds with `{"jsonrpc":"2.0","id":1,"result":{}}`.
 - **Lint/format requirements** – Install `shellcheck` and `shfmt` before running `./test/lint.sh`. Without `shfmt`, lint fails with `Required command "shfmt" not found in PATH` (see [README.md](../README.md#developer-prerequisites)).
 - **Recommended tooling bundle**:
 
@@ -87,6 +88,8 @@ This guide distils hands-on recommendations for designing, building, and operati
 2. Inspect the generated README/snippets, then layer your logic into `tools/<name>/<script>.sh` (or equivalent prompts/resources).
 3. Add unit/integration coverage hitting the new artifacts (see [§5](#5-testing--quality-gates)).
 4. Update docs referencing the new capability, especially if operator steps, limits, or troubleshooting expectations shift.
+
+The scaffolder uses a per-asset directory (for example `tools/hello/hello.sh`), while some examples remain flat (for example `examples/00-hello-tool/tools/hello.sh`). Both layouts are supported by discovery; choose one and stay consistent within a project.
 
 _Asciinema tip_: Record a short run of `bin/mcp-bash scaffold tool sample.hello` plus `./test/examples/test_examples.sh` so newcomers can view the workflow end-to-end.
 
@@ -116,14 +119,14 @@ _Asciinema tip_: Record a short run of `bin/mcp-bash scaffold tool sample.hello`
 | Layer | Scope | Expected gates before merge |
 | --- | --- | --- |
 | Lint/format | `./test/lint.sh` (shellcheck+shfmt) | Always required. |
-| Unit | Focused libraries (`test/unit/test_paginate.sh`) | Required when touching `lib/*.sh` or SDK helpers. |
+| Unit | Focused libraries (`test/unit/lock.bats`) | Required when touching `lib/*.sh` or SDK helpers. |
 | Integration | Full capability smoke (`test/integration/test_capabilities.sh`) plus targeted suites (`test/integration/test_tools.sh`, etc.) | Required for handler/protocol changes. |
 | Smoke/examples | `test/examples/test_examples.sh` | Run whenever scaffolded assets change. |
 | Stress/soak | Custom loops combining `time ./bin/mcp-bash` with replayed JSON | Required before large releases or concurrency changes. |
 
 ### 5.2 Local workflow
 1. `./test/lint.sh`
-2. `./test/unit/test_paginate.sh` (or relevant unit suite)
+2. `./test/unit/lock.bats` (or relevant unit suite)
 3. `./test/integration/test_capabilities.sh`
 4. Focused suite(s) matching touched subsystem(s)
 5. `./test/examples/test_examples.sh`
@@ -163,7 +166,7 @@ Document configuration in `server.d/README.md` (if present) so on-call operators
 <a id="operational-readiness"></a>
 #### Operational readiness checklist
 - [ ] Ping smoke test (`printf '{"jsonrpc":"2.0","id":1,"method":"ping"}\n' | bin/mcp-bash`) returns `{"ok":true}` in full capability mode.
-- [ ] `MAX_CONCURRENT_REQUESTS` tuned for host CPU/memory (default 16).
+- [ ] `MCPBASH_MAX_CONCURRENT_REQUESTS` tuned for host CPU/memory (default 16).
 - [ ] Registry TTLs set to balance discovery churn vs freshness.
 - [ ] `server.d/env.sh` committed or documented for reproducibility.
 - [ ] Monitoring hooks emit at least heartbeat metrics (request count, failures).
@@ -268,7 +271,7 @@ sequenceDiagram
 - **Capability mode** – Either `full` (JSON tooling available) or `minimal` (reduced handler surface).
 - **Discovery** – Automated scanning of `tools/`, `resources/`, `prompts/` resulting in cached registries.
 - **TTL** – Time-to-live controlling how long registries remain cached before rescans.
-- **Worker slot** – Concurrent request execution slot bounded by `MAX_CONCURRENT_REQUESTS`.
+- **Worker slot** – Concurrent request execution slot bounded by `MCPBASH_MAX_CONCURRENT_REQUESTS`.
 
 ### Quick command reference
 ```
@@ -276,7 +279,7 @@ sequenceDiagram
 ./test/lint.sh
 
 # Run unit tests
-./test/unit/test_paginate.sh
+./test/unit/lock.bats
 
 # Run integration suite
 ./test/integration/test_capabilities.sh

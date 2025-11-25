@@ -112,15 +112,7 @@ mcp_resources_register_manual() {
 
 mcp_resources_hash_payload() {
 	local payload="$1"
-	if command -v sha256sum >/dev/null 2>&1; then
-		printf '%s' "${payload}" | sha256sum | awk '{print $1}'
-		return
-	fi
-	if command -v shasum >/dev/null 2>&1; then
-		printf '%s' "${payload}" | shasum -a 256 | awk '{print $1}'
-		return
-	fi
-	printf '%s' "${payload}" | cksum | awk '{print $1}'
+	mcp_hash_string "${payload}"
 }
 
 mcp_resources_subscription_store() {
@@ -205,7 +197,7 @@ mcp_resources_poll_subscriptions() {
 			fi
 		else
 			local code message error_fingerprint
-			code="${MCP_RESOURCES_ERR_CODE:- -32603}"
+			code="${MCP_RESOURCES_ERR_CODE:--32603}"
 			message="${MCP_RESOURCES_ERR_MESSAGE:-Unable to read resource}"
 			error_fingerprint="ERROR:${code}:$(mcp_resources_hash_payload "${message}")"
 			if [ "${error_fingerprint}" != "${fingerprint}" ]; then
@@ -373,11 +365,11 @@ mcp_resources_refresh_registry() {
 					return 1
 				fi
 			else
-				mcp_logging_warn "${MCP_RESOURCES_LOGGER}" "Discarding invalid resource registry cache"
+				mcp_logging_warning "${MCP_RESOURCES_LOGGER}" "Discarding invalid resource registry cache"
 				MCP_RESOURCES_REGISTRY_JSON=""
 			fi
 		else
-			mcp_logging_warn "${MCP_RESOURCES_LOGGER}" "Failed to read resource registry cache ${MCP_RESOURCES_REGISTRY_PATH}"
+			mcp_logging_warning "${MCP_RESOURCES_LOGGER}" "Failed to read resource registry cache ${MCP_RESOURCES_REGISTRY_PATH}"
 			MCP_RESOURCES_REGISTRY_JSON=""
 		fi
 	fi

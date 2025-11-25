@@ -15,7 +15,7 @@ printf '{"jsonrpc":"2.0","id":"1","method":"initialize","params":{}}\n{"jsonrpc"
 ## SDK Helpers
 `examples/run` sets `MCP_SDK` for you so `tools/logger.sh` can source the SDK helpers. Set `MCP_SDK` manually if you execute the script outside of the runner (see [SDK Discovery](../../README.md#sdk-discovery)).
 
-You should see `notifications/log` messages containing `example.logger` before the tool result.
+You should see `notifications/message` messages containing `example.logger` before the tool result.
 
 ## Troubleshooting
 - If logs do not appear, ensure you set the level to `debug` or `info`.

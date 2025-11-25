@@ -13,3 +13,9 @@ Without `shfmt`, the lint step fails immediately with "Required command \"shfmt\
 ## Running Tests
 
 See [TESTING.md](TESTING.md) for detailed instructions on running the test suite.
+
+## Code style & workflow
+- Shell scripts must pass `./test/lint.sh` (shellcheck + shfmt). Keep functions small and prefer `set -euo pipefail`.
+- Branches should be short-lived and opened as PRs against `main` with a concise summary of scope and test evidence.
+- Releases should update `CHANGELOG.md` and note any breaking protocol or SDK changes.
+- Contributions are governed by the [Code of Conduct](CODE_OF_CONDUCT.md); escalate concerns via the security contact in `docs/SECURITY.md`.
