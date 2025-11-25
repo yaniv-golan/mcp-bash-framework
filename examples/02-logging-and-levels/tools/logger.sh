@@ -1,6 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# shellcheck disable=SC1091 # examples/run stages sdk/ alongside these tools before execution
-source "$(dirname "$0")/../../../sdk/tool-sdk.sh"
+script_dir="$(cd "$(dirname "$0")" && pwd)"
+
+if [ -z "${MCP_SDK:-}" ] || [ ! -f "${MCP_SDK}/tool-sdk.sh" ]; then
+	if fallback_sdk="$(cd "${script_dir}/../../../sdk" 2>/dev/null && pwd)"; then
+		if [ -f "${fallback_sdk}/tool-sdk.sh" ]; then
+			MCP_SDK="${fallback_sdk}"
+		fi
+	fi
+fi
+
+if [ -z "${MCP_SDK:-}" ] || [ ! -f "${MCP_SDK}/tool-sdk.sh" ]; then
+	printf 'mcp: SDK helpers not found (expected %s/tool-sdk.sh)\n' "${MCP_SDK:-<unset>}" >&2
+	exit 1
+fi
+
+# shellcheck source=../../../sdk/tool-sdk.sh disable=SC1091
+source "${MCP_SDK}/tool-sdk.sh"
 mcp_log info example.logger '{"message":"about to work"}'
 mcp_emit_text "Check your logging notifications"
