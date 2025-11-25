@@ -1,5 +1,4 @@
 # Spec §3 repository contract: registry/ contains runtime-generated indexes excluded from VCS.
 registry/
 docs/internal/
-SPEC-COMPLIANCE.md
 docs/internal/mcp-bash-technical-spec.md
