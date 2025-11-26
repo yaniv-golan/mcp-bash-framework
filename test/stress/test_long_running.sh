@@ -45,7 +45,6 @@ set +e
 	cd "${WORKSPACE}" || exit 1
 	MCPBASH_PROJECT_ROOT="${WORKSPACE}" MCPBASH_DEFAULT_TOOL_TIMEOUT=1 ./bin/mcp-bash <"${REQS}" >"${RESP}"
 )
-status=$?
 set -e
 end=$(date +%s)
 elapsed=$((end - start))

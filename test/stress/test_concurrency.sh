@@ -44,7 +44,10 @@ exec 3>"${PIPE_IN}"
 exec 4<"${PIPE_OUT}"
 
 send() { printf '%s\n' "$1" >&3; }
-read_resp() { local line; read -r -u 4 line && printf '%s' "${line}"; }
+read_resp() {
+	local line
+	read -r -u 4 line && printf '%s' "${line}"
+}
 
 send '{"jsonrpc":"2.0","id":"init","method":"initialize","params":{}}'
 send '{"jsonrpc":"2.0","method":"notifications/initialized"}'
