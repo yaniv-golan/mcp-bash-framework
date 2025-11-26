@@ -35,7 +35,9 @@ cat <<'JSON' >"${WORKSPACE}/requests.ndjson"
 {"jsonrpc":"2.0","id":"shutdown","method":"shutdown"}
 {"jsonrpc":"2.0","id":"exit","method":"exit"}
 JSON
-sed -i '' "s|__OUTSIDE__|${OUTSIDE_URI//\//\\/}|" "${WORKSPACE}/requests.ndjson"
+OUTSIDE_ESC="${OUTSIDE_URI//\//\\/}"
+sed "s|__OUTSIDE__|${OUTSIDE_ESC}|" "${WORKSPACE}/requests.ndjson" >"${WORKSPACE}/requests.subst.ndjson"
+mv "${WORKSPACE}/requests.subst.ndjson" "${WORKSPACE}/requests.ndjson"
 
 test_run_mcp "${WORKSPACE}" "${WORKSPACE}/requests.ndjson" "${WORKSPACE}/responses.ndjson"
 assert_json_lines "${WORKSPACE}/responses.ndjson"
