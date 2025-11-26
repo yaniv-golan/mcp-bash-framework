@@ -42,7 +42,7 @@ if [ -z "${duration}" ] && [ $# -ge 5 ]; then
 fi
 
 if [ -z "${input_path}" ] || [ -z "${output_path}" ] || [ -z "${preset}" ]; then
-mcp_fail_invalid_args "Missing required arguments: input, output, preset"
+	mcp_fail_invalid_args "Missing required arguments: input, output, preset"
 fi
 
 FFMPEG_STUDIO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"

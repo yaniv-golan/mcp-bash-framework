@@ -3,8 +3,6 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
 output="$(MCPBASH_PROJECT_ROOT='' ./bin/mcp-bash scaffold tool foo 2>&1 >/dev/null || true)"
 
 if ! printf '%s' "${output}" | grep -qi 'MCPBASH_PROJECT_ROOT is not set'; then

@@ -988,7 +988,7 @@ mcp_tools_call() {
 	# Enforce outputSchema when declared: require JSON output and required fields.
 	if [ "${output_schema}" != "null" ] && [ "${has_json_tool}" = "true" ]; then
 		local structured_json=""
-		if ! structured_json="$(cat "${stdout_content}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.' 2>/dev/null)"; then
+		if ! structured_json="$("${MCPBASH_JSON_TOOL_BIN}" -c '.' "${stdout_content}" 2>/dev/null)"; then
 			_mcp_tools_emit_error -32603 "Tool output is not valid JSON for declared outputSchema" "null"
 			cleanup_tool_temp_files
 			return 1
