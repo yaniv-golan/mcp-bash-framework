@@ -22,10 +22,13 @@ mcp_registry_stat_mtime() {
 		return 0
 	fi
 	if command -v stat >/dev/null 2>&1; then
-		if stat -f %m "${path}" 2>/dev/null; then
+		# Prefer GNU stat (-c) for portable numeric mtime; fall back to BSD (-f).
+		if stat -c %Y "${path}" >/dev/null 2>&1; then
+			stat -c %Y "${path}"
 			return 0
 		fi
-		if stat -c %Y "${path}" 2>/dev/null; then
+		if stat -f %m "${path}" >/dev/null 2>&1; then
+			stat -f %m "${path}"
 			return 0
 		fi
 	fi
