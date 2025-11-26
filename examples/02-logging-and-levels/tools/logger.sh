@@ -17,5 +17,5 @@ fi
 
 # shellcheck source=../../../sdk/tool-sdk.sh disable=SC1091
 source "${MCP_SDK}/tool-sdk.sh"
-mcp_log info example.logger '{"message":"about to work"}'
+mcp_log_info "example.logger" "about to work"
 mcp_emit_text "Check your logging notifications"

@@ -1,24 +1,16 @@
 # Windows Support Notes
 
-- Git-Bash/MSYS drive prefixes (e.g., `C:\foo`) are translated to `/c/foo` by providers to avoid lookup failures.
-- Signal delivery (`kill -TERM`) may be unreliable; prefer WSL for production deployments.
-- Ensure `MSYS2_ARG_CONV_EXCL=*` is set when passing raw Windows paths to tools to avoid unwanted conversion.
-- JSON tooling (`jq` or `gojq`) may need manual installation (`pacman -S jq`).
+mcp-bash works on Windows, but only reliably under WSL. Git Bash and MSYS can run it, but signal handling and performance vary.
 
-## Known Issues
+## Guidance
+- Use WSL for predictable behavior and clean signal handling.
+- Git Bash/MSYS may drop signals; prefer short timeouts for long-running tools.
+- Providers translate `C:\foo` to `/c/foo`; avoid mixing Windows and POSIX roots.
+- Set `MSYS2_ARG_CONV_EXCL=*` when passing raw Windows paths to tools.
+- Install JSON tooling manually (`pacman -S jq` or a downloaded `gojq`).
 
-### Executable Permission Detection
-Windows does not have native Unix execute permissions. Git Bash/MSYS2 simulates execute bits based on file extensions (`.sh`, `.bash`) or shebang lines (`#!/usr/bin/env bash`). The tool discovery scanner includes fallback logic to detect executable tools by:
-1. Checking the `-x` test (may be unreliable on Windows)
-2. Falling back to checking for `.sh`/`.bash` extensions
-3. Falling back to checking for shebang lines in the file header
+## Executable detection
+Windows fakes execute bits. The scanner falls back to `.sh`/`.bash` extensions and shebangs when `-x` is unreliable. Use `.sh` plus `#!/usr/bin/env bash` or register tools manually via `server.d/register.sh`.
 
-To ensure tools are discovered reliably on Windows:
-- Use `.sh` extension for all tool scripts
-- Include a shebang line (`#!/usr/bin/env bash`) at the start of each tool script
-- Alternatively, use manual tool registration via `server.d/register.sh`
-
-### gojq Compatibility
-`gojq` v0.12.16 has known issues on Windows with the `--slurpfile` option, which can cause excessive memory allocation or OOM errors. Tests and scripts should prefer:
-- `cat file.ndjson | jq -s '...'` instead of `jq -n --slurpfile messages file.ndjson '...'`
-- Standard `jq` when available, falling back to `gojq` only when necessary
+## gojq notes
+`gojq` v0.12.16 struggles with `--slurpfile` on Windows. Prefer `cat file.ndjson | jq -s '...'` and use standard `jq` when available.

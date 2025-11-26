@@ -40,7 +40,7 @@ run_example_suite() {
 import json, os, sys
 tools_dir = sys.argv[1]
 for entry in sorted(os.listdir(tools_dir)):
-    if entry.endswith(".meta.yaml"):
+    if entry.endswith(".meta.json") or entry.endswith(".meta.yaml"):
         path = os.path.join(tools_dir, entry)
         with open(path, encoding="utf-8") as handle:
             data = json.load(handle)

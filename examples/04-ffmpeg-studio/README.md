@@ -29,7 +29,7 @@ sudo apt-get install ffmpeg
 1.  Place a test video file (e.g., `test.mp4`) into one of the configured media roots (defaults to the bundled `media/` directory).
 2.  Run the server:
     ```bash
-    ./run 04-ffmpeg-studio
+    ./examples/run 04-ffmpeg-studio
     ```
 3.  Use an MCP client (like Claude Desktop or Inspector) to interact with the tools.
 

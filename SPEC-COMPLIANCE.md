@@ -10,6 +10,7 @@ This document tracks `mcp-bash` compliance with the [Model Context Protocol Spec
 | Transport | stdio only (HTTP/SSE out of scope) |
 | JSON-RPC Version | 2.0 |
 | Downgrade Support | Negotiated during `initialize` |
+| Unsupported Versions | `initialize` returns `{"code":-32602,"message":"Unsupported protocol version"}` |
 
 ## Capability Coverage Matrix
 

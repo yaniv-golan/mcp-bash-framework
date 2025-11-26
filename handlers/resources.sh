@@ -38,9 +38,9 @@ mcp_handle_resources() {
 		limit="$(mcp_json_extract_limit "${json_payload}")"
 		cursor="$(mcp_json_extract_cursor "${json_payload}")"
 		if ! list_json="$(mcp_resources_list "${limit}" "${cursor}")"; then
-			local code="${MCP_RESOURCES_ERR_CODE:--32603}"
+			local code="${_MCP_RESOURCES_ERR_CODE:--32603}"
 			local message
-			message=$(mcp_resources_quote "${MCP_RESOURCES_ERR_MESSAGE:-Unable to list resources}")
+			message=$(mcp_resources_quote "${_MCP_RESOURCES_ERR_MESSAGE:-Unable to list resources}")
 			printf '{"jsonrpc":"2.0","id":%s,"error":{"code":%s,"message":%s}}' "${id}" "${code}" "${message}"
 			return 0
 		fi
@@ -57,9 +57,9 @@ mcp_handle_resources() {
 			return 0
 		fi
 		if ! result_json="$(mcp_resources_read "${name}" "${uri}")"; then
-			local code="${MCP_RESOURCES_ERR_CODE:--32603}"
+			local code="${_MCP_RESOURCES_ERR_CODE:--32603}"
 			local message
-			message=$(mcp_resources_quote "${MCP_RESOURCES_ERR_MESSAGE:-Unable to read resource}")
+			message=$(mcp_resources_quote "${_MCP_RESOURCES_ERR_MESSAGE:-Unable to read resource}")
 			printf '{"jsonrpc":"2.0","id":%s,"error":{"code":%s,"message":%s}}' "${id}" "${code}" "${message}"
 			return 0
 		fi
@@ -81,10 +81,10 @@ mcp_handle_resources() {
 		fi
 		subscription_id="$(mcp_resources_generate_subscription_id)"
 		if ! result_json="$(mcp_resources_read "${name}" "${uri}")"; then
-			mcp_logging_error "${logger}" "Initial read failed code=${MCP_RESOURCES_ERR_CODE:-?} msg=${MCP_RESOURCES_ERR_MESSAGE:-?}"
-			local code="${MCP_RESOURCES_ERR_CODE:--32603}"
+			mcp_logging_error "${logger}" "Initial read failed code=${_MCP_RESOURCES_ERR_CODE:-?} msg=${_MCP_RESOURCES_ERR_MESSAGE:-?}"
+			local code="${_MCP_RESOURCES_ERR_CODE:--32603}"
 			local message
-			message=$(mcp_resources_quote "${MCP_RESOURCES_ERR_MESSAGE:-Unable to read resource}")
+			message=$(mcp_resources_quote "${_MCP_RESOURCES_ERR_MESSAGE:-Unable to read resource}")
 			printf '{"jsonrpc":"2.0","id":%s,"error":{"code":%s,"message":%s}}' "${id}" "${code}" "${message}"
 			return 0
 		fi

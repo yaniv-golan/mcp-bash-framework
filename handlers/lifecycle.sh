@@ -56,7 +56,7 @@ mcp_handle_lifecycle() {
 		;;
 	exit)
 		if [ "${MCPBASH_SHUTDOWN_PENDING}" != "true" ]; then
-			printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32003,"message":"Shutdown not requested"}}' "${id}"
+			printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32005,"message":"Shutdown not requested"}}' "${id}"
 			return 0
 		fi
 		mcp_core_cancel_shutdown_watchdog

@@ -278,10 +278,11 @@ else
 fi
 
 send '{"jsonrpc": "2.0", "id": "shutdown", "method": "shutdown"}'
-wait_for "id" "shutdown" || result=1
+wait_for "id" "shutdown" 5 || result=1
 send '{"jsonrpc": "2.0", "id": "exit", "method": "exit"}'
 exec 3>&-
-while read_response >/dev/null; do
+# Drain remaining responses with timeout to prevent hang if server died
+while read -t 2 -r -u 4 line 2>/dev/null; do
 	:
 done
 exec 4<&-

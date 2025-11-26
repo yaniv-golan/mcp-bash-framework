@@ -19,9 +19,22 @@ fi
 # shellcheck source=../../../sdk/tool-sdk.sh disable=SC1091
 source "${MCP_SDK}/tool-sdk.sh"
 
-if [ $# -ne 3 ]; then
-	mcp_tool_error -32602 "Missing required arguments: input, time, output"
-	exit 1
+input_path="$(mcp_args_get '.input // empty' 2>/dev/null || true)"
+timestamp="$(mcp_args_get '.time // empty' 2>/dev/null || true)"
+output_path="$(mcp_args_get '.output // empty' 2>/dev/null || true)"
+
+if [ -z "${input_path}" ] && [ $# -ge 1 ]; then
+	input_path="$1"
+fi
+if [ -z "${timestamp}" ] && [ $# -ge 2 ]; then
+	timestamp="$2"
+fi
+if [ -z "${output_path}" ] && [ $# -ge 3 ]; then
+	output_path="$3"
+fi
+
+if [ -z "${input_path}" ] || [ -z "${timestamp}" ] || [ -z "${output_path}" ]; then
+	mcp_fail_invalid_args "Missing required arguments: input, time, output"
 fi
 
 FFMPEG_STUDIO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -29,33 +42,25 @@ FFMPEG_STUDIO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 source "${FFMPEG_STUDIO_ROOT}/lib/fs_guard.sh"
 
 if ! mcp_ffmpeg_guard_init "${FFMPEG_STUDIO_ROOT}"; then
-	mcp_tool_error -32603 "Media guard initialization failed"
-	exit 1
+	mcp_fail -32603 "Media guard initialization failed"
 fi
 
-input_path="$1"
-timestamp="$2"
-output_path="$3"
-
 if ! full_input="$(mcp_ffmpeg_guard_read_path "${input_path}")"; then
-	mcp_tool_error -32602 "Access denied: ${input_path} is outside configured media roots"
-	exit 1
+	mcp_fail -32602 "Access denied: ${input_path} is outside configured media roots"
 fi
 
 if ! full_output="$(mcp_ffmpeg_guard_write_path "${output_path}")"; then
-	mcp_tool_error -32602 "Access denied: ${output_path} is outside configured media roots"
-	exit 1
+	mcp_fail -32602 "Access denied: ${output_path} is outside configured media roots"
 fi
 
 if [ ! -f "${full_input}" ]; then
-	mcp_tool_error -32602 "Input file not found"
-	exit 1
+	mcp_fail -32602 "Input file not found: ${input_path}"
 fi
 
 # Run ffmpeg to extract single frame
 if ffmpeg -ss "${timestamp}" -i "${full_input}" -frames:v 1 -y "${full_output}" >/dev/null 2>&1; then
-	mcp_emit_text "Frame extracted to ${output_path}"
+	message_json="$(__mcp_sdk_json_escape "Frame extracted to ${output_path}")"
+	mcp_emit_json "{\"message\":${message_json}}"
 else
-	mcp_tool_error -32603 "Failed to extract frame"
-	exit 1
+	mcp_fail -32603 "Failed to extract frame"
 fi

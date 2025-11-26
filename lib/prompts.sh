@@ -8,10 +8,11 @@ MCP_PROMPTS_REGISTRY_HASH=""
 MCP_PROMPTS_REGISTRY_PATH=""
 # shellcheck disable=SC2034
 MCP_PROMPTS_TOTAL=0
+# Internal error handoff between library and handler (not user-configurable).
 # shellcheck disable=SC2034
-MCP_PROMPTS_ERR_CODE=0
+_MCP_PROMPTS_ERR_CODE=0
 # shellcheck disable=SC2034
-MCP_PROMPTS_ERR_MESSAGE=""
+_MCP_PROMPTS_ERR_MESSAGE=""
 MCP_PROMPTS_TTL="${MCP_PROMPTS_TTL:-5}"
 MCP_PROMPTS_LAST_SCAN=0
 MCP_PROMPTS_CHANGED=false
@@ -19,6 +20,23 @@ MCP_PROMPTS_LOGGER="${MCP_PROMPTS_LOGGER:-mcp.prompts}"
 MCP_PROMPTS_MANUAL_ACTIVE=false
 MCP_PROMPTS_MANUAL_BUFFER=""
 MCP_PROMPTS_MANUAL_DELIM=$'\036'
+
+mcp_prompts_scan_root() {
+	local scan_root="${MCPBASH_PROMPTS_DIR}"
+	if [ -n "${MCPBASH_REGISTRY_REFRESH_PATH:-}" ]; then
+		local candidate="${MCPBASH_REGISTRY_REFRESH_PATH}"
+		case "${candidate}" in
+		/*) ;;
+		*)
+			candidate="${MCPBASH_PROJECT_ROOT%/}/${candidate}"
+			;;
+		esac
+		if [ -d "${candidate}" ] && [[ "${candidate}" == "${MCPBASH_PROMPTS_DIR}"* ]]; then
+			scan_root="${candidate}"
+		fi
+	fi
+	printf '%s' "${scan_root}"
+}
 
 mcp_prompts_manual_begin() {
 	MCP_PROMPTS_MANUAL_ACTIVE=true
@@ -113,7 +131,11 @@ mcp_prompts_manual_finalize() {
 	if [ "${previous_hash}" != "${MCP_PROMPTS_REGISTRY_HASH}" ]; then
 		MCP_PROMPTS_CHANGED=true
 	fi
-	printf '%s' "${MCP_PROMPTS_REGISTRY_JSON}" >"${MCP_PROMPTS_REGISTRY_PATH}"
+	local write_rc=0
+	mcp_registry_write_with_lock "${MCP_PROMPTS_REGISTRY_PATH}" "${MCP_PROMPTS_REGISTRY_JSON}" || write_rc=$?
+	if [ "${write_rc}" -ne 0 ]; then
+		return "${write_rc}"
+	fi
 	MCP_PROMPTS_MANUAL_ACTIVE=false
 	MCP_PROMPTS_MANUAL_BUFFER=""
 	return 0
@@ -183,8 +205,8 @@ mcp_prompts_enforce_registry_limits() {
 	limit="$(mcp_prompts_registry_max_bytes)"
 	size="$(LC_ALL=C printf '%s' "${json_payload}" | wc -c | tr -d ' ')"
 	if [ "${size}" -gt "${limit}" ]; then
-		MCP_PROMPTS_ERR_CODE=-32603
-		MCP_PROMPTS_ERR_MESSAGE="Prompts registry exceeds ${limit} byte cap"
+		_MCP_PROMPTS_ERR_CODE=-32603
+		_MCP_PROMPTS_ERR_MESSAGE="Prompts registry exceeds ${limit} byte cap"
 		return 1
 	fi
 	if [ "${total}" -gt 500 ]; then
@@ -194,8 +216,8 @@ mcp_prompts_enforce_registry_limits() {
 }
 
 mcp_prompts_error() {
-	MCP_PROMPTS_ERR_CODE="$1"
-	MCP_PROMPTS_ERR_MESSAGE="$2"
+	_MCP_PROMPTS_ERR_CODE="$1"
+	_MCP_PROMPTS_ERR_MESSAGE="$2"
 }
 
 mcp_prompts_init() {
@@ -245,10 +267,16 @@ mcp_prompts_apply_manual_json() {
 		MCP_PROMPTS_CHANGED=true
 	fi
 	MCP_PROMPTS_LAST_SCAN="$(date +%s)"
-	printf '%s' "${registry_json}" >"${MCP_PROMPTS_REGISTRY_PATH}"
+	local write_rc=0
+	mcp_registry_write_with_lock "${MCP_PROMPTS_REGISTRY_PATH}" "${registry_json}" || write_rc=$?
+	if [ "${write_rc}" -ne 0 ]; then
+		return "${write_rc}"
+	fi
 }
 
 mcp_prompts_refresh_registry() {
+	local scan_root
+	scan_root="$(mcp_prompts_scan_root)"
 	mcp_prompts_init
 	if [ -x "${MCPBASH_SERVER_DIR}/register.sh" ]; then
 		if mcp_prompts_run_manual_script; then
@@ -282,16 +310,28 @@ mcp_prompts_refresh_registry() {
 	if [ -n "${MCP_PROMPTS_REGISTRY_JSON}" ] && [ $((now - MCP_PROMPTS_LAST_SCAN)) -lt "${MCP_PROMPTS_TTL}" ]; then
 		return 0
 	fi
+
+	local fastpath_snapshot
+	fastpath_snapshot="$(mcp_registry_fastpath_snapshot "${scan_root}")"
+	if mcp_registry_fastpath_unchanged "prompts" "${fastpath_snapshot}"; then
+		MCP_PROMPTS_LAST_SCAN="${now}"
+		return 0
+	fi
+
 	local previous_hash="${MCP_PROMPTS_REGISTRY_HASH}"
-	mcp_prompts_scan || return 1
+	mcp_prompts_scan "${scan_root}" || return 1
 	MCP_PROMPTS_LAST_SCAN="${now}"
+	if [ -n "${fastpath_snapshot}" ]; then
+		fastpath_snapshot="$(mcp_registry_fastpath_snapshot "${scan_root}")"
+		mcp_registry_fastpath_store "prompts" "${fastpath_snapshot}" || true
+	fi
 	if [ "${previous_hash}" != "${MCP_PROMPTS_REGISTRY_HASH}" ]; then
 		MCP_PROMPTS_CHANGED=true
 	fi
 }
 
 mcp_prompts_scan() {
-	local prompts_dir="${MCPBASH_PROMPTS_DIR}"
+	local prompts_dir="${1:-${MCPBASH_PROMPTS_DIR}}"
 	local items_file
 	items_file="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-prompts-items.XXXXXX")"
 
@@ -380,7 +420,11 @@ mcp_prompts_scan() {
 		return 1
 	fi
 
-	printf '%s' "${MCP_PROMPTS_REGISTRY_JSON}" >"${MCP_PROMPTS_REGISTRY_PATH}"
+	local write_rc=0
+	mcp_registry_write_with_lock "${MCP_PROMPTS_REGISTRY_PATH}" "${MCP_PROMPTS_REGISTRY_JSON}" || write_rc=$?
+	if [ "${write_rc}" -ne 0 ]; then
+		return "${write_rc}"
+	fi
 }
 
 mcp_prompts_decode_cursor() {
@@ -397,9 +441,9 @@ mcp_prompts_list() {
 	local limit="$1"
 	local cursor="$2"
 	# shellcheck disable=SC2034
-	MCP_PROMPTS_ERR_CODE=0
+	_MCP_PROMPTS_ERR_CODE=0
 	# shellcheck disable=SC2034
-	MCP_PROMPTS_ERR_MESSAGE=""
+	_MCP_PROMPTS_ERR_MESSAGE=""
 
 	mcp_prompts_refresh_registry || {
 		mcp_prompts_error -32603 "Unable to load prompts registry"

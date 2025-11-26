@@ -30,10 +30,18 @@ mcp_handle_tools() {
 		cursor="$(mcp_json_extract_cursor "${json_payload}")"
 		local list_json
 		if ! list_json="$(mcp_tools_list "${limit}" "${cursor}")"; then
-			local code="${MCP_TOOLS_ERROR_CODE:--32603}"
+			local code="${_MCP_TOOLS_ERROR_CODE:--32603}"
+			case "${code}" in
+			0 | "") code=-32603 ;;
+			esac
 			local message
-			message=$(mcp_tools_quote "${MCP_TOOLS_ERROR_MESSAGE:-Unable to list tools}")
-			printf '{"jsonrpc":"2.0","id":%s,"error":{"code":%s,"message":%s}}' "${id}" "${code}" "${message}"
+			message=$(mcp_tools_quote "${_MCP_TOOLS_ERROR_MESSAGE:-Unable to list tools}")
+			local data="${_MCP_TOOLS_ERROR_DATA:-}"
+			if [ -n "${data}" ]; then
+				printf '{"jsonrpc":"2.0","id":%s,"error":{"code":%s,"message":%s,"data":%s}}' "${id}" "${code}" "${message}" "${data}"
+			else
+				printf '{"jsonrpc":"2.0","id":%s,"error":{"code":%s,"message":%s}}' "${id}" "${code}" "${message}"
+			fi
 			return 0
 		fi
 		printf '{"jsonrpc":"2.0","id":%s,"result":%s}' "${id}" "${list_json}"
@@ -51,10 +59,30 @@ mcp_handle_tools() {
 		timeout_override="$(mcp_json_extract_timeout_override "${json_payload}")"
 		local result_json
 		if ! result_json="$(mcp_tools_call "${name}" "${args_json}" "${timeout_override}")"; then
-			local code="${MCP_TOOLS_ERROR_CODE:--32603}"
+			# Parse error info from stdout (mcp_tools_call emits error JSON on failure)
+			local code=-32603 message_raw="Tool execution failed" data="null"
+			if [ -n "${result_json}" ] && [ "${MCPBASH_JSON_TOOL:-none}" != "none" ]; then
+				# Check if it's a tool error object with _mcpToolError marker
+				local is_tool_error
+				is_tool_error="$(printf '%s' "${result_json}" | "${MCPBASH_JSON_TOOL_BIN}" -r '._mcpToolError // empty' 2>/dev/null || true)"
+				if [ "${is_tool_error}" = "true" ]; then
+					code="$(printf '%s' "${result_json}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.code // -32603')"
+					message_raw="$(printf '%s' "${result_json}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.message // "Tool execution failed"')"
+					data="$(printf '%s' "${result_json}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.data // null')"
+				fi
+			fi
+			# Normalize code
+			case "${code}" in
+			0 | "" | "null") code=-32603 ;;
+			esac
 			local message
-			message=$(mcp_tools_quote "${MCP_TOOLS_ERROR_MESSAGE:-Tool execution failed}")
-			printf '{"jsonrpc":"2.0","id":%s,"error":{"code":%s,"message":%s}}' "${id}" "${code}" "${message}"
+			message=$(mcp_tools_quote "${message_raw}")
+			mcp_logging_debug "${MCP_TOOLS_LOGGER}" "tools/call error code=${code} message=${message_raw} data=${data:-<unset>}" || true
+			if [ -n "${data}" ] && [ "${data}" != "null" ]; then
+				printf '{"jsonrpc":"2.0","id":%s,"error":{"code":%s,"message":%s,"data":%s}}' "${id}" "${code}" "${message}" "${data}"
+			else
+				printf '{"jsonrpc":"2.0","id":%s,"error":{"code":%s,"message":%s}}' "${id}" "${code}" "${message}"
+			fi
 			return 0
 		fi
 		printf '{"jsonrpc":"2.0","id":%s,"result":%s}' "${id}" "${result_json}"

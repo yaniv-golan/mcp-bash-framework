@@ -12,6 +12,7 @@ Usage:
   mcp-bash scaffold tool <name>
   mcp-bash scaffold prompt <name>
   mcp-bash scaffold resource <name>
+  mcp-bash registry refresh [--project-root DIR] [--no-notify] [--quiet] [--filter PATH]
 EOF
 }
 
@@ -212,6 +213,184 @@ mcp_scaffold_resource() {
 	exit 0
 }
 
+mcp_registry_refresh_cli() {
+	local project_root=""
+	local quiet="false"
+	local no_notify="false"
+	local filter_path=""
+
+	while [ $# -gt 0 ]; do
+		case "$1" in
+		--project-root)
+			shift
+			project_root="${1:-}"
+			;;
+		--quiet)
+			quiet="true"
+			;;
+		--no-notify)
+			no_notify="true"
+			;;
+		--filter)
+			shift
+			filter_path="${1:-}"
+			;;
+		*)
+			usage
+			exit 1
+			;;
+		esac
+		shift
+	done
+
+	if [ -n "${project_root}" ]; then
+		MCPBASH_PROJECT_ROOT="${project_root%/}"
+		export MCPBASH_PROJECT_ROOT
+		no_notify="true" # implied by --project-root (offline mode)
+	fi
+	if [ -z "${MCPBASH_TMP_ROOT:-}" ]; then
+		MCPBASH_TMP_ROOT="${TMPDIR:-/tmp}"
+	fi
+	if [ -z "${MCPBASH_LOCK_ROOT:-}" ]; then
+		MCPBASH_LOCK_ROOT="${MCPBASH_TMP_ROOT%/}/mcpbash.locks"
+	fi
+	if [ -z "${MCPBASH_STATE_DIR:-}" ]; then
+		MCPBASH_STATE_DIR="${MCPBASH_TMP_ROOT%/}/mcpbash.state.$$"
+	fi
+	if [ -z "${MCPBASH_REGISTRY_DIR:-}" ]; then
+		MCPBASH_REGISTRY_DIR="${MCPBASH_PROJECT_ROOT%/}/.registry"
+	fi
+	if [ -z "${MCPBASH_TOOLS_DIR:-}" ]; then
+		MCPBASH_TOOLS_DIR="${MCPBASH_PROJECT_ROOT%/}/tools"
+	fi
+	if [ -z "${MCPBASH_RESOURCES_DIR:-}" ]; then
+		MCPBASH_RESOURCES_DIR="${MCPBASH_PROJECT_ROOT%/}/resources"
+	fi
+	if [ -z "${MCPBASH_PROMPTS_DIR:-}" ]; then
+		MCPBASH_PROMPTS_DIR="${MCPBASH_PROJECT_ROOT%/}/prompts"
+	fi
+	export MCPBASH_PROJECT_ROOT MCPBASH_REGISTRY_DIR MCPBASH_TOOLS_DIR MCPBASH_RESOURCES_DIR MCPBASH_PROMPTS_DIR MCPBASH_TMP_ROOT MCPBASH_LOCK_ROOT MCPBASH_STATE_DIR
+	mkdir -p "${MCPBASH_LOCK_ROOT}" "${MCPBASH_STATE_DIR}" "${MCPBASH_REGISTRY_DIR}" >/dev/null 2>&1 || true
+	MCP_TOOLS_REGISTRY_PATH="${MCPBASH_REGISTRY_DIR}/tools.json"
+	MCP_RESOURCES_REGISTRY_PATH="${MCPBASH_REGISTRY_DIR}/resources.json"
+	MCP_PROMPTS_REGISTRY_PATH="${MCPBASH_REGISTRY_DIR}/prompts.json"
+	if [ "${quiet}" = "true" ]; then
+		MCPBASH_LOG_LEVEL="error"
+		export MCPBASH_LOG_LEVEL
+	fi
+	if [ -n "${filter_path}" ]; then
+		export MCPBASH_REGISTRY_REFRESH_PATH="${filter_path}"
+	fi
+
+	require_bash_runtime
+	initialize_runtime_paths
+	if [ -z "${MCPBASH_TMP_ROOT:-}" ]; then
+		MCPBASH_TMP_ROOT="${TMPDIR:-/tmp}"
+	fi
+	if [ -z "${MCPBASH_LOCK_ROOT:-}" ]; then
+		MCPBASH_LOCK_ROOT="${MCPBASH_TMP_ROOT%/}/mcpbash.locks"
+	fi
+	if [ -z "${MCPBASH_STATE_DIR:-}" ]; then
+		MCPBASH_STATE_DIR="${MCPBASH_TMP_ROOT%/}/mcpbash.state.$$"
+	fi
+	mcp_lock_init
+	mcp_runtime_detect_json_tool
+	mcp_runtime_log_batch_mode
+
+	if [ "${no_notify}" = "true" ]; then
+		MCPBASH_REGISTRY_REFRESH_NO_NOTIFY="true"
+		export MCPBASH_REGISTRY_REFRESH_NO_NOTIFY
+	fi
+
+	local mode="full"
+	if mcp_runtime_is_minimal_mode; then
+		mode="minimal"
+	fi
+
+	local tools_status="ok"
+	local resources_status="ok"
+	local prompts_status="ok"
+	local tools_error=""
+	local resources_error=""
+	local prompts_error=""
+	local fatal=0
+	local any_fail=0
+
+	if mcp_runtime_is_minimal_mode; then
+		tools_status="skipped"
+		resources_status="skipped"
+		prompts_status="skipped"
+		tools_error="minimal mode"
+		resources_error="minimal mode"
+		prompts_error="minimal mode"
+	else
+		MCP_TOOLS_LAST_SCAN=0
+		MCP_RESOURCES_LAST_SCAN=0
+		MCP_PROMPTS_LAST_SCAN=0
+
+		mcp_tools_refresh_registry || {
+			case "$?" in
+			2) fatal=1 ;;
+			*) any_fail=1 ;;
+			esac
+			tools_status="failed"
+			tools_error="refresh failed"
+		}
+		mcp_resources_refresh_registry || {
+			case "$?" in
+			2) fatal=1 ;;
+			*) any_fail=1 ;;
+			esac
+			resources_status="failed"
+			resources_error="refresh failed"
+		}
+		mcp_prompts_refresh_registry || {
+			case "$?" in
+			2) fatal=1 ;;
+			*) any_fail=1 ;;
+			esac
+			prompts_status="failed"
+			prompts_error="refresh failed"
+		}
+	fi
+
+	local tools_error_json resources_error_json prompts_error_json
+	tools_error_json="null"
+	resources_error_json="null"
+	prompts_error_json="null"
+	if [ -n "${tools_error}" ]; then
+		tools_error_json="$(mcp_json_quote_text "${tools_error}")"
+	fi
+	if [ -n "${resources_error}" ]; then
+		resources_error_json="$(mcp_json_quote_text "${resources_error}")"
+	fi
+	if [ -n "${prompts_error}" ]; then
+		prompts_error_json="$(mcp_json_quote_text "${prompts_error}")"
+	fi
+
+	local json_output
+	json_output="$(cat <<EOF
+{
+  "tools": {"status":"${tools_status}","count":${MCP_TOOLS_TOTAL:-0},"error":${tools_error_json}},
+  "resources": {"status":"${resources_status}","count":${MCP_RESOURCES_TOTAL:-0},"error":${resources_error_json}},
+  "prompts": {"status":"${prompts_status}","count":${MCP_PROMPTS_TOTAL:-0},"error":${prompts_error_json}},
+  "notificationsSent": false,
+  "mode": "${mode}"
+}
+EOF
+)"
+
+	printf '%s\n' "${json_output}"
+
+	if [ "${fatal}" -eq 1 ]; then
+		exit 2
+	fi
+	if [ "${any_fail}" -eq 1 ]; then
+		exit 1
+	fi
+	exit 0
+}
+
 # Keep a stable, versioned core separated from extension directories.
 MCPBASH_SERVER_NAME="mcp-bash"
 MCPBASH_SERVER_TITLE="MCP Bash Server"
@@ -242,7 +421,7 @@ initialize_runtime_paths() {
 	script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 	MCPBASH_HOME="$(cd "${script_dir}/.." && pwd)"
 
-	local required_libs="runtime json hash ids lock io paginate logging spec tools resources prompts completion timeout rpc core"
+	local required_libs="runtime json hash ids lock io paginate logging registry spec tools resources prompts completion timeout rpc core"
 	local lib
 
 	for lib in ${required_libs}; do
@@ -268,6 +447,8 @@ initialize_runtime_paths() {
 	. "${MCPBASH_HOME}/lib/paginate.sh"
 	# shellcheck disable=SC1090
 	. "${MCPBASH_HOME}/lib/logging.sh"
+	# shellcheck disable=SC1090
+	. "${MCPBASH_HOME}/lib/registry.sh"
 	# shellcheck disable=SC1090
 	. "${MCPBASH_HOME}/lib/spec.sh"
 	# shellcheck disable=SC1090
@@ -314,6 +495,20 @@ main() {
 	# Bootstrap: begin primary lifecycle loop.
 	mcp_core_run
 }
+
+if [ "${1-}" = "registry" ]; then
+	shift
+	case "${1-}" in
+	refresh)
+		shift
+		mcp_registry_refresh_cli "$@"
+		;;
+	*)
+		usage
+		exit 1
+		;;
+	esac
+fi
 
 if [ "${1-}" = "scaffold" ]; then
 	shift

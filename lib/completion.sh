@@ -863,10 +863,12 @@ mcp_completion_finalize() {
 			--argjson has_more "${has_more_json}" \
 			--arg cursor "${cursor}" '
 				{
-					suggestions: $suggestions,
-					hasMore: ($has_more == true)
+					completion: {
+						values: $suggestions,
+						hasMore: ($has_more == true)
+					}
 				}
-				+ (if $cursor != "" then {cursor: $cursor} else {} end)
+				+ (if $cursor != "" then {_meta: {cursor: $cursor}} else {} end)
 			'
 	)"
 }

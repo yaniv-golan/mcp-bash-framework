@@ -766,13 +766,24 @@ mcp_core_build_error_response() {
 	local message="$3"
 	local data="$4"
 	local id_value
+	local data_json
+	local message_json
 
 	id_value="${id_json:-null}"
+	message_json="$(mcp_json_quote_text "${message}")"
 
 	if [ -n "${data}" ]; then
-		printf '{"jsonrpc":"2.0","id":%s,"error":{"code":%s,"message":"%s","data":"%s"}}' "${id_value}" "${code}" "${message}" "${data}"
+		case "${data}" in
+		"{"*|"["*)
+			data_json="${data}"
+			;;
+		*)
+			data_json="$(mcp_json_quote_text "${data}")"
+			;;
+		esac
+		printf '{"jsonrpc":"2.0","id":%s,"error":{"code":%s,"message":%s,"data":%s}}' "${id_value}" "${code}" "${message_json}" "${data_json}"
 	else
-		printf '{"jsonrpc":"2.0","id":%s,"error":{"code":%s,"message":"%s"}}' "${id_value}" "${code}" "${message}"
+		printf '{"jsonrpc":"2.0","id":%s,"error":{"code":%s,"message":%s}}' "${id_value}" "${code}" "${message_json}"
 	fi
 }
 
@@ -838,21 +849,44 @@ mcp_core_emit_log_stream() {
 }
 
 mcp_core_emit_registry_notifications() {
+	if [ "${MCPBASH_INITIALIZED}" != true ]; then
+		return 0
+	fi
+
+	local allow_list_changed="true"
+	case "${MCPBASH_NEGOTIATED_PROTOCOL_VERSION:-${MCPBASH_PROTOCOL_VERSION}}" in
+	2025-03-26)
+		allow_list_changed="false"
+		;;
+	esac
+
 	local note
 	mcp_tools_poll
-	note="$(mcp_tools_consume_notification)"
-	if [ -n "${note}" ]; then
-		rpc_send_line "${note}"
+	if [ "${allow_list_changed}" = "true" ]; then
+		note="$(mcp_tools_consume_notification)"
+		if [ -n "${note}" ]; then
+			rpc_send_line "${note}"
+		fi
+	else
+		mcp_tools_consume_notification >/dev/null
 	fi
 	mcp_resources_poll
-	note="$(mcp_resources_consume_notification)"
-	if [ -n "${note}" ]; then
-		rpc_send_line "${note}"
+	if [ "${allow_list_changed}" = "true" ]; then
+		note="$(mcp_resources_consume_notification)"
+		if [ -n "${note}" ]; then
+			rpc_send_line "${note}"
+		fi
+	else
+		mcp_resources_consume_notification >/dev/null
 	fi
 	mcp_prompts_poll
-	note="$(mcp_prompts_consume_notification)"
-	if [ -n "${note}" ]; then
-		rpc_send_line "${note}"
+	if [ "${allow_list_changed}" = "true" ]; then
+		note="$(mcp_prompts_consume_notification)"
+		if [ -n "${note}" ]; then
+			rpc_send_line "${note}"
+		fi
+	else
+		mcp_prompts_consume_notification >/dev/null
 	fi
 }
 

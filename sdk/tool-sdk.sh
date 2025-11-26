@@ -111,7 +111,63 @@ mcp_log() {
 	fi
 	local logger_json
 	logger_json="$(__mcp_sdk_json_escape "${logger}")"
-	printf '{"jsonrpc":"2.0","method":"notifications/message","params":{"level":"%s","logger":%s,"message":%s}}\n' "${normalized_level}" "${logger_json}" "${json_payload}" >>"${MCP_LOG_STREAM}" 2>/dev/null || true
+	printf '{"jsonrpc":"2.0","method":"notifications/message","params":{"level":"%s","logger":%s,"data":%s}}\n' "${normalized_level}" "${logger_json}" "${json_payload}" >>"${MCP_LOG_STREAM}" 2>/dev/null || true
+}
+
+mcp_log_debug() {
+	mcp_log "debug" "$1" "$(__mcp_sdk_json_escape "$2")"
+}
+
+mcp_log_info() {
+	mcp_log "info" "$1" "$(__mcp_sdk_json_escape "$2")"
+}
+
+mcp_log_warn() {
+	mcp_log "warning" "$1" "$(__mcp_sdk_json_escape "$2")"
+}
+
+mcp_log_error() {
+	mcp_log "error" "$1" "$(__mcp_sdk_json_escape "$2")"
+}
+
+mcp_fail() {
+	local code="$1"
+	local message="${2:-}"
+	local data_raw="${3:-}"
+
+	if ! printf '%s' "${code}" | LC_ALL=C grep -Eq '^[-+]?[0-9]+$'; then
+		code="-32603"
+	fi
+	if [ -z "${message}" ]; then
+		message="Tool failed"
+	fi
+
+	local message_json
+	message_json="$(__mcp_sdk_json_escape "${message}")"
+
+	local data_json="null"
+	if [ -n "${data_raw}" ]; then
+		if command -v "${MCPBASH_JSON_TOOL_BIN:-}" >/dev/null 2>&1; then
+			local compact
+			compact="$(printf '%s' "${data_raw}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.' 2>/dev/null || true)"
+			[ -n "${compact}" ] && data_json="${compact}"
+		else
+			data_json="${data_raw}"
+		fi
+	fi
+
+	if [ -n "${MCP_TOOL_ERROR_FILE:-}" ] && [ -w "${MCP_TOOL_ERROR_FILE}" ] 2>/dev/null; then
+		printf '{"code":%s,"message":%s,"data":%s}\n' "${code}" "${message_json}" "${data_json}" >"${MCP_TOOL_ERROR_FILE}" 2>/dev/null || true
+	fi
+	printf '{"code":%s,"message":%s,"data":%s}\n' "${code}" "${message_json}" "${data_json}"
+	printf '%s\n' "${message}" >&2
+	exit 1
+}
+
+mcp_fail_invalid_args() {
+	local message="${1:-Invalid params}"
+	local data="${2:-}"
+	mcp_fail -32602 "${message}" "${data}"
 }
 
 mcp_emit_text() {

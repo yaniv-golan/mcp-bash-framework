@@ -8,10 +8,11 @@ MCP_RESOURCES_REGISTRY_HASH=""
 MCP_RESOURCES_REGISTRY_PATH=""
 # shellcheck disable=SC2034
 MCP_RESOURCES_TOTAL=0
+# Internal error handoff between library and handler (not user-configurable).
 # shellcheck disable=SC2034
-MCP_RESOURCES_ERR_CODE=0
+_MCP_RESOURCES_ERR_CODE=0
 # shellcheck disable=SC2034
-MCP_RESOURCES_ERR_MESSAGE=""
+_MCP_RESOURCES_ERR_MESSAGE=""
 MCP_RESOURCES_TTL="${MCP_RESOURCES_TTL:-5}"
 MCP_RESOURCES_LAST_SCAN=0
 MCP_RESOURCES_CHANGED=false
@@ -19,6 +20,23 @@ MCP_RESOURCES_MANUAL_ACTIVE=false
 MCP_RESOURCES_MANUAL_BUFFER=""
 MCP_RESOURCES_MANUAL_DELIM=$'\036'
 MCP_RESOURCES_LOGGER="${MCP_RESOURCES_LOGGER:-mcp.resources}"
+
+mcp_resources_scan_root() {
+	local scan_root="${MCPBASH_RESOURCES_DIR}"
+	if [ -n "${MCPBASH_REGISTRY_REFRESH_PATH:-}" ]; then
+		local candidate="${MCPBASH_REGISTRY_REFRESH_PATH}"
+		case "${candidate}" in
+		/*) ;;
+		*)
+			candidate="${MCPBASH_PROJECT_ROOT%/}/${candidate}"
+			;;
+		esac
+		if [ -d "${candidate}" ] && [[ "${candidate}" == "${MCPBASH_RESOURCES_DIR}"* ]]; then
+			scan_root="${candidate}"
+		fi
+	fi
+	printf '%s' "${scan_root}"
+}
 
 mcp_resources_manual_begin() {
 	MCP_RESOURCES_MANUAL_ACTIVE=true
@@ -89,7 +107,11 @@ mcp_resources_manual_finalize() {
 	if [ "${previous_hash}" != "${MCP_RESOURCES_REGISTRY_HASH}" ]; then
 		MCP_RESOURCES_CHANGED=true
 	fi
-	printf '%s' "${registry_json}" >"${MCP_RESOURCES_REGISTRY_PATH}"
+	local write_rc=0
+	mcp_registry_write_with_lock "${MCP_RESOURCES_REGISTRY_PATH}" "${registry_json}" || write_rc=$?
+	if [ "${write_rc}" -ne 0 ]; then
+		return "${write_rc}"
+	fi
 	MCP_RESOURCES_MANUAL_ACTIVE=false
 	MCP_RESOURCES_MANUAL_BUFFER=""
 	return 0
@@ -201,8 +223,8 @@ mcp_resources_poll_subscriptions() {
 			fi
 		else
 			local code message error_fingerprint
-			code="${MCP_RESOURCES_ERR_CODE:--32603}"
-			message="${MCP_RESOURCES_ERR_MESSAGE:-Unable to read resource}"
+			code="${_MCP_RESOURCES_ERR_CODE:--32603}"
+			message="${_MCP_RESOURCES_ERR_MESSAGE:-Unable to read resource}"
 			error_fingerprint="ERROR:${code}:$(mcp_resources_hash_payload "${message}")"
 			if [ "${error_fingerprint}" != "${fingerprint}" ]; then
 				mcp_resources_subscription_store "${subscription_id}" "${name}" "${uri}" "${error_fingerprint}"
@@ -237,8 +259,8 @@ mcp_resources_enforce_registry_limits() {
 }
 
 mcp_resources_error() {
-	MCP_RESOURCES_ERR_CODE="$1"
-	MCP_RESOURCES_ERR_MESSAGE="$2"
+	_MCP_RESOURCES_ERR_CODE="$1"
+	_MCP_RESOURCES_ERR_MESSAGE="$2"
 }
 
 mcp_resources_init() {
@@ -291,7 +313,11 @@ mcp_resources_apply_manual_json() {
 		return 1
 	fi
 	MCP_RESOURCES_LAST_SCAN="$(date +%s)"
-	printf '%s' "${registry_json}" >"${MCP_RESOURCES_REGISTRY_PATH}"
+	local write_rc=0
+	mcp_registry_write_with_lock "${MCP_RESOURCES_REGISTRY_PATH}" "${registry_json}" || write_rc=$?
+	if [ "${write_rc}" -ne 0 ]; then
+		return "${write_rc}"
+	fi
 }
 
 mcp_resources_run_manual_script() {
@@ -344,6 +370,8 @@ mcp_resources_run_manual_script() {
 }
 
 mcp_resources_refresh_registry() {
+	local scan_root
+	scan_root="$(mcp_resources_scan_root)"
 	mcp_resources_init
 	mcp_logging_debug "${MCP_RESOURCES_LOGGER}" "Refresh start register=${MCPBASH_SERVER_DIR}/register.sh exists=$([[ -x ${MCPBASH_SERVER_DIR}/register.sh ]] && echo yes || echo no) ttl=${MCP_RESOURCES_TTL:-5}"
 	if [ -x "${MCPBASH_SERVER_DIR}/register.sh" ]; then
@@ -381,9 +409,21 @@ mcp_resources_refresh_registry() {
 		mcp_logging_debug "${MCP_RESOURCES_LOGGER}" "Refresh skipped due to ttl (last=${MCP_RESOURCES_LAST_SCAN})"
 		return 0
 	fi
+
+	local fastpath_snapshot
+	fastpath_snapshot="$(mcp_registry_fastpath_snapshot "${scan_root}")"
+	if mcp_registry_fastpath_unchanged "resources" "${fastpath_snapshot}"; then
+		MCP_RESOURCES_LAST_SCAN="${now}"
+		return 0
+	fi
+
 	local previous_hash="${MCP_RESOURCES_REGISTRY_HASH}"
-	mcp_resources_scan || return 1
+	mcp_resources_scan "${scan_root}" || return 1
 	MCP_RESOURCES_LAST_SCAN="${now}"
+	if [ -n "${fastpath_snapshot}" ]; then
+		fastpath_snapshot="$(mcp_registry_fastpath_snapshot "${scan_root}")"
+		mcp_registry_fastpath_store "resources" "${fastpath_snapshot}" || true
+	fi
 	mcp_logging_debug "${MCP_RESOURCES_LOGGER}" "Refresh completed scan hash=${MCP_RESOURCES_REGISTRY_HASH}"
 	if [ "${previous_hash}" != "${MCP_RESOURCES_REGISTRY_HASH}" ]; then
 		MCP_RESOURCES_CHANGED=true
@@ -391,7 +431,7 @@ mcp_resources_refresh_registry() {
 }
 
 mcp_resources_scan() {
-	local resources_dir="${MCPBASH_RESOURCES_DIR}"
+	local resources_dir="${1:-${MCPBASH_RESOURCES_DIR}}"
 	local items_file
 	items_file="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-resources-items.XXXXXX")"
 
@@ -501,7 +541,9 @@ mcp_resources_scan() {
 		return 1
 	fi
 
-	printf '%s' "${MCP_RESOURCES_REGISTRY_JSON}" >"${MCP_RESOURCES_REGISTRY_PATH}"
+	if ! mcp_registry_write_with_lock "${MCP_RESOURCES_REGISTRY_PATH}" "${MCP_RESOURCES_REGISTRY_JSON}"; then
+		return 1
+	fi
 }
 
 mcp_resources_decode_cursor() {
@@ -518,9 +560,9 @@ mcp_resources_list() {
 	local limit="$1"
 	local cursor="$2"
 	# shellcheck disable=SC2034
-	MCP_RESOURCES_ERR_CODE=0
+	_MCP_RESOURCES_ERR_CODE=0
 	# shellcheck disable=SC2034
-	MCP_RESOURCES_ERR_MESSAGE=""
+	_MCP_RESOURCES_ERR_MESSAGE=""
 
 	mcp_resources_refresh_registry || {
 		mcp_resources_error -32603 "Unable to load resources registry"

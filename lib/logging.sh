@@ -56,7 +56,7 @@ mcp_logging_emit() {
 	fi
 	logger_json="$(mcp_logging_quote "${logger}")"
 	message_json="$(mcp_logging_quote "${message}")"
-	rpc_send_line "$(printf '{"jsonrpc":"2.0","method":"notifications/message","params":{"level":"%s","logger":%s,"message":{"type":"text","text":%s}}}' "${level}" "${logger_json}" "${message_json}")"
+	rpc_send_line "$(printf '{"jsonrpc":"2.0","method":"notifications/message","params":{"level":"%s","logger":%s,"data":%s}}' "${level}" "${logger_json}" "${message_json}")"
 }
 
 mcp_logging_debug() {

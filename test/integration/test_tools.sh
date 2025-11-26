@@ -181,3 +181,43 @@ exit_code="$(echo "$call_resp" | jq -r '.result._meta.exitCode // empty')"
 
 test_assert_eq "$alpha" "one"
 test_assert_eq "$exit_code" "0"
+
+# --- Structured tool error propagation ---
+FAIL_ROOT="${TEST_TMPDIR}/fail"
+stage_workspace "${FAIL_ROOT}"
+
+cat <<'META' >"${FAIL_ROOT}/tools/fail.meta.json"
+{
+  "name": "fail-tool",
+  "description": "Returns a structured error",
+  "arguments": {
+    "type": "object",
+    "properties": {}
+  }
+}
+META
+
+cat <<'SH' >"${FAIL_ROOT}/tools/fail.sh"
+#!/usr/bin/env bash
+set -euo pipefail
+source "${MCP_SDK}/tool-sdk.sh"
+mcp_fail_invalid_args "bad input" '{"hint":"fix it"}'
+SH
+chmod +x "${FAIL_ROOT}/tools/fail.sh"
+
+cat <<'JSON' >"${FAIL_ROOT}/requests.ndjson"
+{"jsonrpc":"2.0","id":"fail-init","method":"initialize","params":{}}
+{"jsonrpc":"2.0","method":"notifications/initialized"}
+{"jsonrpc":"2.0","id":"fail-call","method":"tools/call","params":{"name":"fail-tool","arguments":{}}}
+JSON
+
+run_server "${FAIL_ROOT}" "${FAIL_ROOT}/requests.ndjson" "${FAIL_ROOT}/responses.ndjson"
+
+fail_resp="$(grep '"id":"fail-call"' "${FAIL_ROOT}/responses.ndjson" | head -n1)"
+fail_code="$(echo "$fail_resp" | jq '.error.code')"
+fail_message="$(echo "$fail_resp" | jq -r '.error.message')"
+fail_hint="$(echo "$fail_resp" | jq -r '.error.data.hint // empty')"
+
+test_assert_eq "$fail_code" "-32602"
+test_assert_eq "$fail_message" "bad input"
+test_assert_eq "$fail_hint" "fix it"

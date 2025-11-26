@@ -27,6 +27,15 @@
       }
     },
     "required": ["input", "output", "preset"]
+  },
+  "outputSchema": {
+    "type": "object",
+    "required": ["message"],
+    "properties": {
+      "message": {
+        "type": "string",
+        "description": "Summary of the completed transcode and output location."
+      }
+    }
   }
 }
-

@@ -6,12 +6,22 @@
 [![MCP Protocol](https://img.shields.io/badge/MCP-2025--06--18-blue)](https://spec.modelcontextprotocol.io/)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)](#runtime-requirements)
 
-**mcp-bash** is a fully compliant Model Context Protocol (MCP) server framework written in pure Bash. It allows you to instantly expose shell scripts, binaries, and system commands as secure, AI-ready tools.
+**mcp-bash** lets you expose Bash scripts and binaries directly to AI systems with zero ceremony.
 
-- **Zero-Dependency Core**: Runs on standard Bash 3.2+ (macOS default) without heavy runtimes.
-- **Production Ready**: Supports concurrency, timeouts, structured logging, and cancellation out of the box.
-- **Developer Friendly**: Built-in scaffolding generators and clean separation between framework and your code.
-- **Upgrade-Safe**: Framework and project are separate—upgrade the engine without touching your tools.
+- Runs on the Bash you already have. No runtimes, no dependency chain.
+- Handles concurrency, timeouts and cancellation the way real systems need.
+- You write the tools. The framework stays out of your way.
+
+## Why this exists
+
+Most MCP servers assume you’re willing to spin up heavyweight runtimes and frameworks just to wrap a few shell commands. That’s a lot of machinery for very little gain. mcp-bash takes the opposite approach: your shell is already your automation layer, and the framework is a thin, predictable bridge to MCP clients. If you’re comfortable running Bash in production, you shouldn’t need anything else to expose tools to AI systems.
+
+## Design Principles
+
+- Tools shouldn’t need a Python server to talk to AI.
+- Everything must be inspectable. No magic.
+- If it’s not needed in production, it isn’t in the framework.
+- Your project stays yours. The framework upgrades cleanly.
 
 ## Quick Start
 
@@ -37,7 +47,7 @@ export MCPBASH_PROJECT_ROOT=$(pwd)
 ~/mcp-bash/bin/mcp-bash scaffold tool check-disk
 ```
 
-This creates `tools/check-disk/tool.sh` and `tools/check-disk/tool.meta.json` in your project. Edit the script to add your logic.
+This scaffolds `tools/check-disk/tool.sh` and `tools/check-disk/tool.meta.json` in your project. You write the logic.
 
 ### 4. Configure Your MCP Client
 
@@ -45,7 +55,10 @@ Set `MCPBASH_PROJECT_ROOT=/path/to/your/project` and point your MCP client at `/
 
 ## Client Recipes
 
-All clients follow the same pattern: set `MCPBASH_PROJECT_ROOT=/path/to/your/project` and point the command to your framework install (`/path/to/mcp-bash/bin/mcp-bash`).
+Every client works the same way: point it at the framework and tell it where your project lives:
+
+1. Set `MCPBASH_PROJECT_ROOT=/path/to/your/project`.
+2. Point it at your framework install (`/path/to/mcp-bash/bin/mcp-bash`).
 
 - **Claude Desktop**: Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows) and add:
   ```jsonc
@@ -100,7 +113,7 @@ See [**Project Structure Guide**](docs/PROJECT-STRUCTURE.md) for detailed layout
 
 ## SDK Discovery
 
-Every tool sources shared helpers from `sdk/tool-sdk.sh`. When `mcp-bash` launches a tool it exports `MCP_SDK=/path/to/framework/sdk`, so tool scripts can reliably run:
+Every tool sources shared helpers from `sdk/tool-sdk.sh`. When `mcp-bash` launches a tool it exports `MCP_SDK=/path/to/framework/sdk`, so tool scripts can run:
 
 ```bash
 source "${MCP_SDK}/tool-sdk.sh"
@@ -112,11 +125,11 @@ When you run the bundled examples or scaffolded scripts directly, they automatic
 export MCP_SDK=/path/to/mcp-bash/sdk
 ```
 
-If neither the environment variable nor the relative fallback resolves the SDK, the script exits with a helpful error so you can fix your configuration.
+If the SDK can’t be resolved, the script exits with a clear error.
 
 ## Learn by Example
 
-We provide a comprehensive suite of examples in the [`examples/`](examples/) directory to help you master the framework:
+The [`examples/`](examples/) directory shows common patterns end-to-end:
 
 | Example | Concepts Covered |
 |---------|------------------|
@@ -130,7 +143,7 @@ We provide a comprehensive suite of examples in the [`examples/`](examples/) dir
 
 - **Auto-Discovery**: Place scripts in your project's `tools/`, `resources/`, or `prompts/` directories—the framework finds them automatically.
 - **Scaffolding**: Generate compliant tool, resource, and prompt templates (`mcp-bash scaffold <type> <name>`).
-- **Stdio Transport**: Safe, standard-input/output communication model.
+- **Stdio Transport**: Standard input/output. No custom daemons or sidecars.
 - **Framework/Project Separation**: Install the framework once, create unlimited projects.
 - **Graceful Degradation**: Automatically detects available JSON tools (`gojq`, `jq`) or falls back to minimal mode if none are present.
 
@@ -151,12 +164,27 @@ We provide a comprehensive suite of examples in the [`examples/`](examples/) dir
 | `MCPBASH_PROMPTS_DIR` | `$MCPBASH_PROJECT_ROOT/prompts` | Override prompts location. |
 | `MCPBASH_SERVER_DIR` | `$MCPBASH_PROJECT_ROOT/server.d` | Override server hooks location. |
 | `MCPBASH_REGISTRY_DIR` | `$MCPBASH_PROJECT_ROOT/.registry` | Override registry cache location. |
+| `MCPBASH_REGISTRY_MAX_BYTES` | `104857600` | Maximum serialized registry size (bytes) before discovery fails fast. |
 | `MCPBASH_MAX_CONCURRENT_REQUESTS` | `16` | Cap concurrent worker slots. |
-| `MCPBASH_LOG_LEVEL` | `info` | Log level. Use `debug` to see path resolution and discovery traces. |
+| `MCPBASH_LOG_LEVEL` | `info` | Log level. Falls back to `MCPBASH_LOG_LEVEL_DEFAULT` when unset; use `debug` to see path resolution and discovery traces. |
 | `MCPBASH_RESOURCES_POLL_INTERVAL_SECS` | `2` | Background polling interval for resource subscriptions; set to `0` to disable. |
 | `MCPBASH_DEBUG_PAYLOADS` | (unset) | Set to `true` to write full message payloads to `${TMPDIR}/mcpbash.state.*`. |
 | `MCPBASH_FORCE_MINIMAL` | (unset) | Set to `true` to force "Minimal Mode" (Ping/Lifecycle only). |
+| `MCPBASH_TOOL_ENV_MODE` | `minimal` | Tool environment isolation: `minimal` (default), `inherit`, or `allowlist`. |
+| `MCPBASH_TOOL_ENV_ALLOWLIST` | (unset) | Extra env var names permitted when `MCPBASH_TOOL_ENV_MODE=allowlist`. |
+| `MCPBASH_REGISTRY_REFRESH_PATH` | (unset) | Optional subpath to limit `registry refresh` scanning scope (defaults to full tools/resources/prompts trees). |
 | `MCPBASH_COMPAT_BATCHES` | (unset) | Set to `true` to enable legacy batch request support. |
+
+### Capability Modes
+
+| Mode | Supported surface | Limitations / when it applies |
+|------|-------------------|--------------------------------|
+| Full | Lifecycle, ping, logging/setLevel, tools/resources/prompts (list, call/read/subscribe), completion, pagination, `listChanged` notifications | Requires `jq`/`gojq` available; default mode. |
+| Minimal | Lifecycle, ping, logging/setLevel | Tools/resources/prompts/completion are disabled and registry notifications are suppressed. Activated when no JSON tool is found or `MCPBASH_FORCE_MINIMAL=true`. |
+
+### Registry Maintenance
+- Auto-refresh: registries re-scan on TTL expiry (default 5s) and use lightweight file-list hashing to skip rebuilds when nothing changed.
+- Manual refresh: `bin/mcp-bash registry refresh [--project-root DIR] [--no-notify] [--quiet] [--filter PATH]` rebuilds `.registry/*.json` and returns a status JSON. In minimal mode the command is skipped gracefully.
 
 ## Requirements
 
@@ -167,6 +195,12 @@ We provide a comprehensive suite of examples in the [`examples/`](examples/) dir
 
 ### Development Requirements
 If you plan to contribute to the core framework, see [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions (linting, tests, etc).
+
+### Windows Notes
+- Signals from the client may not reliably terminate subprocesses on Git Bash; prefer explicit `shutdown`/`exit` and short tool timeouts.
+- Paths are normalized to `/c/...` style; avoid mixing Windows- and POSIX-style roots in the same project.
+- Large payloads can be slower under MSYS; keep registry TTLs reasonable.
+See [docs/WINDOWS.md](docs/WINDOWS.md) for full guidance and workarounds.
 
 ---
 
@@ -196,3 +230,7 @@ This server targets MCP protocol version `2025-06-18` (the current stable specif
 | `2025-06-18` | ✅ Fully supported (default) |
 | `2025-03-26` | ✅ Supported |
 | `2024-11-05` | ❌ **Not supported** |
+
+Unsupported versions receive an `initialize` error payload: `{"code":-32602,"message":"Unsupported protocol version"}`.
+
+mcp-bash is intentionally small. It gives you control, clarity, and a predictable surface for AI systems. **Build tools, not infrastructure.**

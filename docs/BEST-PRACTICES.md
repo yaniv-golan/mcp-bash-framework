@@ -101,6 +101,7 @@ _Asciinema tip_: Record a short run of `bin/mcp-bash scaffold tool sample.hello`
 - **Timeouts** – Set per-tool `timeoutSecs` inside `<tool>.meta.json` when default (30 seconds) is too high/low. Align metadata with `lib/timeout.sh` expectations.
 
 ### 4.3 Error handling patterns
+- Use `mcp_fail` (or `mcp_fail_invalid_args`) to return structured JSON-RPC errors with proper `code/message/data` directly from tools; it survives `tool_env_mode=minimal/allowlist` via the injected `MCP_TOOL_ERROR_FILE`.
 - Only return `-32603` (internal error) for unknown failures; otherwise map to specific JSON-RPC errors spelled out in the protocol.
 - Capture stderr and propagate actionable diagnostics; see `examples/01-args-and-validation/tools/echo-arg.sh:7` for human-readable error surfaces.
 - Wrap risky filesystem/network calls in helper functions so they can be retried or mocked in unit tests.
@@ -165,7 +166,7 @@ Document configuration in `server.d/README.md` (if present) so on-call operators
 
 <a id="operational-readiness"></a>
 #### Operational readiness checklist
-- [ ] Ping smoke test (`printf '{"jsonrpc":"2.0","id":1,"method":"ping"}\n' | bin/mcp-bash`) returns `{"ok":true}` in full capability mode.
+- [ ] Ping smoke test (`printf '{"jsonrpc":"2.0","id":1,"method":"ping"}\n' | bin/mcp-bash`) returns `{"jsonrpc":"2.0","id":1,"result":{}}` in full capability mode.
 - [ ] `MCPBASH_MAX_CONCURRENT_REQUESTS` tuned for host CPU/memory (default 16).
 - [ ] Registry TTLs set to balance discovery churn vs freshness.
 - [ ] `server.d/env.sh` committed or documented for reproducibility.
@@ -182,11 +183,11 @@ Document configuration in `server.d/README.md` (if present) so on-call operators
 
 ### 6.5 Discovery hygiene
 - Keep `registry/` out of version control (already `.gitignore`d) and monitor growth.
-- Run a nightly job that executes `bin/mcp-bash registry refresh` (future command) or a manual `rm registry/*.json` to force regeneration on schedule.
+- Run a nightly job that executes `bin/mcp-bash registry refresh --no-notify` to rebuild registries; use `--project-root` in CI/offline contexts.
 - Validate metadata via `scripts/verify-metadata.sh` (when available) before merging large batches of tools/resources.
 
 ## 7. Security & compliance
-- Start with [docs/SECURITY.md](SECURITY.md) for threat model context. Apply principle of least privilege by scoping `MCP_RESOURCES_ROOTS` and sanitising environment variables inherited by tools.
+- Start with [docs/SECURITY.md](SECURITY.md) for threat model context. Apply principle of least privilege by scoping `MCP_RESOURCES_ROOTS` and keeping tool environments minimal (`MCPBASH_TOOL_ENV_MODE`).
 - Never enable untrusted `server.d/register.sh` scripts; treat them like application code subject to review and signing.
 - Secrets management: rely on OS keychains or inject short-lived tokens at launch. Avoid long-lived tokens in `.env` files that might leak through scaffolds.
 - Validate third-party scaffolds before execution. Run `shellcheck` manually on contributions and require signed commits for sensitive providers.

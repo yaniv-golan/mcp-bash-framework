@@ -25,10 +25,10 @@ if ! grep -q '"id":"2"' "${TMP}/responses.ndjson"; then
 fi
 
 resp_json="$(grep '"id":"2"' "${TMP}/responses.ndjson" | head -n1)"
-suggestions_len="$(echo "$resp_json" | jq '.result.suggestions | length')"
-suggestion_type="$(echo "$resp_json" | jq -r '.result.suggestions[0].type')"
-suggestion_text="$(echo "$resp_json" | jq -r '.result.suggestions[0].text')"
-has_more="$(echo "$resp_json" | jq '.result.hasMore')"
+suggestions_len="$(echo "$resp_json" | jq '.result.completion.values | length')"
+suggestion_type="$(echo "$resp_json" | jq -r '.result.completion.values[0].type')"
+suggestion_text="$(echo "$resp_json" | jq -r '.result.completion.values[0].text')"
+has_more="$(echo "$resp_json" | jq '.result.completion.hasMore')"
 
 test_assert_eq "$suggestions_len" "1"
 test_assert_eq "$suggestion_type" "text"

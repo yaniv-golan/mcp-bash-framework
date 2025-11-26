@@ -3,24 +3,24 @@
 # Path resolution for framework/project separation.
 
 # shellcheck disable=SC2034
-MCPBASH_JSON_TOOL=""
+: "${MCPBASH_JSON_TOOL:=}"
 # shellcheck disable=SC2034
-MCPBASH_JSON_TOOL_BIN=""
-MCPBASH_MODE=""
-MCPBASH_TMP_ROOT=""
-MCPBASH_LOCK_ROOT=""
-MCPBASH_STATE_DIR=""
-MCPBASH_STATE_SEED=""
-MCPBASH_CLEANUP_REGISTERED="false"
-MCPBASH_JOB_CONTROL_ENABLED="false"
-MCPBASH_PROCESS_GROUP_WARNED="false"
+: "${MCPBASH_JSON_TOOL_BIN:=}"
+: "${MCPBASH_MODE:=}"
+: "${MCPBASH_TMP_ROOT:=}"
+: "${MCPBASH_LOCK_ROOT:=}"
+: "${MCPBASH_STATE_DIR:=}"
+: "${MCPBASH_STATE_SEED:=}"
+: "${MCPBASH_CLEANUP_REGISTERED:=false}"
+: "${MCPBASH_JOB_CONTROL_ENABLED:=false}"
+: "${MCPBASH_PROCESS_GROUP_WARNED:=false}"
 
 # Content directory variables (set by mcp_runtime_init_paths)
-MCPBASH_REGISTRY_DIR=""
-MCPBASH_TOOLS_DIR=""
-MCPBASH_RESOURCES_DIR=""
-MCPBASH_PROMPTS_DIR=""
-MCPBASH_SERVER_DIR=""
+: "${MCPBASH_REGISTRY_DIR:=}"
+: "${MCPBASH_TOOLS_DIR:=}"
+: "${MCPBASH_RESOURCES_DIR:=}"
+: "${MCPBASH_PROMPTS_DIR:=}"
+: "${MCPBASH_SERVER_DIR:=}"
 
 # Validate that MCPBASH_PROJECT_ROOT is set and exists.
 # Called early in startup; exits with helpful error if not configured.

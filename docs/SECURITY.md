@@ -1,20 +1,25 @@
 # Security Considerations
 
 ## Reporting
-- Please submit security reports via GitHub’s security advisories (Repository → Security → Report a vulnerability). Include reproduction steps, affected versions, and impact; maintainers will acknowledge within 48 hours and coordinate disclosure.
-- Avoid public issues/PRs for exploitable bugs until a fix is available.
+- Submit reports via GitHub security advisories (Repository → Security → Report a vulnerability). Include reproduction steps, affected versions, and impact; maintainers acknowledge within 48 hours and coordinate disclosure.
+- Keep exploitable bugs out of public issues/PRs until a fix ships.
+
+## Approach
+
+mcp-bash keeps the attack surface small: every tool is a subprocess with a controlled environment and no shared state. Security comes from reducing what the framework does, not layering more on top.
 
 ## Threat model
-- **Attack surface**: executable tools/resources/prompts under project control, manual registration hooks (`server.d/register.sh`), environment variables injected into tool processes, and filesystem access for resource providers.
+- **Attack surface**: tool/resource/prompt executables, manual registration hooks (`server.d/register.sh`), environment passed to tools, and filesystem access through resource providers.
 - **Trust boundaries**: operators are trusted; tool authors may be semi-trusted; external callers (clients) are untrusted.
 
 ## Runtime guardrails
-- Tools/resources inherit the server environment; when running untrusted extensions, prefer a curated env (e.g., invoke server via `env -i` plus explicit allowlist) and set `MCP_RESOURCES_ROOTS` to limit file access.
-- Logging defaults to `info` and can be tuned with `logging/setLevel` while respecting RFC-5424 levels.
-- Manual registration scripts execute in-process; ensure they are trusted before enabling `server.d/register.sh` and consider wrapper scripts that sanitize output.
-- JSON outputs are escaped and newline-compacted before reaching stdout to protect consumers.
+- Default tool env is minimal (`MCPBASH_TOOL_ENV_MODE=minimal` keeps PATH/HOME/TMPDIR/LANG plus `MCP_*`/`MCPBASH_*`). Use `allowlist` via `MCPBASH_TOOL_ENV_ALLOWLIST` or `inherit` only when the tool needs it.
+- Scope file access with `MCP_RESOURCES_ROOTS`; avoid mixing Windows/POSIX roots on Git-Bash/MSYS.
+- Logging defaults to `info` and follows RFC-5424 levels via `logging/setLevel`.
+- Manual registration scripts run in-process; only enable trusted code or wrap it to sanitize output.
+- Outbound JSON is escaped and newline-compacted before hitting stdout to keep consumers safe.
 
-## Input validation
-- JSON-RPC requests are validated for method presence, ids, and payload shape; unknown methods return `-32601`.
-- Tool/resource/prompt metadata is schema-normalized before use; malformed registries are rejected and rebuilt.
-- Environment variables and arguments passed to tools are not automatically sanitized—extensions must validate inputs and reject untrusted values explicitly.
+## Expectations for extensions
+- Validate inputs inside your tools; the framework does not guess what your scripts should accept or reject.
+- Avoid invoking scripts that run arbitrary input without checks.
+- Keep metadata well-formed; malformed registries are rejected and rebuilt.

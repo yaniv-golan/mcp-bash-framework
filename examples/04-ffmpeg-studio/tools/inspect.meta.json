@@ -10,6 +10,9 @@
       }
     },
     "required": ["path"]
+  },
+  "outputSchema": {
+    "type": "object",
+    "description": "ffprobe JSON output containing format and streams."
   }
 }
-

@@ -1,8 +1,12 @@
 # Project Structure Guide
 
+## Why this structure
+
+mcp-bash keeps the framework and your project separate so upgrades stay painless and your code stays yours. The project tree is intentionally small: tools, resources, prompts, optional server hooks, nothing else.
+
 ## Overview
 
-`mcp-bash` follows a strict **framework/project separation** model. The framework is an immutable engine installed once (e.g., `~/mcp-bash` or as a Docker base image), while your server code lives in a separate **project directory**.
+`mcp-bash` uses a strict **framework/project separation** model. Install the framework once (e.g., `~/mcp-bash` or a Docker base layer) and keep your server code in a separate **project directory**.
 
 ## The Model
 
@@ -20,11 +24,11 @@ MCPBASH_HOME (Read-Only)              MCPBASH_PROJECT_ROOT (Your Code)
                                        └── .registry/  (auto-generated cache)
 ```
 
-## Required Configuration
+## Required configuration
 
-You **must** set the `MCPBASH_PROJECT_ROOT` environment variable to point to your project directory. Without it, the server will refuse to start.
+Set `MCPBASH_PROJECT_ROOT` to your project directory; the server refuses to start without it.
 
-### Example: Claude Desktop Configuration
+### Example: Claude Desktop configuration
 
 ```json
 {
@@ -39,7 +43,7 @@ You **must** set the `MCPBASH_PROJECT_ROOT` environment variable to point to you
 }
 ```
 
-### Example: Docker Deployment
+### Example: Docker deployment
 
 ```dockerfile
 FROM debian:bookworm-slim
@@ -55,9 +59,9 @@ ENV MCPBASH_PROJECT_ROOT=/app
 CMD ["/mcp-bash/bin/mcp-bash"]
 ```
 
-## Path Resolution
+## Path resolution
 
-The framework uses the following precedence to locate content:
+The framework resolves directories in this order:
 
 | Content Type | Variable | Default |
 |--------------|----------|---------|
@@ -67,7 +71,7 @@ The framework uses the following precedence to locate content:
 | Server Hooks | `MCPBASH_SERVER_DIR` | `$MCPBASH_PROJECT_ROOT/server.d` |
 | Registry Cache | `MCPBASH_REGISTRY_DIR` | `$MCPBASH_PROJECT_ROOT/.registry` |
 
-**Advanced**: You can override individual directories for complex layouts:
+Override individual directories when needed:
 
 ```bash
 export MCPBASH_PROJECT_ROOT=/app
@@ -75,13 +79,13 @@ export MCPBASH_TOOLS_DIR=/app/tools-v2      # Override tools location
 export MCPBASH_PROMPTS_DIR=/shared/prompts  # Shared prompts
 ```
 
-## Tool SDK Discovery
+## Tool SDK discovery
 
-Before a tool script runs, `lib/tools.sh` exports `MCP_SDK` pointing at the framework's `sdk/` directory so your script can source `${MCP_SDK}/tool-sdk.sh`. The templates checked into this repository also fall back to resolving `sdk/` relative to the script when you execute them directly during development. When copying tools into a different project tree, set `MCP_SDK` yourself (see [SDK Discovery](../README.md#sdk-discovery)) so the helpers can be located consistently.
+`lib/tools.sh` exports `MCP_SDK` to the framework's `sdk/` directory so tools can `source "${MCP_SDK}/tool-sdk.sh"`. Templates fall back to resolving `sdk/` relative to the script when executed directly. When copying tools into another tree, set `MCP_SDK` yourself (see [SDK Discovery](../README.md#sdk-discovery)) to keep helpers locatable.
 
-## Example Project Layouts
+## Example project layouts
 
-### Minimal Project
+### Minimal project
 
 ```
 my-server/
@@ -92,7 +96,7 @@ my-server/
 └── .registry/  (created automatically)
 ```
 
-To create this structure:
+Create this structure:
 
 ```bash
 mkdir -p my-server/tools
@@ -100,7 +104,7 @@ export MCPBASH_PROJECT_ROOT=$(pwd)/my-server
 ~/mcp-bash/bin/mcp-bash scaffold tool hello
 ```
 
-### Full-Featured Project
+### Full-featured project
 
 ```
 my-devops-server/
@@ -119,7 +123,7 @@ my-devops-server/
 └── .registry/             (auto-generated)
 ```
 
-### Multi-Environment Project
+### Multi-environment project
 
 ```
 company-mcp-servers/
@@ -134,7 +138,7 @@ company-mcp-servers/
     └── resources/
 ```
 
-Configure each environment separately:
+Configure each environment:
 
 ```json
 {
@@ -155,9 +159,9 @@ Configure each environment separately:
 }
 ```
 
-## Version Control Strategy
+## Version control strategy
 
-**Best Practice**: Keep your project under version control, but not the framework.
+Keep your project under version control, but not the framework.
 
 ```bash
 # Your project repository
@@ -169,13 +173,13 @@ my-server/
 └── README.md
 ```
 
-**`.gitignore`**:
+`.gitignore`:
 ```
 .registry/
 *.log
 ```
 
-Upgrades are simple:
+Upgrade steps:
 
 ```bash
 # Upgrade framework
@@ -187,9 +191,9 @@ cd ~/my-server
 git status  # Clean
 ```
 
-## Debugging Path Resolution
+## Debugging path resolution
 
-Set `MCPBASH_LOG_LEVEL=debug` to see resolved paths at startup:
+Set `MCPBASH_LOG_LEVEL=debug` to print resolved paths at startup:
 
 ```json
 {
@@ -205,7 +209,7 @@ Set `MCPBASH_LOG_LEVEL=debug` to see resolved paths at startup:
 }
 ```
 
-You'll see output like:
+Expected output:
 
 ```
 Resolved paths:
@@ -217,10 +221,10 @@ Resolved paths:
   MCPBASH_REGISTRY_DIR=/Users/me/my-server/.registry
 ```
 
-## Benefits of This Model
+## Benefits of this model
 
-1. **Clean Upgrades**: Update the framework without touching your code
-2. **Version Control**: Track your project separately from the framework
-3. **Read-Only Installs**: Framework can live in `/opt`, Docker layers, or NFS mounts
-4. **Multi-Project**: Run multiple servers from one framework installation
+1. **Clean upgrades**: Update the framework without touching your code
+2. **Version control**: Track your project separately from the framework
+3. **Read-only installs**: Framework can live in `/opt`, Docker layers, or NFS mounts
+4. **Multi-project**: Run multiple servers from one framework installation
 5. **Security**: Framework and project can have different permissions

@@ -19,8 +19,6 @@ fi
 source "${MCP_SDK}/tool-sdk.sh"
 value="$(mcp_args_get '.value')"
 if [ -z "${value}" ]; then
-	stderr_message="Missing 'value' argument"
-	printf '%s' "${stderr_message}" >&2
-	exit 1
+	mcp_fail_invalid_args "Missing 'value' argument"
 fi
 mcp_emit_text "You sent: ${value}"

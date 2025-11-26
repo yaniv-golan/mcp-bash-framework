@@ -19,10 +19,13 @@ fi
 # shellcheck source=../../../sdk/tool-sdk.sh disable=SC1091
 source "${MCP_SDK}/tool-sdk.sh"
 
-# Validation: Check args
-if [ $# -ne 1 ]; then
-	mcp_tool_error -32602 "Missing required argument: path"
-	exit 1
+path="$(mcp_args_get '.path // empty' 2>/dev/null || true)"
+if [ -z "${path}" ] && [ $# -ge 1 ]; then
+	path="$1"
+fi
+
+if [ -z "${path}" ]; then
+	mcp_fail_invalid_args "Missing required argument: path"
 fi
 
 FFMPEG_STUDIO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -30,27 +33,21 @@ FFMPEG_STUDIO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 source "${FFMPEG_STUDIO_ROOT}/lib/fs_guard.sh"
 
 if ! mcp_ffmpeg_guard_init "${FFMPEG_STUDIO_ROOT}"; then
-	mcp_tool_error -32603 "Media guard initialization failed"
-	exit 1
+	mcp_fail -32603 "Media guard initialization failed"
 fi
 
-path="$1"
-
 if ! full_path="$(mcp_ffmpeg_guard_read_path "${path}")"; then
-	mcp_tool_error -32602 "Access denied: ${path} is outside configured media roots"
-	exit 1
+	mcp_fail -32602 "Access denied: ${path} is outside configured media roots"
 fi
 
 # Validation: File exists
 if [ ! -f "${full_path}" ]; then
-	mcp_tool_error -32602 "File not found: ${path}"
-	exit 1
+	mcp_fail -32602 "File not found: ${path}"
 fi
 
 # Run ffprobe
 if ! output=$(ffprobe -v quiet -print_format json -show_format -show_streams "${full_path}" 2>/dev/null); then
-	mcp_tool_error -32603 "Failed to inspect media file"
-	exit 1
+	mcp_fail -32603 "Failed to inspect media file: ${path}"
 fi
 
-mcp_emit_text "${output}"
+mcp_emit_json "${output}"

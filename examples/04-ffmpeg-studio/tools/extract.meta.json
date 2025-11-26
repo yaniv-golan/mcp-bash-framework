@@ -18,6 +18,15 @@
       }
     },
     "required": ["input", "time", "output"]
+  },
+  "outputSchema": {
+    "type": "object",
+    "required": ["message"],
+    "properties": {
+      "message": {
+        "type": "string",
+        "description": "Confirmation describing where the frame was written."
+      }
+    }
   }
 }
-

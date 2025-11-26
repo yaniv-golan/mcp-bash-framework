@@ -35,6 +35,34 @@ mcp_lock_acquire() {
 	done
 }
 
+mcp_lock_acquire_timeout() {
+	local name="$1"
+	local timeout_secs="${2:-5}"
+	local path
+	path="$(mcp_lock_path "${name}")"
+	local start
+	start="$(date +%s)"
+
+	while :; do
+		if mkdir "${path}" 2>/dev/null; then
+			if printf '%s' "${BASHPID:-$$}" >"${path}/pid" 2>/dev/null; then
+				break
+			fi
+			rm -rf "${path}" 2>/dev/null || true
+		else
+			mcp_lock_try_reap "${path}"
+			if [ "${timeout_secs}" -gt 0 ]; then
+				local now
+				now="$(date +%s)"
+				if [ $((now - start)) -ge "${timeout_secs}" ]; then
+					return 1
+				fi
+			fi
+			sleep "${MCPBASH_LOCK_POLL_INTERVAL}"
+		fi
+	done
+}
+
 mcp_lock_release() {
 	local name="$1"
 	local path
