@@ -182,6 +182,71 @@ exit_code="$(echo "$call_resp" | jq -r '.result._meta.exitCode // empty')"
 test_assert_eq "$alpha" "one"
 test_assert_eq "$exit_code" "0"
 
+# --- Tool environment isolation (minimal vs allowlist) ---
+ENV_ROOT="${TEST_TMPDIR}/env"
+stage_workspace "${ENV_ROOT}"
+mkdir -p "${ENV_ROOT}/tools"
+
+cat <<'META' >"${ENV_ROOT}/tools/env.meta.json"
+{
+  "name": "env.echo",
+  "description": "Echo selected env",
+  "arguments": {"type": "object", "properties": {}},
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "foo": {"type": "string"},
+      "bar": {"type": "string"}
+    },
+    "required": ["foo","bar"]
+  }
+}
+META
+
+cat <<'SH' >"${ENV_ROOT}/tools/env.sh"
+#!/usr/bin/env bash
+set -euo pipefail
+printf '{"foo":"%s","bar":"%s"}' "${FOO:-}" "${BAR:-}"
+SH
+chmod +x "${ENV_ROOT}/tools/env.sh"
+
+cat <<'JSON' >"${ENV_ROOT}/requests.ndjson"
+{"jsonrpc":"2.0","id":"init","method":"initialize","params":{}}
+{"jsonrpc":"2.0","method":"notifications/initialized"}
+{"jsonrpc":"2.0","id":"env","method":"tools/call","params":{"name":"env.echo","arguments":{}}}
+JSON
+
+(
+	cd "${ENV_ROOT}" || exit 1
+	FOO="hidden" BAR="visible" MCPBASH_TOOL_ENV_MODE="minimal" MCPBASH_PROJECT_ROOT="${ENV_ROOT}" ./bin/mcp-bash <"requests.ndjson" >"responses.ndjson"
+)
+
+foo_val="$(jq -r 'select(.id=="env") | .result.structuredContent.foo // empty' "${ENV_ROOT}/responses.ndjson")"
+bar_val="$(jq -r 'select(.id=="env") | .result.structuredContent.bar // empty' "${ENV_ROOT}/responses.ndjson")"
+if [ -n "${foo_val}" ] || [ -n "${bar_val}" ]; then
+	test_fail "minimal env isolation leaked vars: foo='${foo_val}' bar='${bar_val}'"
+fi
+
+cat <<'JSON' >"${ENV_ROOT}/requests_allowlist.ndjson"
+{"jsonrpc":"2.0","id":"init","method":"initialize","params":{}}
+{"jsonrpc":"2.0","method":"notifications/initialized"}
+{"jsonrpc":"2.0","id":"env-allow","method":"tools/call","params":{"name":"env.echo","arguments":{}}}
+JSON
+
+(
+	cd "${ENV_ROOT}" || exit 1
+	FOO="hidden" BAR="visible" MCPBASH_TOOL_ENV_MODE="allowlist" MCPBASH_TOOL_ENV_ALLOWLIST="BAR" MCPBASH_PROJECT_ROOT="${ENV_ROOT}" ./bin/mcp-bash <"requests_allowlist.ndjson" >"responses_allowlist.ndjson"
+)
+
+foo_allow="$(jq -r 'select(.id=="env-allow") | .result.structuredContent.foo // empty' "${ENV_ROOT}/responses_allowlist.ndjson")"
+bar_allow="$(jq -r 'select(.id=="env-allow") | .result.structuredContent.bar // empty' "${ENV_ROOT}/responses_allowlist.ndjson")"
+if [ -n "${foo_allow}" ]; then
+	test_fail "allowlist mode should not include FOO"
+fi
+if [ "${bar_allow}" != "visible" ]; then
+	test_fail "allowlist mode should include BAR"
+fi
+
 # --- Structured tool error propagation ---
 FAIL_ROOT="${TEST_TMPDIR}/fail"
 stage_workspace "${FAIL_ROOT}"

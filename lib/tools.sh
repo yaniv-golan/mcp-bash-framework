@@ -423,32 +423,14 @@ mcp_tools_scan() {
 			local output_schema="null"
 
 			if [ -f "${meta_json}" ]; then
-				local meta_values
-				meta_values="$("${MCPBASH_JSON_TOOL_BIN}" -r '
-					{
-						name: (.name // ""),
-						description: (.description // ""),
-						args: (.inputSchema // .arguments // {type: "object", properties: {}}),
-						timeout: (.timeoutSecs // ""),
-						output: (.outputSchema // null)
-					}
-					| [
-						(.name // ""),
-						(.description // ""),
-						(.args | @json),
-						(if (.timeout | tostring) == "null" then "" else (.timeout | tostring) end),
-						(.output | @json)
-					]
-					| @tsv
-				' "${meta_json}" 2>/dev/null)"
-				if [ -n "${meta_values}" ]; then
-					local j_name
-					local IFS=$'\t'
-					read -r j_name description arguments timeout output_schema <<<"${meta_values}"
-					[ -n "${j_name}" ] && name="${j_name}"
-					[ -n "${arguments}" ] || arguments='{"type":"object","properties":{}}'
-					[ -n "${output_schema}" ] || output_schema="null"
-				fi
+				# Read fields individually to avoid collapsing empty columns
+				local j_name
+				j_name="$("${MCPBASH_JSON_TOOL_BIN}" -r '.name // ""' "${meta_json}" 2>/dev/null || printf '')"
+				[ -n "${j_name}" ] && name="${j_name}"
+				description="$("${MCPBASH_JSON_TOOL_BIN}" -r '.description // ""' "${meta_json}" 2>/dev/null || printf '')"
+				arguments="$("${MCPBASH_JSON_TOOL_BIN}" -c '.inputSchema // .arguments // {type:"object",properties:{}}' "${meta_json}" 2>/dev/null || printf '{}')"
+				timeout="$("${MCPBASH_JSON_TOOL_BIN}" -r '.timeoutSecs // ""' "${meta_json}" 2>/dev/null || printf '')"
+				output_schema="$("${MCPBASH_JSON_TOOL_BIN}" -c '.outputSchema // null' "${meta_json}" 2>/dev/null || printf 'null')"
 			fi
 
 			if [ "${arguments}" = "{}" ]; then
@@ -1002,6 +984,42 @@ mcp_tools_call() {
 	fi
 
 	set -e
+
+	# Enforce outputSchema when declared: require JSON output and required fields.
+	if [ "${output_schema}" != "null" ] && [ "${has_json_tool}" = "true" ]; then
+		local structured_json=""
+		if ! structured_json="$(cat "${stdout_content}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.' 2>/dev/null)"; then
+			_mcp_tools_emit_error -32603 "Tool output is not valid JSON for declared outputSchema" "null"
+			cleanup_tool_temp_files
+			return 1
+		fi
+		if ! printf '%s' "${structured_json}" | "${MCPBASH_JSON_TOOL_BIN}" -e --argjson schema "${output_schema}" '
+			def required_ok($schema;$data):
+				($schema.required // []) as $req
+				| all($req[]; . as $k | ($data|has($k)));
+			def types_ok($schema;$data):
+				($schema.properties // {}) as $props
+				| ($props | to_entries | all(.[]; 
+					($data[.key] // null) as $v
+					| (.value.type // "") as $t
+					| if ($v == null or ($t|length)==0) then true
+					  else
+						(if $t=="string" then ($v|type)=="string"
+						elif $t=="number" then ($v|type)=="number"
+						elif $t=="integer" then ($v|type)=="number" and (($v|floor)==($v|tonumber))
+						elif $t=="boolean" then ($v|type)=="boolean"
+						elif $t=="array" then ($v|type)=="array"
+						elif $t=="object" then ($v|type)=="object"
+						else true end)
+					  end));
+			if ($schema.type // "object") != "object" then true
+			else (required_ok($schema;.) and types_ok($schema;.)) end
+		' >/dev/null 2>&1; then
+			_mcp_tools_emit_error -32603 "Tool output does not satisfy outputSchema" "null"
+			cleanup_tool_temp_files
+			return 1
+		fi
+	fi
 
 	local result_json
 	result_json="$(

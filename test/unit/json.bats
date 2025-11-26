@@ -45,4 +45,9 @@ if mcp_json_normalize_line '{"jsonrpc":2}' >/dev/null 2>&1; then
 	test_fail "minimal mode should reject invalid payload"
 fi
 
+printf ' -> BOM and whitespace trimming\n'
+bom_line=$'\xEF\xBB\xBF  {\"jsonrpc\":\"2.0\",\"method\":\"ping\"}  \n'
+trimmed="$(MCPBASH_MODE="full" MCPBASH_JSON_TOOL="gojq" MCPBASH_JSON_TOOL_BIN="${MCPBASH_JSON_TOOL_BIN}" mcp_json_normalize_line "${bom_line}")"
+assert_eq '{"jsonrpc":"2.0","method":"ping"}' "${trimmed}" "BOM/whitespace not normalized"
+
 printf 'JSON helper tests passed.\n'

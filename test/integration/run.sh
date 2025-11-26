@@ -11,12 +11,22 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 TESTS=(
 	"test_capabilities.sh"
+	"test_core_errors.sh"
 	"test_completion.sh"
 	"test_tools.sh"
+	"test_tools_errors.sh"
+	"test_tools_schema.sh"
 	"test_prompts.sh"
 	"test_resources.sh"
 	"test_lifecycle_gating.sh"
 	"test_resources_providers.sh"
+	"test_minimal_mode.sh"
+	"test_minimal_auto.sh"
+	"test_registry_refresh.sh"
+	"test_registry_limits.sh"
+	"test_progress_logs.sh"
+	"test_cancellation.sh"
+	"test_cli_guards.sh"
 )
 
 passed=0
