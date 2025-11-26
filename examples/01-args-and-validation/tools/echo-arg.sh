@@ -21,4 +21,19 @@ value="$(mcp_args_get '.value')"
 if [ -z "${value}" ]; then
 	mcp_fail_invalid_args "Missing 'value' argument"
 fi
-mcp_emit_text "You sent: ${value}"
+
+json_tool="${MCPBASH_JSON_TOOL_BIN:-}"
+if [ -z "${json_tool}" ] || ! command -v "${json_tool}" >/dev/null 2>&1; then
+	json_tool=""
+fi
+
+emit_message_json() {
+	local message="$1"
+	if [ -n "${json_tool}" ]; then
+		mcp_emit_json "$("${json_tool}" -n --arg message "${message}" '{message:$message}')" || mcp_emit_text "${message}"
+	else
+		mcp_emit_text "${message}"
+	fi
+}
+
+emit_message_json "You sent: ${value}"

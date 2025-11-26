@@ -32,6 +32,7 @@ sudo apt-get install ffmpeg
     ./examples/run 04-ffmpeg-studio
     ```
 3.  Use an MCP client (like Claude Desktop or Inspector) to interact with the tools.
+   The runner automatically executes `check-env` so `ffmpeg`/`ffprobe` are validated and the `media/` directory is created.
 
 ## Configuring Media Roots
 
@@ -62,6 +63,12 @@ Media access is controlled by `config/media_roots.json`. Each entry defines a `p
 ### Progress Reporting
 
 The `transcode.sh` script demonstrates how to handle long-running CLI processes. It calculates the total duration of the video first, then monitors `ffmpeg`'s machine-readable progress output to emit `mcp_progress` notifications.
+
+Include `_meta.progressToken` in your `tools/call` request to receive progress updates. Example:
+
+```
+{"jsonrpc":"2.0","id":"1","method":"tools/call","params":{"name":"transcode","arguments":{"input":"./media/test.mp4","output":"./media/out.mp4","preset":"720p"},"_meta":{"progressToken":"demo-progress"}}}
+```
 
 ### Cancellation
 

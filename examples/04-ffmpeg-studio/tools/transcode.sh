@@ -42,7 +42,7 @@ if [ -z "${duration}" ] && [ $# -ge 5 ]; then
 fi
 
 if [ -z "${input_path}" ] || [ -z "${output_path}" ] || [ -z "${preset}" ]; then
-	mcp_fail_invalid_args "Missing required arguments: input, output, preset"
+mcp_fail_invalid_args "Missing required arguments: input, output, preset"
 fi
 
 FFMPEG_STUDIO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -134,5 +134,18 @@ ffmpeg "${ffmpeg_args[@]}" -i "${full_input}" -progress pipe:1 "${full_output}" 
 	fi
 done
 
-message_json="$(__mcp_sdk_json_escape "Transcoding complete: ${output_path}")"
-mcp_emit_json "{\"message\":${message_json}}"
+json_tool="${MCPBASH_JSON_TOOL_BIN:-}"
+if [ -z "${json_tool}" ] || ! command -v "${json_tool}" >/dev/null 2>&1; then
+	json_tool=""
+fi
+
+emit_message_json() {
+	local message="$1"
+	if [ -n "${json_tool}" ]; then
+		mcp_emit_json "$("${json_tool}" -n --arg message "${message}" '{message:$message}')" || mcp_emit_text "${message}"
+	else
+		mcp_emit_text "${message}"
+	fi
+}
+
+emit_message_json "Transcoding complete: ${output_path}"

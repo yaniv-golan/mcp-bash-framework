@@ -19,7 +19,7 @@ fi
 source "${MCP_SDK}/tool-sdk.sh"
 for pct in 10 50 90; do
 	if mcp_is_cancelled; then
-		exit 1
+		mcp_fail -32001 "Cancelled"
 	fi
 	mcp_progress "${pct}" "Working (${pct}%)"
 	sleep 1

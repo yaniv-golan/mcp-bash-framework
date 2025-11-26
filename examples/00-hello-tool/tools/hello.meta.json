@@ -1,4 +1,19 @@
 {
   "name": "example.hello",
-  "description": "Return a friendly greeting"
+  "description": "Return a friendly greeting",
+  "inputSchema": {
+    "type": "object",
+    "properties": {}
+  },
+  "outputSchema": {
+    "type": "object",
+    "required": ["message"],
+    "properties": {
+      "message": {
+        "type": "string",
+        "description": "Greeting text"
+      }
+    }
+  },
+  "timeoutSecs": 5
 }

@@ -39,6 +39,30 @@ mkdir -p "${TMPDIR}/server.d"
 # Copy example content into project directories
 cp -a "${EXAMPLE_DIR}/"* "${TMPDIR}/" 2>/dev/null || true
 
+# Run per-example environment checks if provided
+if [ -x "${TMPDIR}/check-env" ]; then
+  if ! (cd "${TMPDIR}" && "${TMPDIR}/check-env"); then
+    printf 'Warning: check-env for %s failed; continuing.\n' "${EXAMPLE_ID}" >&2
+  fi
+fi
+
+# Ensure media roots exist for examples that declare them
+if [ -f "${TMPDIR}/config/media_roots.json" ]; then
+  if command -v jq >/dev/null 2>&1; then
+    while IFS= read -r root; do
+      [ -z "${root}" ] && continue
+      case "${root}" in
+      /*) dir="${root}" ;;
+      ./*) dir="${TMPDIR}/${root#./}" ;;
+      *) dir="${TMPDIR}/${root}" ;;
+      esac
+      mkdir -p "${dir}" 2>/dev/null || true
+    done < <(jq -r '.roots[]?.path // empty' "${TMPDIR}/config/media_roots.json" 2>/dev/null)
+  else
+    mkdir -p "${TMPDIR}/media" 2>/dev/null || true
+  fi
+fi
+
 # Debug: List tools dir
 ls -la "${TMPDIR}/tools" >&2
 

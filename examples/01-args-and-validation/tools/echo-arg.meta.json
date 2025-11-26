@@ -1,11 +1,23 @@
 {
   "name": "example.echoArg",
   "description": "Echos a provided value",
-  "arguments": {
+  "inputSchema": {
     "type": "object",
     "properties": {
       "value": {"type": "string"}
     },
     "required": ["value"]
-  }
+  },
+  "outputSchema": {
+    "type": "object",
+    "required": ["message"],
+    "properties": {
+      "message": {
+        "type": "string",
+        "description": "Echoed string"
+      }
+    }
+  },
+  "timeoutSecs": 10
+}
 }

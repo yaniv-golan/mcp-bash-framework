@@ -18,4 +18,19 @@ fi
 # shellcheck source=../../../sdk/tool-sdk.sh disable=SC1091
 source "${MCP_SDK}/tool-sdk.sh"
 mcp_log_info "example.logger" "about to work"
-mcp_emit_text "Check your logging notifications"
+
+json_tool="${MCPBASH_JSON_TOOL_BIN:-}"
+if [ -z "${json_tool}" ] || ! command -v "${json_tool}" >/dev/null 2>&1; then
+	json_tool=""
+fi
+
+emit_message_json() {
+	local message="$1"
+	if [ -n "${json_tool}" ]; then
+		mcp_emit_json "$("${json_tool}" -n --arg message "${message}" '{message:$message}')" || mcp_emit_text "${message}"
+	else
+		mcp_emit_text "${message}"
+	fi
+}
+
+emit_message_json "Check your logging notifications"
