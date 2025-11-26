@@ -24,10 +24,7 @@ META
 cat <<'SH' >"${WORKSPACE}/tools/big.sh"
 #!/usr/bin/env bash
 set -euo pipefail
-python3 - <<'PY'
-import sys
-sys.stdout.write("A" * 15000000)
-PY
+yes A | head -c 15000000
 SH
 chmod +x "${WORKSPACE}/tools/big.sh"
 

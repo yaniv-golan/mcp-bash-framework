@@ -14,7 +14,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 . "${SCRIPT_DIR}/../common/fixtures.sh"
 
-test_require_command python3 || test_require_command python
+test_require_command jq
 
 discover_examples() {
 	local entry
@@ -32,26 +32,21 @@ run_example_suite() {
 	local workdir="${MCP_TEST_WORKDIR}"
 
 	local tool_name=""
-	local py_meta
-	py_meta="$(command -v python3 2>/dev/null || command -v python)"
-	if [ -n "${py_meta}" ] && [ -d "${MCPBASH_HOME}/examples/${example_id}/tools" ]; then
-		if ! tool_name="$(
-			"${py_meta}" - "${MCPBASH_HOME}/examples/${example_id}/tools" <<'PY'
-import json, os, sys
-tools_dir = sys.argv[1]
-for entry in sorted(os.listdir(tools_dir)):
-    if entry.endswith(".meta.json") or entry.endswith(".meta.yaml"):
-        path = os.path.join(tools_dir, entry)
-        with open(path, encoding="utf-8") as handle:
-            data = json.load(handle)
-        name = data.get("name")
-        if name:
-            print(name)
-            break
-PY
-		)"; then
-			tool_name=""
-		fi
+	if command -v jq >/dev/null 2>&1 && [ -d "${MCPBASH_HOME}/examples/${example_id}/tools" ]; then
+		while IFS= read -r meta_file; do
+			case "${meta_file}" in
+			*.json)
+				tool_name="$(jq -r '.name // empty' "${meta_file}" 2>/dev/null || true)"
+				;;
+			*.yaml | *.yml)
+				tool_name="$(grep -E '^[[:space:]]*name:' "${meta_file}" 2>/dev/null | head -n1 | sed 's/^[[:space:]]*name:[[:space:]]*//' | tr -d '"' || true)"
+				;;
+			esac
+			tool_name="${tool_name%$'\r'}"
+			if [ -n "${tool_name}" ]; then
+				break
+			fi
+		done < <(find "${MCPBASH_HOME}/examples/${example_id}/tools" -maxdepth 1 -type f \( -name '*.meta.json' -o -name '*.meta.yaml' -o -name '*.meta.yml' \) | sort)
 	fi
 
 	cat <<'JSON' >"${workdir}/requests.ndjson"
@@ -71,41 +66,22 @@ JSON
 	test_run_mcp "${workdir}" "${workdir}/requests.ndjson" "${workdir}/responses.ndjson"
 	assert_json_lines "${workdir}/responses.ndjson"
 
-	PY_BIN="$(command -v python3 2>/dev/null || command -v python)"
-	WORKDIR="${workdir}" TOOL_NAME="${tool_name}" "${PY_BIN}" <<'PY'
-import json, os
+	jq -e -s '
+		def by_id(id): first(.[] | select(.id == id));
+		by_id("init").result.protocolVersion == "2025-06-18"
+	' "${workdir}/responses.ndjson" >/dev/null
 
-path = os.path.join(os.environ["WORKDIR"], "responses.ndjson")
-tool_name = os.environ.get("TOOL_NAME", "")
-messages = []
-with open(path, encoding="utf-8") as handle:
-    for raw in handle:
-        raw = raw.strip()
-        if not raw:
-            continue
-        messages.append(json.loads(raw))
-
-def by_id(identifier):
-    for msg in messages:
-        if msg.get("id") == identifier:
-            return msg
-    raise SystemExit(f"{identifier} missing from responses")
-
-init = by_id("init")
-result = init.get("result") or {}
-if result.get("protocolVersion") != "2025-06-18":
-    raise SystemExit("protocol negotiation mismatch for example")
-
-caps = result.get("capabilities") or {}
-if "logging" not in caps:
-    raise SystemExit("logging capability should always be present")
-
-if tool_name:
-    tools = by_id("tools").get("result", {}).get("items", [])
-    names = {item.get("name") for item in tools}
-    if tool_name not in names:
-        raise SystemExit(f"expected tool {tool_name} not found in example registry")
-PY
+	jq -e -s --arg tool_name "${tool_name}" '
+		def by_id(id): first(.[] | select(.id == id));
+		(by_id("init").result.capabilities.logging != null) and
+		(
+			if ($tool_name | length) == 0 then
+				true
+			else
+				((by_id("tools").result.items // by_id("tools").result.tools // []) | map(.name) | any(. == $tool_name))
+			end
+		)
+	' "${workdir}/responses.ndjson" >/dev/null
 }
 
 examples=()

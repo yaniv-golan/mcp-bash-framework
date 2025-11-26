@@ -18,7 +18,7 @@ Most MCP servers assume you’re willing to spin up heavyweight runtimes and fra
 
 ## Design Principles
 
-- Tools shouldn’t need a Python server to talk to AI.
+- Tools shouldn’t need another runtime to talk to AI.
 - Everything must be inspectable. No magic.
 - If it’s not needed in production, it isn’t in the framework.
 - Your project stays yours. The framework upgrades cleanly.

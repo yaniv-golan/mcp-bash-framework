@@ -15,6 +15,8 @@ _MCP_TOOLS_ERROR_CODE=0
 _MCP_TOOLS_ERROR_MESSAGE=""
 # shellcheck disable=SC2034
 _MCP_TOOLS_ERROR_DATA=""
+# shellcheck disable=SC2034
+_MCP_TOOLS_RESULT=""
 MCP_TOOLS_TTL="${MCP_TOOLS_TTL:-5}"
 MCP_TOOLS_LAST_SCAN=0
 MCP_TOOLS_CHANGED=false
@@ -203,17 +205,17 @@ _mcp_tools_emit_error() {
 	_MCP_TOOLS_ERROR_CODE="${err_code}"
 	_MCP_TOOLS_ERROR_MESSAGE="${err_message}"
 	_MCP_TOOLS_ERROR_DATA="${err_data}"
-	# Output error JSON to stdout - handler will parse this
+	# Output error JSON to variable - handler will parse this
 	if [ "${MCPBASH_JSON_TOOL:-none}" != "none" ]; then
 		local msg_escaped
 		msg_escaped="$(printf '%s' "${err_message}" | "${MCPBASH_JSON_TOOL_BIN}" -Rs '.')"
-		printf '{"_mcpToolError":true,"code":%s,"message":%s,"data":%s}' "${err_code}" "${msg_escaped}" "${err_data}"
+		_MCP_TOOLS_RESULT="$(printf '{"_mcpToolError":true,"code":%s,"message":%s,"data":%s}' "${err_code}" "${msg_escaped}" "${err_data}")"
 	else
 		# Minimal mode: basic JSON escaping
 		local msg_escaped="${err_message//\\/\\\\}"
 		msg_escaped="${msg_escaped//\"/\\\"}"
 		msg_escaped="${msg_escaped//$'\n'/\\n}"
-		printf '{"_mcpToolError":true,"code":%s,"message":"%s","data":%s}' "${err_code}" "${msg_escaped}" "${err_data}"
+		_MCP_TOOLS_RESULT="$(printf '{"_mcpToolError":true,"code":%s,"message":"%s","data":%s}' "${err_code}" "${msg_escaped}" "${err_data}")"
 	fi
 }
 
@@ -639,6 +641,8 @@ mcp_tools_call() {
 	_MCP_TOOLS_ERROR_MESSAGE=""
 	# shellcheck disable=SC2034
 	_MCP_TOOLS_ERROR_DATA=""
+	# shellcheck disable=SC2034
+	_MCP_TOOLS_RESULT=""
 
 	local metadata
 	if ! metadata="$(mcp_tools_metadata_for_name "${name}")"; then
@@ -1044,5 +1048,5 @@ mcp_tools_call() {
 
 	cleanup_tool_temp_files
 
-	printf '%s' "${result_json}"
+	_MCP_TOOLS_RESULT="${result_json}"
 }

@@ -13,6 +13,8 @@ MCP_RESOURCES_TOTAL=0
 _MCP_RESOURCES_ERR_CODE=0
 # shellcheck disable=SC2034
 _MCP_RESOURCES_ERR_MESSAGE=""
+# shellcheck disable=SC2034
+_MCP_RESOURCES_RESULT=""
 MCP_RESOURCES_TTL="${MCP_RESOURCES_TTL:-5}"
 MCP_RESOURCES_LAST_SCAN=0
 MCP_RESOURCES_CHANGED=false
@@ -214,7 +216,8 @@ mcp_resources_poll_subscriptions() {
 			IFS= read -r fingerprint || true
 		} <"${path}"
 		local result
-		if result="$(mcp_resources_read "${name}" "${uri}")"; then
+		if mcp_resources_read "${name}" "${uri}"; then
+			result="${_MCP_RESOURCES_RESULT}"
 			local new_fingerprint
 			new_fingerprint="$(mcp_resources_hash_payload "${result}")"
 			if [ "${new_fingerprint}" != "${fingerprint}" ]; then
@@ -750,6 +753,8 @@ mcp_resources_read_via_provider() {
 mcp_resources_read() {
 	local name="$1"
 	local explicit_uri="$2"
+	# shellcheck disable=SC2034
+	_MCP_RESOURCES_RESULT=""
 	mcp_resources_refresh_registry || {
 		mcp_resources_error -32603 "Unable to load resources registry"
 		return 1
@@ -811,5 +816,5 @@ mcp_resources_read() {
 			}
 		]
 	}')"
-	printf '%s' "${result}"
+	_MCP_RESOURCES_RESULT="${result}"
 }

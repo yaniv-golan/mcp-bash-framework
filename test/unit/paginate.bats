@@ -10,11 +10,13 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 . "${REPO_ROOT}/test/common/assert.sh"
 . "${REPO_ROOT}/test/common/env.sh"
 
+# Provide JSON tooling expected by paginate helpers without full runtime init.
+MCPBASH_JSON_TOOL="jq"
+MCPBASH_JSON_TOOL_BIN="$(command -v jq)"
+
 # shellcheck source=lib/paginate.sh
 # shellcheck disable=SC1091
 . "${REPO_ROOT}/lib/paginate.sh"
-
-test_require_command python3 || test_require_command python
 
 printf ' -> encode/decode roundtrip\n'
 cursor="$(mcp_paginate_encode "tools" 10 "hash-value" "2025-01-01T00:00:00Z")"

@@ -32,10 +32,6 @@ mcp_template_render() {
 
 mcp_url_encode() {
 	local value="$1"
-	if command -v python3 >/dev/null 2>&1; then
-		PYTHONUTF8=1 python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=":/"))' "${value}"
-		return 0
-	fi
 	local output=""
 	local i
 	local char
@@ -58,14 +54,6 @@ mcp_url_encode() {
 
 mcp_file_uri_from_path() {
 	local path="$1"
-	if command -v python3 >/dev/null 2>&1; then
-		if PYTHONUTF8=1 python3 - "$path" <<'PY'; then
-import pathlib, sys
-print(pathlib.Path(sys.argv[1]).resolve().as_uri())
-PY
-			return 0
-		fi
-	fi
 	local dir
 	if ! dir="$(cd "$(dirname "${path}")" >/dev/null 2>&1 && pwd)"; then
 		printf 'Unable to resolve resource path %s\n' "${path}" >&2

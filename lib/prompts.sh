@@ -13,6 +13,8 @@ MCP_PROMPTS_TOTAL=0
 _MCP_PROMPTS_ERR_CODE=0
 # shellcheck disable=SC2034
 _MCP_PROMPTS_ERR_MESSAGE=""
+# shellcheck disable=SC2034
+_MCP_PROMPTS_RESULT=""
 MCP_PROMPTS_TTL="${MCP_PROMPTS_TTL:-5}"
 MCP_PROMPTS_LAST_SCAN=0
 MCP_PROMPTS_CHANGED=false
@@ -507,6 +509,8 @@ mcp_prompts_metadata_for_name() {
 mcp_prompts_render() {
 	local metadata="$1"
 	local args_json="$2"
+	# shellcheck disable=SC2034
+	_MCP_PROMPTS_RESULT=""
 	local path description role metadata_value
 	path="$(printf '%s' "${metadata}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.path // empty')"
 	description="$(printf '%s' "${metadata}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.description // ""')"
@@ -592,7 +596,7 @@ mcp_prompts_emit_render_result() {
 		normalized_meta="null"
 	fi
 
-	"${MCPBASH_JSON_TOOL_BIN}" -n -c \
+	_MCP_PROMPTS_RESULT="$("${MCPBASH_JSON_TOOL_BIN}" -n -c \
 		--arg text "${text}" \
 		--arg role "${role}" \
 		--arg desc "${description}" \
@@ -609,7 +613,7 @@ mcp_prompts_emit_render_result() {
 			]
 		}
 		+ (if ($desc | length) > 0 then {description: $desc} else {} end)
-		+ (if $meta != null then {metadata: $meta} else {} end)'
+		+ (if $meta != null then {metadata: $meta} else {} end)')"
 }
 
 mcp_prompts_poll() {

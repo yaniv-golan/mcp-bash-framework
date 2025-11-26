@@ -62,12 +62,13 @@ mcp_handle_prompts() {
 			printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32601,"message":%s}}' "${id}" "${message}"
 			return 0
 		fi
-		if ! rendered="$(mcp_prompts_render "${metadata}" "${args_json}")"; then
+		if ! mcp_prompts_render "${metadata}" "${args_json}"; then
 			local message
 			message=$(mcp_prompts_quote "Unable to render prompt")
 			printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32603,"message":%s}}' "${id}" "${message}"
 			return 0
 		fi
+		rendered="${_MCP_PROMPTS_RESULT}"
 		printf '{"jsonrpc":"2.0","id":%s,"result":%s}' "${id}" "${rendered}"
 		;;
 	*)

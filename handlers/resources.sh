@@ -56,13 +56,14 @@ mcp_handle_resources() {
 			printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32602,"message":%s}}' "${id}" "${message}"
 			return 0
 		fi
-		if ! result_json="$(mcp_resources_read "${name}" "${uri}")"; then
+		if ! mcp_resources_read "${name}" "${uri}"; then
 			local code="${_MCP_RESOURCES_ERR_CODE:--32603}"
 			local message
 			message=$(mcp_resources_quote "${_MCP_RESOURCES_ERR_MESSAGE:-Unable to read resource}")
 			printf '{"jsonrpc":"2.0","id":%s,"error":{"code":%s,"message":%s}}' "${id}" "${code}" "${message}"
 			return 0
 		fi
+		result_json="${_MCP_RESOURCES_RESULT}"
 		printf '{"jsonrpc":"2.0","id":%s,"result":%s}' "${id}" "${result_json}"
 		;;
 	resources/subscribe)
@@ -80,7 +81,7 @@ mcp_handle_resources() {
 			return 0
 		fi
 		subscription_id="$(mcp_resources_generate_subscription_id)"
-		if ! result_json="$(mcp_resources_read "${name}" "${uri}")"; then
+		if ! mcp_resources_read "${name}" "${uri}"; then
 			mcp_logging_error "${logger}" "Initial read failed code=${_MCP_RESOURCES_ERR_CODE:-?} msg=${_MCP_RESOURCES_ERR_MESSAGE:-?}"
 			local code="${_MCP_RESOURCES_ERR_CODE:--32603}"
 			local message
@@ -88,6 +89,7 @@ mcp_handle_resources() {
 			printf '{"jsonrpc":"2.0","id":%s,"error":{"code":%s,"message":%s}}' "${id}" "${code}" "${message}"
 			return 0
 		fi
+		result_json="${_MCP_RESOURCES_RESULT}"
 		mcp_logging_debug "${logger}" "Subscribe initial read ok subscription=${subscription_id}"
 		if [ -n "${MCPBASH_STATE_DIR:-}" ]; then
 			printf '%s %s\n' "subscribe-read-ok" "${subscription_id}" >>"${MCPBASH_STATE_DIR}/resources.debug.log"

@@ -25,7 +25,7 @@ if [ "${MCPBASH_MODE}" = "minimal" ]; then
 	test_fail "JSON tooling unavailable for normalization test"
 fi
 
-printf ' -> normalize with python fallback\n'
+printf ' -> normalize with jq/gojq\n'
 normalized="$(mcp_json_normalize_line $' {\"foo\":1,\n\"bar\":2 }\n')"
 assert_eq '{"foo":1,"bar":2}' "${normalized}" "unexpected normalization result"
 

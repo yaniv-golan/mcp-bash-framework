@@ -58,7 +58,8 @@ mcp_handle_tools() {
 		args_json="$(mcp_json_extract_arguments "${json_payload}")"
 		timeout_override="$(mcp_json_extract_timeout_override "${json_payload}")"
 		local result_json
-		if ! result_json="$(mcp_tools_call "${name}" "${args_json}" "${timeout_override}")"; then
+		if ! mcp_tools_call "${name}" "${args_json}" "${timeout_override}"; then
+			result_json="${_MCP_TOOLS_RESULT:-}"
 			# Parse error info from stdout (mcp_tools_call emits error JSON on failure)
 			local code=-32603 message_raw="Tool execution failed" data="null"
 			if [ -n "${result_json}" ] && [ "${MCPBASH_JSON_TOOL:-none}" != "none" ]; then
@@ -85,6 +86,7 @@ mcp_handle_tools() {
 			fi
 			return 0
 		fi
+		result_json="${_MCP_TOOLS_RESULT}"
 		printf '{"jsonrpc":"2.0","id":%s,"result":%s}' "${id}" "${result_json}"
 		;;
 	*)

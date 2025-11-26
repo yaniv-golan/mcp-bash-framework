@@ -14,16 +14,7 @@ mcp_ffmpeg_guard_realpath() {
 		realpath -m "${target}"
 		return
 	fi
-	if command -v python3 >/dev/null 2>&1; then
-		python3 - "$target" <<'PY'
-import pathlib
-import sys
-
-print(pathlib.Path(sys.argv[1]).resolve(strict=False))
-PY
-		return
-	fi
-	echo "mcp_ffmpeg_guard: realpath or python3 is required" >&2
+	echo "mcp_ffmpeg_guard: realpath is required" >&2
 	return 1
 }
 
