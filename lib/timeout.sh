@@ -37,11 +37,12 @@ with_timeout() {
 	local main_pgid="${MCPBASH_MAIN_PGID:-}"
 	local watchdog_token=""
 
-	# Spawn command
+	# Spawn command as background process
 	("${cmd[@]}") &
 	worker_pid=$!
 
-	mcp_runtime_set_process_group "${worker_pid}" || true
+	# Look up process group - if job control is active in the environment,
+	# the worker may already be in its own group
 	worker_pgid="$(mcp_runtime_lookup_pgid "${worker_pid}")"
 
 	# Capture the caller's pgid so watchdog can avoid killing it

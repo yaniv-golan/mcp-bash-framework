@@ -262,26 +262,21 @@ mcp_runtime_enable_job_control() {
 
 mcp_runtime_set_process_group() {
 	# Isolate worker processes so cancellation and timeouts can target entire trees.
+	# NOTE: This is a no-op legacy function. Process group isolation is now handled
+	# by spawning processes with job control enabled (set -m), which automatically
+	# places background processes in their own process group.
 	local pid="$1"
 	[ -n "${pid}" ] || return 1
 
-	if command -v perl >/dev/null 2>&1; then
-		perl -MPOSIX -e "POSIX::setpgid($pid,$pid)" >/dev/null 2>&1 && return 0
-	fi
-
-	if command -v ruby >/dev/null 2>&1; then
-		ruby -e "Process.setpgid(${pid},${pid})" >/dev/null 2>&1 && return 0
-	fi
-
-	if [ "${MCPBASH_JOB_CONTROL_ENABLED}" = "true" ]; then
-		# Job-control mode already increases the odds workers are isolated; treat as success.
+	# Check if the process is already its own group leader (job control worked)
+	local pgid
+	pgid="$(ps -o pgid= -p "${pid}" 2>/dev/null | tr -d ' ')"
+	if [ -n "${pgid}" ] && [ "${pgid}" = "${pid}" ]; then
 		return 0
 	fi
 
-	if [ "${MCPBASH_PROCESS_GROUP_WARNED}" != "true" ]; then
-		MCPBASH_PROCESS_GROUP_WARNED="true"
-		printf '%s\n' 'mcp-bash: unable to assign dedicated process groups; cancellation may be less effective.' >&2
-	fi
+	# Process not isolated - this is expected if job control wasn't enabled
+	# The caller should handle this gracefully (e.g., only signal specific PIDs)
 	return 1
 }
 
@@ -290,18 +285,10 @@ mcp_runtime_lookup_pgid() {
 	local pgid=""
 	[ -n "${pid}" ] || return 1
 
-	if [ -z "${pgid}" ] && command -v perl >/dev/null 2>&1; then
-		pgid="$(perl -MPOSIX -e "print POSIX::getpgid($pid)" 2>/dev/null)"
-	fi
+	# Use ps to look up the process group ID (POSIX-compliant)
+	pgid="$(ps -o pgid= -p "${pid}" 2>/dev/null | tr -d ' ')"
 
-	if [ -z "${pgid}" ] && command -v ruby >/dev/null 2>&1; then
-		pgid="$(ruby -e "begin; puts Process.getpgid(${pid}); rescue; end" 2>/dev/null)"
-	fi
-
-	if [ -z "${pgid}" ]; then
-		pgid="$(ps -o pgid= -p "${pid}" 2>/dev/null | tr -d ' ')"
-	fi
-
+	# Fallback to assuming pid == pgid if ps fails
 	if [ -z "${pgid}" ]; then
 		pgid="${pid}"
 	fi
