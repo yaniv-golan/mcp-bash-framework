@@ -61,14 +61,10 @@ with_timeout() {
 	wait "${watchdog_pid}" 2>/dev/null || true
 
 	if [ -n "${watchdog_state}" ] && [ -f "${watchdog_state}" ]; then
-		local current_token
-		current_token="$(awk '{print $4}' "${watchdog_state}" 2>/dev/null || true)"
-		if [ -n "${watchdog_token}" ] && [ "${current_token}" = "${watchdog_token}" ]; then
-			if grep -Fq "timeout" "${watchdog_state}" 2>/dev/null; then
-				status=124
-			fi
-			rm -f "${watchdog_state}"
+		if grep -Fq "timeout" "${watchdog_state}" 2>/dev/null; then
+			status=124
 		fi
+		rm -f "${watchdog_state}"
 	fi
 
 	return "${status}"
@@ -106,7 +102,7 @@ mcp_timeout_spawn_watchdog() {
 		exit 0
 	fi
 
-	[ -n "${state_file}" ] && printf '%s\n' "timeout" >"${state_file}"
+	[ -n "${state_file}" ] && printf 'timeout\n' >>"${state_file}"
 
 	mcp_runtime_signal_group "${worker_pgid}" TERM "${worker_pid}" "${main_pgid}"
 	sleep 1

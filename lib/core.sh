@@ -533,6 +533,11 @@ mcp_core_timeout_for_method() {
 	local timeout_value=""
 
 	case "${method}" in
+	tools/call)
+		# Tool-level timeouts are enforced inside mcp_tools_call; avoid double-wrapping
+		printf ''
+		return 0
+		;;
 	tools/* | resources/* | prompts/get | completion/complete)
 		if mcp_runtime_is_minimal_mode; then
 			printf ''

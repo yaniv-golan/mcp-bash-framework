@@ -197,19 +197,17 @@ mcp_io_send_response() {
 		return 0
 	fi
 
+	# Suppress responses for cancelled requests
+	if [ -n "${key}" ] && [ "${key}" != "-" ] && mcp_ids_is_cancelled_key "${key}" 2>/dev/null; then
+		mcp_io_debug_log "response" "${key}" "cancelled" "${payload}"
+		return 0
+	fi
+
 	local prev_key="${MCP_IO_ACTIVE_KEY}"
 	local prev_category="${MCP_IO_ACTIVE_CATEGORY}"
 	MCP_IO_ACTIVE_KEY="${key:-"-"}"
 	MCP_IO_ACTIVE_CATEGORY="response"
 	mcp_io_stdout_lock_acquire
-	if [ -n "${key}" ] && mcp_ids_is_cancelled_key "${key}"; then
-		mcp_io_stdout_lock_release
-		MCP_IO_ACTIVE_KEY="${prev_key}"
-		MCP_IO_ACTIVE_CATEGORY="${prev_category}"
-		mcp_io_debug_log "response" "${key}" "cancelled" ""
-		return 0
-	fi
-
 	if ! mcp_io_write_payload "${payload}"; then
 		mcp_io_stdout_lock_release
 		MCP_IO_ACTIVE_KEY="${prev_key}"

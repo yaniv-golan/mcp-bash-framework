@@ -237,6 +237,45 @@ mcp_tools_validate_output_schema() {
 		return 1
 	fi
 
+	if [ -z "${structured_json}" ]; then
+		_mcp_tools_emit_error -32603 "Tool output is empty for declared outputSchema" "null"
+		return 1
+	fi
+
+	local validation_result
+	validation_result="$(printf '%s' "${structured_json}" | "${MCPBASH_JSON_TOOL_BIN}" --argjson schema "${output_schema}" '
+		def required_ok($schema;$data):
+			($schema.required // []) as $req
+			| all($req[]; . as $k | ($data|has($k)));
+		def types_ok($schema;$data):
+			($schema.properties // {}) as $props
+			| ($props | to_entries | all(.[];
+				($data[.key] // null) as $v
+				| (.value.type // "") as $t
+				| if ($v == null or ($t|length)==0) then true
+				  else
+					(if $t=="string" then ($v|type)=="string"
+					elif $t=="number" then ($v|type)=="number"
+					elif $t=="integer" then ($v|type)=="number" and (($v|floor)==($v|tonumber))
+					elif $t=="boolean" then ($v|type)=="boolean"
+					elif $t=="array" then ($v|type)=="array"
+					elif $t=="object" then ($v|type)=="object"
+					else true end)
+				  end));
+		if ($schema.type // "object") != "object" then true
+		else (required_ok($schema;.) and types_ok($schema;.)) end
+	' 2>/dev/null)" || validation_result="false"
+
+	if [ "${validation_result}" != "true" ]; then
+		_mcp_tools_emit_error -32603 "Tool output does not satisfy outputSchema" "null"
+		return 1
+	fi
+
+	if [ -z "${structured_json}" ]; then
+		_mcp_tools_emit_error -32603 "Tool output is empty for declared outputSchema" "null"
+		return 1
+	fi
+
 	if ! printf '%s' "${structured_json}" | "${MCPBASH_JSON_TOOL_BIN}" -e --argjson schema "${output_schema}" '
 		def required_ok($schema;$data):
 			($schema.required // []) as $req
@@ -721,6 +760,9 @@ mcp_tools_call() {
 	if [ -z "${effective_timeout}" ] && [ -n "${metadata_timeout}" ]; then
 		effective_timeout="${metadata_timeout}"
 	fi
+	case "${effective_timeout}" in
+	'' | *[!0-9]*) effective_timeout="" ;;
+	esac
 
 	local stdout_file stderr_file
 	stdout_file="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-tools-stdout.XXXXXX")"
@@ -896,7 +938,7 @@ mcp_tools_call() {
 
 	case "${exit_code}" in
 	124 | 137)
-		_mcp_tools_emit_error -32004 "Tool timed out" "null"
+		_mcp_tools_emit_error -32603 "Tool timed out" "null"
 		cleanup_tool_temp_files
 		return 1
 		;;
