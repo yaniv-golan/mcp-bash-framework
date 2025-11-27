@@ -227,10 +227,12 @@ mcp_tools_validate_output_schema() {
 	local output_schema="$2"
 	local has_json_tool="$3"
 
-	if [ "${output_schema}" = "null" ] || [ "${has_json_tool}" != "true" ]; then
+	# Skip validation if no schema or no JSON tool
+	if [ "${output_schema}" = "null" ] || [ -z "${output_schema}" ] || [ "${has_json_tool}" != "true" ]; then
 		return 0
 	fi
 
+	# Parse the tool output as JSON
 	local structured_json=""
 	if ! structured_json="$("${MCPBASH_JSON_TOOL_BIN}" -c '.' "${stdout_file}" 2>/dev/null)"; then
 		_mcp_tools_emit_error -32603 "Tool output is not valid JSON for declared outputSchema" "null"
@@ -242,67 +244,55 @@ mcp_tools_validate_output_schema() {
 		return 1
 	fi
 
+	# Write schema to temp file to avoid shell quoting issues with --argjson
+	local schema_file
+	schema_file="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-schema-check.XXXXXX")"
+	printf '%s' "${output_schema}" >"${schema_file}"
+
+	# Run validation, capturing result as string
 	local validation_result
-	validation_result="$(printf '%s' "${structured_json}" | "${MCPBASH_JSON_TOOL_BIN}" --argjson schema "${output_schema}" '
-		def required_ok($schema;$data):
-			($schema.required // []) as $req
-			| all($req[]; . as $k | ($data|has($k)));
-		def types_ok($schema;$data):
-			($schema.properties // {}) as $props
-			| ($props | to_entries | all(.[];
-				($data[.key] // null) as $v
-				| (.value.type // "") as $t
-				| if ($v == null or ($t|length)==0) then true
-				  else
+	validation_result="$(printf '%s' "${structured_json}" | "${MCPBASH_JSON_TOOL_BIN}" --slurpfile schema "${schema_file}" '
+		($schema[0]) as $s |
+		. as $data |
+		(
+			# Check required fields exist
+			(($s.required // []) | all(. as $k | $data | has($k)))
+		) as $required_ok |
+		(
+			# Check types match for present fields
+			(($s.properties // {}) | keys) |
+			all(. as $k |
+				($data[$k] // null) as $v |
+				(($s.properties // {})[$k].type // "") as $t |
+				if ($v == null) or ($t == "") then true
+				else
 					(if $t=="string" then ($v|type)=="string"
 					elif $t=="number" then ($v|type)=="number"
-					elif $t=="integer" then ($v|type)=="number" and (($v|floor)==($v|tonumber))
+					elif $t=="integer" then ($v|type)=="number" and (($v|floor)==$v)
 					elif $t=="boolean" then ($v|type)=="boolean"
 					elif $t=="array" then ($v|type)=="array"
 					elif $t=="object" then ($v|type)=="object"
 					else true end)
-				  end));
-		if ($schema.type // "object") != "object" then true
-		else (required_ok($schema;.) and types_ok($schema;.)) end
-	' 2>/dev/null)" || validation_result="false"
+				end)
+		) as $types_ok |
+		if ($s.type // "object") != "object" then "true"
+		elif $required_ok and $types_ok then "true"
+		else "false"
+		end
+	' 2>/dev/null)" || validation_result="error"
 
-	if [ "${validation_result}" != "true" ]; then
+	rm -f "${schema_file}"
+
+	# Check result - must be exactly "true" (with quotes, as jq outputs strings)
+	case "${validation_result}" in
+	'"true"' | 'true')
+		return 0
+		;;
+	*)
 		_mcp_tools_emit_error -32603 "Tool output does not satisfy outputSchema" "null"
 		return 1
-	fi
-
-	if [ -z "${structured_json}" ]; then
-		_mcp_tools_emit_error -32603 "Tool output is empty for declared outputSchema" "null"
-		return 1
-	fi
-
-	if ! printf '%s' "${structured_json}" | "${MCPBASH_JSON_TOOL_BIN}" -e --argjson schema "${output_schema}" '
-		def required_ok($schema;$data):
-			($schema.required // []) as $req
-			| all($req[]; . as $k | ($data|has($k)));
-		def types_ok($schema;$data):
-			($schema.properties // {}) as $props
-			| ($props | to_entries | all(.[];
-				($data[.key] // null) as $v
-				| (.value.type // "") as $t
-				| if ($v == null or ($t|length)==0) then true
-				  else
-					(if $t=="string" then ($v|type)=="string"
-					elif $t=="number" then ($v|type)=="number"
-					elif $t=="integer" then ($v|type)=="number" and (($v|floor)==($v|tonumber))
-					elif $t=="boolean" then ($v|type)=="boolean"
-					elif $t=="array" then ($v|type)=="array"
-					elif $t=="object" then ($v|type)=="object"
-					else true end)
-				  end));
-		if ($schema.type // "object") != "object" then true
-		else (required_ok($schema;.) and types_ok($schema;.)) end
-	' >/dev/null 2>&1; then
-		_mcp_tools_emit_error -32603 "Tool output does not satisfy outputSchema" "null"
-		return 1
-	fi
-
-	return 0
+		;;
+	esac
 }
 
 mcp_tools_apply_manual_json() {
@@ -711,9 +701,10 @@ mcp_tools_call() {
 		return 1
 	fi
 
-	local info_fields tool_path metadata_timeout output_schema
-	info_fields="$(printf '%s' "${metadata}" | "${MCPBASH_JSON_TOOL_BIN}" -r '[.path // "", (.timeoutSecs // ""), (.outputSchema // null | tojson)] | @tsv')"
-	IFS=$'\t' read -r tool_path metadata_timeout output_schema <<<"${info_fields}"
+	local tool_path metadata_timeout output_schema
+	tool_path="$(printf '%s' "${metadata}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.path // ""')"
+	metadata_timeout="$(printf '%s' "${metadata}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.timeoutSecs // "" | tostring')"
+	output_schema="$(printf '%s' "${metadata}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.outputSchema // null')"
 	case "${metadata_timeout}" in
 	"" | "null") metadata_timeout="" ;;
 	esac
@@ -782,6 +773,9 @@ mcp_tools_call() {
 
 	local exit_code
 	(
+		# Ignore SIGTERM in this subshell - only the tool process should be killed
+		# The tool runs in its own process via with_timeout, which handles the signal
+		trap '' TERM
 		set -o pipefail
 		cd "${MCPBASH_PROJECT_ROOT}" || exit 1
 		MCP_SDK="${MCPBASH_HOME}/sdk"

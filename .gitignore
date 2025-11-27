@@ -2,3 +2,4 @@
 registry/
 docs/internal/
 docs/internal/mcp-bash-technical-spec.md
+.cursor/

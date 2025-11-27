@@ -37,19 +37,32 @@ with_timeout() {
 	local main_pgid="${MCPBASH_MAIN_PGID:-}"
 	local watchdog_token=""
 
+	# Spawn command
 	("${cmd[@]}") &
 	worker_pid=$!
 
 	mcp_runtime_set_process_group "${worker_pid}" || true
 	worker_pgid="$(mcp_runtime_lookup_pgid "${worker_pid}")"
 
+	# Capture the caller's pgid so watchdog can avoid killing it
+	local caller_pgid=""
+	caller_pgid="$(mcp_runtime_lookup_pgid "$$")"
+
+	# The worker is truly isolated ONLY if it's the leader of its own process group
+	# (pgid == pid). Otherwise, signaling the group would kill other processes.
+	local isolated="false"
+	if [ -n "${worker_pgid}" ] && [ "${worker_pgid}" = "${worker_pid}" ]; then
+		# Worker is its own group leader - safe to signal the group
+		isolated="true"
+	fi
+
 	if [ -n "${MCPBASH_STATE_DIR:-}" ]; then
 		watchdog_state="${MCPBASH_STATE_DIR}/watchdog.${worker_pid}.log"
 		watchdog_token="${worker_pid}.${RANDOM}.${SECONDS}"
-		printf '%s %s %s %s\n' "${worker_pid}" "${worker_pgid}" "${seconds}" "${watchdog_token}" >"${watchdog_state}"
+		printf '%s %s %s %s %s\n' "${worker_pid}" "${worker_pgid}" "${seconds}" "${watchdog_token}" "${isolated}" >"${watchdog_state}"
 	fi
 
-	mcp_timeout_spawn_watchdog "${worker_pid}" "${worker_pgid}" "${seconds}" "${watchdog_state}" "${main_pgid}" "${watchdog_token}" &
+	mcp_timeout_spawn_watchdog "${worker_pid}" "${worker_pgid}" "${seconds}" "${watchdog_state}" "${main_pgid}" "${watchdog_token}" "${caller_pgid}" &
 	watchdog_pid=$!
 
 	wait "${worker_pid}"
@@ -77,6 +90,7 @@ mcp_timeout_spawn_watchdog() {
 	local state_file="$4"
 	local main_pgid="$5"
 	local token="$6"
+	local caller_pgid="$7"
 	local remaining
 
 	remaining="${seconds}"
@@ -104,10 +118,27 @@ mcp_timeout_spawn_watchdog() {
 
 	[ -n "${state_file}" ] && printf 'timeout\n' >>"${state_file}"
 
-	mcp_runtime_signal_group "${worker_pgid}" TERM "${worker_pid}" "${main_pgid}"
+	# Read isolation status from state file (5th field)
+	local isolated="false"
+	if [ -n "${state_file}" ] && [ -f "${state_file}" ]; then
+		isolated="$(awk '{print $5}' "${state_file}" 2>/dev/null || echo "false")"
+	fi
+
+	# Only use process group signals if the worker is properly isolated.
+	# Otherwise, we'd kill the caller along with the tool!
+	if [ "${isolated}" = "true" ]; then
+		mcp_runtime_signal_group "${worker_pgid}" TERM "${worker_pid}" "${main_pgid}"
+	else
+		# Process not isolated - only signal the specific PID
+		kill -TERM "${worker_pid}" 2>/dev/null || true
+	fi
 	sleep 1
 	if kill -0 "${worker_pid}" 2>/dev/null; then
-		mcp_runtime_signal_group "${worker_pgid}" KILL "${worker_pid}" "${main_pgid}"
+		if [ "${isolated}" = "true" ]; then
+			mcp_runtime_signal_group "${worker_pgid}" KILL "${worker_pid}" "${main_pgid}"
+		else
+			kill -KILL "${worker_pid}" 2>/dev/null || true
+		fi
 	fi
 
 	if [ -n "${state_file}" ] && [ -f "${state_file}" ]; then
