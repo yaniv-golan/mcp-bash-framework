@@ -589,18 +589,19 @@ mcp_core_worker_entry() {
 		mcp_core_worker_emit "${key}" "${response}"
 	fi
 
-	if [ -n "${progress_stream}" ]; then
+	if [ "${MCPBASH_ENABLE_LIVE_PROGRESS:-false}" != "true" ] && [ -n "${progress_stream}" ]; then
 		mcp_core_emit_progress_stream "${key}" "${progress_stream}"
-		rm -f "${progress_stream}"
-		rm -f "${MCPBASH_STATE_DIR}/rate.progress.${key}.log"
-		rm -f "${progress_stream}.offset"
 	fi
-	if [ -n "${log_stream}" ]; then
+	rm -f "${progress_stream}"
+	rm -f "${MCPBASH_STATE_DIR}/rate.progress.${key}.log"
+	rm -f "${progress_stream}.offset"
+
+	if [ "${MCPBASH_ENABLE_LIVE_PROGRESS:-false}" != "true" ] && [ -n "${log_stream}" ]; then
 		mcp_core_emit_log_stream "${key}" "${log_stream}"
-		rm -f "${log_stream}"
-		rm -f "${MCPBASH_STATE_DIR}/rate.log.${key}.log"
-		rm -f "${log_stream}.offset"
 	fi
+	rm -f "${log_stream}"
+	rm -f "${MCPBASH_STATE_DIR}/rate.log.${key}.log"
+	rm -f "${log_stream}.offset"
 }
 
 mcp_core_worker_emit() {
