@@ -63,6 +63,10 @@ JSON
 {"jsonrpc":"2.0","id":"exit","method":"exit"}
 JSON
 
+	# Use per-workspace tmp root to avoid cross-example contention.
+	export MCPBASH_TMP_ROOT="${workdir}"
+	unset MCPBASH_LOCK_ROOT
+
 	test_run_mcp "${workdir}" "${workdir}/requests.ndjson" "${workdir}/responses.ndjson"
 	assert_json_lines "${workdir}/responses.ndjson"
 
