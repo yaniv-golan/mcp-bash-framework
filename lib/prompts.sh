@@ -18,6 +18,7 @@ _MCP_PROMPTS_RESULT=""
 MCP_PROMPTS_TTL="${MCP_PROMPTS_TTL:-5}"
 MCP_PROMPTS_LAST_SCAN=0
 MCP_PROMPTS_LAST_NOTIFIED_HASH=""
+MCP_PROMPTS_CHANGED=false
 MCP_PROMPTS_LOGGER="${MCP_PROMPTS_LOGGER:-mcp.prompts}"
 MCP_PROMPTS_MANUAL_ACTIVE=false
 MCP_PROMPTS_MANUAL_BUFFER=""
@@ -312,6 +313,20 @@ mcp_prompts_refresh_registry() {
 	fastpath_snapshot="$(mcp_registry_fastpath_snapshot "${scan_root}")"
 	if mcp_registry_fastpath_unchanged "prompts" "${fastpath_snapshot}"; then
 		MCP_PROMPTS_LAST_SCAN="${now}"
+		# Sync in-memory state from cache if another process refreshed the registry
+		if [ -f "${MCP_PROMPTS_REGISTRY_PATH}" ]; then
+			local cached_hash
+			cached_hash="$("${MCPBASH_JSON_TOOL_BIN}" -r '.hash // empty' "${MCP_PROMPTS_REGISTRY_PATH}" 2>/dev/null || true)"
+			if [ -n "${cached_hash}" ] && [ "${cached_hash}" != "${MCP_PROMPTS_REGISTRY_HASH}" ]; then
+				local cached_json cached_total
+				cached_json="$(cat "${MCP_PROMPTS_REGISTRY_PATH}" 2>/dev/null || true)"
+				cached_total="$("${MCPBASH_JSON_TOOL_BIN}" '.total // 0' "${MCP_PROMPTS_REGISTRY_PATH}" 2>/dev/null || printf '0')"
+				MCP_PROMPTS_REGISTRY_JSON="${cached_json}"
+				MCP_PROMPTS_REGISTRY_HASH="${cached_hash}"
+				MCP_PROMPTS_TOTAL="${cached_total}"
+				MCP_PROMPTS_CHANGED=true
+			fi
+		fi
 		return 0
 	fi
 
@@ -336,6 +351,9 @@ mcp_prompts_refresh_registry() {
 		if [ "${write_rc}" -ne 0 ]; then
 			return "${write_rc}"
 		fi
+	fi
+	if [ "${previous_hash}" != "${MCP_PROMPTS_REGISTRY_HASH}" ]; then
+		MCP_PROMPTS_CHANGED=true
 	fi
 }
 
@@ -644,12 +662,13 @@ mcp_prompts_consume_notification() {
 		return 0
 	fi
 
-	if [ "${current_hash}" = "${MCP_PROMPTS_LAST_NOTIFIED_HASH}" ]; then
+	if [ "${MCP_PROMPTS_CHANGED}" != "true" ]; then
 		return 0
 	fi
 
 	if [ "${actually_emit}" = "true" ]; then
 		MCP_PROMPTS_LAST_NOTIFIED_HASH="${current_hash}"
+		MCP_PROMPTS_CHANGED=false
 		_MCP_NOTIFICATION_PAYLOAD='{"jsonrpc":"2.0","method":"notifications/prompts/list_changed","params":{}}'
 	fi
 }

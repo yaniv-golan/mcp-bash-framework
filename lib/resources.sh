@@ -18,6 +18,7 @@ _MCP_RESOURCES_RESULT=""
 MCP_RESOURCES_TTL="${MCP_RESOURCES_TTL:-5}"
 MCP_RESOURCES_LAST_SCAN=0
 MCP_RESOURCES_LAST_NOTIFIED_HASH=""
+MCP_RESOURCES_CHANGED=false
 MCP_RESOURCES_MANUAL_ACTIVE=false
 MCP_RESOURCES_MANUAL_BUFFER=""
 MCP_RESOURCES_MANUAL_DELIM=$'\036'
@@ -411,6 +412,20 @@ mcp_resources_refresh_registry() {
 	fastpath_snapshot="$(mcp_registry_fastpath_snapshot "${scan_root}")"
 	if mcp_registry_fastpath_unchanged "resources" "${fastpath_snapshot}"; then
 		MCP_RESOURCES_LAST_SCAN="${now}"
+		# Sync in-memory state from cache if another process refreshed the registry
+		if [ -f "${MCP_RESOURCES_REGISTRY_PATH}" ]; then
+			local cached_hash
+			cached_hash="$("${MCPBASH_JSON_TOOL_BIN}" -r '.hash // empty' "${MCP_RESOURCES_REGISTRY_PATH}" 2>/dev/null || true)"
+			if [ -n "${cached_hash}" ] && [ "${cached_hash}" != "${MCP_RESOURCES_REGISTRY_HASH}" ]; then
+				local cached_json cached_total
+				cached_json="$(cat "${MCP_RESOURCES_REGISTRY_PATH}" 2>/dev/null || true)"
+				cached_total="$("${MCPBASH_JSON_TOOL_BIN}" '.total // 0' "${MCP_RESOURCES_REGISTRY_PATH}" 2>/dev/null || printf '0')"
+				MCP_RESOURCES_REGISTRY_JSON="${cached_json}"
+				MCP_RESOURCES_REGISTRY_HASH="${cached_hash}"
+				MCP_RESOURCES_TOTAL="${cached_total}"
+				MCP_RESOURCES_CHANGED=true
+			fi
+		fi
 		return 0
 	fi
 
@@ -437,6 +452,9 @@ mcp_resources_refresh_registry() {
 		fi
 	fi
 	mcp_logging_debug "${MCP_RESOURCES_LOGGER}" "Refresh completed scan hash=${MCP_RESOURCES_REGISTRY_HASH}"
+	if [ "${previous_hash}" != "${MCP_RESOURCES_REGISTRY_HASH}" ]; then
+		MCP_RESOURCES_CHANGED=true
+	fi
 }
 
 mcp_resources_scan() {
@@ -626,12 +644,13 @@ mcp_resources_consume_notification() {
 		return 0
 	fi
 
-	if [ "${current_hash}" = "${MCP_RESOURCES_LAST_NOTIFIED_HASH}" ]; then
+	if [ "${MCP_RESOURCES_CHANGED}" != "true" ]; then
 		return 0
 	fi
 
 	if [ "${actually_emit}" = "true" ]; then
 		MCP_RESOURCES_LAST_NOTIFIED_HASH="${current_hash}"
+		MCP_RESOURCES_CHANGED=false
 		_MCP_NOTIFICATION_PAYLOAD='{"jsonrpc":"2.0","method":"notifications/resources/list_changed","params":{}}'
 	fi
 }

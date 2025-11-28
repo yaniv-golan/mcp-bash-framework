@@ -20,6 +20,7 @@ _MCP_TOOLS_RESULT=""
 MCP_TOOLS_TTL="${MCP_TOOLS_TTL:-5}"
 MCP_TOOLS_LAST_SCAN=0
 MCP_TOOLS_LAST_NOTIFIED_HASH=""
+MCP_TOOLS_CHANGED=false
 MCP_TOOLS_MANUAL_ACTIVE=false
 MCP_TOOLS_MANUAL_BUFFER=""
 MCP_TOOLS_MANUAL_DELIM=$'\036'
@@ -441,6 +442,20 @@ mcp_tools_refresh_registry() {
 	fastpath_snapshot="$(mcp_registry_fastpath_snapshot "${scan_root}")"
 	if mcp_registry_fastpath_unchanged "tools" "${fastpath_snapshot}"; then
 		MCP_TOOLS_LAST_SCAN="${now}"
+		# Sync in-memory state from cache if another process refreshed the registry
+		if [ -f "${MCP_TOOLS_REGISTRY_PATH}" ]; then
+			local cached_hash
+			cached_hash="$("${MCPBASH_JSON_TOOL_BIN}" -r '.hash // empty' "${MCP_TOOLS_REGISTRY_PATH}" 2>/dev/null || true)"
+			if [ -n "${cached_hash}" ] && [ "${cached_hash}" != "${MCP_TOOLS_REGISTRY_HASH}" ]; then
+				local cached_json cached_total
+				cached_json="$(cat "${MCP_TOOLS_REGISTRY_PATH}" 2>/dev/null || true)"
+				cached_total="$("${MCPBASH_JSON_TOOL_BIN}" '.total // 0' "${MCP_TOOLS_REGISTRY_PATH}" 2>/dev/null || printf '0')"
+				MCP_TOOLS_REGISTRY_JSON="${cached_json}"
+				MCP_TOOLS_REGISTRY_HASH="${cached_hash}"
+				MCP_TOOLS_TOTAL="${cached_total}"
+				MCP_TOOLS_CHANGED=true
+			fi
+		fi
 		return 0
 	fi
 
@@ -465,6 +480,9 @@ mcp_tools_refresh_registry() {
 		if [ "${write_rc}" -ne 0 ]; then
 			return "${write_rc}"
 		fi
+	fi
+	if [ "${previous_hash}" != "${MCP_TOOLS_REGISTRY_HASH}" ]; then
+		MCP_TOOLS_CHANGED=true
 	fi
 }
 
@@ -600,12 +618,13 @@ mcp_tools_consume_notification() {
 		return 0
 	fi
 
-	if [ "${current_hash}" = "${MCP_TOOLS_LAST_NOTIFIED_HASH}" ]; then
+	if [ "${MCP_TOOLS_CHANGED}" != "true" ]; then
 		return 0
 	fi
 
 	if [ "${actually_emit}" = "true" ]; then
 		MCP_TOOLS_LAST_NOTIFIED_HASH="${current_hash}"
+		MCP_TOOLS_CHANGED=false
 		_MCP_NOTIFICATION_PAYLOAD='{"jsonrpc":"2.0","method":"notifications/tools/list_changed","params":{}}'
 	fi
 }

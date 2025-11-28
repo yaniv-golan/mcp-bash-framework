@@ -196,9 +196,10 @@ read_response() {
 	# Safety timeout to avoid hanging if the server stops producing output
 	if read -r -t 5 -u 4 line; then
 		printf '%s' "${line}"
-	else
-		return 1
+		return 0
 	fi
+	# Timeout or EOF: return empty so callers can decide to continue waiting
+	return 2
 }
 
 wait_for() {
@@ -241,11 +242,11 @@ wait_for "id" "list" || {
 	exit 1
 }
 
-# Modify prompt and force refresh via a second list
-printf 'Live version 2\n' >"${POLL_ROOT}/prompts/live.txt"
-
-# Wait for TTL and trigger another prompts/list
+# Wait for TTL, then modify prompt metadata and trigger another prompts/list
 sleep 1.2
+cat <<'EOF_META' >"${POLL_ROOT}/prompts/live.meta.json"
+{"name": "prompt.live", "description": "Live prompt v2", "arguments": {"type": "object", "properties": {}}, "role": "system"}
+EOF_META
 send '{"jsonrpc": "2.0", "id": "list2", "method": "prompts/list", "params": {}}'
 
 # Expect a list2 response AND a list_changed notification
@@ -257,7 +258,7 @@ while [ "$(date +%s)" -lt "${end_time}" ]; do
 	if [ "${seen_update}" = "true" ] && [ "${seen_list}" = "true" ]; then
 		break
 	fi
-	response="$(read_response)" || break
+	response="$(read_response || true)"
 	if [ -z "${response}" ]; then
 		continue
 	fi
