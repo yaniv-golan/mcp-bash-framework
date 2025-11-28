@@ -56,3 +56,39 @@ valid_response="$(
 	jq -c 'select(.id=="lvl-valid") | .result // empty' "${WORKSPACE}/responses.ndjson"
 )"
 assert_eq '{}' "${valid_response}" "valid logging/setLevel should succeed in minimal mode"
+
+test_old_protocol_suppresses_list_changed() {
+    # Set up workspace with tools to ensure notifications WOULD fire on newer protocol
+    local test_dir
+    test_dir="$(mktemp -d)"
+    mkdir -p "${test_dir}/tools"
+    cat > "${test_dir}/tools/test_tool.sh" << 'TOOL'
+#!/usr/bin/env bash
+# @describe A test tool
+echo "ok"
+TOOL
+    chmod +x "${test_dir}/tools/test_tool.sh"
+    
+    local output_file="${test_dir}/output.json"
+    
+    # Run mcp-bash, redirecting stdout to file to avoid pipe hangs
+    # We use 2>/dev/null to ignore stderr logs
+    # Set short intervals to ensure quick shutdown
+    MCPBASH_RESOURCES_POLL_INTERVAL_SECS=0 \
+    MCPBASH_PROGRESS_FLUSH_INTERVAL=0.1 \
+    MCPBASH_PROJECT_ROOT="${test_dir}" \
+    ./bin/mcp-bash << 'EOF' > "${output_file}" 2>/dev/null
+{"jsonrpc":"2.0","id":"init","method":"initialize","params":{"protocolVersion":"2025-03-26"}}
+{"jsonrpc":"2.0","method":"notifications/initialized"}
+{"jsonrpc":"2.0","id":"l1","method":"tools/list"}
+EOF
+    
+    local count
+    count=$(grep -c "list_changed" "${output_file}" || true)
+    
+    rm -rf "${test_dir}"
+    
+    assert_eq 0 "${count}" "Protocol 2025-03-26 should suppress list_changed notifications"
+}
+
+test_old_protocol_suppresses_list_changed

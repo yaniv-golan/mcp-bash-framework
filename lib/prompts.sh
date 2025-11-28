@@ -17,7 +17,7 @@ _MCP_PROMPTS_ERR_MESSAGE=""
 _MCP_PROMPTS_RESULT=""
 MCP_PROMPTS_TTL="${MCP_PROMPTS_TTL:-5}"
 MCP_PROMPTS_LAST_SCAN=0
-MCP_PROMPTS_CHANGED=false
+MCP_PROMPTS_LAST_NOTIFIED_HASH=""
 MCP_PROMPTS_LOGGER="${MCP_PROMPTS_LOGGER:-mcp.prompts}"
 MCP_PROMPTS_MANUAL_ACTIVE=false
 MCP_PROMPTS_MANUAL_BUFFER=""
@@ -130,9 +130,6 @@ mcp_prompts_manual_finalize() {
 	fi
 
 	MCP_PROMPTS_LAST_SCAN="$(date +%s)"
-	if [ "${previous_hash}" != "${MCP_PROMPTS_REGISTRY_HASH}" ]; then
-		MCP_PROMPTS_CHANGED=true
-	fi
 	local write_rc=0
 	mcp_registry_write_with_lock "${MCP_PROMPTS_REGISTRY_PATH}" "${MCP_PROMPTS_REGISTRY_JSON}" || write_rc=$?
 	if [ "${write_rc}" -ne 0 ]; then
@@ -259,9 +256,6 @@ mcp_prompts_apply_manual_json() {
 	MCP_PROMPTS_REGISTRY_HASH="${hash}"
 	MCP_PROMPTS_TOTAL="${total}"
 
-	if [ "${previous_hash}" != "${MCP_PROMPTS_REGISTRY_HASH}" ]; then
-		MCP_PROMPTS_CHANGED=true
-	fi
 	MCP_PROMPTS_LAST_SCAN="$(date +%s)"
 	local write_rc=0
 	mcp_registry_write_with_lock "${MCP_PROMPTS_REGISTRY_PATH}" "${registry_json}" || write_rc=$?
@@ -328,12 +322,20 @@ mcp_prompts_refresh_registry() {
 	fi
 	mcp_prompts_scan "${scan_root}" || return 1
 	MCP_PROMPTS_LAST_SCAN="${now}"
-	if [ -n "${fastpath_snapshot}" ]; then
-		fastpath_snapshot="$(mcp_registry_fastpath_snapshot "${scan_root}")"
-		mcp_registry_fastpath_store "prompts" "${fastpath_snapshot}" || true
-	fi
-	if [ "${previous_hash}" != "${MCP_PROMPTS_REGISTRY_HASH}" ]; then
-		MCP_PROMPTS_CHANGED=true
+	# Recompute fastpath snapshot post-scan to capture content-only changes
+	fastpath_snapshot="$(mcp_registry_fastpath_snapshot "${scan_root}")"
+	mcp_registry_fastpath_store "prompts" "${fastpath_snapshot}" || true
+	# Incorporate fastpath snapshot into registry hash so content changes trigger notifications
+	if [ -n "${MCP_PROMPTS_REGISTRY_HASH}" ] && [ -n "${fastpath_snapshot}" ]; then
+		local combined_hash
+		combined_hash="$(mcp_hash_string "${MCP_PROMPTS_REGISTRY_HASH}|${fastpath_snapshot}")"
+		MCP_PROMPTS_REGISTRY_HASH="${combined_hash}"
+		MCP_PROMPTS_REGISTRY_JSON="$(printf '%s' "${MCP_PROMPTS_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" --arg hash "${combined_hash}" '.hash = $hash')"
+		local write_rc=0
+		mcp_registry_write_with_lock "${MCP_PROMPTS_REGISTRY_PATH}" "${MCP_PROMPTS_REGISTRY_JSON}" || write_rc=$?
+		if [ "${write_rc}" -ne 0 ]; then
+			return "${write_rc}"
+		fi
 	fi
 }
 
@@ -634,10 +636,20 @@ mcp_prompts_poll() {
 }
 
 mcp_prompts_consume_notification() {
-	if [ "${MCP_PROMPTS_CHANGED}" = true ]; then
-		MCP_PROMPTS_CHANGED=false
-		printf '{"jsonrpc":"2.0","method":"notifications/prompts/list_changed","params":{}}'
-	else
-		printf ''
+	local actually_emit="${1:-true}"
+	local current_hash="${MCP_PROMPTS_REGISTRY_HASH}"
+	_MCP_NOTIFICATION_PAYLOAD=""
+
+	if [ -z "${current_hash}" ]; then
+		return 0
+	fi
+
+	if [ "${current_hash}" = "${MCP_PROMPTS_LAST_NOTIFIED_HASH}" ]; then
+		return 0
+	fi
+
+	if [ "${actually_emit}" = "true" ]; then
+		MCP_PROMPTS_LAST_NOTIFIED_HASH="${current_hash}"
+		_MCP_NOTIFICATION_PAYLOAD='{"jsonrpc":"2.0","method":"notifications/prompts/list_changed","params":{}}'
 	fi
 }

@@ -56,6 +56,7 @@ mcp_core_bootstrap_state() {
 	MCPBASH_INITIALIZED=false
 	MCPBASH_SHUTDOWN_PENDING=false
 	MCPBASH_INITIALIZE_HANDSHAKE_DONE=false
+	_MCP_NOTIFICATION_PAYLOAD=""
 	mcp_runtime_init_paths
 	mcp_ids_init_state
 	mcp_lock_init
@@ -954,30 +955,19 @@ mcp_core_emit_registry_notifications() {
 
 	mcp_core_poll_registries_once
 
-	local note
 	if [ "${allow_list_changed}" = "true" ]; then
-		note="$(mcp_tools_consume_notification)"
-		if [ -n "${note}" ]; then
-			rpc_send_line "${note}"
+		mcp_tools_consume_notification true
+		if [ -n "${_MCP_NOTIFICATION_PAYLOAD}" ]; then
+			rpc_send_line "${_MCP_NOTIFICATION_PAYLOAD}"
 		fi
-	else
-		mcp_tools_consume_notification >/dev/null
-	fi
-	if [ "${allow_list_changed}" = "true" ]; then
-		note="$(mcp_resources_consume_notification)"
-		if [ -n "${note}" ]; then
-			rpc_send_line "${note}"
+		mcp_resources_consume_notification true
+		if [ -n "${_MCP_NOTIFICATION_PAYLOAD}" ]; then
+			rpc_send_line "${_MCP_NOTIFICATION_PAYLOAD}"
 		fi
-	else
-		mcp_resources_consume_notification >/dev/null
-	fi
-	if [ "${allow_list_changed}" = "true" ]; then
-		note="$(mcp_prompts_consume_notification)"
-		if [ -n "${note}" ]; then
-			rpc_send_line "${note}"
+		mcp_prompts_consume_notification true
+		if [ -n "${_MCP_NOTIFICATION_PAYLOAD}" ]; then
+			rpc_send_line "${_MCP_NOTIFICATION_PAYLOAD}"
 		fi
-	else
-		mcp_prompts_consume_notification >/dev/null
 	fi
 }
 

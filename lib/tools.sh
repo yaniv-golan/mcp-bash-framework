@@ -19,7 +19,7 @@ _MCP_TOOLS_ERROR_DATA=""
 _MCP_TOOLS_RESULT=""
 MCP_TOOLS_TTL="${MCP_TOOLS_TTL:-5}"
 MCP_TOOLS_LAST_SCAN=0
-MCP_TOOLS_CHANGED=false
+MCP_TOOLS_LAST_NOTIFIED_HASH=""
 MCP_TOOLS_MANUAL_ACTIVE=false
 MCP_TOOLS_MANUAL_BUFFER=""
 MCP_TOOLS_MANUAL_DELIM=$'\036'
@@ -133,9 +133,6 @@ mcp_tools_manual_finalize() {
 	MCP_TOOLS_MANUAL_BUFFER=""
 
 	MCP_TOOLS_LAST_SCAN="$(date +%s)"
-	if [ "${previous_hash}" != "${MCP_TOOLS_REGISTRY_HASH}" ]; then
-		MCP_TOOLS_CHANGED=true
-	fi
 	local write_rc=0
 	mcp_registry_write_with_lock "${MCP_TOOLS_REGISTRY_PATH}" "${registry_json}" || write_rc=$?
 	if [ "${write_rc}" -ne 0 ]; then
@@ -245,17 +242,13 @@ mcp_tools_validate_output_schema() {
 	fi
 
 	# Write schema to temp file to avoid shell quoting issues with --argjson
-	local schema_file
-	schema_file="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-schema-check.XXXXXX")"
-	printf '%s' "${output_schema}" >"${schema_file}"
-
-	# Run validation, capturing result as string
+	# Run validation using jq -s pattern (avoid --slurpfile for Windows/gojq compatibility)
 	local validation_result
 	local validation_status=0
 	set +e
-	validation_result="$(printf '%s' "${structured_json}" | "${MCPBASH_JSON_TOOL_BIN}" --slurpfile schema "${schema_file}" '
-		($schema[0]) as $s |
-		. as $data |
+	validation_result="$(printf '%s\n%s' "${output_schema}" "${structured_json}" | "${MCPBASH_JSON_TOOL_BIN}" -s '
+		.[0] as $s |
+		.[1] as $data |
 		(
 			# Check required fields exist
 			(($s.required // []) | all(. as $k | $data | has($k)))
@@ -284,8 +277,6 @@ mcp_tools_validate_output_schema() {
 	' 2>/dev/null)"
 	validation_status=$?
 	set -e
-
-	rm -f "${schema_file}"
 
 	if [ "${validation_status}" -ne 0 ]; then
 		_mcp_tools_emit_error -32603 "Tool output does not satisfy outputSchema" "null"
@@ -327,9 +318,6 @@ mcp_tools_apply_manual_json() {
 	registry_json="$(echo "${registry_json}" | "${MCPBASH_JSON_TOOL_BIN}" --arg hash "${hash}" '.hash = $hash')"
 
 	local new_hash="${hash}"
-	if [ "${new_hash}" != "${MCP_TOOLS_REGISTRY_HASH}" ]; then
-		MCP_TOOLS_CHANGED=true
-	fi
 	MCP_TOOLS_REGISTRY_JSON="${registry_json}"
 	MCP_TOOLS_REGISTRY_HASH="${new_hash}"
 	MCP_TOOLS_TOTAL="$(echo "${registry_json}" | "${MCPBASH_JSON_TOOL_BIN}" '.total')"
@@ -463,12 +451,20 @@ mcp_tools_refresh_registry() {
 	fi
 	mcp_tools_scan "${scan_root}" || return 1
 	MCP_TOOLS_LAST_SCAN="${now}"
-	if [ -n "${fastpath_snapshot}" ]; then
-		fastpath_snapshot="$(mcp_registry_fastpath_snapshot "${scan_root}")"
-		mcp_registry_fastpath_store "tools" "${fastpath_snapshot}" || true
-	fi
-	if [ "${previous_hash}" != "${MCP_TOOLS_REGISTRY_HASH}" ]; then
-		MCP_TOOLS_CHANGED=true
+	# Recompute fastpath snapshot post-scan to track content changes (mtime/cksum)
+	fastpath_snapshot="$(mcp_registry_fastpath_snapshot "${scan_root}")"
+	mcp_registry_fastpath_store "tools" "${fastpath_snapshot}" || true
+	# Incorporate fastpath snapshot into registry hash so content-only changes trigger notifications
+	if [ -n "${MCP_TOOLS_REGISTRY_HASH}" ] && [ -n "${fastpath_snapshot}" ]; then
+		local combined_hash
+		combined_hash="$(mcp_hash_string "${MCP_TOOLS_REGISTRY_HASH}|${fastpath_snapshot}")"
+		MCP_TOOLS_REGISTRY_HASH="${combined_hash}"
+		MCP_TOOLS_REGISTRY_JSON="$(printf '%s' "${MCP_TOOLS_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" --arg hash "${combined_hash}" '.hash = $hash')"
+		local write_rc=0
+		mcp_registry_write_with_lock "${MCP_TOOLS_REGISTRY_PATH}" "${MCP_TOOLS_REGISTRY_JSON}" || write_rc=$?
+		if [ "${write_rc}" -ne 0 ]; then
+			return "${write_rc}"
+		fi
 	fi
 }
 
@@ -596,11 +592,21 @@ mcp_tools_scan() {
 }
 
 mcp_tools_consume_notification() {
-	if [ "${MCP_TOOLS_CHANGED}" = true ]; then
-		MCP_TOOLS_CHANGED=false
-		printf '{"jsonrpc":"2.0","method":"notifications/tools/list_changed","params":{}}'
-	else
-		printf ''
+	local actually_emit="${1:-true}"
+	local current_hash="${MCP_TOOLS_REGISTRY_HASH}"
+	_MCP_NOTIFICATION_PAYLOAD=""
+
+	if [ -z "${current_hash}" ]; then
+		return 0
+	fi
+
+	if [ "${current_hash}" = "${MCP_TOOLS_LAST_NOTIFIED_HASH}" ]; then
+		return 0
+	fi
+
+	if [ "${actually_emit}" = "true" ]; then
+		MCP_TOOLS_LAST_NOTIFIED_HASH="${current_hash}"
+		_MCP_NOTIFICATION_PAYLOAD='{"jsonrpc":"2.0","method":"notifications/tools/list_changed","params":{}}'
 	fi
 }
 
@@ -732,9 +738,15 @@ mcp_tools_call() {
 	fi
 
 	local absolute_path="${MCPBASH_TOOLS_DIR}/${tool_path}"
+	local tool_runner=("${absolute_path}")
+	# On Windows (Git Bash/MSYS), -x test is unreliable. Check for shebang or .sh extension as fallback.
 	if [ ! -x "${absolute_path}" ]; then
-		mcp_tools_error -32601 "Tool executable missing"
-		return 1
+		if [[ ! "${absolute_path}" =~ \.(sh|bash)$ ]] && ! head -n1 "${absolute_path}" 2>/dev/null | grep -q '^#!'; then
+			mcp_tools_error -32601 "Tool executable missing"
+			return 1
+		fi
+		# Fallback: invoke via shell if not marked executable but looks runnable
+		tool_runner=(bash "${absolute_path}")
 	fi
 
 	local env_limit="${MCPBASH_ENV_PAYLOAD_THRESHOLD:-65536}"
@@ -869,15 +881,15 @@ mcp_tools_call() {
 
 		if [ -n "${effective_timeout}" ]; then
 			if [ "${tool_env_mode}" != "inherit" ]; then
-				with_timeout "${effective_timeout}" -- "${env_exec[@]}" "${absolute_path}"
+				with_timeout "${effective_timeout}" -- "${env_exec[@]}" "${tool_runner[@]}"
 			else
-				with_timeout "${effective_timeout}" -- "${absolute_path}"
+				with_timeout "${effective_timeout}" -- "${tool_runner[@]}"
 			fi
 		else
 			if [ "${tool_env_mode}" != "inherit" ]; then
-				"${env_exec[@]}" "${absolute_path}"
+				"${env_exec[@]}" "${tool_runner[@]}"
 			else
-				"${absolute_path}"
+				"${tool_runner[@]}"
 			fi
 		fi
 	) >"${stdout_file}" 2>"${stderr_file}" || exit_code=$?

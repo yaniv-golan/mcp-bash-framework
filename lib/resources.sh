@@ -17,7 +17,7 @@ _MCP_RESOURCES_ERR_MESSAGE=""
 _MCP_RESOURCES_RESULT=""
 MCP_RESOURCES_TTL="${MCP_RESOURCES_TTL:-5}"
 MCP_RESOURCES_LAST_SCAN=0
-MCP_RESOURCES_CHANGED=false
+MCP_RESOURCES_LAST_NOTIFIED_HASH=""
 MCP_RESOURCES_MANUAL_ACTIVE=false
 MCP_RESOURCES_MANUAL_BUFFER=""
 MCP_RESOURCES_MANUAL_DELIM=$'\036'
@@ -106,9 +106,6 @@ mcp_resources_manual_finalize() {
 	fi
 
 	MCP_RESOURCES_LAST_SCAN="$(date +%s)"
-	if [ "${previous_hash}" != "${MCP_RESOURCES_REGISTRY_HASH}" ]; then
-		MCP_RESOURCES_CHANGED=true
-	fi
 	local write_rc=0
 	mcp_registry_write_with_lock "${MCP_RESOURCES_REGISTRY_PATH}" "${registry_json}" || write_rc=$?
 	if [ "${write_rc}" -ne 0 ]; then
@@ -299,9 +296,6 @@ mcp_resources_apply_manual_json() {
 	registry_json="$(echo "${registry_json}" | "${MCPBASH_JSON_TOOL_BIN}" --arg hash "${hash}" '.hash = $hash')"
 
 	local new_hash="${hash}"
-	if [ "${new_hash}" != "${MCP_RESOURCES_REGISTRY_HASH}" ]; then
-		MCP_RESOURCES_CHANGED=true
-	fi
 	MCP_RESOURCES_REGISTRY_JSON="${registry_json}"
 	MCP_RESOURCES_REGISTRY_HASH="${new_hash}"
 	MCP_RESOURCES_TOTAL="$(echo "${registry_json}" | "${MCPBASH_JSON_TOOL_BIN}" '.total')"
@@ -427,14 +421,22 @@ mcp_resources_refresh_registry() {
 	fi
 	mcp_resources_scan "${scan_root}" || return 1
 	MCP_RESOURCES_LAST_SCAN="${now}"
-	if [ -n "${fastpath_snapshot}" ]; then
-		fastpath_snapshot="$(mcp_registry_fastpath_snapshot "${scan_root}")"
-		mcp_registry_fastpath_store "resources" "${fastpath_snapshot}" || true
+	# Recompute fastpath snapshot post-scan to capture content-only changes
+	fastpath_snapshot="$(mcp_registry_fastpath_snapshot "${scan_root}")"
+	mcp_registry_fastpath_store "resources" "${fastpath_snapshot}" || true
+	# Incorporate fastpath snapshot into registry hash so content changes trigger notifications
+	if [ -n "${MCP_RESOURCES_REGISTRY_HASH}" ] && [ -n "${fastpath_snapshot}" ]; then
+		local combined_hash
+		combined_hash="$(mcp_hash_string "${MCP_RESOURCES_REGISTRY_HASH}|${fastpath_snapshot}")"
+		MCP_RESOURCES_REGISTRY_HASH="${combined_hash}"
+		MCP_RESOURCES_REGISTRY_JSON="$(printf '%s' "${MCP_RESOURCES_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" --arg hash "${combined_hash}" '.hash = $hash')"
+		local write_rc=0
+		mcp_registry_write_with_lock "${MCP_RESOURCES_REGISTRY_PATH}" "${MCP_RESOURCES_REGISTRY_JSON}" || write_rc=$?
+		if [ "${write_rc}" -ne 0 ]; then
+			return "${write_rc}"
+		fi
 	fi
 	mcp_logging_debug "${MCP_RESOURCES_LOGGER}" "Refresh completed scan hash=${MCP_RESOURCES_REGISTRY_HASH}"
-	if [ "${previous_hash}" != "${MCP_RESOURCES_REGISTRY_HASH}" ]; then
-		MCP_RESOURCES_CHANGED=true
-	fi
 }
 
 mcp_resources_scan() {
@@ -616,11 +618,21 @@ mcp_resources_list() {
 }
 
 mcp_resources_consume_notification() {
-	if [ "${MCP_RESOURCES_CHANGED}" = true ]; then
-		MCP_RESOURCES_CHANGED=false
-		printf '{"jsonrpc":"2.0","method":"notifications/resources/list_changed","params":{}}'
-	else
-		printf ''
+	local actually_emit="${1:-true}"
+	local current_hash="${MCP_RESOURCES_REGISTRY_HASH}"
+	_MCP_NOTIFICATION_PAYLOAD=""
+
+	if [ -z "${current_hash}" ]; then
+		return 0
+	fi
+
+	if [ "${current_hash}" = "${MCP_RESOURCES_LAST_NOTIFIED_HASH}" ]; then
+		return 0
+	fi
+
+	if [ "${actually_emit}" = "true" ]; then
+		MCP_RESOURCES_LAST_NOTIFIED_HASH="${current_hash}"
+		_MCP_NOTIFICATION_PAYLOAD='{"jsonrpc":"2.0","method":"notifications/resources/list_changed","params":{}}'
 	fi
 }
 

@@ -29,7 +29,7 @@ done
 
 output="$(
 	MCPBASH_PROJECT_ROOT="${WORKSPACE}" MCPBASH_REGISTRY_MAX_BYTES=200 \
-		./bin/mcp-bash registry refresh --project-root "${WORKSPACE}" --no-notify 2>/dev/null || true
+		"${MCPBASH_TEST_ROOT}/bin/mcp-bash" registry refresh --project-root "${WORKSPACE}" --no-notify 2>/dev/null || true
 )"
 
 status_tools="$(printf '%s' "${output}" | jq -r '.tools.status // empty' 2>/dev/null || printf '')"

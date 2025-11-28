@@ -76,9 +76,17 @@ mcp_registry_fastpath_snapshot() {
 		printf '0|0|0'
 		return 0
 	fi
-	local count hash mtime
+	local count hash mtime manifest=""
 	count="$(find "${scan_root}" -type f ! -name ".*" 2>/dev/null | wc -l | tr -d ' ')"
-	hash="$(find "${scan_root}" -type f ! -name ".*" 2>/dev/null | LC_ALL=C sort | cksum | awk '{print $1}')"
+	while IFS= read -r path; do
+		[ -z "${path}" ] && continue
+		local file_mtime
+		file_mtime="$(mcp_registry_stat_mtime "${path}")"
+		# Use relative path to avoid absolute prefixes in hash
+		local rel_path="${path#"${scan_root}/"}"
+		manifest="${manifest}${file_mtime}|${rel_path}\n"
+	done < <(find "${scan_root}" -type f ! -name ".*" 2>/dev/null | LC_ALL=C sort)
+	hash="$(mcp_hash_string "${manifest}")"
 	mtime="$(mcp_registry_stat_mtime "${scan_root}")"
 	printf '%s|%s|%s' "${count:-0}" "${hash:-0}" "${mtime:-0}"
 }
@@ -414,8 +422,11 @@ mcp_registry_register_execute() {
 mcp_registry_register_apply() {
 	local kind="$1"
 	local script_path="${MCPBASH_SERVER_DIR}/register.sh"
+	# On Windows (Git Bash/MSYS), -x test is unreliable. Check for shebang as fallback.
 	if [ ! -x "${script_path}" ]; then
-		return 1
+		if ! head -n1 "${script_path}" 2>/dev/null | grep -q '^#!'; then
+			return 1
+		fi
 	fi
 
 	local signature

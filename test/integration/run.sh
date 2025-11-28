@@ -25,6 +25,7 @@ TESTS=(
 	"test_registry_refresh.sh"
 	"test_registry_limits.sh"
 	"test_progress_logs.sh"
+	"test_notification_dedup.sh"
 	"test_cancellation.sh"
 	"test_cli_guards.sh"
 )
