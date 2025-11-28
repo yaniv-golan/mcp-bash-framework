@@ -303,14 +303,22 @@ mcp_runtime_signal_group() {
 	local fallback_pid="$3"
 	local main_pgid="$4"
 
-	if [ -n "${pgid}" ] && [ -n "${signal}" ] && [ -n "${fallback_pid}" ]; then
-		if [ -n "${main_pgid}" ] && [ "${pgid}" = "${main_pgid}" ]; then
-			kill -"${signal}" "${fallback_pid}" 2>/dev/null
-			return 0
-		fi
-		if kill -"${signal}" "-${pgid}" 2>/dev/null; then
-			return 0
-		fi
-		kill -"${signal}" "${fallback_pid}" 2>/dev/null
+	# Guard against empty inputs; cancellation/timeout callers are best-effort.
+	if [ -z "${pgid}" ] || [ -z "${signal}" ] || [ -z "${fallback_pid}" ]; then
+		return 0
 	fi
+
+	# Never signal the main process group; fall back to the specific pid.
+	if [ -n "${main_pgid}" ] && [ "${pgid}" = "${main_pgid}" ]; then
+		kill -"${signal}" "${fallback_pid}" 2>/dev/null || true
+		return 0
+	fi
+
+	# Try the process group first; if that fails, target the pid directly.
+	if kill -"${signal}" "-${pgid}" 2>/dev/null; then
+		return 0
+	fi
+
+	kill -"${signal}" "${fallback_pid}" 2>/dev/null || true
+	return 0
 }
