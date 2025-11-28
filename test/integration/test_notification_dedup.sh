@@ -3,7 +3,11 @@ set -euo pipefail
 
 # Source common assertion helpers and env
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=../common/env.sh
+# shellcheck disable=SC1091
 . "${SCRIPT_DIR}/../common/env.sh"
+# shellcheck source=../common/assert.sh
+# shellcheck disable=SC1091
 . "${SCRIPT_DIR}/../common/assert.sh"
 
 test_fast_sequence_notification_count() {
