@@ -343,6 +343,11 @@ mcp_registry_register_execute() {
 	MCP_REGISTRY_REGISTER_SIGNATURE="${signature}"
 	MCP_REGISTRY_REGISTER_LAST_RUN="$(date +%s)"
 
+	# Ensure registry paths/dirs are initialized before manual registration writes.
+	mcp_tools_init
+	mcp_resources_init
+	mcp_prompts_init
+
 	mcp_tools_manual_begin
 	mcp_resources_manual_begin
 	mcp_prompts_manual_begin
@@ -351,41 +356,13 @@ mcp_registry_register_execute() {
 	local script_output_file
 	script_output_file="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-register-output.XXXXXX")"
 	local script_status=0
-	local timeout="${MCPBASH_MANUAL_REGISTER_TIMEOUT:-10}"
 
+	# Execute in the current shell so manual registration buffers are retained.
 	set +e
-	if [ "${timeout}" -gt 0 ]; then
-		(
-			set -euo pipefail
-			# shellcheck disable=SC1090
-			# shellcheck disable=SC1091
-			. "${script_path}"
-		) >"${script_output_file}" 2>&1 &
-		local script_pid=$!
-		local waited=0
-		while kill -0 "${script_pid}" 2>/dev/null; do
-			if [ "${waited}" -ge "${timeout}" ]; then
-				kill "${script_pid}" 2>/dev/null || true
-				wait "${script_pid}" 2>/dev/null || true
-				script_status=124
-				break
-			fi
-			sleep 1
-			waited=$((waited + 1))
-		done
-		if [ "${script_status}" -ne 124 ]; then
-			wait "${script_pid}" 2>/dev/null || true
-			script_status=$?
-		fi
-	else
-		(
-			set -euo pipefail
-			# shellcheck disable=SC1090
-			# shellcheck disable=SC1091
-			. "${script_path}"
-		) >"${script_output_file}" 2>&1
-		script_status=$?
-	fi
+	# shellcheck disable=SC1090
+	# shellcheck disable=SC1091
+	. "${script_path}" >"${script_output_file}" 2>&1
+	script_status=$?
 	set -e
 
 	local script_output
