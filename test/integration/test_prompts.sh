@@ -9,6 +9,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 . "${SCRIPT_DIR}/../common/assert.sh"
 
+# Named pipes and blocking reads are unreliable on Windows runners; skip there.
+case "$(uname -s 2>/dev/null)" in
+MINGW* | MSYS* | CYGWIN*)
+	printf 'SKIP: prompts test disabled on Windows (FIFO/timeout unreliable)\n'
+	exit 0
+	;;
+esac
+
 test_create_tmpdir
 
 stage_workspace() {
