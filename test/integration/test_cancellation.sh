@@ -61,7 +61,7 @@ send '{"jsonrpc":"2.0","id":"ping","method":"ping"}'
 
 got_call=false
 got_ping=false
-deadline=$((SECONDS + 8))
+deadline=$((SECONDS + 15))
 while [ "${SECONDS}" -lt "${deadline}" ]; do
 	line="$(read_resp || true)"
 	[ -z "${line}" ] && continue
@@ -71,6 +71,10 @@ while [ "${SECONDS}" -lt "${deadline}" ]; do
 	fi
 	if [ "${id}" = "ping" ]; then
 		got_ping=true
+	fi
+	# If ping hasn’t arrived after a few seconds, send another probe.
+	if [ "${got_ping}" != true ] && [ $((deadline - SECONDS)) -le 10 ]; then
+		send '{"jsonrpc":"2.0","id":"ping2","method":"ping"}'
 	fi
 	if [ "${got_ping}" = true ]; then
 		break
