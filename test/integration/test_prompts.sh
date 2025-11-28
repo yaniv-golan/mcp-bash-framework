@@ -193,7 +193,8 @@ send() {
 
 read_response() {
 	local line
-	if read -r -u 4 line; then
+	# Safety timeout to avoid hanging if the server stops producing output
+	if read -r -t 5 -u 4 line; then
 		printf '%s' "${line}"
 	else
 		return 1
@@ -225,17 +226,17 @@ wait_for() {
 }
 
 # Initialize
-send  '{"jsonrpc": "2.0", "id": "init", "method": "initialize", "params": {}}'
-wait_for  "id" "init" || {
+send '{"jsonrpc": "2.0", "id": "init", "method": "initialize", "params": {}}'
+wait_for "id" "init" || {
 	printf 'Init timeout\n' >&2
 	exit 1
 }
 
-send  '{"jsonrpc": "2.0", "method": "notifications/initialized"}'
+send '{"jsonrpc": "2.0", "method": "notifications/initialized"}'
 
 # Initial list
-send  '{"jsonrpc": "2.0", "id": "list", "method": "prompts/list", "params": {}}'
-wait_for  "id" "list" || {
+send '{"jsonrpc": "2.0", "id": "list", "method": "prompts/list", "params": {}}'
+wait_for "id" "list" || {
 	printf 'List timeout\n' >&2
 	exit 1
 }
@@ -244,15 +245,15 @@ wait_for  "id" "list" || {
 printf 'Live version 2\n' >"${POLL_ROOT}/prompts/live.txt"
 
 # Wait for update notification
-sleep  1.2
-send  '{"jsonrpc": "2.0", "id": "ping", "method": "ping"}'
+sleep 1.2
+send '{"jsonrpc": "2.0", "id": "ping", "method": "ping"}'
 
 # We expect a ping response AND a list_changed notification
 seen_update=false
 seen_ping=false
-end_time=$(($( date +%s) + 10))
+end_time=$(($(date +%s) + 10))
 
-while  [ "$(date +%s)" -lt "${end_time}" ]; do
+while [ "$(date +%s)" -lt "${end_time}" ]; do
 	if [ "${seen_update}" = "true" ] && [ "${seen_ping}" = "true" ]; then
 		break
 	fi
@@ -270,7 +271,7 @@ while  [ "$(date +%s)" -lt "${end_time}" ]; do
 	fi
 done
 
-if  [ "${seen_update}" != "true" ]; then
+if [ "${seen_update}" != "true" ]; then
 	printf 'Missing prompts/list_changed notification\n' >&2
 	result=1
 else
