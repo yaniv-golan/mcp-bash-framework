@@ -76,7 +76,7 @@ Scaffolding requires a project directory. Set MCPBASH_PROJECT_ROOT first:
   export MCPBASH_PROJECT_ROOT=/path/to/my-project
   mcp-bash scaffold tool my-tool
 
-See: https://github.com/yaniv-golan/mcp-bash#quick-start
+See: https://github.com/yaniv-golan/mcp-bash-framework#quick-start
 EOF
 		exit 1
 	fi

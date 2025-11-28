@@ -6,22 +6,22 @@ mcp-bash keeps the framework and your project separate so upgrades stay painless
 
 ## Overview
 
-`mcp-bash` uses a strict **framework/project separation** model. Install the framework once (e.g., `~/mcp-bash` or a Docker base layer) and keep your server code in a separate **project directory**.
+`mcp-bash` uses a strict **framework/project separation** model. Install the framework once (e.g., `~/mcp-bash-framework` or a Docker base layer) and keep your server code in a separate **project directory**.
 
 ## The Model
 
 ```
-MCPBASH_HOME (Read-Only)              MCPBASH_PROJECT_ROOT (Your Code)
-~/mcp-bash/                           ~/my-mcp-server/
-├── bin/mcp-bash          ────────>   ├── tools/
-├── lib/                               │   └── my-tool/
-├── handlers/                          │       ├── tool.sh
-└── ...                                │       └── tool.meta.json
-                                       ├── prompts/
-                                       ├── resources/
-                                       ├── server.d/
-                                       │   └── register.sh
-                                       └── .registry/  (auto-generated cache)
+MCPBASH_HOME (Read-Only)                   MCPBASH_PROJECT_ROOT (Your Code)
+~/mcp-bash-framework/                      ~/my-mcp-server/
+├── bin/mcp-bash               ────────>   ├── tools/
+├── lib/                                    │   └── my-tool/
+├── handlers/                               │       ├── tool.sh
+└── ...                                     │       └── tool.meta.json
+                                            ├── prompts/
+                                            ├── resources/
+                                            ├── server.d/
+                                            │   └── register.sh
+                                            └── .registry/  (auto-generated cache)
 ```
 
 ## Required configuration
@@ -34,7 +34,7 @@ Set `MCPBASH_PROJECT_ROOT` to your project directory; the server refuses to star
 {
   "mcpServers": {
     "my-server": {
-      "command": "/Users/me/.mcp-bash/bin/mcp-bash",
+      "command": "/Users/me/mcp-bash-framework/bin/mcp-bash",
       "env": {
         "MCPBASH_PROJECT_ROOT": "/Users/me/my-mcp-server"
       }
@@ -49,14 +49,14 @@ Set `MCPBASH_PROJECT_ROOT` to your project directory; the server refuses to star
 FROM debian:bookworm-slim
 
 # Install framework (read-only layer)
-COPY mcp-bash/ /mcp-bash/
+COPY mcp-bash-framework/ /mcp-bash-framework/
 
 # Copy project (writable layer)
 COPY my-server/ /app/
 
 ENV MCPBASH_PROJECT_ROOT=/app
 
-CMD ["/mcp-bash/bin/mcp-bash"]
+CMD ["/mcp-bash-framework/bin/mcp-bash"]
 ```
 
 ## Path resolution
@@ -114,7 +114,7 @@ Create this structure:
 ```bash
 mkdir -p my-server/tools
 export MCPBASH_PROJECT_ROOT=$(pwd)/my-server
-~/mcp-bash/bin/mcp-bash scaffold tool hello
+~/mcp-bash-framework/bin/mcp-bash scaffold tool hello
 ```
 
 ### Full-featured project
@@ -157,13 +157,13 @@ Configure each environment:
 {
   "mcpServers": {
     "dev": {
-      "command": "/Users/me/.mcp-bash/bin/mcp-bash",
+      "command": "/Users/me/mcp-bash-framework/bin/mcp-bash",
       "env": {
         "MCPBASH_PROJECT_ROOT": "/projects/company-mcp-servers/dev"
       }
     },
     "production": {
-      "command": "/Users/me/.mcp-bash/bin/mcp-bash",
+      "command": "/Users/me/mcp-bash-framework/bin/mcp-bash",
       "env": {
         "MCPBASH_PROJECT_ROOT": "/projects/company-mcp-servers/production"
       }
@@ -196,7 +196,7 @@ Upgrade steps:
 
 ```bash
 # Upgrade framework
-cd ~/mcp-bash
+cd ~/mcp-bash-framework
 git pull
 
 # Your project is unaffected
@@ -212,7 +212,7 @@ Set `MCPBASH_LOG_LEVEL=debug` to print resolved paths at startup:
 {
   "mcpServers": {
     "my-server": {
-      "command": "/Users/me/.mcp-bash/bin/mcp-bash",
+      "command": "/Users/me/mcp-bash-framework/bin/mcp-bash",
       "env": {
         "MCPBASH_PROJECT_ROOT": "/Users/me/my-server",
         "MCPBASH_LOG_LEVEL": "debug"
@@ -226,7 +226,7 @@ Expected output:
 
 ```
 Resolved paths:
-  MCPBASH_HOME=/Users/me/.mcp-bash
+  MCPBASH_HOME=/Users/me/mcp-bash-framework
   MCPBASH_PROJECT_ROOT=/Users/me/my-server
   MCPBASH_TOOLS_DIR=/Users/me/my-server/tools
   MCPBASH_RESOURCES_DIR=/Users/me/my-server/resources

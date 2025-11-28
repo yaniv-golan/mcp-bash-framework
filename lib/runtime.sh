@@ -46,7 +46,7 @@ Example (Claude Desktop config):
 {
   "mcpServers": {
     "my-server": {
-      "command": "/Users/you/mcp-bash/bin/mcp-bash",
+      "command": "/Users/you/mcp-bash-framework/bin/mcp-bash",
       "env": {
         "MCPBASH_PROJECT_ROOT": "/path/to/my-project"
       }
@@ -54,7 +54,7 @@ Example (Claude Desktop config):
   }
 }
 
-See: https://github.com/yaniv-golan/mcp-bash#quick-start
+See: https://github.com/yaniv-golan/mcp-bash-framework#quick-start
 EOF
 		exit 1
 	fi

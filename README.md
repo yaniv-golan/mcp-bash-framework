@@ -6,6 +6,8 @@
 [![MCP Protocol](https://img.shields.io/badge/MCP-2025--06--18-blue)](https://spec.modelcontextprotocol.io/)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)](#runtime-requirements)
 
+> **Repository:** [`mcp-bash-framework`](https://github.com/yaniv-golan/mcp-bash-framework) &nbsp;•&nbsp; **CLI/Binary:** `mcp-bash`
+
 **mcp-bash** lets you expose Bash scripts and binaries directly to AI systems with zero ceremony.
 
 - Runs on the Bash you already have. No runtimes, no dependency chain.
@@ -28,7 +30,7 @@ Most MCP servers assume you’re willing to spin up heavyweight runtimes and fra
 ### 1. Install the Framework
 
 ```bash
-git clone https://github.com/yaniv-golan/mcp-bash-framework.git ~/mcp-bash
+git clone https://github.com/yaniv-golan/mcp-bash-framework.git ~/mcp-bash-framework
 ```
 
 ### 2. Create Your Project
@@ -44,27 +46,27 @@ export MCPBASH_PROJECT_ROOT=$(pwd)
 ### 3. Scaffold Your First Tool
 
 ```bash
-~/mcp-bash/bin/mcp-bash scaffold tool check-disk
+~/mcp-bash-framework/bin/mcp-bash scaffold tool check-disk
 ```
 
 This scaffolds `tools/check-disk/tool.sh` and `tools/check-disk/tool.meta.json` in your project. You write the logic.
 
 ### 4. Configure Your MCP Client
 
-Set `MCPBASH_PROJECT_ROOT=/path/to/your/project` and point your MCP client at `/path/to/mcp-bash/bin/mcp-bash`. See [Client Recipes](#client-recipes) for one-line configs for Claude Desktop/CLI/Code, Cursor, Windsurf, LibreChat, and OpenAI Agents SDK.
+Set `MCPBASH_PROJECT_ROOT=/path/to/your/project` and point your MCP client at `/path/to/mcp-bash-framework/bin/mcp-bash`. See [Client Recipes](#client-recipes) for one-line configs for Claude Desktop/CLI/Code, Cursor, Windsurf, LibreChat, and OpenAI Agents SDK.
 
 ## Client Recipes
 
 Every client works the same way: point it at the framework and tell it where your project lives:
 
 1. Set `MCPBASH_PROJECT_ROOT=/path/to/your/project`.
-2. Point it at your framework install (`/path/to/mcp-bash/bin/mcp-bash`).
+2. Point it at your framework install (`/path/to/mcp-bash-framework/bin/mcp-bash`).
 
 - **Claude Desktop**: Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows) and add:
   ```jsonc
   "mcpServers": {
     "mcp-bash": {
-      "command": "/Users/you/mcp-bash/bin/mcp-bash",
+      "command": "/Users/you/mcp-bash-framework/bin/mcp-bash",
       "env": {"MCPBASH_PROJECT_ROOT": "/Users/you/my-mcp-server"}
     }
   }
@@ -73,7 +75,7 @@ Every client works the same way: point it at the framework and tell it where you
   ```bash
   claude mcp add --transport stdio mcp-bash \
     --env MCPBASH_PROJECT_ROOT="$HOME/my-mcp-server" \
-    -- "$HOME/mcp-bash/bin/mcp-bash"
+    -- "$HOME/mcp-bash-framework/bin/mcp-bash"
   ```
 - **Cursor**: Create `~/.cursor/mcp.json` (or `.cursor/mcp.json` in a project) with the same `mcpServers` JSON as above.
 - **Windsurf (Cascade)**: Edit `~/.codeium/windsurf/mcp_config.json` via Settings → Advanced → Cascade, and add the same `mcpServers` entry.
@@ -82,7 +84,7 @@ Every client works the same way: point it at the framework and tell it where you
   mcpServers:
     mcp-bash:
       type: stdio
-      command: /Users/you/mcp-bash/bin/mcp-bash
+      command: /Users/you/mcp-bash-framework/bin/mcp-bash
       env:
         MCPBASH_PROJECT_ROOT: /Users/you/my-mcp-server
   ```
@@ -90,7 +92,7 @@ Every client works the same way: point it at the framework and tell it where you
   ```python
   os.environ["MCPBASH_PROJECT_ROOT"] = "/Users/you/my-mcp-server"
   async with MCPServerStdio(name="mcp-bash",
-                            params={"command": "/Users/you/mcp-bash/bin/mcp-bash"}) as server:
+                            params={"command": "/Users/you/mcp-bash-framework/bin/mcp-bash"}) as server:
       ...
   ```
 - **Windows note**: Use Git Bash or WSL so `/usr/bin/env bash` and your paths resolve; adjust paths to `C:\Users\you\...` as needed.
@@ -98,15 +100,15 @@ Every client works the same way: point it at the framework and tell it where you
 ## Project Structure
 
 ```
-Framework (Install Once)          Your Project (Version Control This)
-~/mcp-bash/                       ~/my-mcp-server/
-├── bin/mcp-bash                  ├── tools/
-├── lib/                          │   └── check-disk/
-├── handlers/                     │       ├── tool.sh
-└── ...                           │       └── tool.meta.json
-                                  ├── prompts/
-                                  ├── resources/
-                                  └── .registry/ (auto-generated)
+Framework (Install Once)               Your Project (Version Control This)
+~/mcp-bash-framework/                  ~/my-mcp-server/
+├── bin/mcp-bash                       ├── tools/
+├── lib/                               │   └── check-disk/
+├── handlers/                          │       ├── tool.sh
+└── ...                                │       └── tool.meta.json
+                                       ├── prompts/
+                                       ├── resources/
+                                       └── .registry/ (auto-generated)
 ```
 
 The scaffolder creates nested directories per tool (e.g., `tools/check-disk/tool.sh`); the examples stay flat for readability. Both layouts are supported by discovery.
@@ -124,7 +126,7 @@ source "${MCP_SDK}/tool-sdk.sh"
 When you run the bundled examples or scaffolded scripts directly, they automatically fall back to locating `sdk/` relative to their location so you can prototype without additional setup. If you copy a tool out of this repository (or build your own project layout), set `MCP_SDK` before executing the script:
 
 ```bash
-export MCP_SDK=/path/to/mcp-bash/sdk
+export MCP_SDK=/path/to/mcp-bash-framework/sdk
 ```
 
 If the SDK can’t be resolved, the script exits with a clear error.
@@ -263,5 +265,13 @@ This server targets MCP protocol version `2025-06-18` (the current stable specif
 | `2024-10-07` | ❌ **Not supported** |
 
 Unsupported versions receive an `initialize` error payload: `{"code":-32602,"message":"Unsupported protocol version"}`.
+
+## FAQ
+
+### Why is the repository named `mcp-bash-framework` but the CLI is `mcp-bash`?
+
+The repository name `mcp-bash-framework` reflects what this project is: a framework you install once and use to create multiple MCP server projects. The CLI/binary is named `mcp-bash` because that's what you invoke—short and memorable. The name `mcp-bash` was already taken on GitHub, so we chose `mcp-bash-framework` to accurately describe the architecture while avoiding namespace conflicts.
+
+---
 
 mcp-bash is intentionally small. It gives you control, clarity, and a predictable surface for AI systems. **Build tools, not infrastructure.**
