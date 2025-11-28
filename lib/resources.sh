@@ -682,17 +682,12 @@ mcp_resources_templates_list() {
 	fi
 
 	local result_json
-	result_json="$("${MCPBASH_JSON_TOOL_BIN}" -n -c '{resourceTemplates: [], total: 0, nextCursor: null}')"
+	result_json="$("${MCPBASH_JSON_TOOL_BIN}" -n -c '{resourceTemplates: [], total: 0}')"
 
 	if ! result_json="$(mcp_paginate_attach_next_cursor "${result_json}" "resourceTemplates" "${offset}" "${numeric_limit}" 0 "${hash}")"; then
 		mcp_resources_error -32603 "Unable to encode resource template cursor"
 		return 1
 	fi
-
-	result_json="$("${MCPBASH_JSON_TOOL_BIN}" -c '
-		. as $root
-		| if has("nextCursor") then $root else ($root + {nextCursor: null}) end
-	' <<<"${result_json}")"
 
 	printf '%s' "${result_json}"
 }

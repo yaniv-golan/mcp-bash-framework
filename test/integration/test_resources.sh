@@ -153,6 +153,32 @@ jq -s '
 	if $read.contents[0].text != "right" then error("manual resource content mismatch: " + ($read.contents[0].text|tostring)) else null end
 ' <"${MANUAL_ROOT}/responses.ndjson" >/dev/null
 
+# --- Resource templates contract ---
+TEMPLATE_ROOT="${TEST_TMPDIR}/templates"
+stage_workspace "${TEMPLATE_ROOT}"
+# Remove register.sh to mirror auto-discovery baseline
+rm -f "${TEMPLATE_ROOT}/server.d/register.sh"
+
+cat <<'JSON' >"${TEMPLATE_ROOT}/requests.ndjson"
+{"jsonrpc":"2.0","id":"templates-init","method":"initialize","params":{}}
+{"jsonrpc":"2.0","method":"notifications/initialized"}
+{"jsonrpc":"2.0","id":"templates-list","method":"resources/templates/list","params":{}}
+JSON
+
+(
+	cd "${TEMPLATE_ROOT}" || exit 1
+	MCPBASH_PROJECT_ROOT="${TEMPLATE_ROOT}" ./bin/mcp-bash <"requests.ndjson" >"responses.ndjson"
+)
+
+jq -s '
+	def error(msg): error(msg);
+
+	(map(select(.id == "templates-list"))[0].result) as $list |
+
+	if ($list.resourceTemplates | length) != 0 then error("expected empty resourceTemplates") else null end,
+	if ($list | has("nextCursor") and ($list.nextCursor | type) != "string") then error("nextCursor must be a string when present") else null end
+' <"${TEMPLATE_ROOT}/responses.ndjson" >/dev/null
+
 # --- Subscription updates ---
 SUB_ROOT="${TEST_TMPDIR}/subscribe"
 stage_workspace "${SUB_ROOT}"

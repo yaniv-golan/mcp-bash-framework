@@ -4,6 +4,7 @@
 set -euo pipefail
 
 MCPBASH_LOCK_POLL_INTERVAL="0.01"
+MCPBASH_LOCK_REAP_GRACE_SECS="${MCPBASH_LOCK_REAP_GRACE_SECS:-1}"
 
 mcp_lock_init() {
 	if [ -z "${MCPBASH_LOCK_ROOT}" ]; then
@@ -15,6 +16,23 @@ mcp_lock_init() {
 
 mcp_lock_path() {
 	printf '%s/%s.lock' "${MCPBASH_LOCK_ROOT}" "$1"
+}
+
+mcp_lock_stat_mtime() {
+	local path="$1"
+	local mtime="0"
+	if [ ! -e "${path}" ]; then
+		printf '%s' "${mtime}"
+		return 0
+	fi
+	if command -v stat >/dev/null 2>&1; then
+		if stat -c %Y "${path}" >/dev/null 2>&1; then
+			mtime="$(stat -c %Y "${path}")"
+		elif stat -f %m "${path}" >/dev/null 2>&1; then
+			mtime="$(stat -f %m "${path}")"
+		fi
+	fi
+	printf '%s' "${mtime}"
 }
 
 mcp_lock_acquire() {
@@ -83,10 +101,18 @@ mcp_lock_try_reap() {
 	local path="$1"
 	local owner
 	local current
+	local now age mtime
 	if [ ! -d "${path}" ]; then
 		return
 	fi
 	if [ ! -f "${path}/pid" ]; then
+		now="$(date +%s)"
+		mtime="$(mcp_lock_stat_mtime "${path}")"
+		age=$((now - mtime))
+		if [ "${age}" -lt "${MCPBASH_LOCK_REAP_GRACE_SECS}" ]; then
+			# Grace window: allow the creator to finish writing the pid file.
+			return
+		fi
 		rm -rf "${path}"
 		return
 	fi

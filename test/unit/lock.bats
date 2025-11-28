@@ -45,4 +45,17 @@ mcp_lock_acquire "stale"
 assert_file_exists "${MCPBASH_LOCK_ROOT}/stale.lock/pid"
 mcp_lock_release "stale"
 
+printf ' -> grace period for pid creation\n'
+MCPBASH_LOCK_REAP_GRACE_SECS=5
+mkdir -p "${MCPBASH_LOCK_ROOT}/grace.lock"
+mcp_lock_try_reap "${MCPBASH_LOCK_ROOT}/grace.lock"
+if [ ! -d "${MCPBASH_LOCK_ROOT}/grace.lock" ]; then
+	test_fail "lock reaped during grace window"
+fi
+MCPBASH_LOCK_REAP_GRACE_SECS=0
+mcp_lock_try_reap "${MCPBASH_LOCK_ROOT}/grace.lock"
+if [ -d "${MCPBASH_LOCK_ROOT}/grace.lock" ]; then
+	test_fail "stale lock without pid not reaped after grace"
+fi
+
 printf 'All lock tests passed.\n'
