@@ -109,11 +109,37 @@ mcp_core_wait_for_workers() {
 	done
 }
 
+mcp_core_state_worker_pids() {
+	local keys key info pid state_pids=""
+
+	keys="$(mcp_ids_list_active_workers 2>/dev/null || true)"
+	[ -n "${keys}" ] || return 0
+
+	while IFS= read -r key || [ -n "${key}" ]; do
+		[ -n "${key}" ] || continue
+		info="$(mcp_ids_worker_info "${key}" 2>/dev/null || true)"
+		pid="$(printf '%s' "${info}" | awk '{print $1}')"
+		[ -n "${pid}" ] || continue
+		if kill -0 "${pid}" 2>/dev/null; then
+			if [ -z "${state_pids}" ]; then
+				state_pids="${pid}"
+			else
+				state_pids="${state_pids}"$'\n'"${pid}"
+			fi
+		else
+			mcp_ids_clear_worker "${key}"
+		fi
+	done <<<"${keys}"$'\n'
+
+	printf '%s' "${state_pids}"
+}
+
 mcp_core_list_worker_pids() {
 	local pids filtered pid
 	pids="$(jobs -p 2>/dev/null || true)"
 	if [ -z "${pids}" ]; then
-		printf ''
+		filtered="$(mcp_core_state_worker_pids)"
+		printf '%s' "${filtered}"
 		return 0
 	fi
 	filtered=""
@@ -124,12 +150,20 @@ mcp_core_list_worker_pids() {
 		if [ -n "${MCPBASH_RESOURCE_POLL_PID:-}" ] && [ "${pid}" = "${MCPBASH_RESOURCE_POLL_PID}" ]; then
 			continue
 		fi
-		if [ -z "${filtered}" ]; then
-			filtered="${pid}"
-		else
-			filtered="${filtered}"$'\n'"${pid}"
-		fi
+		filtered="${filtered:+${filtered}$'\n'}${pid}"
 	done
+	# Merge any workers tracked via pid files (needed on platforms without job control).
+	local state_pids
+	state_pids="$(mcp_core_state_worker_pids)"
+	if [ -n "${state_pids}" ]; then
+		while IFS= read -r pid || [ -n "${pid}" ]; do
+			[ -n "${pid}" ] || continue
+			case $'\n'"${filtered}"$'\n' in
+			*$'\n'"${pid}"$'\n'*) continue ;;
+			esac
+			filtered="${filtered:+${filtered}$'\n'}${pid}"
+		done <<<"${state_pids}"$'\n'
+	fi
 	printf '%s' "${filtered}"
 }
 
