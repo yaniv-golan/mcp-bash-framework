@@ -321,7 +321,11 @@ mcp_prompts_refresh_registry() {
 		return 0
 	fi
 
+	# Capture previous hash from cache file if in-memory state is empty (parent may not have run scan yet)
 	local previous_hash="${MCP_PROMPTS_REGISTRY_HASH}"
+	if [ -z "${previous_hash}" ] && [ -f "${MCP_PROMPTS_REGISTRY_PATH}" ]; then
+		previous_hash="$("${MCPBASH_JSON_TOOL_BIN}" -r '.hash // empty' "${MCP_PROMPTS_REGISTRY_PATH}" 2>/dev/null || true)"
+	fi
 	mcp_prompts_scan "${scan_root}" || return 1
 	MCP_PROMPTS_LAST_SCAN="${now}"
 	if [ -n "${fastpath_snapshot}" ]; then
