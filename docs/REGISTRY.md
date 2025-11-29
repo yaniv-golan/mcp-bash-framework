@@ -90,8 +90,35 @@ Entries describe resource templates and providers. Paths are relative to `MCPBAS
 - Metadata that cannot be parsed (missing `uri`, unsupported `provider`, non-object `arguments`, unreadable `.meta.json`) is skipped and logged as a warning through the structured logging subsystem.
 - When no `provider` is specified, the scanner infers one from the URI scheme (`file://`, `git://`, `https://`); unrecognised schemes default to `file` and are rejected if the provider script is unavailable.
 - Discovery records `name`, `description`, `path`, `uri`, `mimeType`, and `provider`; argument/template schemas are not persisted today.
-- Template-style `inputSchema` fields and `resources/templates/list` discovery are not implemented yet; the handler currently returns an empty `resourceTemplates` array.
 - The `file` provider fails closed if no resource roots are configured; missing/non-existent roots are ignored, so ensure allowed roots exist before use.
+
+## Resource Templates
+
+The MCP protocol supports **resource templates** — parameterized resources using [RFC 6570 URI templates](https://datatracker.ietf.org/doc/html/rfc6570) (e.g., `file:///{path}`, `logs/{date}.log`). Templates allow servers to expose dynamic access patterns without enumerating every possible resource.
+
+**Current status:** The `resources/templates/list` endpoint is implemented and returns a valid, paginated empty response. The server advertises `"templates": true` in its capabilities. Template discovery from `.meta.json` files (using `uriTemplate` instead of `uri`) is not yet implemented.
+
+**Response format:**
+
+```json
+{
+  "resourceTemplates": [],
+  "nextCursor": null
+}
+```
+
+When template discovery is implemented, entries will follow the MCP schema:
+
+```json
+{
+  "name": "project-files",
+  "uriTemplate": "file:///{path}",
+  "description": "Access any file in the project directory",
+  "mimeType": "application/octet-stream"
+}
+```
+
+**Note:** Resource templates are for discovery only. Clients expand the URI template with their own values and call `resources/read` with the resulting concrete URI.
 
 ## `.registry/prompts.json`
 

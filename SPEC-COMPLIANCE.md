@@ -32,7 +32,7 @@ This document tracks `mcp-bash` compliance with the [Model Context Protocol Spec
 | Logging | `notifications/message` for log output | `handlers/logging.sh`, `lib/logging.sh` |
 | Completion | Argument completion for tools/prompts/resources | `lib/completion.sh`, `handlers/completion.sh` |
 | Pagination | Cursor-based result pagination | `lib/paginate.sh` |
-| Resource Templates | Optional templates listing | `handlers/resources.sh`, `lib/resources.sh`, `lib/spec.sh` |
+| Resource Templates | `resources/templates/list` (returns empty array; discovery not implemented) | `handlers/resources.sh`, `lib/resources.sh`, `lib/spec.sh` |
 | **Infrastructure** | | |
 | Runtime Environment | Tooling detection, minimal-mode fallbacks | `bin/mcp-bash`, `lib/runtime.sh` |
 | Concurrency Model | Worker orchestration, cancellation, locks | `lib/core.sh`, `lib/ids.sh`, `lib/lock.sh` |
@@ -68,7 +68,7 @@ The following MCP features are currently out of scope:
 **Applicability notes**
 
 - “Not applicable” entries above are client-side-only features per MCP spec.
-- “Not yet implemented” items (e.g., resource templates discovery) are stubbed with empty responses and advertised as reserved for future use.
+- Resource templates: The `resources/templates/list` method is implemented and returns an empty `resourceTemplates` array. The capability is advertised (`"templates": true`) but template discovery from `.meta.json` files is not yet implemented. Clients can call the endpoint; it will return valid, paginated empty results.
 - “Partial” surfaces (e.g., older protocol versions without `listChanged`) are intentionally reduced per back-compat behavior.
 
 ## Verification
