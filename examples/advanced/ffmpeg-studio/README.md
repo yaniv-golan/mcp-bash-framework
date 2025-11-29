@@ -21,11 +21,15 @@
 **Run**
 ```
 ./examples/run advanced/ffmpeg-studio
+
+# Quick start with bundled sample (12s clip at ./media/example.mp4)
+./examples/run advanced/ffmpeg-studio -- \
+  tools/call inspect_media '{"arguments":{"path":"./media/example.mp4"}}'
 ```
 
 **Transcript (abridged)**
 ```
-> tools/call transcode {"arguments":{"input":"./media/test.mp4","output":"./media/out.mp4","preset":"720p"},"_meta":{"progressToken":"demo-progress"}}
+> tools/call transcode {"arguments":{"input":"./media/example.mp4","output":"./media/out-720p.mp4","preset":"720p"},"_meta":{"progressToken":"demo-progress"}}
 < notifications/progress ... "10%"
 < notifications/progress ... "50%"
 < {"result":{"content":[{"type":"text","text":"Transcode complete"}]}}
@@ -33,14 +37,14 @@
 Include `_meta.progressToken` to receive progress updates.
 
 **Success criteria**
-- Media roots created (runner calls `check-env` to provision `media/`)
+- Media roots created (runner calls `check-env` to provision `media/` with `example.mp4` ready to use)
 - Progress notifications arrive during long runs; cancellation returns `-32001`
 - Inspect/transcode/extract complete without escaping configured roots
 
 **Troubleshooting**
 - Missing `ffmpeg`/`ffprobe`: install via `brew install ffmpeg` (macOS) or `apt-get install ffmpeg` (Debian/Ubuntu).
 - No progress? Ensure `_meta.progressToken` is set on the call and `MCPBASH_ENABLE_LIVE_PROGRESS=true` if you want streaming mid-flight.
-- Access denied: verify paths are inside allowed roots (`config/media_roots.json`).
+- Access denied: use the bundled `./media/example.mp4`, or update `config/media_roots.json` to include your media paths.
 - Long runtimes: this example is heavy; it’s excluded from the quick smoke ladder.
 
 **Configuring media roots**
