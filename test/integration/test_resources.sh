@@ -232,18 +232,19 @@ EOF
 	# Mutate the file and verify via a second stateless get
 	echo "updated" >"${sub_root}/resources/live.txt"
 
-	cat <<'EOF' | MCPBASH_PROJECT_ROOT="${sub_root}" ./bin/mcp-bash >"${resp_file}"
-{"jsonrpc":"2.0","id":"init","method":"initialize","params":{}}
-{"jsonrpc":"2.0","method":"notifications/initialized"}
-{"jsonrpc":"2.0","id":"get","method":"resources/get","params":{"uri":"file://__LIVE__"}}
-EOF
-
-	# Replace placeholder with actual path for jq lookup
 	local live_uri
 	live_uri="file://${sub_root}/resources/live.txt"
 
+	# Build requests with proper URI (heredoc must be unquoted for variable expansion)
+	# Note: MCP uses resources/read, not resources/get
+	cat <<EOF | MCPBASH_PROJECT_ROOT="${sub_root}" ./bin/mcp-bash >"${resp_file}"
+{"jsonrpc":"2.0","id":"init","method":"initialize","params":{}}
+{"jsonrpc":"2.0","method":"notifications/initialized"}
+{"jsonrpc":"2.0","id":"read","method":"resources/read","params":{"uri":"${live_uri}"}}
+EOF
+
 	local get_text
-	get_text="$(jq -r --arg uri "${live_uri}" 'select(.id=="get" and .result.uri==$uri) | .result.contents[0].text // empty' "${resp_file}" || true)"
+	get_text="$(jq -r 'select(.id=="read") | .result.contents[0].text // empty' "${resp_file}" || true)"
 	if [ "${get_text}" != "updated" ]; then
 		printf 'Updated content not observed on Windows file-based path\n' >&2
 		exit 1
