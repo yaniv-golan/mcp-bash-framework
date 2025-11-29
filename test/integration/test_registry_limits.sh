@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Integration: registry size cap enforcement.
+TEST_DESC="Registry refresh enforces max bytes thresholds."
 
 set -euo pipefail
 

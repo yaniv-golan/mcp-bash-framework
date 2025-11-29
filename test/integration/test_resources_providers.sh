@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Integration: resource provider safety and allowlist enforcement.
+TEST_DESC="Resource provider allowlist denies outside roots."
 
 set -euo pipefail
 

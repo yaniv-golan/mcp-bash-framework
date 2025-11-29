@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Integration: CLI guard for missing MCPBASH_PROJECT_ROOT.
+TEST_DESC="CLI scaffolding rejects missing project root."
 
 set -euo pipefail
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+TEST_DESC="Registry refresh builds cache and respects state."
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+TEST_DESC="Deduplicate back-to-back list_changed notifications."
 set -euo pipefail
 
 # Source common assertion helpers and env

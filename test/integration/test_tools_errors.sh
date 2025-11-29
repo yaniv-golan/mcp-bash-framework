@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Integration: tool error propagation, stderr capture, timeout overrides.
+TEST_DESC="Tool stderr, non-zero exit, and timeouts."
 
 set -euo pipefail
 

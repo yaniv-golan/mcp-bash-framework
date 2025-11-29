@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Integration: cancellation notification terminates a running worker.
+TEST_DESC="Cancellation request aborts a running worker."
 
 set -euo pipefail
 

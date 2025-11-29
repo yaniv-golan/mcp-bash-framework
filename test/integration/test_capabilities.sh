@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+TEST_DESC="Capabilities negotiation including listChanged/template flags."
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

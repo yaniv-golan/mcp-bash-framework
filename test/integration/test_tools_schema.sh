@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Integration: tool outputSchema validation and list_changed notification TTL.
+TEST_DESC="Tool outputSchema validation and TTL behavior."
 
 set -euo pipefail
 

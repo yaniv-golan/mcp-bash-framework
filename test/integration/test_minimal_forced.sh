@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Integration: forced minimal mode (even when jq/gojq are available).
+TEST_DESC="Forced minimal mode despite jq availability."
 
 set -euo pipefail
 

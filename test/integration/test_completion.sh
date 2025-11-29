@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+TEST_DESC="Built-in completion provider and cursor handling."
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

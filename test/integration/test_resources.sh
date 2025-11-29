@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+TEST_DESC="Resource discovery, manual overrides, and subscriptions."
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

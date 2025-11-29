@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Integration: unsupported protocol version should return -32602.
+TEST_DESC="Unsupported protocol versions return -32602 errors."
 
 set -euo pipefail
 

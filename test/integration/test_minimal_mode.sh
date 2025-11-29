@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Minimal mode coverage: ensure the fallback JSON parser and reduced capability surface behave.
+TEST_DESC="Minimal mode capabilities and logging validation."
 
 set -euo pipefail
 
