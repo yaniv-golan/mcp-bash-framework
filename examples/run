@@ -20,14 +20,6 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-# Use the same JSON tooling detection as the runtime to avoid drift.
-# shellcheck source=../lib/runtime.sh
-source "${SCRIPT_DIR}/../lib/runtime.sh"
-mcp_runtime_detect_json_tool
-json_tool="${MCPBASH_JSON_TOOL:-minimal}"
-json_tool_bin="${MCPBASH_JSON_TOOL_BIN:-<none>}"
-printf 'JSON tooling: %s (%s)\n' "${json_tool}" "${json_tool_bin}" >&2
-
 # Reuse the framework in-place; only stage example content into a temp project.
 FRAMEWORK_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 export MCPBASH_HOME="${FRAMEWORK_ROOT}"
@@ -38,8 +30,8 @@ mkdir -p "${TMPDIR}/resources"
 mkdir -p "${TMPDIR}/prompts"
 mkdir -p "${TMPDIR}/server.d"
 
-# Copy example content into project directories
-cp -a "${EXAMPLE_DIR}/"* "${TMPDIR}/" 2>/dev/null || true
+# Copy example content into project directories (including dotfiles)
+cp -a "${EXAMPLE_DIR}/." "${TMPDIR}/" 2>/dev/null || true
 
 # Run per-example environment checks if provided
 if [ -x "${TMPDIR}/check-env" ]; then
@@ -65,9 +57,8 @@ if [ -f "${TMPDIR}/config/media_roots.json" ]; then
   fi
 fi
 
-# Debug: List tools dir
-ls -la "${TMPDIR}/tools" >&2
-
 cd "${TMPDIR}" || exit 1
 export MCPBASH_PROJECT_ROOT="${TMPDIR}"
-exec "${FRAMEWORK_ROOT}/bin/mcp-bash"
+
+# Run server in foreground (not exec) so EXIT trap can clean up TMPDIR
+"${FRAMEWORK_ROOT}/bin/mcp-bash"

@@ -131,6 +131,10 @@ export MCP_SDK=/path/to/mcp-bash-framework/sdk
 
 If the SDK can’t be resolved, the script exits with a clear error.
 
+## Roots (scoping filesystem access)
+- If the client supports MCP Roots, mcp-bash requests them after `initialized` and exposes them to tools via env (`MCP_ROOTS_JSON`, `MCP_ROOTS_PATHS`, `MCP_ROOTS_COUNT`) and SDK helpers (`mcp_roots_list`, `mcp_roots_count`, `mcp_roots_contains`).
+- If the client does not provide roots or times out, you can supply them via `MCPBASH_ROOTS="/path/one:/path/two"` or an optional `config/roots.json` in your project. Paths are normalized and enforced consistently.
+
 ## Completions
 
 Completions are registered via `server.d/register.sh` (they are not auto-discovered). A minimal registration snippet:
@@ -157,6 +161,8 @@ The [`examples/`](examples/) directory shows common patterns end-to-end:
 | [**04-resources-basics**](examples/04-resources-basics/) | Listing and reading resources via the built-in file provider. |
 | [**05-prompts-basics**](examples/05-prompts-basics/) | Discovering and rendering prompt templates. |
 | [**06-manual-registration**](examples/06-manual-registration/) | Manual registry overrides, live progress streaming, and a custom resource provider. |
+| [**07-elicitation**](examples/07-elicitation/) | Client-driven elicitation prompts that gate tool execution. |
+| [**08-roots-basics**](examples/08-roots-basics/) | MCP roots scoping for tools; allows/denies file reads based on configured roots. |
 | [**Advanced: ffmpeg-studio**](examples/advanced/ffmpeg-studio/) | Real-world application: video processing pipeline with media inspection (optional, heavy deps). |
 
 ## Features at a Glance

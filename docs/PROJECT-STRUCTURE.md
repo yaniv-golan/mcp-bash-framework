@@ -79,6 +79,10 @@ export MCPBASH_TOOLS_DIR=/app/tools-v2      # Override tools location
 export MCPBASH_PROMPTS_DIR=/shared/prompts  # Shared prompts
 ```
 
+Optional roots config:
+- `MCPBASH_ROOTS="/path/one:/path/two"` – env override (useful for CI/tests).
+- `config/roots.json` – project-level roots fallback when the client doesn’t send roots.
+
 ## Completions
 
 Completions are registered via `server.d/register.sh` (not auto-discovered). A minimal example:

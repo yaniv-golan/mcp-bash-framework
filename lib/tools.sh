@@ -787,6 +787,15 @@ mcp_tools_call() {
 	0) env_limit=65536 ;;
 	esac
 
+	# Roots environment (blocks until roots ready when available)
+	local MCP_ROOTS_JSON MCP_ROOTS_PATHS MCP_ROOTS_COUNT
+	if declare -F mcp_roots_wait_ready >/dev/null 2>&1; then
+		mcp_roots_wait_ready
+		MCP_ROOTS_JSON="$(mcp_roots_get_json)"
+		MCP_ROOTS_PATHS="$(mcp_roots_get_paths)"
+		MCP_ROOTS_COUNT="${#MCPBASH_ROOTS_PATHS[@]}"
+	fi
+
 	local args_env_value="${args_json}"
 	local args_file=""
 	if [ "${#args_json}" -gt "${env_limit}" ]; then
@@ -918,6 +927,11 @@ mcp_tools_call() {
 				"MCP_TOOL_ERROR_FILE=${MCP_TOOL_ERROR_FILE}"
 				"MCP_ELICIT_SUPPORTED=${elicit_supported}"
 			)
+			if declare -F mcp_roots_wait_ready >/dev/null 2>&1; then
+				env_exec+=("MCP_ROOTS_JSON=${MCP_ROOTS_JSON:-[]}")
+				env_exec+=("MCP_ROOTS_PATHS=${MCP_ROOTS_PATHS:-}")
+				env_exec+=("MCP_ROOTS_COUNT=${MCP_ROOTS_COUNT:-0}")
+			fi
 			[ -n "${MCP_TOOL_ARGS_FILE:-}" ] && env_exec+=("MCP_TOOL_ARGS_FILE=${MCP_TOOL_ARGS_FILE}")
 			[ -n "${MCP_TOOL_METADATA_FILE:-}" ] && env_exec+=("MCP_TOOL_METADATA_FILE=${MCP_TOOL_METADATA_FILE}")
 			if [ "${elicit_supported}" = "1" ]; then
@@ -945,6 +959,11 @@ mcp_tools_call() {
 			if [ "${elicit_supported}" = "1" ]; then
 				export MCP_ELICIT_REQUEST_FILE="${elicit_request_file}"
 				export MCP_ELICIT_RESPONSE_FILE="${elicit_response_file}"
+			fi
+			if declare -F mcp_roots_wait_ready >/dev/null 2>&1; then
+				export MCP_ROOTS_JSON="${MCP_ROOTS_JSON:-[]}"
+				export MCP_ROOTS_PATHS="${MCP_ROOTS_PATHS:-}"
+				export MCP_ROOTS_COUNT="${MCP_ROOTS_COUNT:-0}"
 			fi
 		fi
 

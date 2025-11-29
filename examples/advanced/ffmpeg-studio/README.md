@@ -5,7 +5,7 @@
 **What you’ll learn**
 - Long-running tool orchestration with progress updates and cancellation
 - Structured inspection vs text scraping for media metadata
-- Sandboxed file access via configured media roots
+- Sandboxed file access via MCP Roots (client-provided roots) with a safe default fallback
 - Optional elicitation confirmation before overwriting outputs (if the client supports elicitation)
 
 **What it does**
@@ -17,7 +17,7 @@
 **Prereqs**
 - Bash 3.2+
 - `ffmpeg` and `ffprobe` on PATH
-- jq or gojq (required; fs_guard uses it to parse media roots)
+- jq or gojq (used for args parsing/JSON handling)
 
 **Run**
 ```
@@ -48,14 +48,17 @@ Include `_meta.progressToken` to receive progress updates.
 - Access denied: use the bundled `./media/example.mp4`, or update `config/media_roots.json` to include your media paths.
 - Long runtimes: this example is heavy; it’s excluded from the quick smoke ladder.
 
-**Configuring media roots**
-Edit `config/media_roots.json` to set allowed paths:
-```json
-{
-  "roots": [
-    { "path": "./media", "mode": "rw" },
-    { "path": "/Volumes/samples", "mode": "ro" }
-  ]
-}
-```
-`mode: "rw"` allows read/write; `"ro"` is read-only. Paths are normalized; requests outside the allowlist are denied.
+**Roots and file access**
+- By default (no client roots / env / config), the example falls back to the bundled `./media` directory so you can run immediately and use `./media/example.mp4`.
+- Preferred: let your MCP client provide roots. The server will request `roots/list` after initialization and the tools will only operate inside those roots.
+- Override via env for quick testing: `MCPBASH_ROOTS="/path/one:/path/two"`.
+- Project config (optional): create `examples/advanced/ffmpeg-studio/config/roots.json` if you want a project default. Example:
+  ```json
+  {
+    "roots": [
+      { "path": "./media", "name": "Sample Media" },
+      { "path": "/Volumes/samples", "name": "External Samples" }
+    ]
+  }
+  ```
+All paths are normalized; accesses outside the configured roots are denied. Read/write enforcement relies on your filesystem permissions (no custom mode overlay).

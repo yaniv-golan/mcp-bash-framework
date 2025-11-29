@@ -18,27 +18,27 @@ fi
 
 # shellcheck source=../../../sdk/tool-sdk.sh disable=SC1091
 source "${MCP_SDK}/tool-sdk.sh"
+# shellcheck source=../lib/roots.sh disable=SC1091
+source "${script_dir}/../lib/roots.sh"
 
 path="$(mcp_args_get '.path // empty' 2>/dev/null || true)"
 if [ -z "${path}" ] && [ $# -ge 1 ]; then
 	path="$1"
 fi
 
+# Accept bare-string arguments (some clients may send the path as a string instead of an object).
+if [ -z "${path}" ]; then
+	raw_args="$(mcp_args_raw)"
+	if [ -n "${raw_args}" ]; then
+		path="$(printf '%s' "${raw_args}" | jq -r 'if type=="string" then . elif type=="object" then .path // empty else empty end' 2>/dev/null || true)"
+	fi
+fi
+
 if [ -z "${path}" ]; then
 	mcp_fail_invalid_args "Missing required argument: path"
 fi
 
-FFMPEG_STUDIO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-# shellcheck source=../lib/fs_guard.sh disable=SC1091
-source "${FFMPEG_STUDIO_ROOT}/lib/fs_guard.sh"
-
-if ! mcp_ffmpeg_guard_init "${FFMPEG_STUDIO_ROOT}"; then
-	mcp_fail -32603 "Media guard initialization failed"
-fi
-
-if ! full_path="$(mcp_ffmpeg_guard_read_path "${path}")"; then
-	mcp_fail -32602 "Access denied: ${path} is outside configured media roots"
-fi
+full_path="$(ffmpeg_resolve_path "${path}" "read")"
 
 # Validation: File exists
 if [ ! -f "${full_path}" ]; then

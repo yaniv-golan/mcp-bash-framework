@@ -11,6 +11,11 @@ mcp_rpc_pending_path() {
 	printf '%s/pending.%s.path' "${MCPBASH_STATE_DIR}" "${request_id}"
 }
 
+mcp_rpc_callback_path() {
+	local request_id="$1"
+	printf '%s/pending.%s.cb' "${MCPBASH_STATE_DIR}" "${request_id}"
+}
+
 mcp_rpc_next_outgoing_id() {
 	local id="${MCPBASH_NEXT_OUTGOING_ID}"
 	MCPBASH_NEXT_OUTGOING_ID=$((MCPBASH_NEXT_OUTGOING_ID + 1))
@@ -23,15 +28,50 @@ mcp_rpc_register_pending() {
 	printf '%s' "${response_file}" >"$(mcp_rpc_pending_path "${request_id}")"
 }
 
+mcp_rpc_register_callback() {
+	local request_id="$1"
+	local callback="$2"
+	local generation="${3:-0}"
+	printf '%s %s' "${callback}" "${generation}" >"$(mcp_rpc_callback_path "${request_id}")"
+}
+
 mcp_rpc_unregister_pending() {
 	local request_id="$1"
 	rm -f "$(mcp_rpc_pending_path "${request_id}")"
+}
+
+mcp_rpc_cancel_pending() {
+	local request_id="$1"
+	rm -f "$(mcp_rpc_pending_path "${request_id}")" 2>/dev/null || true
+	rm -f "$(mcp_rpc_callback_path "${request_id}")" 2>/dev/null || true
 }
 
 mcp_rpc_handle_response() {
 	local json_payload="$1"
 	local id
 	id="$(mcp_json_extract_id "${json_payload}")"
+
+	# Callback-based responses (e.g., roots/list)
+	local callback_file
+	callback_file="$(mcp_rpc_callback_path "${id}")"
+	if [ -f "${callback_file}" ]; then
+		local callback generation
+		callback="$(cut -d' ' -f1 <"${callback_file}" 2>/dev/null || true)"
+		generation="$(cut -d' ' -f2 <"${callback_file}" 2>/dev/null || true)"
+		rm -f "${callback_file}"
+
+		if [ -z "${callback}" ]; then
+			return 1
+		fi
+
+		if [ -n "${generation}" ] && [ "${generation}" != "0" ] && [ -n "${MCPBASH_ROOTS_GENERATION:-}" ] && [ "${generation}" != "${MCPBASH_ROOTS_GENERATION}" ]; then
+			mcp_logging_debug "mcp.rpc" "Discarding stale response (gen ${generation}, current ${MCPBASH_ROOTS_GENERATION:-0})"
+			return 0
+		fi
+
+		"${callback}" "${json_payload}" "${generation}"
+		return 0
+	fi
 
 	local response_file
 	response_file="$(cat "$(mcp_rpc_pending_path "${id}")" 2>/dev/null || true)"

@@ -60,6 +60,22 @@ mcp_json_quote_text() {
 	printf '"%s"' "${joined}"
 }
 
+mcp_json_escape_string() {
+	local value="$1"
+
+	if [ "${MCPBASH_JSON_TOOL:-none}" != "none" ]; then
+		"${MCPBASH_JSON_TOOL_BIN}" -n --arg v "${value}" '$v'
+		return 0
+	fi
+
+	local escaped="${value//\\/\\\\}"
+	escaped="${escaped//\"/\\\"}"
+	escaped="${escaped//$'\n'/\\n}"
+	escaped="${escaped//$'\r'/\\r}"
+	escaped="${escaped//$'\t'/\\t}"
+	printf '"%s"' "${escaped}"
+}
+
 mcp_json_normalize_line() {
 	local line="$1"
 	line="$(mcp_json_strip_bom "${line}")"

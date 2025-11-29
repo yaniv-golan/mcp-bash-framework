@@ -29,7 +29,7 @@ mcp_spec_resolve_protocol_version() {
 
 mcp_spec_capabilities_full() {
 	cat <<'EOF'
-{"logging":{},"tools":{"listChanged":true},"resources":{"subscribe":true,"listChanged":true,"templates":true},"prompts":{"listChanged":true},"completion":{}}
+{"logging":{},"tools":{"listChanged":true},"resources":{"subscribe":true,"listChanged":true,"templates":true},"prompts":{"listChanged":true},"completion":{},"roots":{"listChanged":true}}
 EOF
 }
 

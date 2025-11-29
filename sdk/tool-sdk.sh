@@ -203,6 +203,45 @@ mcp_emit_json() {
 	printf '%s' "${json}"
 }
 
+# Roots helpers ---------------------------------------------------------------
+
+mcp_roots_list() {
+	printf '%s' "${MCP_ROOTS_PATHS:-}"
+}
+
+mcp_roots_count() {
+	printf '%s' "${MCP_ROOTS_COUNT:-0}"
+}
+
+mcp_roots_contains() {
+	local path="$1"
+	local canonical
+
+	if command -v realpath >/dev/null 2>&1; then
+		canonical="$(realpath -m "${path}" 2>/dev/null)" || canonical="$(realpath "${path}" 2>/dev/null)" || canonical="${path}"
+	else
+		if [[ "${path}" != /* ]]; then
+			canonical="$(cd "$(dirname "${path}")" 2>/dev/null && pwd)/$(basename "${path}")"
+		else
+			canonical="${path}"
+		fi
+	fi
+
+	if [[ "${canonical}" != "/" ]]; then
+		canonical="${canonical%/}"
+	fi
+
+	local root
+	while IFS= read -r root; do
+		[ -n "${root}" ] || continue
+		if [[ "${canonical}" == "${root}" ]] || [[ "${canonical}" == "${root}/"* ]]; then
+			return 0
+		fi
+	done <<<"${MCP_ROOTS_PATHS:-}"
+
+	return 1
+}
+
 # Elicitation helpers ---------------------------------------------------------
 
 MCP_ELICIT_DEFAULT_TIMEOUT="${MCPBASH_ELICITATION_TIMEOUT:-30}"

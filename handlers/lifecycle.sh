@@ -54,6 +54,11 @@ mcp_handle_lifecycle() {
 			mcp_logging_debug "mcp.lifecycle" "Elicitation support=${MCPBASH_CLIENT_SUPPORTS_ELICITATION}"
 		fi
 
+		mcp_roots_capture_capabilities "${client_caps}"
+		if mcp_logging_is_enabled "debug"; then
+			mcp_logging_debug "mcp.lifecycle" "Roots support=${MCPBASH_CLIENT_SUPPORTS_ROOTS} listChanged=${MCPBASH_CLIENT_SUPPORTS_ROOTS_LIST_CHANGED}"
+		fi
+
 		printf '%s' "$(mcp_spec_build_initialize_response "${id}" "${capabilities}" "${negotiated_version}")"
 		;;
 	notifications/initialized | initialized)
@@ -62,6 +67,7 @@ mcp_handle_lifecycle() {
 		if mcp_logging_is_enabled "debug"; then
 			mcp_logging_debug "mcp.lifecycle" "Initialized handshake complete"
 		fi
+		mcp_roots_init_after_initialized
 		printf '%s' "${MCPBASH_NO_RESPONSE}"
 		;;
 	shutdown)

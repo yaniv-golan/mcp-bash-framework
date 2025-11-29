@@ -50,6 +50,7 @@ mcp_core_require_handlers() {
 	. "${MCPBASH_HOME}/handlers/resources.sh"
 	. "${MCPBASH_HOME}/handlers/prompts.sh"
 	. "${MCPBASH_HOME}/handlers/completion.sh"
+	. "${MCPBASH_HOME}/handlers/roots.sh"
 }
 
 mcp_core_bootstrap_state() {
@@ -516,6 +517,9 @@ mcp_core_resolve_handler() {
 		;;
 	completion/*)
 		MCPBASH_RESOLVED_HANDLER="mcp_handle_completion"
+		;;
+	roots/* | notifications/roots/*)
+		MCPBASH_RESOLVED_HANDLER="mcp_handle_roots"
 		;;
 	*)
 		return 1

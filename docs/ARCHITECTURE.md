@@ -95,6 +95,12 @@ Stable modules live under `bin/` and `lib/`, protocol handlers under `handlers/`
 - `lib/prompts.sh` scans `prompts/`, writes `.registry/prompts.json`, paginates deterministically (returning `prompts`, `total`, and optional `nextCursor`), and renders templates with argument schemas into structured and text content.
 - Manual overrides: `server.d/register.sh` can return a `prompts` array.
 
+### Roots
+- `handlers/roots.sh` handles `notifications/roots/list_changed` by re-requesting roots (debounced).
+- `lib/roots.sh` tracks client support, sends `roots/list` after `initialized`, normalizes/percent-decodes `file://` URIs, drops stale responses via generations, and falls back to env/config on errors/timeouts.
+- Tools block on `mcp_roots_wait_ready`; when ready, env includes `MCP_ROOTS_JSON`, `MCP_ROOTS_PATHS`, `MCP_ROOTS_COUNT`. SDK helpers expose `mcp_roots_list`, `mcp_roots_count`, and `mcp_roots_contains`.
+- RPC callbacks in `lib/rpc.sh` route responses to roots without touching existing file-based pending responses.
+
 ### Progress & logs
 - Workers buffer progress and log notifications and flush after handler completion by default.
 - Set `MCPBASH_ENABLE_LIVE_PROGRESS=true` to stream notifications mid-flight; adjust cadence with `MCPBASH_PROGRESS_FLUSH_INTERVAL` (seconds).

@@ -1,0 +1,5 @@
+{
+  "roots": [
+    { "path": "./data", "name": "Example Data" }
+  ]
+}
