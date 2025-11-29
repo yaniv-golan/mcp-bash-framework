@@ -256,7 +256,11 @@ mcp_registry_register_finalize_kind() {
 				return 0
 			fi
 			if [ -n "${script_output}" ]; then
-				mcp_logging_warning "${MCP_TOOLS_LOGGER}" "Manual registration script output: ${script_output}"
+				if mcp_logging_verbose_enabled; then
+					mcp_logging_warning "${MCP_TOOLS_LOGGER}" "Manual registration script output: ${script_output}"
+				else
+					mcp_logging_warning "${MCP_TOOLS_LOGGER}" "Manual registration script produced output (enable MCPBASH_LOG_VERBOSE=true to view)"
+				fi
 			fi
 			if mcp_tools_manual_finalize; then
 				mcp_registry_register_set_status "tools" "ok" ""
@@ -279,7 +283,11 @@ mcp_registry_register_finalize_kind() {
 				return 0
 			fi
 			if [ -n "${script_output}" ]; then
-				mcp_logging_warning "${MCP_RESOURCES_LOGGER}" "Manual registration script output: ${script_output}"
+				if mcp_logging_verbose_enabled; then
+					mcp_logging_warning "${MCP_RESOURCES_LOGGER}" "Manual registration script output: ${script_output}"
+				else
+					mcp_logging_warning "${MCP_RESOURCES_LOGGER}" "Manual registration script produced output (enable MCPBASH_LOG_VERBOSE=true to view)"
+				fi
 			fi
 			if mcp_resources_manual_finalize; then
 				mcp_registry_register_set_status "resources" "ok" ""
@@ -302,7 +310,11 @@ mcp_registry_register_finalize_kind() {
 				return 0
 			fi
 			if [ -n "${script_output}" ]; then
-				mcp_logging_warning "${MCP_PROMPTS_LOGGER}" "Manual registration script output: ${script_output}"
+				if mcp_logging_verbose_enabled; then
+					mcp_logging_warning "${MCP_PROMPTS_LOGGER}" "Manual registration script output: ${script_output}"
+				else
+					mcp_logging_warning "${MCP_PROMPTS_LOGGER}" "Manual registration script produced output (enable MCPBASH_LOG_VERBOSE=true to view)"
+				fi
 			fi
 			if mcp_prompts_manual_finalize; then
 				mcp_registry_register_set_status "prompts" "ok" ""
@@ -327,7 +339,11 @@ mcp_registry_register_finalize_kind() {
 				return 0
 			fi
 			if [ -n "${script_output}" ]; then
-				mcp_logging_warning "${MCP_COMPLETION_LOGGER}" "Manual completion script output: ${script_output}"
+				if mcp_logging_verbose_enabled; then
+					mcp_logging_warning "${MCP_COMPLETION_LOGGER}" "Manual completion script output: ${script_output}"
+				else
+					mcp_logging_warning "${MCP_COMPLETION_LOGGER}" "Manual completion script produced output (enable MCPBASH_LOG_VERBOSE=true to view)"
+				fi
 			fi
 			# shellcheck disable=SC2034  # consumed by completion refresh path in lib/completion.sh
 			if mcp_completion_manual_finalize; then
@@ -405,7 +421,11 @@ mcp_registry_register_execute() {
 		mcp_registry_register_set_status "prompts" "error" "${message}"
 		mcp_registry_register_set_status "completions" "error" "${message}"
 		if [ -n "${script_output}" ]; then
-			mcp_logging_error "mcp.registry" "Manual registration script output: ${script_output}"
+			if mcp_logging_verbose_enabled; then
+				mcp_logging_error "mcp.registry" "Manual registration script output: ${script_output}"
+			else
+				mcp_logging_error "mcp.registry" "Manual registration script failed (enable MCPBASH_LOG_VERBOSE=true for details)"
+			fi
 		fi
 		mcp_registry_register_abort_all
 		MCP_REGISTRY_REGISTER_COMPLETE=true

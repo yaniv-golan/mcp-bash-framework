@@ -167,7 +167,11 @@ mcp_prompts_run_manual_script() {
 		mcp_prompts_manual_abort
 		mcp_prompts_error -32603 "Manual registration script failed"
 		if [ -n "${script_output}" ]; then
-			mcp_logging_error "${MCP_PROMPTS_LOGGER}" "Manual registration script output: ${script_output}"
+			if mcp_logging_verbose_enabled; then
+				mcp_logging_error "${MCP_PROMPTS_LOGGER}" "Manual registration script output: ${script_output}"
+			else
+				mcp_logging_error "${MCP_PROMPTS_LOGGER}" "Manual registration script failed (enable MCPBASH_LOG_VERBOSE=true for details)"
+			fi
 		fi
 		return 1
 	fi
@@ -181,7 +185,11 @@ mcp_prompts_run_manual_script() {
 	fi
 
 	if [ -n "${script_output}" ]; then
-		mcp_logging_warning "${MCP_PROMPTS_LOGGER}" "Manual registration script output: ${script_output}"
+		if mcp_logging_verbose_enabled; then
+			mcp_logging_warning "${MCP_PROMPTS_LOGGER}" "Manual registration script output: ${script_output}"
+		else
+			mcp_logging_warning "${MCP_PROMPTS_LOGGER}" "Manual registration script produced output (enable MCPBASH_LOG_VERBOSE=true to view)"
+		fi
 	fi
 
 	if ! mcp_prompts_manual_finalize; then
@@ -257,6 +265,10 @@ mcp_prompts_apply_manual_json() {
 	MCP_PROMPTS_REGISTRY_HASH="${hash}"
 	MCP_PROMPTS_TOTAL="${total}"
 
+	if mcp_logging_is_enabled "debug"; then
+		mcp_logging_debug "${MCP_PROMPTS_LOGGER}" "Refresh count=${MCP_PROMPTS_TOTAL} hash=${MCP_PROMPTS_REGISTRY_HASH}"
+	fi
+
 	MCP_PROMPTS_LAST_SCAN="$(date +%s)"
 	local write_rc=0
 	mcp_registry_write_with_lock "${MCP_PROMPTS_REGISTRY_PATH}" "${registry_json}" || write_rc=$?
@@ -301,7 +313,11 @@ mcp_prompts_refresh_registry() {
 				MCP_PROMPTS_REGISTRY_JSON=""
 			fi
 		else
-			mcp_logging_warning "${MCP_PROMPTS_LOGGER}" "Failed to read prompt registry cache ${MCP_PROMPTS_REGISTRY_PATH}"
+			if mcp_logging_verbose_enabled; then
+				mcp_logging_warning "${MCP_PROMPTS_LOGGER}" "Failed to read prompt registry cache ${MCP_PROMPTS_REGISTRY_PATH}"
+			else
+				mcp_logging_warning "${MCP_PROMPTS_LOGGER}" "Failed to read prompt registry cache"
+			fi
 			MCP_PROMPTS_REGISTRY_JSON=""
 		fi
 	fi

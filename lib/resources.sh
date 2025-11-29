@@ -390,7 +390,11 @@ mcp_resources_run_manual_script() {
 		mcp_resources_manual_abort
 		mcp_resources_error -32603 "Manual registration script failed"
 		if [ -n "${script_output}" ]; then
-			mcp_logging_error "${MCP_RESOURCES_LOGGER}" "Manual registration script output: ${script_output}"
+			if mcp_logging_verbose_enabled; then
+				mcp_logging_error "${MCP_RESOURCES_LOGGER}" "Manual registration script output: ${script_output}"
+			else
+				mcp_logging_error "${MCP_RESOURCES_LOGGER}" "Manual registration script failed (enable MCPBASH_LOG_VERBOSE=true for details)"
+			fi
 		fi
 		return 1
 	fi
@@ -404,7 +408,11 @@ mcp_resources_run_manual_script() {
 	fi
 
 	if [ -n "${script_output}" ]; then
-		mcp_logging_warning "${MCP_RESOURCES_LOGGER}" "Manual registration script output: ${script_output}"
+		if mcp_logging_verbose_enabled; then
+			mcp_logging_warning "${MCP_RESOURCES_LOGGER}" "Manual registration script output: ${script_output}"
+		else
+			mcp_logging_warning "${MCP_RESOURCES_LOGGER}" "Manual registration script produced output (enable MCPBASH_LOG_VERBOSE=true to view)"
+		fi
 	fi
 
 	if ! mcp_resources_manual_finalize; then
@@ -417,7 +425,15 @@ mcp_resources_refresh_registry() {
 	local scan_root
 	scan_root="$(mcp_resources_scan_root)"
 	mcp_resources_init
-	mcp_logging_debug "${MCP_RESOURCES_LOGGER}" "Refresh start register=${MCPBASH_SERVER_DIR}/register.sh exists=$([[ -x ${MCPBASH_SERVER_DIR}/register.sh ]] && echo yes || echo no) ttl=${MCP_RESOURCES_TTL:-5}"
+	if mcp_logging_is_enabled "debug"; then
+		local register_exists
+		register_exists="$([[ -x "${MCPBASH_SERVER_DIR}/register.sh" ]] && echo yes || echo no)"
+		if mcp_logging_verbose_enabled; then
+			mcp_logging_debug "${MCP_RESOURCES_LOGGER}" "Refresh start register=${MCPBASH_SERVER_DIR}/register.sh exists=${register_exists} ttl=${MCP_RESOURCES_TTL:-5}"
+		else
+			mcp_logging_debug "${MCP_RESOURCES_LOGGER}" "Refresh start exists=${register_exists} ttl=${MCP_RESOURCES_TTL:-5}"
+		fi
+	fi
 	if mcp_registry_register_apply "resources"; then
 		mcp_logging_debug "${MCP_RESOURCES_LOGGER}" "Refresh satisfied by manual script"
 		return 0
@@ -451,7 +467,11 @@ mcp_resources_refresh_registry() {
 				MCP_RESOURCES_REGISTRY_JSON=""
 			fi
 		else
-			mcp_logging_warning "${MCP_RESOURCES_LOGGER}" "Failed to read resource registry cache ${MCP_RESOURCES_REGISTRY_PATH}"
+			if mcp_logging_verbose_enabled; then
+				mcp_logging_warning "${MCP_RESOURCES_LOGGER}" "Failed to read resource registry cache ${MCP_RESOURCES_REGISTRY_PATH}"
+			else
+				mcp_logging_warning "${MCP_RESOURCES_LOGGER}" "Failed to read resource registry cache"
+			fi
 			MCP_RESOURCES_REGISTRY_JSON=""
 		fi
 	fi
@@ -926,7 +946,14 @@ mcp_resources_read() {
 		metadata='{}'
 	fi
 
-	mcp_logging_debug "${MCP_RESOURCES_LOGGER}" "Metadata resolved for name=${name:-<direct>} uri=${explicit_uri}"
+	if mcp_logging_is_enabled "debug"; then
+		if mcp_logging_verbose_enabled; then
+			mcp_logging_debug "${MCP_RESOURCES_LOGGER}" "Metadata resolved for name=${name:-<direct>} uri=${explicit_uri}"
+		else
+			local uri_scheme="${explicit_uri%%:*}"
+			mcp_logging_debug "${MCP_RESOURCES_LOGGER}" "Metadata resolved for name=${name:-<direct>} scheme=${uri_scheme}"
+		fi
+	fi
 
 	local uri provider mime
 	uri="$(echo "${metadata}" | "${MCPBASH_JSON_TOOL_BIN}" -r --arg explicit "${explicit_uri}" 'if $explicit != "" then $explicit else .uri // "" end')"
@@ -946,7 +973,13 @@ mcp_resources_read() {
 			provider="file"
 		fi
 	fi
-	mcp_logging_debug "${MCP_RESOURCES_LOGGER}" "Reading provider=${provider} uri=${uri}"
+	if mcp_logging_is_enabled "debug"; then
+		if mcp_logging_verbose_enabled; then
+			mcp_logging_debug "${MCP_RESOURCES_LOGGER}" "Reading provider=${provider} uri=${uri}"
+		else
+			mcp_logging_debug "${MCP_RESOURCES_LOGGER}" "Reading provider=${provider}"
+		fi
+	fi
 	local content
 	if ! content="$(mcp_resources_read_via_provider "${provider}" "${uri}")"; then
 		return 1

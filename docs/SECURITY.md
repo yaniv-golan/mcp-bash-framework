@@ -15,7 +15,7 @@ mcp-bash keeps the attack surface small: every tool is a subprocess with a contr
 ## Runtime guardrails
 - Default tool env is minimal (`MCPBASH_TOOL_ENV_MODE=minimal` keeps PATH/HOME/TMPDIR/LANG plus `MCP_*`/`MCPBASH_*`). Use `allowlist` via `MCPBASH_TOOL_ENV_ALLOWLIST` or `inherit` only when the tool needs it.
 - Scope file access with `MCP_RESOURCES_ROOTS`; avoid mixing Windows/POSIX roots on Git-Bash/MSYS.
-- Logging defaults to `info` and follows RFC-5424 levels via `logging/setLevel`.
+- Logging defaults to `info` and follows RFC-5424 levels via `logging/setLevel`. Paths and manual-registration script output are redacted unless `MCPBASH_LOG_VERBOSE=true`; avoid enabling verbose mode in shared or remote environments as it exposes file paths, usernames, and cache locations.
 - Manual registration scripts run in-process; only enable trusted code or wrap it to sanitize output.
 - Outbound JSON is escaped and newline-compacted before hitting stdout to keep consumers safe.
 

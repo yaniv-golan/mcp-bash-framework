@@ -434,6 +434,10 @@ mcp_core_dispatch_object() {
 		return
 	fi
 
+	if mcp_logging_is_enabled "debug"; then
+		mcp_logging_debug "mcp.core" "Dispatch method=${method} id=${id_json}"
+	fi
+
 	if [ "${MCPBASH_INITIALIZED}" != true ] && ! mcp_core_method_allowed_preinit "${method}"; then
 		mcp_core_emit_not_initialized "${id_json}"
 		return
@@ -520,6 +524,14 @@ mcp_core_execute_handler() {
 		fi
 		if [ -z "${response}" ]; then
 			response="$(mcp_core_build_error_response "${id_json}" -32603 "Empty handler response" "")"
+		fi
+	fi
+
+	if mcp_logging_is_enabled "debug"; then
+		if [ "${response}" != "${MCPBASH_NO_RESPONSE}" ]; then
+			mcp_logging_debug "mcp.core" "Response id=${id_json} bytes=${#response}"
+		else
+			mcp_logging_debug "mcp.core" "NoResponse id=${id_json}"
 		fi
 	fi
 

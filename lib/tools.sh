@@ -373,7 +373,11 @@ mcp_tools_run_manual_script() {
 		mcp_tools_manual_abort
 		mcp_tools_error -32603 "Manual registration script failed"
 		if [ -n "${script_output}" ]; then
-			mcp_logging_error "${MCP_TOOLS_LOGGER}" "Manual registration script output: ${script_output}"
+			if mcp_logging_verbose_enabled; then
+				mcp_logging_error "${MCP_TOOLS_LOGGER}" "Manual registration script output: ${script_output}"
+			else
+				mcp_logging_error "${MCP_TOOLS_LOGGER}" "Manual registration script failed (enable MCPBASH_LOG_VERBOSE=true for details)"
+			fi
 		fi
 		return 1
 	fi
@@ -387,7 +391,11 @@ mcp_tools_run_manual_script() {
 	fi
 
 	if [ -n "${script_output}" ]; then
-		mcp_logging_warning "${MCP_TOOLS_LOGGER}" "Manual registration script output: ${script_output}"
+		if mcp_logging_verbose_enabled; then
+			mcp_logging_warning "${MCP_TOOLS_LOGGER}" "Manual registration script output: ${script_output}"
+		else
+			mcp_logging_warning "${MCP_TOOLS_LOGGER}" "Manual registration script produced output (enable MCPBASH_LOG_VERBOSE=true to view)"
+		fi
 	fi
 
 	if ! mcp_tools_manual_finalize; then
@@ -598,6 +606,10 @@ mcp_tools_scan() {
 	MCP_TOOLS_REGISTRY_HASH="${hash}"
 	MCP_TOOLS_TOTAL="${total}"
 
+	if mcp_logging_is_enabled "debug"; then
+		mcp_logging_debug "${MCP_TOOLS_LOGGER}" "Refresh count=${MCP_TOOLS_TOTAL} hash=${MCP_TOOLS_REGISTRY_HASH}"
+	fi
+
 	if ! mcp_tools_enforce_registry_limits "${MCP_TOOLS_TOTAL}" "${MCP_TOOLS_REGISTRY_JSON}"; then
 		return 1
 	fi
@@ -802,6 +814,17 @@ mcp_tools_call() {
 	'' | *[!0-9]*) effective_timeout="" ;;
 	esac
 
+	if mcp_logging_is_enabled "debug"; then
+		local arg_count=0
+		if [ -n "${args_json}" ] && [ "${args_json}" != "{}" ]; then
+			arg_count="$(printf '%s' "${args_json}" | "${MCPBASH_JSON_TOOL_BIN}" -r 'keys | length' 2>/dev/null || echo 0)"
+		fi
+		mcp_logging_debug "${MCP_TOOLS_LOGGER}" "Invoke tool=${name} arg_count=${arg_count} timeout=${effective_timeout:-none}"
+		if mcp_logging_verbose_enabled; then
+			mcp_logging_debug "${MCP_TOOLS_LOGGER}" "Tool path=${absolute_path}"
+		fi
+	fi
+
 	local stdout_file stderr_file
 	stdout_file="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-tools-stdout.XXXXXX")"
 	stderr_file="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-tools-stderr.XXXXXX")"
@@ -914,6 +937,12 @@ mcp_tools_call() {
 		fi
 	) >"${stdout_file}" 2>"${stderr_file}" || exit_code=$?
 	exit_code=${exit_code:-0}
+
+	if mcp_logging_is_enabled "debug"; then
+		local stdout_size=0
+		[ -f "${stdout_file}" ] && stdout_size="$(wc -c <"${stdout_file}" | tr -d ' ')"
+		mcp_logging_debug "${MCP_TOOLS_LOGGER}" "Complete tool=${name} exit=${exit_code} stdout_bytes=${stdout_size}"
+	fi
 
 	# Prefer explicit tool-authored errors as early as possible.
 	if [ -n "${tool_error_file}" ] && [ -s "${tool_error_file}" ]; then

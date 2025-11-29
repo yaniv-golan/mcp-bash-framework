@@ -67,6 +67,9 @@ mcp_handle_tools() {
 			return 0
 		fi
 		printf '{"jsonrpc":"2.0","id":%s,"result":%s}' "${id}" "${list_json}"
+		if mcp_logging_is_enabled "debug"; then
+			mcp_logging_debug "${MCP_TOOLS_LOGGER}" "List count=${MCP_TOOLS_TOTAL}"
+		fi
 		;;
 	tools/call)
 		local name args_json timeout_override

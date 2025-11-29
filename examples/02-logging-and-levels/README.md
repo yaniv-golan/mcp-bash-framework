@@ -31,3 +31,4 @@
 - If no logs appear, confirm `logging/setLevel` to `debug` or `info`.
 - If you see minimal-mode warnings, install jq/gojq; minimal mode disables tools/resources/prompts.
 - Avoid CRLF in requests; send LF-only NDJSON.
+- To see full paths in debug logs or manual-registration output in warnings/errors, set `MCPBASH_LOG_VERBOSE=true` (security risk: exposes file paths and usernames).

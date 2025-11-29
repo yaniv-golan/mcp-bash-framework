@@ -37,6 +37,7 @@ This guide distils hands-on recommendations for designing, building, and operati
 | --- | --- | --- |
 | `MCPBASH_FORCE_MINIMAL` | Forces the minimal capability tier even when JSON tooling is available | Useful for testing degraded mode per [README.md](../README.md#runtime-detection) |
 | `MCPBASH_LOG_LEVEL` / `MCPBASH_LOG_LEVEL_DEFAULT` | Sets startup log verbosity (`info` default) | Harmonises with `logging/setLevel` requests; see [§6.2](#62-logging-tracing-and-metrics) |
+| `MCPBASH_LOG_VERBOSE` | Exposes full paths and manual-registration script output in logs | **Security risk**: reveals file paths, usernames, cache locations. Use only in trusted environments; see [docs/LOGGING.md](LOGGING.md) |
 | `MCPBASH_DEBUG_PAYLOADS` | Persists per-message payload logs under `${TMPDIR}/mcpbash.state.*` | Enable only during targeted debugging (storage heavy) |
 | `MCPBASH_MAX_CONCURRENT_REQUESTS` | Caps worker count (default 16 per [docs/LIMITS.md](LIMITS.md)) | Right-size before shipping to resource-constrained hosts |
 | `MCPBASH_MAX_PROGRESS_PER_MIN` / `MCPBASH_MAX_LOGS_PER_MIN` | Throttle progress/log notifications per request | Raise with caution to avoid client overload |
@@ -108,6 +109,7 @@ _Asciinema tip_: Record a short run of `bin/mcp-bash scaffold tool sample.hello`
 
 ### 4.4 Logging & instrumentation
 - Use `MCPBASH_LOG_LEVEL` for startup defaults, then rely on `logging/setLevel` requests for runtime tuning (§6.2).
+- Enable `MCPBASH_LOG_VERBOSE=true` when debugging path-related issues; paths and manual-registration script output are redacted by default. **Warning**: verbose mode exposes file paths and usernames—disable after troubleshooting. See [docs/LOGGING.md](LOGGING.md).
 - Enable `MCPBASH_DEBUG_PAYLOADS` only while debugging parser bugs; purge `${TMPDIR}/mcpbash.state.*` afterward to avoid leaking sensitive payloads.
 
 ### 4.5 Documentation hooks

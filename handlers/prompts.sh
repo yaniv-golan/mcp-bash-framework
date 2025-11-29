@@ -38,6 +38,9 @@ mcp_handle_prompts() {
 			return 0
 		fi
 		printf '{"jsonrpc":"2.0","id":%s,"result":%s}' "${id}" "${list_json}"
+		if mcp_logging_is_enabled "debug"; then
+			mcp_logging_debug "${MCP_PROMPTS_LOGGER}" "List count=${MCP_PROMPTS_TOTAL}"
+		fi
 		;;
 	prompts/get)
 		local name args_json metadata rendered
@@ -71,6 +74,9 @@ mcp_handle_prompts() {
 			return 0
 		fi
 		rendered="${_MCP_PROMPTS_RESULT}"
+		if mcp_logging_is_enabled "debug"; then
+			mcp_logging_debug "${MCP_PROMPTS_LOGGER}" "Get name=${name}"
+		fi
 		printf '{"jsonrpc":"2.0","id":%s,"result":%s}' "${id}" "${rendered}"
 		;;
 	*)

@@ -13,7 +13,7 @@
 - **Progress streaming**: `MCPBASH_ENABLE_LIVE_PROGRESS=true` streams progress/log updates mid-flight; tune `MCPBASH_PROGRESS_FLUSH_INTERVAL` (seconds) to balance responsiveness vs overhead.
 
 ## Diagnostics
-- Enable `MCPBASH_LOG_LEVEL=debug` to log registry fast-path decisions, path resolution, and worker lifecycle events.
+- Enable `MCPBASH_LOG_LEVEL=debug` to log registry fast-path decisions, path resolution, and worker lifecycle events. Add `MCPBASH_LOG_VERBOSE=true` to include full paths in debug output (increases log volume; disable after troubleshooting).
 - Inspect `.registry/*.json` sizes and counts when pagination feels slow; large registries may warrant manual registration or narrower scan roots.
 - Use `ps`/`top`/`htop` to spot runaway tools; align `timeoutSecs` and watchdogs in `lib/timeout.sh` with observed runtimes.
 - On Windows/MSYS, prefer shorter TTLs and smaller payloads to offset filesystem overhead; watch for `MSYS2_ARG_CONV_EXCL` quirks in provider scripts.

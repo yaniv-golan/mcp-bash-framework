@@ -15,6 +15,13 @@
 : "${MCPBASH_JOB_CONTROL_ENABLED:=false}"
 : "${MCPBASH_PROCESS_GROUP_WARNED:=false}"
 
+# Provide a no-op verbose check when logging.sh is not loaded (unit tests source runtime directly).
+if ! command -v mcp_logging_verbose_enabled >/dev/null 2>&1; then
+	mcp_logging_verbose_enabled() {
+		return 1
+	}
+fi
+
 # Content directory variables (set by mcp_runtime_init_paths)
 : "${MCPBASH_REGISTRY_DIR:=}"
 : "${MCPBASH_TOOLS_DIR:=}"
@@ -205,7 +212,11 @@ mcp_runtime_detect_json_tool() {
 		MCPBASH_JSON_TOOL_BIN="${candidate}"
 		MCPBASH_MODE="full"
 		if mcp_runtime_log_allowed; then
-			printf '%s\n' "Detected gojq at ${candidate}; full protocol surface enabled." >&2
+			if mcp_logging_verbose_enabled; then
+				printf '%s\n' "JSON tooling: gojq at ${candidate}; full protocol surface enabled." >&2
+			else
+				printf '%s\n' "JSON tooling: gojq; full protocol surface enabled." >&2
+			fi
 		fi
 		return 0
 	fi
@@ -216,7 +227,11 @@ mcp_runtime_detect_json_tool() {
 		MCPBASH_JSON_TOOL_BIN="${candidate}"
 		MCPBASH_MODE="full"
 		if mcp_runtime_log_allowed; then
-			printf '%s\n' "Detected jq at ${candidate}; full protocol surface enabled." >&2
+			if mcp_logging_verbose_enabled; then
+				printf '%s\n' "JSON tooling: jq at ${candidate}; full protocol surface enabled." >&2
+			else
+				printf '%s\n' "JSON tooling: jq; full protocol surface enabled." >&2
+			fi
 		fi
 		return 0
 	fi

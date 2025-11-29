@@ -188,6 +188,7 @@ The [`examples/`](examples/) directory shows common patterns end-to-end:
 | `MCPBASH_REGISTRY_MAX_BYTES` | `104857600` | Maximum serialized registry size (bytes) before discovery fails fast. |
 | `MCPBASH_MAX_CONCURRENT_REQUESTS` | `16` | Cap concurrent worker slots. |
 | `MCPBASH_LOG_LEVEL` | `info` | Log level. Falls back to `MCPBASH_LOG_LEVEL_DEFAULT` when unset; use `debug` to see path resolution and discovery traces. |
+| `MCPBASH_LOG_VERBOSE` | (unset) | Set to `true` to include full paths and manual-registration script output in logs. **Security note**: exposes file paths and usernames; use only in trusted environments. See [docs/LOGGING.md](docs/LOGGING.md). |
 | `MCPBASH_RESOURCES_POLL_INTERVAL_SECS` | `2` | Background polling interval for resource subscriptions; set to `0` to disable. |
 | `MCPBASH_ENABLE_LIVE_PROGRESS` | `false` | Stream progress/log notifications as they are produced instead of after handler completion. |
 | `MCPBASH_PROGRESS_FLUSH_INTERVAL` | `0.5` | Flush interval (seconds) for live progress/log streaming when enabled. |

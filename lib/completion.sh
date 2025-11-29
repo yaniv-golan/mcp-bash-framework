@@ -323,7 +323,11 @@ mcp_completion_run_manual_script() {
 	if [ "${script_status}" -ne 0 ]; then
 		mcp_completion_manual_abort
 		if [ -n "${script_output}" ]; then
-			mcp_logging_error "${MCP_COMPLETION_LOGGER}" "Manual completion registry output: ${script_output}"
+			if mcp_logging_verbose_enabled; then
+				mcp_logging_error "${MCP_COMPLETION_LOGGER}" "Manual completion registry output: ${script_output}"
+			else
+				mcp_logging_error "${MCP_COMPLETION_LOGGER}" "Manual completion registry failed (enable MCPBASH_LOG_VERBOSE=true for details)"
+			fi
 		fi
 		return 1
 	fi
@@ -337,7 +341,11 @@ mcp_completion_run_manual_script() {
 	fi
 
 	if [ -n "${script_output}" ]; then
-		mcp_logging_warning "${MCP_COMPLETION_LOGGER}" "Manual completion script output: ${script_output}"
+		if mcp_logging_verbose_enabled; then
+			mcp_logging_warning "${MCP_COMPLETION_LOGGER}" "Manual completion script output: ${script_output}"
+		else
+			mcp_logging_warning "${MCP_COMPLETION_LOGGER}" "Manual completion script produced output (enable MCPBASH_LOG_VERBOSE=true to view)"
+		fi
 	fi
 
 	if ! mcp_completion_manual_finalize; then

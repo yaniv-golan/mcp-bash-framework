@@ -41,11 +41,18 @@ mcp_handle_lifecycle() {
 		MCPBASH_INITIALIZE_HANDSHAKE_DONE=true
 		MCPBASH_INITIALIZED=false
 
+		if mcp_logging_is_enabled "debug"; then
+			mcp_logging_debug "mcp.lifecycle" "Initialize requested=${requested_version} negotiated=${negotiated_version}"
+		fi
+
 		printf '%s' "$(mcp_spec_build_initialize_response "${id}" "${capabilities}" "${negotiated_version}")"
 		;;
 	notifications/initialized | initialized)
 		# shellcheck disable=SC2034
 		MCPBASH_INITIALIZED=true
+		if mcp_logging_is_enabled "debug"; then
+			mcp_logging_debug "mcp.lifecycle" "Initialized handshake complete"
+		fi
 		printf '%s' "${MCPBASH_NO_RESPONSE}"
 		;;
 	shutdown)
@@ -53,6 +60,9 @@ mcp_handle_lifecycle() {
 		if [ "${MCPBASH_SHUTDOWN_TIMER_STARTED:-false}" != "true" ]; then
 			MCPBASH_SHUTDOWN_TIMER_STARTED=true
 			mcp_core_start_shutdown_watchdog
+		fi
+		if mcp_logging_is_enabled "debug"; then
+			mcp_logging_debug "mcp.lifecycle" "Shutdown requested"
 		fi
 		printf '{"jsonrpc":"2.0","id":%s,"result":{}}' "${id}"
 		;;

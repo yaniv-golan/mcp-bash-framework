@@ -45,6 +45,10 @@ mcp_logging_is_enabled() {
 	return 0
 }
 
+mcp_logging_verbose_enabled() {
+	[ "${MCPBASH_LOG_VERBOSE:-false}" = "true" ]
+}
+
 mcp_logging_quote() {
 	local text="$1"
 	mcp_json_quote_text "${text}"
