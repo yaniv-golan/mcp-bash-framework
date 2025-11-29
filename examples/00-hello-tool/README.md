@@ -7,7 +7,7 @@
 
 **Prereqs**
 - Bash 3.2+
-- jq or gojq recommended; otherwise minimal mode (text-only output)
+- jq or gojq required; without it the server enters minimal mode and this example is unavailable
 
 **Run**
 ```
@@ -28,5 +28,5 @@
 
 **Troubleshooting**
 - Ensure scripts are executable (`chmod +x examples/run examples/00-hello-tool/tools/*.sh`).
-- If you see minimal-mode warnings, install jq/gojq or accept text-only output.
+- If you see minimal-mode warnings, install jq/gojq; minimal mode disables tools/resources/prompts entirely.
 - Avoid CRLF in requests; send LF-only NDJSON.

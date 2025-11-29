@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Manual registration script; invoked when executable (manual overrides).
+# Preferred pattern is to emit a single JSON registry object (see examples/06-manual-registration/server.d/register.sh).
+# Helper functions remain available for compatibility.
 
 set -euo pipefail
 

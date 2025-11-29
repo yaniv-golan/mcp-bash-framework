@@ -3,11 +3,11 @@
 **What you’ll learn**
 - Emitting structured logs from a tool
 - Changing verbosity via `logging/setLevel`
-- Text vs structured output depending on jq/gojq (no Python fallback)
+- Structured output when jq/gojq is available; minimal mode disables this example
 
 **Prereqs**
 - Bash 3.2+
-- jq or gojq recommended; otherwise minimal mode (text-only output)
+- jq or gojq required; without it the server enters minimal mode and this example is unavailable
 
 **Run**
 ```
@@ -29,4 +29,5 @@
 **Troubleshooting**
 - Ensure scripts are executable (`chmod +x examples/run examples/02-logging-and-levels/tools/*.sh`).
 - If no logs appear, confirm `logging/setLevel` to `debug` or `info`.
+- If you see minimal-mode warnings, install jq/gojq; minimal mode disables tools/resources/prompts.
 - Avoid CRLF in requests; send LF-only NDJSON.

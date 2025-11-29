@@ -20,6 +20,12 @@ mcp_logging_level_rank() {
 	esac
 }
 
+# Normalize default level so invalid env values do not disable logging.
+if [ "$(mcp_logging_level_rank "${MCP_LOG_LEVEL_DEFAULT}")" -eq 999 ]; then
+	MCP_LOG_LEVEL_DEFAULT="info"
+	MCP_LOG_LEVEL_CURRENT="${MCP_LOG_LEVEL_DEFAULT}"
+fi
+
 mcp_logging_set_level() {
 	local level="$1"
 	MCP_LOG_LEVEL_CURRENT="${level}"

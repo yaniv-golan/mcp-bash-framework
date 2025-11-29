@@ -1,23 +1,16 @@
-{
-  "name": "tool.__NAME__",
-  "description": "One-line summary for __NAME__ tool",
-  "inputSchema": {
-    "type": "object",
-    "properties": {
-      "name": {
-        "type": "string",
-        "description": "Optional name to include in the greeting"
-      }
-    }
-  },
-  "outputSchema": {
-    "type": "object",
-    "required": ["message"],
-    "properties": {
-      "message": {
-        "type": "string",
-        "description": "Human-readable message produced by the tool"
-      }
-    }
-  }
-}
+name: "__NAME__"
+description: "One-line summary for __NAME__ tool"
+inputSchema:
+  type: object
+  properties:
+    name:
+      type: string
+      description: "Optional name to include in the greeting"
+outputSchema:
+  type: object
+  required:
+    - message
+  properties:
+    message:
+      type: string
+      description: "Human-readable message produced by the tool"

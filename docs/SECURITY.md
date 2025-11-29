@@ -24,7 +24,7 @@ mcp-bash keeps the attack surface small: every tool is a subprocess with a contr
 - Treat `server.d/register.sh` and provider scripts as privileged code paths; require code review and signing, and avoid executing from writable shared volumes.
 - Run `shellcheck`/`shfmt`/`pre-commit run --all-files` on contributed tools/resources to prevent obvious injection vectors.
 - Periodically review `.registry/*.json` contents for unexpected providers/URIs and revoke filesystem roots that are no longer required.
-- Git resource provider is intentionally not constrained by local resource roots; only enable it in trusted environments or sandbox the server to limit which repositories can be fetched.
+- Git resource provider is intentionally not constrained by local resource roots; only enable it in trusted environments or sandbox the server to limit which repositories can be fetched. It performs a fresh shallow clone per request; for large or frequently accessed repos, run behind an allowlisted proxy/cache or add a small TMPDIR cache keyed by repo/ref to avoid repeated network pulls.
 
 ## Expectations for extensions
 - Validate inputs inside your tools; the framework does not guess what your scripts should accept or reject.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Integration: auto minimal fallback when jq/gojq unavailable.
+# Integration: forced minimal mode (even when jq/gojq are available).
 
 set -euo pipefail
 
@@ -12,7 +12,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "${SCRIPT_DIR}/../common/assert.sh"
 
 test_create_tmpdir
-WORKSPACE="${TEST_TMPDIR}/minimal-auto"
+WORKSPACE="${TEST_TMPDIR}/minimal-forced"
 test_stage_workspace "${WORKSPACE}"
 
 cat <<'JSON' >"${WORKSPACE}/requests.ndjson"
@@ -29,12 +29,12 @@ JSON
 
 init_caps="$(jq -c 'select(.id=="init") | .result.capabilities // empty' "${WORKSPACE}/responses.ndjson")"
 if [ "${init_caps}" != '{"logging":{}}' ]; then
-	test_fail "expected logging-only capabilities when jq/gojq missing, got ${init_caps}"
+	test_fail "expected logging-only capabilities when forced minimal, got ${init_caps}"
 fi
 
 log_code="$(jq -r 'select(.id=="log") | .error.code // empty' "${WORKSPACE}/responses.ndjson")"
 if [ "${log_code}" != "-32602" ]; then
-	test_fail "invalid log level should be rejected in minimal auto mode"
+	test_fail "invalid log level should be rejected in forced minimal mode"
 fi
 
-printf 'Minimal auto-detection tests passed.\n'
+printf 'Forced minimal mode tests passed.\n'

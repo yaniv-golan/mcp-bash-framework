@@ -3,11 +3,11 @@
 **What you’ll learn**
 - Reading arguments with `mcp_args_get`
 - Validation failures surfacing as `isError=true`
-- Structured output when jq/gojq is available; text fallback otherwise
+- Structured output when jq/gojq is available; minimal mode disables the tool entirely
 
 **Prereqs**
 - Bash 3.2+
-- jq or gojq recommended; otherwise minimal mode (text-only output)
+- jq or gojq required; without it the server enters minimal mode and this example is unavailable
 
 **Run**
 ```
@@ -28,5 +28,5 @@
 
 **Troubleshooting**
 - Ensure scripts are executable (`chmod +x examples/run examples/01-args-and-validation/tools/*.sh`).
-- Install jq/gojq for structured JSON output; otherwise expect text-only responses.
+- Install jq/gojq; minimal mode disables tools/resources/prompts.
 - Avoid CRLF in requests; send LF-only NDJSON.

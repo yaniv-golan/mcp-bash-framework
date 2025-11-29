@@ -882,6 +882,9 @@ mcp_resources_read_via_provider() {
 		5)
 			mcp_resources_error -32603 "${message:-Resource fetch failed}"
 			;;
+		6)
+			mcp_resources_error -32603 "${message:-Resource exceeded size limit}"
+			;;
 		*)
 			mcp_resources_error -32603 "${message:-Resource provider failed}"
 			;;

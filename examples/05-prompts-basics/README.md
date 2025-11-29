@@ -6,7 +6,7 @@
 
 **Prereqs**
 - Bash 3.2+
-- jq or gojq recommended; otherwise minimal mode (prompts are unavailable in minimal mode)
+- jq or gojq required; otherwise the server enters minimal mode and prompts are unavailable
 
 **Run**
 ```

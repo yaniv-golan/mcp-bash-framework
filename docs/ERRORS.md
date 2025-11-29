@@ -28,6 +28,12 @@ Example `resources/read` error payload:
 
 Size guardrails: `mcp_core_guard_response_size` rejects oversized responses with `-32603` (tool/resource reads use `MCPBASH_MAX_TOOL_OUTPUT_SIZE`, default 10MB; registry/list payloads use `MCPBASH_REGISTRY_MAX_BYTES`, default 100MB) and does not return partial content.
 
+## Resource provider exit codes
+- `file.sh`: `2` outside allowed roots → `-32603`; `3` missing file → `-32601`.
+- `git.sh`: `4` invalid URI or missing git → `-32602`; `5` clone/fetch failure → `-32603`.
+- `https.sh`: `4` invalid URI or missing curl/wget → `-32602`; `5` network/timeout → `-32603`; `6` payload exceeds `MCPBASH_HTTPS_MAX_BYTES` → `-32603`.
+- Any other provider exit code maps to `-32603` with stderr text when available.
+
 ## Troubleshooting Quick Hits
 - **Unsupported protocol (`-32602`)**: Client requested an older MCP version. Update the client or request `2025-03-26`/`2025-06-18`.
 - **Invalid cursor (`-32602`)**: Drop the cursor to restart pagination; ensure clients do not cache cursors across registry refreshes.

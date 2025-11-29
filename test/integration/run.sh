@@ -21,7 +21,7 @@ TESTS=(
 	"test_lifecycle_gating.sh"
 	"test_resources_providers.sh"
 	"test_minimal_mode.sh"
-	"test_minimal_auto.sh"
+	"test_minimal_forced.sh"
 	"test_protocol_reject_unknown.sh"
 	"test_registry_refresh.sh"
 	"test_registry_limits.sh"

@@ -1,7 +1,5 @@
-{
-  "name": "resource.__NAME__",
-  "description": "Describe the resource content",
-  "uri": "__RESOURCE_URI__",
-  "mimeType": "text/plain",
-  "provider": "file"
-}
+name: "resource.__NAME__"
+description: "Describe the resource content"
+uri: "__RESOURCE_URI__"
+mimeType: "text/plain"
+provider: "file"

@@ -16,6 +16,6 @@ labels: bug
 - mcp-bash version:
 - Platform (macOS/Linux/Windows):
 - JSON tool (gojq/jq) and version:
+- MCP client and version (Inspector, Claude, Cursor, etc.):
 
 ### Additional Context
-

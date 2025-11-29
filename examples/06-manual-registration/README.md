@@ -7,7 +7,7 @@
 
 **Prereqs**
 - Bash 3.2+
-- jq or gojq recommended; otherwise minimal mode (manual registry still works but capabilities are limited)
+- jq or gojq required; otherwise the server enters minimal mode and manual registry entries are not exposed
 
 **Run**
 ```
@@ -33,4 +33,5 @@ bin/mcp-bash
 **Troubleshooting**
 - Ensure scripts are executable (`chmod +x examples/06-manual-registration/server.d/register.sh examples/06-manual-registration/tools/*.sh`).
 - Live progress requires `MCPBASH_ENABLE_LIVE_PROGRESS=true`; otherwise notifications flush at completion.
+- If you see minimal-mode warnings, install jq/gojq; minimal mode disables tools/resources/prompts.
 - Avoid CRLF in requests; send LF-only NDJSON.

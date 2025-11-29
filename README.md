@@ -229,6 +229,17 @@ The [`examples/`](examples/) directory shows common patterns end-to-end:
 ### Development Requirements
 If you plan to contribute to the core framework, see [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions (linting, tests, etc).
 
+### Testing (quick start)
+From the repo root:
+```bash
+./test/lint.sh
+./test/unit/run.sh
+./test/integration/run.sh
+# Optional:
+# ./test/compatibility/run.sh
+# ./test/stress/run.sh
+```
+
 ### Windows Notes
 - Signals from the client may not reliably terminate subprocesses on Git Bash; prefer explicit `shutdown`/`exit` and short tool timeouts.
 - Paths are normalized to `/c/...` style; avoid mixing Windows- and POSIX-style roots in the same project.

@@ -7,7 +7,7 @@
 
 **Prereqs**
 - Bash 3.2+
-- jq or gojq recommended; otherwise minimal mode (text-only output)
+- jq or gojq required; without it the server enters minimal mode and this example is unavailable
 
 **Run**
 ```
@@ -28,6 +28,6 @@
 
 **Troubleshooting**
 - Ensure files are in place (`examples/04-resources-basics/resources/*`) and readable.
-- Install jq/gojq for structured JSON output; otherwise expect text-only responses.
+- Install jq/gojq; minimal mode disables tools/resources/prompts.
 - Avoid CRLF in requests; send LF-only NDJSON.
 - For live updates, see `resources/subscribe` in docs (not part of this basic run).

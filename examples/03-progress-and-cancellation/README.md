@@ -3,11 +3,11 @@
 **What you’ll learn**
 - Emitting progress notifications with a progress token
 - Cooperative cancellation surfaced as `-32001` cancellation
-- Text vs structured output depending on jq/gojq (no Python fallback)
+- Structured output when jq/gojq is available; minimal mode disables this example
 
 **Prereqs**
 - Bash 3.2+
-- jq or gojq recommended; otherwise minimal mode (text-only output)
+- jq or gojq required; without it the server enters minimal mode and this example is unavailable
 
 **Run**
 ```
@@ -30,4 +30,5 @@
 **Troubleshooting**
 - Ensure scripts are executable (`chmod +x examples/run examples/03-progress-and-cancellation/tools/*.sh`).
 - If you don’t see progress, include `_meta.progressToken` in the call.
+- If you see minimal-mode warnings, install jq/gojq; minimal mode disables tools/resources/prompts.
 - Avoid CRLF in requests; send LF-only NDJSON.
