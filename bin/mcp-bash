@@ -224,58 +224,29 @@ mcp_registry_refresh_cli() {
 		shift
 	done
 
+	# Set PROJECT_ROOT before library load
 	if [ -n "${project_root}" ]; then
-		MCPBASH_PROJECT_ROOT="${project_root%/}"
+		MCPBASH_PROJECT_ROOT="${project_root}"
 		export MCPBASH_PROJECT_ROOT
 		no_notify="true" # implied by --project-root (offline mode)
 	fi
-	if [ -z "${MCPBASH_TMP_ROOT:-}" ]; then
-		MCPBASH_TMP_ROOT="${TMPDIR:-/tmp}"
-	fi
-	if [ -z "${MCPBASH_LOCK_ROOT:-}" ]; then
-		MCPBASH_LOCK_ROOT="${MCPBASH_TMP_ROOT%/}/mcpbash.locks"
-	fi
-	if [ -z "${MCPBASH_STATE_DIR:-}" ]; then
-		MCPBASH_STATE_DIR="${MCPBASH_TMP_ROOT%/}/mcpbash.state.$$"
-	fi
-	if [ -z "${MCPBASH_REGISTRY_DIR:-}" ]; then
-		MCPBASH_REGISTRY_DIR="${MCPBASH_PROJECT_ROOT%/}/.registry"
-	fi
-	if [ -z "${MCPBASH_TOOLS_DIR:-}" ]; then
-		MCPBASH_TOOLS_DIR="${MCPBASH_PROJECT_ROOT%/}/tools"
-	fi
-	if [ -z "${MCPBASH_RESOURCES_DIR:-}" ]; then
-		MCPBASH_RESOURCES_DIR="${MCPBASH_PROJECT_ROOT%/}/resources"
-	fi
-	if [ -z "${MCPBASH_PROMPTS_DIR:-}" ]; then
-		MCPBASH_PROMPTS_DIR="${MCPBASH_PROJECT_ROOT%/}/prompts"
-	fi
-	export MCPBASH_PROJECT_ROOT MCPBASH_REGISTRY_DIR MCPBASH_TOOLS_DIR MCPBASH_RESOURCES_DIR MCPBASH_PROMPTS_DIR MCPBASH_TMP_ROOT MCPBASH_LOCK_ROOT MCPBASH_STATE_DIR
-	mkdir -p "${MCPBASH_LOCK_ROOT}" "${MCPBASH_STATE_DIR}" "${MCPBASH_REGISTRY_DIR}" >/dev/null 2>&1 || true
-	MCP_TOOLS_REGISTRY_PATH="${MCPBASH_REGISTRY_DIR}/tools.json"
-	MCP_RESOURCES_REGISTRY_PATH="${MCPBASH_REGISTRY_DIR}/resources.json"
-	MCP_PROMPTS_REGISTRY_PATH="${MCPBASH_REGISTRY_DIR}/prompts.json"
+
+	# Quiet mode (set before library load for logging)
 	if [ "${quiet}" = "true" ]; then
 		MCPBASH_LOG_LEVEL="error"
-		export MCPBASH_LOG_LEVEL
 		MCPBASH_QUIET="true"
-		export MCPBASH_QUIET
+		export MCPBASH_LOG_LEVEL MCPBASH_QUIET
 	fi
+
+	# Filter path
 	if [ -n "${filter_path}" ]; then
 		export MCPBASH_REGISTRY_REFRESH_PATH="${filter_path}"
 	fi
 
+	# Load libraries and init paths with CLI mode
 	require_bash_runtime
 	initialize_runtime_paths
-	if [ -z "${MCPBASH_TMP_ROOT:-}" ]; then
-		MCPBASH_TMP_ROOT="${TMPDIR:-/tmp}"
-	fi
-	if [ -z "${MCPBASH_LOCK_ROOT:-}" ]; then
-		MCPBASH_LOCK_ROOT="${MCPBASH_TMP_ROOT%/}/mcpbash.locks"
-	fi
-	if [ -z "${MCPBASH_STATE_DIR:-}" ]; then
-		MCPBASH_STATE_DIR="${MCPBASH_TMP_ROOT%/}/mcpbash.state.$$"
-	fi
+	mcp_runtime_init_paths "cli"
 	mcp_lock_init
 	mcp_runtime_detect_json_tool
 	mcp_runtime_log_batch_mode

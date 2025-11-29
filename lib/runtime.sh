@@ -74,8 +74,13 @@ EOF
 }
 
 mcp_runtime_init_paths() {
+	local mode="${1:-server}"
+
 	# Require MCPBASH_PROJECT_ROOT to be set
 	mcp_runtime_require_project_root
+
+	# Normalize PROJECT_ROOT (strip trailing slash for consistent path construction)
+	MCPBASH_PROJECT_ROOT="${MCPBASH_PROJECT_ROOT%/}"
 
 	# Temporary/state directories
 	if [ -z "${MCPBASH_TMP_ROOT}" ]; then
@@ -84,24 +89,37 @@ mcp_runtime_init_paths() {
 		MCPBASH_TMP_ROOT="${tmp}"
 	fi
 
-	if [ -z "${MCPBASH_STATE_SEED}" ]; then
-		MCPBASH_STATE_SEED="${RANDOM}" # STATE_SEED initialized once per boot.
-	fi
-
-	if [ -z "${MCPBASH_STATE_DIR}" ]; then
-		local pid_component
-		if [ -n "${BASHPID-}" ]; then
-			pid_component="${BASHPID}"
-		else
-			pid_component="$$"
+	# State/lock paths - mode-dependent
+	if [ "${mode}" = "cli" ]; then
+		# CLI: simpler paths, shared locks, no cleanup needed
+		if [ -z "${MCPBASH_STATE_DIR}" ]; then
+			MCPBASH_STATE_DIR="${MCPBASH_TMP_ROOT}/mcpbash.state.$$"
 		fi
-		MCPBASH_STATE_DIR="${MCPBASH_TMP_ROOT}/mcpbash.state.${PPID}.${pid_component}.${MCPBASH_STATE_SEED}"
+		if [ -z "${MCPBASH_LOCK_ROOT}" ]; then
+			MCPBASH_LOCK_ROOT="${MCPBASH_TMP_ROOT}/mcpbash.locks"
+		fi
+	else
+		# Server: instance-isolated paths with cleanup
+		if [ -z "${MCPBASH_STATE_SEED}" ]; then
+			MCPBASH_STATE_SEED="${RANDOM}" # STATE_SEED initialized once per boot.
+		fi
+		if [ -z "${MCPBASH_STATE_DIR}" ]; then
+			local pid_component
+			if [ -n "${BASHPID-}" ]; then
+				pid_component="${BASHPID}"
+			else
+				pid_component="$$"
+			fi
+			MCPBASH_STATE_DIR="${MCPBASH_TMP_ROOT}/mcpbash.state.${PPID}.${pid_component}.${MCPBASH_STATE_SEED}"
+		fi
+		# Default lock root is instance-scoped to avoid cross-process interference (e.g., lingering servers on Windows).
+		if [ -z "${MCPBASH_LOCK_ROOT}" ]; then
+			MCPBASH_LOCK_ROOT="${MCPBASH_STATE_DIR}/locks"
+		fi
 	fi
 
-	# Default lock root is instance-scoped to avoid cross-process interference (e.g., lingering servers on Windows).
-	if [ -z "${MCPBASH_LOCK_ROOT}" ]; then
-		MCPBASH_LOCK_ROOT="${MCPBASH_STATE_DIR}/locks"
-	fi
+	# Create state directory (needed for fastpath caching in registry refresh)
+	mkdir -p "${MCPBASH_STATE_DIR}" >/dev/null 2>&1 || true
 
 	# Content directories: explicit override → project default
 	# Registry: hidden .registry in project for cache files
