@@ -93,7 +93,17 @@ mcp_elicitation_handle_tool_request() {
 	response_file="$(mcp_elicitation_response_path_for_worker "${key}")"
 
 	local request_json
-	request_json="$(cat "${request_file}")"
+	# The tool may time out and clean up the request file before the poller can
+	# read it (seen intermittently on Windows runners). Handle the race
+	# gracefully instead of crashing the server under set -e.
+	if [ ! -f "${request_file}" ]; then
+		return 0
+	fi
+	request_json="$(cat "${request_file}" 2>/dev/null || true)"
+	if [ -z "${request_json}" ]; then
+		rm -f "${request_file}"
+		return 0
+	fi
 	rm -f "${request_file}"
 
 	# If client doesn't support elicitation, respond immediately so tool can proceed
