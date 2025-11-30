@@ -1,5 +1,7 @@
 # mcp-bash
 
+[![mcp-bash framework banner](assets/mcp-bash-framework.png)](assets/mcp-bash-framework.png)
+
 [![CI](https://img.shields.io/github/actions/workflow/status/yaniv-golan/mcp-bash-framework/ci.yml?branch=main&label=CI)](https://github.com/yaniv-golan/mcp-bash-framework/actions)
 [![License](https://img.shields.io/github/license/yaniv-golan/mcp-bash-framework)](LICENSE)
 [![Bash](https://img.shields.io/badge/bash-%3E%3D3.2-green.svg)](https://www.gnu.org/software/bash/)
