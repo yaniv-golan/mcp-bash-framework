@@ -221,7 +221,7 @@ The [`examples/`](examples/) directory shows common patterns end-to-end:
 
 | Mode | Supported surface | Limitations / when it applies |
 |------|-------------------|--------------------------------|
-| Full | Lifecycle, ping, logging/setLevel, tools/resources/prompts (list, call/read/subscribe), completion, pagination, `list_changed` notifications | Requires `jq`/`gojq` available; default mode. |
+| Full | Lifecycle, ping, logging/setLevel, tools/resources/prompts (list, call/read/subscribe), completion, pagination, `listChanged` notifications | Requires `jq`/`gojq` available; default mode. |
 | Minimal | Lifecycle, ping, logging/setLevel | Tools/resources/prompts/completion are disabled and registry notifications are suppressed. Activated when no JSON tool is found or `MCPBASH_FORCE_MINIMAL=true`. |
 
 ### Registry Maintenance
