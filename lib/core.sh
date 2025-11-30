@@ -1086,14 +1086,19 @@ mcp_core_start_progress_flusher() {
 		return 0
 	fi
 	(
+		# Keep this loop resilient on platforms where individual iterations may
+		# fail (e.g., Git Bash background quirks).
+		set +e
 		while :; do
 			if [ "${MCPBASH_ENABLE_LIVE_PROGRESS:-false}" = "true" ]; then
-				mcp_core_flush_worker_streams_once
+				mcp_core_flush_worker_streams_once || true
 			fi
 			if declare -F mcp_elicitation_process_requests >/dev/null 2>&1; then
-				mcp_elicitation_process_requests
+				mcp_elicitation_process_requests || true
 			fi
-			sleep "${MCPBASH_PROGRESS_FLUSH_INTERVAL:-0.5}"
+			# Windows Git Bash may reject fractional sleep intervals; fall back to
+			# a 1s tick instead of exiting the flusher.
+			sleep "${MCPBASH_PROGRESS_FLUSH_INTERVAL:-0.5}" 2>/dev/null || sleep 1
 		done
 	) &
 	MCPBASH_PROGRESS_FLUSHER_PID=$!
