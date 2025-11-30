@@ -772,7 +772,6 @@ mcp_tools_call() {
 	local elicit_request_file=""
 	local elicit_response_file=""
 	local elicit_key="${MCPBASH_WORKER_KEY:-${key:-}}"
-	local elicit_pump_pid=""
 	if declare -F mcp_elicitation_is_supported >/dev/null 2>&1 && [ -n "${elicit_key}" ]; then
 		if mcp_elicitation_is_supported; then
 			elicit_supported="1"
@@ -784,17 +783,6 @@ mcp_tools_call() {
 	if mcp_logging_is_enabled "debug"; then
 		mcp_logging_debug "${MCP_TOOLS_LOGGER}" "Elicitation env supported=${elicit_supported} request=${elicit_request_file:-none} response=${elicit_response_file:-none}"
 	fi
-	if [ "${elicit_supported}" = "1" ] && declare -F mcp_elicitation_process_requests >/dev/null 2>&1; then
-		(
-			set +e
-			local interval="${MCPBASH_ELICITATION_POLL_INTERVAL:-0.1}"
-			while :; do
-				mcp_elicitation_process_requests || true
-				sleep "${interval}" 2>/dev/null || sleep 1
-			done
-		) &
-		elicit_pump_pid=$!
-	fi
 
 	cleanup_tool_temp_files() {
 		# Preserve temp files when debugging so we can inspect tool I/O.
@@ -805,11 +793,6 @@ mcp_tools_call() {
 		[ -n "${tool_error_file}" ] && rm -f "${tool_error_file}"
 		[ -n "${args_file}" ] && rm -f "${args_file}"
 		[ -n "${metadata_file}" ] && rm -f "${metadata_file}"
-		if [ -n "${elicit_pump_pid}" ]; then
-			kill "${elicit_pump_pid}" 2>/dev/null || true
-			wait "${elicit_pump_pid}" 2>/dev/null || true
-			elicit_pump_pid=""
-		fi
 	}
 
 	local exit_code

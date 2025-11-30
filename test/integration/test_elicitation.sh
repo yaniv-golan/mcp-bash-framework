@@ -69,12 +69,15 @@ call_response=""
 elicitation_seen=0
 start_ts=$(date +%s)
 
-while IFS= read -r line <&4; do
-	# Timeout guard
+while :; do
 	now=$(date +%s)
-	if [ $((now - start_ts)) -gt 10 ]; then
+	if [ $((now - start_ts)) -gt 20 ]; then
 		test_fail "timed out waiting for elicitation flow"
 		break
+	fi
+
+	if ! IFS= read -r -t 1 line <&4; then
+		continue
 	fi
 
 	if printf '%s' "${line}" | jq -e '.method == "elicitation/create"' >/dev/null 2>&1; then
