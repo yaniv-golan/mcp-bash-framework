@@ -33,6 +33,17 @@ Most MCP servers assume you’re willing to spin up heavyweight runtimes and fra
 git clone https://github.com/yaniv-golan/mcp-bash-framework.git ~/mcp-bash-framework
 ```
 
+### 1.5 (Optional) Verify Your Install
+
+Run the tiny hello example to confirm `mcp-bash` starts, registers a tool, and returns a response:
+
+```bash
+cd ~/mcp-bash-framework
+npx @modelcontextprotocol/inspector --transport stdio -- ./examples/run 00-hello-tool
+```
+
+If you don't have Node/npx, you can also point any stdio MCP client at `./examples/run 00-hello-tool`.
+
 ### 2. Create Your Project
 
 Your server code lives in a separate project directory:
