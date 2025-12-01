@@ -1,0 +1,15 @@
+{
+  "name": "__NAME__",
+  "title": "__TITLE__",
+  "version": "0.1.0",
+  "description": "One-line description of this MCP server",
+  "websiteUrl": "https://example.com",
+  "icons": [
+    {
+      "src": "https://example.com/icon.svg",
+      "sizes": ["any"],
+      "mimeType": "image/svg+xml"
+    }
+  ]
+}
+

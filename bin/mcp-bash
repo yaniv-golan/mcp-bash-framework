@@ -16,6 +16,8 @@ Usage:
   mcp-bash scaffold prompt <name>
   mcp-bash scaffold resource <name>
   mcp-bash registry refresh [--project-root DIR] [--no-notify] [--quiet] [--filter PATH]
+
+Note: running without MCPBASH_PROJECT_ROOT starts a temporary getting-started helper tool.
 EOF
 }
 
@@ -326,9 +328,8 @@ EOF
 }
 
 # Keep a stable, versioned core separated from extension directories.
-MCPBASH_SERVER_NAME="mcp-bash"
-MCPBASH_SERVER_TITLE="MCP Bash Server"
-MCPBASH_SERVER_VERSION="0.1.0"
+# Server metadata (name, version, title, etc.) is loaded from server.d/server.meta.json
+# with smart defaults derived from the project structure. See mcp_runtime_load_server_meta().
 MCPBASH_PROTOCOL_VERSION="2025-06-18"
 MCPBASH_NEGOTIATED_PROTOCOL_VERSION="${MCPBASH_PROTOCOL_VERSION}"
 MCPBASH_HOME=""
@@ -396,6 +397,8 @@ initialize_runtime_paths() {
 	# shellcheck disable=SC1090
 	. "${MCPBASH_HOME}/lib/completion.sh"
 	# shellcheck disable=SC1090
+	. "${MCPBASH_HOME}/lib/timeout.sh"
+	# shellcheck disable=SC1090
 	. "${MCPBASH_HOME}/lib/elicitation.sh"
 	# shellcheck disable=SC1090
 	. "${MCPBASH_HOME}/lib/roots.sh"
@@ -425,7 +428,7 @@ main() {
 	mcp_runtime_detect_json_tool
 	mcp_runtime_log_batch_mode
 
-	trap 'mcp_runtime_cleanup' EXIT INT TERM
+	trap 'mcp_runtime_cleanup' EXIT INT TERM HUP
 
 	if mcp_runtime_is_minimal_mode; then
 		# Warn about reduced capability surface.
@@ -442,7 +445,13 @@ case "${1-}" in
 	exit 0
 	;;
 --version | -v)
-	printf 'mcp-bash %s\n' "${MCPBASH_SERVER_VERSION}"
+	# Read framework version from VERSION file
+	_version_file="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/VERSION"
+	if [ -f "${_version_file}" ]; then
+		printf 'mcp-bash %s\n' "$(tr -d '[:space:]' <"${_version_file}")"
+	else
+		printf 'mcp-bash (unknown version)\n'
+	fi
 	exit 0
 	;;
 esac

@@ -36,6 +36,7 @@ mcp_register_prompt() {
 }
 
 mcp_core_run() {
+	# Args: (none) - sets up handlers, state, main read loop, and waits for workers.
 	mcp_core_require_handlers
 	mcp_core_bootstrap_state
 	mcp_core_read_loop
@@ -59,6 +60,7 @@ mcp_core_bootstrap_state() {
 	MCPBASH_INITIALIZE_HANDSHAKE_DONE=false
 	_MCP_NOTIFICATION_PAYLOAD=""
 	mcp_runtime_init_paths
+	mcp_runtime_load_server_meta
 	mcp_ids_init_state
 	mcp_lock_init
 	mcp_io_init
@@ -339,6 +341,9 @@ mcp_core_rate_limit() {
 
 	[ -z "${key}" ] && return 0
 
+	# Simple sliding window: track timestamps per key/kind in a local file and drop
+	# events once the per-minute quota is exhausted. Uses coarse locking because
+	# rate limiting is best-effort and should not block the main loop for long.
 	case "${kind}" in
 	progress) limit="${MCPBASH_MAX_PROGRESS_PER_MIN:-100}" ;;
 	log) limit="${MCPBASH_MAX_LOGS_PER_MIN:-${MCPBASH_MAX_PROGRESS_PER_MIN:-100}}" ;;
@@ -382,6 +387,8 @@ mcp_core_handle_line() {
 	local normalized_line
 	local method
 
+	# Args:
+	#   raw_line - raw JSON-RPC line from stdin (may contain arrays or responses).
 	# Log incoming request for debugging
 	if mcp_io_debug_enabled; then
 		mcp_io_debug_log "request" "-" "recv" "${raw_line}"
@@ -443,6 +450,9 @@ mcp_core_dispatch_object() {
 	local async="false"
 	local id_json
 
+	# Args:
+	#   json_line - normalized JSON-RPC object (single request/notification).
+	#   method    - extracted method name used to resolve handler.
 	if [ "${method}" = "notifications/cancelled" ]; then
 		mcp_core_handle_cancel_notification "${json_line}"
 		return
@@ -577,6 +587,9 @@ mcp_core_spawn_worker() {
 
 	mcp_core_wait_for_available_slot
 
+	# Each async request runs in its own background worker with dedicated stderr
+	# capture, optional timeout wrapper, and isolated progress/log streams so
+	# cancellation or noisy tools cannot interfere with other requests.
 	key="$(mcp_core_get_id_key "${id_json}")"
 
 	if [ -n "${key}" ]; then
@@ -631,6 +644,9 @@ mcp_core_timeout_for_method() {
 	local json_line="$2"
 	local timeout_value=""
 
+	# Args:
+	#   method     - JSON-RPC method name (tools/*, resources/*, etc.).
+	#   json_line  - full request payload for extracting per-call timeout.
 	case "${method}" in
 	tools/call)
 		# Tool-level timeouts are enforced inside mcp_tools_call; avoid double-wrapping
@@ -689,6 +705,9 @@ mcp_core_worker_entry() {
 
 	trap 'mcp_core_worker_cleanup "${key}" "${stderr_file}"' EXIT
 
+	# Worker functions emit their response via stdout into a temp file; this shim
+	# folds empty/no-response cases into JSON-RPC errors and handles stream flush
+	# so handlers stay minimal.
 	if ! mcp_core_invoke_handler "${handler}" "${method}" "${json_line}"; then
 		response="$(mcp_core_build_error_response "${id_json}" -32601 "Handler not implemented" "")"
 	else
@@ -815,6 +834,11 @@ mcp_core_cancel_request() {
 
 	if [ -z "${pid}" ]; then
 		return 0
+	fi
+
+	# Allow environments without reliable process groups to opt into PID-only signals.
+	if [ "${MCPBASH_SKIP_PROCESS_GROUP_LOOKUP:-0}" = "1" ]; then
+		pgid=""
 	fi
 
 	mcp_core_send_signal_chain "${pid}" "${pgid}" TERM
@@ -1053,6 +1077,8 @@ mcp_core_flush_stream() {
 	if [ "${size}" -eq "${last_offset}" ]; then
 		return 0
 	fi
+	# Continue emitting from the last offset so progress/log lines survive worker
+	# restarts without replaying already-sent messages.
 	tail -c +$((last_offset + 1)) "${stream}" 2>/dev/null \
 		| while IFS= read -r line || [ -n "${line}" ]; do
 			[ -z "${line}" ] && continue
@@ -1096,6 +1122,8 @@ mcp_core_start_progress_flusher() {
 			if declare -F mcp_elicitation_process_requests >/dev/null 2>&1; then
 				mcp_elicitation_process_requests || true
 			fi
+			# Polling tick drives live progress/log emission and pending
+			# elicitation prompts without blocking request handlers.
 			# Windows Git Bash may reject fractional sleep intervals; fall back to
 			# a 1s tick instead of exiting the flusher.
 			sleep "${MCPBASH_PROGRESS_FLUSH_INTERVAL:-0.5}" 2>/dev/null || sleep 1

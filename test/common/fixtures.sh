@@ -23,18 +23,7 @@ test_stage_example() {
 		test_fail "example ${example_id} not found"
 	fi
 	TMP_WORKDIR="$(mktemp -d "${TEST_TMPDIR}/example.XXXXXX")"
-	# Copy framework files
-	cp -a "${MCPBASH_HOME}/bin" "${TMP_WORKDIR}/"
-	cp -a "${MCPBASH_HOME}/lib" "${TMP_WORKDIR}/"
-	cp -a "${MCPBASH_HOME}/handlers" "${TMP_WORKDIR}/"
-	cp -a "${MCPBASH_HOME}/providers" "${TMP_WORKDIR}/"
-	cp -a "${MCPBASH_HOME}/sdk" "${TMP_WORKDIR}/"
-	cp -a "${MCPBASH_HOME}/scaffold" "${TMP_WORKDIR}/" 2>/dev/null || true
-	# Create project directories
-	mkdir -p "${TMP_WORKDIR}/tools"
-	mkdir -p "${TMP_WORKDIR}/resources"
-	mkdir -p "${TMP_WORKDIR}/prompts"
-	mkdir -p "${TMP_WORKDIR}/server.d"
+	test_stage_workspace "${TMP_WORKDIR}"
 	# Copy example content into project directories
 	cp -a "${EXAMPLE_DIR}/"* "${TMP_WORKDIR}/" 2>/dev/null || true
 	# shellcheck disable=SC2034

@@ -13,23 +13,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 test_create_tmpdir
 
-stage_workspace() {
-	local dest="$1"
-	mkdir -p "${dest}"
-	# Copy framework files
-	cp -a "${MCPBASH_HOME}/bin" "${dest}/"
-	cp -a "${MCPBASH_HOME}/lib" "${dest}/"
-	cp -a "${MCPBASH_HOME}/handlers" "${dest}/"
-	cp -a "${MCPBASH_HOME}/providers" "${dest}/"
-	cp -a "${MCPBASH_HOME}/sdk" "${dest}/"
-	cp -a "${MCPBASH_HOME}/scaffold" "${dest}/" 2>/dev/null || true
-	# Create project directories
-	mkdir -p "${dest}/tools"
-	mkdir -p "${dest}/resources"
-	mkdir -p "${dest}/prompts"
-	mkdir -p "${dest}/server.d"
-}
-
 run_server() {
 	local workdir="$1"
 	local request_file="$2"
@@ -42,7 +25,7 @@ run_server() {
 
 # --- Auto-discovery pagination and structured output ---
 AUTO_ROOT="${TEST_TMPDIR}/auto"
-stage_workspace "${AUTO_ROOT}"
+test_stage_workspace "${AUTO_ROOT}"
 # Remove register.sh to force auto-discovery (chmod -x doesn't work on Windows)
 rm -f "${AUTO_ROOT}/server.d/register.sh"
 mkdir -p "${AUTO_ROOT}/tools"
@@ -106,7 +89,7 @@ test_assert_eq "$exit_code" "0"
 
 # --- Manual registration overrides ---
 MANUAL_ROOT="${TEST_TMPDIR}/manual"
-stage_workspace "${MANUAL_ROOT}"
+test_stage_workspace "${MANUAL_ROOT}"
 mkdir -p "${MANUAL_ROOT}/tools/manual"
 
 cat <<'SH' >"${MANUAL_ROOT}/tools/manual/alpha.sh"
@@ -186,7 +169,7 @@ test_assert_eq "$exit_code" "0"
 
 # --- Tool environment isolation (minimal vs allowlist) ---
 ENV_ROOT="${TEST_TMPDIR}/env"
-stage_workspace "${ENV_ROOT}"
+test_stage_workspace "${ENV_ROOT}"
 mkdir -p "${ENV_ROOT}/tools"
 
 cat <<'META' >"${ENV_ROOT}/tools/env.meta.json"
@@ -251,7 +234,7 @@ fi
 
 # --- Structured tool error propagation ---
 FAIL_ROOT="${TEST_TMPDIR}/fail"
-stage_workspace "${FAIL_ROOT}"
+test_stage_workspace "${FAIL_ROOT}"
 
 cat <<'META' >"${FAIL_ROOT}/tools/fail.meta.json"
 {

@@ -13,14 +13,46 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Set Go paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${RUNNER_OS}" = "Windows" ]; then
+            win_home="$(cygpath -w "${HOME}")"
+            win_gopath="${win_home}\\go"
+            win_gomodcache="${win_gopath}\\pkg\\mod"
+            win_gocache="${LOCALAPPDATA:-${win_home}\\AppData\\Local}\\go-build"
+            echo "GOPATH=${win_gopath}" >> "$GITHUB_ENV"
+            echo "GOMODCACHE=${win_gomodcache}" >> "$GITHUB_ENV"
+            echo "GOCACHE=${win_gocache}" >> "$GITHUB_ENV"
+            echo "$(cygpath -u "${win_gopath}")/bin" >> "$GITHUB_PATH"
+            mkdir -p "$(cygpath -u "${win_gopath}")/bin" "$(cygpath -u "${win_gomodcache}")" "$(cygpath -u "${win_gocache}")"
+          else
+            echo "GOPATH=${HOME}/go" >> "$GITHUB_ENV"
+            echo "GOMODCACHE=${HOME}/go/pkg/mod" >> "$GITHUB_ENV"
+            echo "GOCACHE=${HOME}/.cache/go-build" >> "$GITHUB_ENV"
+            echo "${HOME}/go/bin" >> "$GITHUB_PATH"
+            mkdir -p "${HOME}/go/bin" "${HOME}/go/pkg/mod" "${HOME}/.cache/go-build"
+          fi
       - name: Setup Go
+        id: go
         uses: actions/setup-go@v5
         with:
           go-version: '1.21'
+          cache: true
+          cache-dependency-path: tools/go.sum
+      - name: Cache Go build cache
+        id: gocache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.GOCACHE }}
+          key: ${{ runner.os }}-gocache-${{ hashFiles('tools/go.sum') }}-${{ steps.go.outputs.go-version }}
       - name: Install gojq
         run: |
+          set -euo pipefail
+          pushd tools >/dev/null
           go install github.com/itchyny/gojq/cmd/gojq@v0.12.16
-          echo "$HOME/go/bin" >> "$GITHUB_PATH"
+          popd >/dev/null
       - name: Install lint dependencies
         run: |
           sudo apt-get update
@@ -32,14 +64,46 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Set Go paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${RUNNER_OS}" = "Windows" ]; then
+            win_home="$(cygpath -w "${HOME}")"
+            win_gopath="${win_home}\\go"
+            win_gomodcache="${win_gopath}\\pkg\\mod"
+            win_gocache="${LOCALAPPDATA:-${win_home}\\AppData\\Local}\\go-build"
+            echo "GOPATH=${win_gopath}" >> "$GITHUB_ENV"
+            echo "GOMODCACHE=${win_gomodcache}" >> "$GITHUB_ENV"
+            echo "GOCACHE=${win_gocache}" >> "$GITHUB_ENV"
+            echo "$(cygpath -u "${win_gopath}")/bin" >> "$GITHUB_PATH"
+            mkdir -p "$(cygpath -u "${win_gopath}")/bin" "$(cygpath -u "${win_gomodcache}")" "$(cygpath -u "${win_gocache}")"
+          else
+            echo "GOPATH=${HOME}/go" >> "$GITHUB_ENV"
+            echo "GOMODCACHE=${HOME}/go/pkg/mod" >> "$GITHUB_ENV"
+            echo "GOCACHE=${HOME}/.cache/go-build" >> "$GITHUB_ENV"
+            echo "${HOME}/go/bin" >> "$GITHUB_PATH"
+            mkdir -p "${HOME}/go/bin" "${HOME}/go/pkg/mod" "${HOME}/.cache/go-build"
+          fi
       - name: Setup Go
+        id: go
         uses: actions/setup-go@v5
         with:
           go-version: '1.21'
+          cache: true
+          cache-dependency-path: tools/go.sum
+      - name: Cache Go build cache
+        id: gocache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.GOCACHE }}
+          key: ${{ runner.os }}-gocache-${{ hashFiles('tools/go.sum') }}-${{ steps.go.outputs.go-version }}
       - name: Install gojq
         run: |
+          set -euo pipefail
+          pushd tools >/dev/null
           go install github.com/itchyny/gojq/cmd/gojq@v0.12.16
-          echo "$HOME/go/bin" >> "$GITHUB_PATH"
+          popd >/dev/null
       - name: Unit tests
         run: test/unit/run.sh
 
@@ -53,18 +117,71 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v4
+      - name: Set Go paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${RUNNER_OS}" = "Windows" ]; then
+            win_home="$(cygpath -w "${HOME}")"
+            win_gopath="${win_home}\\go"
+            win_gomodcache="${win_gopath}\\pkg\\mod"
+            win_gocache="${LOCALAPPDATA:-${win_home}\\AppData\\Local}\\go-build"
+            echo "GOPATH=${win_gopath}" >> "$GITHUB_ENV"
+            echo "GOMODCACHE=${win_gomodcache}" >> "$GITHUB_ENV"
+            echo "GOCACHE=${win_gocache}" >> "$GITHUB_ENV"
+            echo "$(cygpath -u "${win_gopath}")/bin" >> "$GITHUB_PATH"
+            mkdir -p "$(cygpath -u "${win_gopath}")/bin" "$(cygpath -u "${win_gomodcache}")" "$(cygpath -u "${win_gocache}")"
+          else
+            echo "GOPATH=${HOME}/go" >> "$GITHUB_ENV"
+            echo "GOMODCACHE=${HOME}/go/pkg/mod" >> "$GITHUB_ENV"
+            echo "GOCACHE=${HOME}/.cache/go-build" >> "$GITHUB_ENV"
+            echo "${HOME}/go/bin" >> "$GITHUB_PATH"
+            mkdir -p "${HOME}/go/bin" "${HOME}/go/pkg/mod" "${HOME}/.cache/go-build"
+          fi
       - name: Setup Go
+        id: go
         uses: actions/setup-go@v5
         with:
           go-version: '1.21'
+          cache: true
+          cache-dependency-path: tools/go.sum
+      - name: Cache Go build cache
+        id: gocache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.GOCACHE }}
+          key: ${{ runner.os }}-gocache-${{ hashFiles('tools/go.sum') }}-${{ steps.go.outputs.go-version }}
       - name: Install gojq
         run: |
+          set -euo pipefail
+          pushd tools >/dev/null
           go install github.com/itchyny/gojq/cmd/gojq@v0.12.16
-          echo "$HOME/go/bin" >> "$GITHUB_PATH"
+          popd >/dev/null
       - name: Smoke tests
         run: test/smoke.sh
       - name: Integration suite
-        run: test/integration/run.sh
+        id: integration
+        run: |
+          set -euo pipefail
+          start="$(date +%s)"
+          test/integration/run.sh
+          end="$(date +%s)"
+          echo "duration=$((end - start))" >> "$GITHUB_OUTPUT"
+      - name: Enforce Windows integration budget
+        if: matrix.os == 'windows-latest'
+        run: |
+          set -euo pipefail
+          warm="${{ steps.go.outputs.cache-hit == 'true' && steps.gocache.outputs.cache-hit == 'true' }}"
+          duration="${{ steps.integration.outputs.duration }}"
+          warn_budget=240
+          fail_budget=900
+          if [ -n "${duration}" ] && [ "${duration}" -gt "${warn_budget}" ]; then
+            echo "::warning ::Integration duration ${duration}s exceeded warning budget ${warn_budget}s (warm caches=${warm})"
+          fi
+          if [ "${warm}" = "true" ] && [ -n "${duration}" ] && [ "${duration}" -gt "${fail_budget}" ]; then
+            echo "Integration exceeded fail budget (${duration}s) with warm caches" >&2
+            exit 1
+          fi
       - name: Examples suite
         run: test/examples/run.sh
 
@@ -73,14 +190,46 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Set Go paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${RUNNER_OS}" = "Windows" ]; then
+            win_home="$(cygpath -w "${HOME}")"
+            win_gopath="${win_home}\\go"
+            win_gomodcache="${win_gopath}\\pkg\\mod"
+            win_gocache="${LOCALAPPDATA:-${win_home}\\AppData\\Local}\\go-build"
+            echo "GOPATH=${win_gopath}" >> "$GITHUB_ENV"
+            echo "GOMODCACHE=${win_gomodcache}" >> "$GITHUB_ENV"
+            echo "GOCACHE=${win_gocache}" >> "$GITHUB_ENV"
+            echo "$(cygpath -u "${win_gopath}")/bin" >> "$GITHUB_PATH"
+            mkdir -p "$(cygpath -u "${win_gopath}")/bin" "$(cygpath -u "${win_gomodcache}")" "$(cygpath -u "${win_gocache}")"
+          else
+            echo "GOPATH=${HOME}/go" >> "$GITHUB_ENV"
+            echo "GOMODCACHE=${HOME}/go/pkg/mod" >> "$GITHUB_ENV"
+            echo "GOCACHE=${HOME}/.cache/go-build" >> "$GITHUB_ENV"
+            echo "${HOME}/go/bin" >> "$GITHUB_PATH"
+            mkdir -p "${HOME}/go/bin" "${HOME}/go/pkg/mod" "${HOME}/.cache/go-build"
+          fi
       - name: Setup Go
+        id: go
         uses: actions/setup-go@v5
         with:
           go-version: '1.21'
+          cache: true
+          cache-dependency-path: tools/go.sum
+      - name: Cache Go build cache
+        id: gocache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.GOCACHE }}
+          key: ${{ runner.os }}-gocache-${{ hashFiles('tools/go.sum') }}-${{ steps.go.outputs.go-version }}
       - name: Install gojq
         run: |
+          set -euo pipefail
+          pushd tools >/dev/null
           go install github.com/itchyny/gojq/cmd/gojq@v0.12.16
-          echo "$HOME/go/bin" >> "$GITHUB_PATH"
+          popd >/dev/null
       - name: Stress suite
         run: test/stress/run.sh
 
@@ -89,13 +238,32 @@ jobs:
     needs: integration
     steps:
       - uses: actions/checkout@v4
+      - name: Set Go paths
+        run: |
+          set -euo pipefail
+          echo "GOPATH=$HOME/go" >> "$GITHUB_ENV"
+          echo "GOMODCACHE=$HOME/go/pkg/mod" >> "$GITHUB_ENV"
+          echo "GOCACHE=$HOME/.cache/go-build" >> "$GITHUB_ENV"
+          mkdir -p "$HOME/go/bin" "$HOME/go/pkg/mod" "$HOME/.cache/go-build"
       - name: Setup Go
+        id: go
         uses: actions/setup-go@v5
         with:
           go-version: '1.21'
+          cache: true
+          cache-dependency-path: tools/go.sum
+      - name: Cache Go build cache
+        id: gocache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.GOCACHE }}
+          key: ${{ runner.os }}-gocache-${{ hashFiles('tools/go.sum') }}-${{ steps.go.outputs.go-version }}
       - name: Install gojq
         run: |
+          set -euo pipefail
+          pushd tools >/dev/null
           go install github.com/itchyny/gojq/cmd/gojq@v0.12.16
+          popd >/dev/null
           echo "$HOME/go/bin" >> "$GITHUB_PATH"
       - name: Compatibility suite
         run: test/compatibility/run.sh

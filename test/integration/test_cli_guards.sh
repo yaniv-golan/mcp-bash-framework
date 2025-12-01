@@ -17,4 +17,12 @@ if ! printf '%s' "${output}" | grep -qi 'MCPBASH_PROJECT_ROOT is not set'; then
 	exit 1
 fi
 
+invalid_root="${TMPDIR%/}/mcpbash.invalid.$$"
+invalid_output="$(MCPBASH_PROJECT_ROOT="${invalid_root}" "${MCPBASH_TEST_ROOT}/bin/mcp-bash" 2>&1 >/dev/null || true)"
+
+if ! printf '%s' "${invalid_output}" | grep -qi 'does not exist'; then
+	printf 'Expected error for invalid MCPBASH_PROJECT_ROOT, got:\n%s\n' "${invalid_output}" >&2
+	exit 1
+fi
+
 printf 'CLI guard test passed.\n'

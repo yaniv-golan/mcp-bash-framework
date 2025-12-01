@@ -20,26 +20,9 @@ esac
 
 test_create_tmpdir
 
-stage_workspace() {
-	local dest="$1"
-	mkdir -p "${dest}"
-	# Copy framework files
-	cp -a "${MCPBASH_HOME}/bin" "${dest}/"
-	cp -a "${MCPBASH_HOME}/lib" "${dest}/"
-	cp -a "${MCPBASH_HOME}/handlers" "${dest}/"
-	cp -a "${MCPBASH_HOME}/providers" "${dest}/"
-	cp -a "${MCPBASH_HOME}/sdk" "${dest}/"
-	cp -a "${MCPBASH_HOME}/scaffold" "${dest}/" 2>/dev/null || true
-	# Create project directories
-	mkdir -p "${dest}/tools"
-	mkdir -p "${dest}/resources"
-	mkdir -p "${dest}/prompts"
-	mkdir -p "${dest}/server.d"
-}
-
 # --- Auto-discovery prompts ---
 AUTO_ROOT="${TEST_TMPDIR}/auto"
-stage_workspace "${AUTO_ROOT}"
+test_stage_workspace "${AUTO_ROOT}"
 # Remove register.sh to force auto-discovery (chmod -x doesn't work on Windows)
 rm -f "${AUTO_ROOT}/server.d/register.sh"
 mkdir -p "${AUTO_ROOT}/prompts"
@@ -97,7 +80,7 @@ fi
 
 # --- Manual registration overrides ---
 MANUAL_ROOT="${TEST_TMPDIR}/manual"
-stage_workspace "${MANUAL_ROOT}"
+test_stage_workspace "${MANUAL_ROOT}"
 mkdir -p "${MANUAL_ROOT}/prompts/manual"
 
 cat <<'EOF_PROMPT' >"${MANUAL_ROOT}/prompts/manual/greet.txt"
@@ -170,7 +153,7 @@ fi
 
 run_windows_prompt_notification() {
 	local win_root="${TEST_TMPDIR}/poll-win"
-	stage_workspace "${win_root}"
+	test_stage_workspace "${win_root}"
 	rm -f "${win_root}/server.d/register.sh"
 	mkdir -p "${win_root}/prompts"
 
@@ -226,7 +209,7 @@ if [ "${IS_WINDOWS}" = "true" ]; then
 fi
 
 POLL_ROOT="${TEST_TMPDIR}/poll"
-stage_workspace "${POLL_ROOT}"
+test_stage_workspace "${POLL_ROOT}"
 # Remove register.sh to force auto-discovery (chmod -x doesn't work on Windows)
 rm -f "${POLL_ROOT}/server.d/register.sh"
 mkdir -p "${POLL_ROOT}/prompts"

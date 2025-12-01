@@ -1,0 +1,9 @@
+{
+  "name": "getting_started",
+  "description": "Show setup steps when MCPBASH_PROJECT_ROOT is unset.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {}
+  },
+  "timeoutSecs": 5
+}

@@ -4,6 +4,8 @@
 
 mcp-bash keeps the framework and your project separate so upgrades stay painless and your code stays yours. The project tree is intentionally small: tools, resources, prompts, optional server hooks, nothing else.
 
+If you run `mcp-bash` without `MCPBASH_PROJECT_ROOT` set, it will launch a temporary getting-started helper project with a single tool that points you back to these docs. Set `MCPBASH_PROJECT_ROOT` to your own project to run a real server.
+
 ## Overview
 
 `mcp-bash` uses a strict **framework/project separation** model. Install the framework once (e.g., `~/mcp-bash-framework` or a Docker base layer) and keep your server code in a separate **project directory**.

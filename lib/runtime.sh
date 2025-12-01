@@ -15,6 +15,9 @@
 : "${MCPBASH_JOB_CONTROL_ENABLED:=false}"
 : "${MCPBASH_PROCESS_GROUP_WARNED:=false}"
 : "${MCPBASH_LOG_JSON_TOOL:=log}"
+: "${MCPBASH_BOOTSTRAP_STAGED:=false}"
+: "${MCPBASH_BOOTSTRAP_TMP_DIR:=}"
+: "${MCPBASH_HOME:=}"
 
 # Provide a no-op verbose check when logging.sh is not loaded (unit tests source runtime directly).
 if ! command -v mcp_logging_verbose_enabled >/dev/null 2>&1; then
@@ -40,16 +43,69 @@ mcp_runtime_log_allowed() {
 	return 0
 }
 
+mcp_runtime_stage_bootstrap_project() {
+	if [ "${MCPBASH_BOOTSTRAP_STAGED}" = "true" ]; then
+		return 0
+	fi
+
+	local bootstrap_dir="${MCPBASH_HOME}/bootstrap"
+	if [ ! -d "${bootstrap_dir}" ]; then
+		printf 'mcp-bash: bootstrap project missing at %s\n' "${bootstrap_dir}" >&2
+		exit 1
+	fi
+
+	local tmp_base tmp_root
+	tmp_base="${TMPDIR:-/tmp}"
+	tmp_base="${tmp_base%/}"
+	tmp_root="$(mktemp -d "${tmp_base}/mcpbash.bootstrap.XXXXXX")"
+	if [ -z "${tmp_root}" ] || [ ! -d "${tmp_root}" ]; then
+		printf 'mcp-bash: unable to create temporary bootstrap workspace\n' >&2
+		exit 1
+	fi
+
+	# Copy helper content into a disposable workspace.
+	cp -a "${bootstrap_dir}/." "${tmp_root}/" 2>/dev/null || true
+	mkdir -p "${tmp_root}/tools" "${tmp_root}/resources" "${tmp_root}/prompts" "${tmp_root}/server.d"
+
+	# Copy VERSION file so smart defaults can detect framework version.
+	if [ -f "${MCPBASH_HOME}/VERSION" ]; then
+		cp "${MCPBASH_HOME}/VERSION" "${tmp_root}/VERSION" 2>/dev/null || true
+	fi
+
+	MCPBASH_PROJECT_ROOT="${tmp_root}"
+	export MCPBASH_PROJECT_ROOT
+
+	# Override registry dir to avoid reusing caller-provided caches.
+	MCPBASH_REGISTRY_DIR="${tmp_root}/.registry"
+	export MCPBASH_REGISTRY_DIR
+	mkdir -p "${MCPBASH_REGISTRY_DIR}" >/dev/null 2>&1 || true
+
+	MCPBASH_BOOTSTRAP_TMP_DIR="${tmp_root}"
+	MCPBASH_BOOTSTRAP_STAGED="true"
+
+	if mcp_runtime_log_allowed; then
+		printf 'mcp-bash: no project configured; starting getting-started helper (temporary workspace %s)\n' "${tmp_root}" >&2
+	fi
+}
+
 # Validate that MCPBASH_PROJECT_ROOT is set and exists.
 # Called early in startup; exits with helpful error if not configured.
 mcp_runtime_require_project_root() {
+	local bootstrap_hint="${1:-false}"
+
 	if [ -z "${MCPBASH_PROJECT_ROOT:-}" ]; then
 		cat >&2 <<'EOF'
 mcp-bash: MCPBASH_PROJECT_ROOT is not set.
 
 mcp-bash requires a project directory separate from the framework.
 Set MCPBASH_PROJECT_ROOT to your project directory containing tools/, prompts/, resources/.
-
+EOF
+		if [ "${bootstrap_hint}" = "true" ]; then
+			cat >&2 <<'EOF'
+Tip: run mcp-bash without MCPBASH_PROJECT_ROOT to open a temporary getting-started helper with setup instructions.
+EOF
+		fi
+		cat >&2 <<'EOF'
 Example (Claude Desktop config):
 {
   "mcpServers": {
@@ -69,15 +125,29 @@ EOF
 
 	if [ ! -d "${MCPBASH_PROJECT_ROOT}" ]; then
 		printf 'mcp-bash: MCPBASH_PROJECT_ROOT directory does not exist: %s\n' "${MCPBASH_PROJECT_ROOT}" >&2
+		printf 'Set MCPBASH_PROJECT_ROOT to an existing project directory or create it first.\n' >&2
 		exit 1
 	fi
 }
 
 mcp_runtime_init_paths() {
 	local mode="${1:-server}"
+	local allow_bootstrap="${2:-}"
+
+	if [ -z "${allow_bootstrap}" ]; then
+		if [ "${mode}" = "server" ]; then
+			allow_bootstrap="true"
+		else
+			allow_bootstrap="false"
+		fi
+	fi
+
+	if [ "${allow_bootstrap}" = "true" ] && [ -z "${MCPBASH_PROJECT_ROOT:-}" ]; then
+		mcp_runtime_stage_bootstrap_project
+	fi
 
 	# Require MCPBASH_PROJECT_ROOT to be set
-	mcp_runtime_require_project_root
+	mcp_runtime_require_project_root "${allow_bootstrap}"
 
 	# Normalize PROJECT_ROOT (strip trailing slash for consistent path construction)
 	MCPBASH_PROJECT_ROOT="${MCPBASH_PROJECT_ROOT%/}"
@@ -192,6 +262,7 @@ mcp_runtime_cleanup() {
 		if [ -n "${MCPBASH_STATE_DIR}" ]; then
 			printf 'mcp-bash: state preserved at %s\n' "${MCPBASH_STATE_DIR}" >&2
 		fi
+		mcp_runtime_cleanup_bootstrap
 		return
 	fi
 
@@ -202,6 +273,8 @@ mcp_runtime_cleanup() {
 	if [ -n "${MCPBASH_LOCK_ROOT}" ] && [ -d "${MCPBASH_LOCK_ROOT}" ]; then
 		mcp_runtime_safe_rmrf "${MCPBASH_LOCK_ROOT}"
 	fi
+
+	mcp_runtime_cleanup_bootstrap
 }
 
 mcp_runtime_safe_rmrf() {
@@ -211,7 +284,7 @@ mcp_runtime_safe_rmrf() {
 		return 1
 	fi
 	case "${target}" in
-	"${MCPBASH_TMP_ROOT}"/mcpbash.state.* | "${MCPBASH_TMP_ROOT}"/mcpbash.locks*)
+	"${MCPBASH_TMP_ROOT}"/mcpbash.state.* | "${MCPBASH_TMP_ROOT}"/mcpbash.locks* | "${MCPBASH_TMP_ROOT}"/mcpbash.bootstrap.*)
 		rm -rf "${target}"
 		;;
 	*)
@@ -219,6 +292,19 @@ mcp_runtime_safe_rmrf() {
 		return 1
 		;;
 	esac
+}
+
+mcp_runtime_cleanup_bootstrap() {
+	if [ "${MCPBASH_BOOTSTRAP_STAGED:-false}" != "true" ]; then
+		return
+	fi
+	if [ -z "${MCPBASH_BOOTSTRAP_TMP_DIR:-}" ]; then
+		return
+	fi
+	if [ ! -d "${MCPBASH_BOOTSTRAP_TMP_DIR}" ]; then
+		return
+	fi
+	mcp_runtime_safe_rmrf "${MCPBASH_BOOTSTRAP_TMP_DIR}"
 }
 
 mcp_runtime_detect_json_tool() {
@@ -346,13 +432,18 @@ mcp_runtime_signal_group() {
 	local fallback_pid="$3"
 	local main_pgid="$4"
 
+	# Allow opting out of group signaling entirely (e.g., CI without job control).
+	if [ "${MCPBASH_SKIP_PROCESS_GROUP_LOOKUP:-0}" = "1" ]; then
+		pgid=""
+	fi
+
 	# Guard against empty inputs; cancellation/timeout callers are best-effort.
-	if [ -z "${pgid}" ] || [ -z "${signal}" ] || [ -z "${fallback_pid}" ]; then
+	if [ -z "${signal}" ] || [ -z "${fallback_pid}" ]; then
 		return 0
 	fi
 
-	# Never signal the main process group; fall back to the specific pid.
-	if [ -n "${main_pgid}" ] && [ "${pgid}" = "${main_pgid}" ]; then
+	# If we have no pgid or it matches the main group, target only the worker pid.
+	if [ -z "${pgid}" ] || { [ -n "${main_pgid}" ] && [ "${pgid}" = "${main_pgid}" ]; }; then
 		kill -"${signal}" "${fallback_pid}" 2>/dev/null || true
 		return 0
 	fi
@@ -364,4 +455,106 @@ mcp_runtime_signal_group() {
 
 	kill -"${signal}" "${fallback_pid}" 2>/dev/null || true
 	return 0
+}
+
+# Server metadata variables (populated by mcp_runtime_load_server_meta)
+: "${MCPBASH_SERVER_NAME:=}"
+: "${MCPBASH_SERVER_VERSION:=}"
+: "${MCPBASH_SERVER_TITLE:=}"
+: "${MCPBASH_SERVER_DESCRIPTION:=}"
+: "${MCPBASH_SERVER_WEBSITE_URL:=}"
+: "${MCPBASH_SERVER_ICONS:=}"
+
+mcp_runtime_load_server_meta() {
+	# Load server metadata from server.d/server.meta.json with smart defaults.
+	# Called after mcp_runtime_init_paths() to ensure MCPBASH_SERVER_DIR is set.
+	local meta_file="${MCPBASH_SERVER_DIR}/server.meta.json"
+
+	# Smart defaults
+	local default_name default_title default_version
+
+	# name: basename of project root
+	default_name="$(basename "${MCPBASH_PROJECT_ROOT}")"
+
+	# title: titlecase of name (replace hyphens/underscores with spaces, capitalize words)
+	default_title="$(mcp_runtime_titlecase "${default_name}")"
+
+	# version: check VERSION file, then package.json, else 0.0.0
+	default_version="$(mcp_runtime_detect_version)"
+
+	# Load from server.meta.json if it exists and we have JSON tooling
+	if [ -f "${meta_file}" ] && [ "${MCPBASH_JSON_TOOL:-none}" != "none" ]; then
+		local json_content
+		json_content="$(cat "${meta_file}" 2>/dev/null || true)"
+
+		if [ -n "${json_content}" ]; then
+			# Extract each field, falling back to defaults
+			MCPBASH_SERVER_NAME="$("${MCPBASH_JSON_TOOL_BIN}" -r '.name // empty' <<<"${json_content}" 2>/dev/null || true)"
+			MCPBASH_SERVER_VERSION="$("${MCPBASH_JSON_TOOL_BIN}" -r '.version // empty' <<<"${json_content}" 2>/dev/null || true)"
+			MCPBASH_SERVER_TITLE="$("${MCPBASH_JSON_TOOL_BIN}" -r '.title // empty' <<<"${json_content}" 2>/dev/null || true)"
+			MCPBASH_SERVER_DESCRIPTION="$("${MCPBASH_JSON_TOOL_BIN}" -r '.description // empty' <<<"${json_content}" 2>/dev/null || true)"
+			MCPBASH_SERVER_WEBSITE_URL="$("${MCPBASH_JSON_TOOL_BIN}" -r '.websiteUrl // empty' <<<"${json_content}" 2>/dev/null || true)"
+			# icons is an array, keep as JSON
+			local icons_json
+			icons_json="$("${MCPBASH_JSON_TOOL_BIN}" -c '.icons // empty' <<<"${json_content}" 2>/dev/null || true)"
+			if [ -n "${icons_json}" ] && [ "${icons_json}" != "null" ]; then
+				MCPBASH_SERVER_ICONS="${icons_json}"
+			fi
+		fi
+	fi
+
+	# Apply defaults for required fields if not set
+	[ -z "${MCPBASH_SERVER_NAME}" ] && MCPBASH_SERVER_NAME="${default_name}"
+	[ -z "${MCPBASH_SERVER_VERSION}" ] && MCPBASH_SERVER_VERSION="${default_version}"
+	[ -z "${MCPBASH_SERVER_TITLE}" ] && MCPBASH_SERVER_TITLE="${default_title}"
+
+	export MCPBASH_SERVER_NAME MCPBASH_SERVER_VERSION MCPBASH_SERVER_TITLE
+	export MCPBASH_SERVER_DESCRIPTION MCPBASH_SERVER_WEBSITE_URL MCPBASH_SERVER_ICONS
+}
+
+mcp_runtime_titlecase() {
+	# Convert "my-cool-server" or "my_cool_server" to "My Cool Server"
+	local input="$1"
+	local result=""
+	local word
+
+	# Replace hyphens and underscores with spaces, then capitalize each word
+	input="${input//-/ }"
+	input="${input//_/ }"
+
+	for word in ${input}; do
+		# Capitalize first letter
+		local first="${word:0:1}"
+		local rest="${word:1}"
+		first="$(printf '%s' "${first}" | tr '[:lower:]' '[:upper:]')"
+		result="${result}${result:+ }${first}${rest}"
+	done
+
+	printf '%s' "${result}"
+}
+
+mcp_runtime_detect_version() {
+	# Try to detect version from common sources
+	local version=""
+
+	# 1. Check VERSION file in project root
+	if [ -f "${MCPBASH_PROJECT_ROOT}/VERSION" ]; then
+		version="$(tr -d '[:space:]' <"${MCPBASH_PROJECT_ROOT}/VERSION" 2>/dev/null || true)"
+		if [ -n "${version}" ]; then
+			printf '%s' "${version}"
+			return 0
+		fi
+	fi
+
+	# 2. Check package.json if we have JSON tooling
+	if [ -f "${MCPBASH_PROJECT_ROOT}/package.json" ] && [ "${MCPBASH_JSON_TOOL:-none}" != "none" ]; then
+		version="$("${MCPBASH_JSON_TOOL_BIN}" -r '.version // empty' <"${MCPBASH_PROJECT_ROOT}/package.json" 2>/dev/null || true)"
+		if [ -n "${version}" ]; then
+			printf '%s' "${version}"
+			return 0
+		fi
+	fi
+
+	# 3. Default
+	printf '0.0.0'
 }

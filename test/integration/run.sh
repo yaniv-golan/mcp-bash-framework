@@ -40,6 +40,7 @@ if [ "${UNICODE}" = "1" ]; then
 fi
 
 TESTS=(
+	"test_bootstrap.sh"
 	"test_capabilities.sh"
 	"test_core_errors.sh"
 	"test_completion.sh"

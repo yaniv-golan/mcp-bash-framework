@@ -75,11 +75,53 @@ mcp_spec_build_initialize_response() {
 	local id_json="$1"
 	local capabilities_json="$2"
 	local protocol="${3:-${MCPBASH_NEGOTIATED_PROTOCOL_VERSION:-${MCPBASH_PROTOCOL_VERSION}}}"
-	printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":"%s","capabilities":%s,"serverInfo":{"name":"%s","version":"%s","title":"%s"}}}' \
+
+	# Build serverInfo with required fields and optional fields when set
+	local server_info
+	server_info="$(mcp_spec_build_server_info)"
+
+	printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":"%s","capabilities":%s,"serverInfo":%s}}' \
 		"${id_json}" \
 		"${protocol}" \
 		"${capabilities_json}" \
-		"${MCPBASH_SERVER_NAME}" \
-		"${MCPBASH_SERVER_VERSION}" \
-		"${MCPBASH_SERVER_TITLE}"
+		"${server_info}"
+}
+
+mcp_spec_build_server_info() {
+	# Build serverInfo object with required fields (name, version, title)
+	# and optional fields (description, icons, websiteUrl) when set.
+
+	# If we have JSON tooling, use jq for clean construction
+	if [ "${MCPBASH_JSON_TOOL:-none}" != "none" ]; then
+		local jq_args=()
+		jq_args+=(--arg name "${MCPBASH_SERVER_NAME}")
+		jq_args+=(--arg version "${MCPBASH_SERVER_VERSION}")
+		jq_args+=(--arg title "${MCPBASH_SERVER_TITLE}")
+
+		local jq_filter='{name: $name, version: $version, title: $title}'
+
+		# Add optional fields
+		if [ -n "${MCPBASH_SERVER_DESCRIPTION:-}" ]; then
+			jq_args+=(--arg description "${MCPBASH_SERVER_DESCRIPTION}")
+			jq_filter="${jq_filter} + {description: \$description}"
+		fi
+
+		if [ -n "${MCPBASH_SERVER_WEBSITE_URL:-}" ]; then
+			jq_args+=(--arg websiteUrl "${MCPBASH_SERVER_WEBSITE_URL}")
+			jq_filter="${jq_filter} + {websiteUrl: \$websiteUrl}"
+		fi
+
+		if [ -n "${MCPBASH_SERVER_ICONS:-}" ]; then
+			jq_args+=(--argjson icons "${MCPBASH_SERVER_ICONS}")
+			jq_filter="${jq_filter} + {icons: \$icons}"
+		fi
+
+		"${MCPBASH_JSON_TOOL_BIN}" -c -n "${jq_args[@]}" "${jq_filter}"
+	else
+		# Minimal mode: just required fields with simple printf
+		printf '{"name":"%s","version":"%s","title":"%s"}' \
+			"${MCPBASH_SERVER_NAME}" \
+			"${MCPBASH_SERVER_VERSION}" \
+			"${MCPBASH_SERVER_TITLE}"
+	fi
 }
