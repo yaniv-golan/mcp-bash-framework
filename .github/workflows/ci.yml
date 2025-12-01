@@ -14,12 +14,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Set Go paths
+        shell: bash
         run: |
           set -euo pipefail
-          echo "GOPATH=$HOME/go" >> "$GITHUB_ENV"
-          echo "GOMODCACHE=$HOME/go/pkg/mod" >> "$GITHUB_ENV"
-          echo "GOCACHE=$HOME/.cache/go-build" >> "$GITHUB_ENV"
-          mkdir -p "$HOME/go/bin" "$HOME/go/pkg/mod" "$HOME/.cache/go-build"
+          if [ "${RUNNER_OS}" = "Windows" ]; then
+            win_home="$(cygpath -w "${HOME}")"
+            win_gopath="${win_home}\\go"
+            win_gomodcache="${win_gopath}\\pkg\\mod"
+            win_gocache="${LOCALAPPDATA:-${win_home}\\AppData\\Local}\\go-build"
+            echo "GOPATH=${win_gopath}" >> "$GITHUB_ENV"
+            echo "GOMODCACHE=${win_gomodcache}" >> "$GITHUB_ENV"
+            echo "GOCACHE=${win_gocache}" >> "$GITHUB_ENV"
+            echo "$(cygpath -u "${win_gopath}")/bin" >> "$GITHUB_PATH"
+            mkdir -p "$(cygpath -u "${win_gopath}")/bin" "$(cygpath -u "${win_gomodcache}")" "$(cygpath -u "${win_gocache}")"
+          else
+            echo "GOPATH=${HOME}/go" >> "$GITHUB_ENV"
+            echo "GOMODCACHE=${HOME}/go/pkg/mod" >> "$GITHUB_ENV"
+            echo "GOCACHE=${HOME}/.cache/go-build" >> "$GITHUB_ENV"
+            echo "${HOME}/go/bin" >> "$GITHUB_PATH"
+            mkdir -p "${HOME}/go/bin" "${HOME}/go/pkg/mod" "${HOME}/.cache/go-build"
+          fi
       - name: Setup Go
         id: go
         uses: actions/setup-go@v5
@@ -39,7 +53,6 @@ jobs:
           pushd tools >/dev/null
           go install github.com/itchyny/gojq/cmd/gojq@v0.12.16
           popd >/dev/null
-          echo "$HOME/go/bin" >> "$GITHUB_PATH"
       - name: Install lint dependencies
         run: |
           sudo apt-get update
@@ -52,12 +65,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Set Go paths
+        shell: bash
         run: |
           set -euo pipefail
-          echo "GOPATH=$HOME/go" >> "$GITHUB_ENV"
-          echo "GOMODCACHE=$HOME/go/pkg/mod" >> "$GITHUB_ENV"
-          echo "GOCACHE=$HOME/.cache/go-build" >> "$GITHUB_ENV"
-          mkdir -p "$HOME/go/bin" "$HOME/go/pkg/mod" "$HOME/.cache/go-build"
+          if [ "${RUNNER_OS}" = "Windows" ]; then
+            win_home="$(cygpath -w "${HOME}")"
+            win_gopath="${win_home}\\go"
+            win_gomodcache="${win_gopath}\\pkg\\mod"
+            win_gocache="${LOCALAPPDATA:-${win_home}\\AppData\\Local}\\go-build"
+            echo "GOPATH=${win_gopath}" >> "$GITHUB_ENV"
+            echo "GOMODCACHE=${win_gomodcache}" >> "$GITHUB_ENV"
+            echo "GOCACHE=${win_gocache}" >> "$GITHUB_ENV"
+            echo "$(cygpath -u "${win_gopath}")/bin" >> "$GITHUB_PATH"
+            mkdir -p "$(cygpath -u "${win_gopath}")/bin" "$(cygpath -u "${win_gomodcache}")" "$(cygpath -u "${win_gocache}")"
+          else
+            echo "GOPATH=${HOME}/go" >> "$GITHUB_ENV"
+            echo "GOMODCACHE=${HOME}/go/pkg/mod" >> "$GITHUB_ENV"
+            echo "GOCACHE=${HOME}/.cache/go-build" >> "$GITHUB_ENV"
+            echo "${HOME}/go/bin" >> "$GITHUB_PATH"
+            mkdir -p "${HOME}/go/bin" "${HOME}/go/pkg/mod" "${HOME}/.cache/go-build"
+          fi
       - name: Setup Go
         id: go
         uses: actions/setup-go@v5
@@ -77,7 +104,6 @@ jobs:
           pushd tools >/dev/null
           go install github.com/itchyny/gojq/cmd/gojq@v0.12.16
           popd >/dev/null
-          echo "$HOME/go/bin" >> "$GITHUB_PATH"
       - name: Unit tests
         run: test/unit/run.sh
 
@@ -92,12 +118,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Set Go paths
+        shell: bash
         run: |
           set -euo pipefail
-          echo "GOPATH=$HOME/go" >> "$GITHUB_ENV"
-          echo "GOMODCACHE=$HOME/go/pkg/mod" >> "$GITHUB_ENV"
-          echo "GOCACHE=$HOME/.cache/go-build" >> "$GITHUB_ENV"
-          mkdir -p "$HOME/go/bin" "$HOME/go/pkg/mod" "$HOME/.cache/go-build"
+          if [ "${RUNNER_OS}" = "Windows" ]; then
+            win_home="$(cygpath -w "${HOME}")"
+            win_gopath="${win_home}\\go"
+            win_gomodcache="${win_gopath}\\pkg\\mod"
+            win_gocache="${LOCALAPPDATA:-${win_home}\\AppData\\Local}\\go-build"
+            echo "GOPATH=${win_gopath}" >> "$GITHUB_ENV"
+            echo "GOMODCACHE=${win_gomodcache}" >> "$GITHUB_ENV"
+            echo "GOCACHE=${win_gocache}" >> "$GITHUB_ENV"
+            echo "$(cygpath -u "${win_gopath}")/bin" >> "$GITHUB_PATH"
+            mkdir -p "$(cygpath -u "${win_gopath}")/bin" "$(cygpath -u "${win_gomodcache}")" "$(cygpath -u "${win_gocache}")"
+          else
+            echo "GOPATH=${HOME}/go" >> "$GITHUB_ENV"
+            echo "GOMODCACHE=${HOME}/go/pkg/mod" >> "$GITHUB_ENV"
+            echo "GOCACHE=${HOME}/.cache/go-build" >> "$GITHUB_ENV"
+            echo "${HOME}/go/bin" >> "$GITHUB_PATH"
+            mkdir -p "${HOME}/go/bin" "${HOME}/go/pkg/mod" "${HOME}/.cache/go-build"
+          fi
       - name: Setup Go
         id: go
         uses: actions/setup-go@v5
@@ -117,7 +157,6 @@ jobs:
           pushd tools >/dev/null
           go install github.com/itchyny/gojq/cmd/gojq@v0.12.16
           popd >/dev/null
-          echo "$HOME/go/bin" >> "$GITHUB_PATH"
       - name: Smoke tests
         run: test/smoke.sh
       - name: Integration suite
@@ -147,12 +186,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Set Go paths
+        shell: bash
         run: |
           set -euo pipefail
-          echo "GOPATH=$HOME/go" >> "$GITHUB_ENV"
-          echo "GOMODCACHE=$HOME/go/pkg/mod" >> "$GITHUB_ENV"
-          echo "GOCACHE=$HOME/.cache/go-build" >> "$GITHUB_ENV"
-          mkdir -p "$HOME/go/bin" "$HOME/go/pkg/mod" "$HOME/.cache/go-build"
+          if [ "${RUNNER_OS}" = "Windows" ]; then
+            win_home="$(cygpath -w "${HOME}")"
+            win_gopath="${win_home}\\go"
+            win_gomodcache="${win_gopath}\\pkg\\mod"
+            win_gocache="${LOCALAPPDATA:-${win_home}\\AppData\\Local}\\go-build"
+            echo "GOPATH=${win_gopath}" >> "$GITHUB_ENV"
+            echo "GOMODCACHE=${win_gomodcache}" >> "$GITHUB_ENV"
+            echo "GOCACHE=${win_gocache}" >> "$GITHUB_ENV"
+            echo "$(cygpath -u "${win_gopath}")/bin" >> "$GITHUB_PATH"
+            mkdir -p "$(cygpath -u "${win_gopath}")/bin" "$(cygpath -u "${win_gomodcache}")" "$(cygpath -u "${win_gocache}")"
+          else
+            echo "GOPATH=${HOME}/go" >> "$GITHUB_ENV"
+            echo "GOMODCACHE=${HOME}/go/pkg/mod" >> "$GITHUB_ENV"
+            echo "GOCACHE=${HOME}/.cache/go-build" >> "$GITHUB_ENV"
+            echo "${HOME}/go/bin" >> "$GITHUB_PATH"
+            mkdir -p "${HOME}/go/bin" "${HOME}/go/pkg/mod" "${HOME}/.cache/go-build"
+          fi
       - name: Setup Go
         id: go
         uses: actions/setup-go@v5
@@ -172,7 +225,6 @@ jobs:
           pushd tools >/dev/null
           go install github.com/itchyny/gojq/cmd/gojq@v0.12.16
           popd >/dev/null
-          echo "$HOME/go/bin" >> "$GITHUB_PATH"
       - name: Stress suite
         run: test/stress/run.sh
 
