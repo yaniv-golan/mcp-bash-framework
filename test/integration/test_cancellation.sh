@@ -67,7 +67,8 @@ deadline=$((SECONDS + 15))
 while [ "${SECONDS}" -lt "${deadline}" ]; do
 	line="$(read_resp || true)"
 	[ -z "${line}" ] && continue
-	id="$(printf '%s' "${line}" | jq -r '.id // empty')"
+	id="$(printf '%s' "${line}" | jq -er 'try .id // empty catch ""' 2>/dev/null || true)"
+	[ -z "${id}" ] && continue
 	if [ "${id}" = "slow" ]; then
 		got_call=true
 	fi
