@@ -132,7 +132,7 @@ jobs:
         if: matrix.os == 'windows-latest'
         run: |
           set -euo pipefail
-          warm="${{ and(steps.go.outputs.cache-hit == 'true', steps.gocache.outputs.cache-hit == 'true') }}"
+          warm="${{ steps.go.outputs.cache-hit == 'true' && steps.gocache.outputs.cache-hit == 'true' }}"
           duration="${{ steps.integration.outputs.duration }}"
           if [ "${warm}" = "true" ] && [ -n "${duration}" ] && [ "${duration}" -gt 240 ]; then
             echo "Integration exceeded budget (${duration}s) with warm caches" >&2
