@@ -328,9 +328,8 @@ EOF
 }
 
 # Keep a stable, versioned core separated from extension directories.
-MCPBASH_SERVER_NAME="mcp-bash"
-MCPBASH_SERVER_TITLE="MCP Bash Server"
-MCPBASH_SERVER_VERSION="0.1.0"
+# Server metadata (name, version, title, etc.) is loaded from server.d/server.meta.json
+# with smart defaults derived from the project structure. See mcp_runtime_load_server_meta().
 MCPBASH_PROTOCOL_VERSION="2025-06-18"
 MCPBASH_NEGOTIATED_PROTOCOL_VERSION="${MCPBASH_PROTOCOL_VERSION}"
 MCPBASH_HOME=""
@@ -446,7 +445,13 @@ case "${1-}" in
 	exit 0
 	;;
 --version | -v)
-	printf 'mcp-bash %s\n' "${MCPBASH_SERVER_VERSION}"
+	# Read framework version from VERSION file
+	_version_file="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/VERSION"
+	if [ -f "${_version_file}" ]; then
+		printf 'mcp-bash %s\n' "$(tr -d '[:space:]' <"${_version_file}")"
+	else
+		printf 'mcp-bash (unknown version)\n'
+	fi
 	exit 0
 	;;
 esac

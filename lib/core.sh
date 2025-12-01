@@ -60,6 +60,7 @@ mcp_core_bootstrap_state() {
 	MCPBASH_INITIALIZE_HANDSHAKE_DONE=false
 	_MCP_NOTIFICATION_PAYLOAD=""
 	mcp_runtime_init_paths
+	mcp_runtime_load_server_meta
 	mcp_ids_init_state
 	mcp_lock_init
 	mcp_io_init

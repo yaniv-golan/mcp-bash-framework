@@ -1,0 +1,7 @@
+{
+  "name": "hello-tool-example",
+  "title": "Hello Tool Example",
+  "version": "1.0.0",
+  "description": "A minimal MCP server demonstrating the hello tool"
+}
+

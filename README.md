@@ -124,6 +124,8 @@ Framework (Install Once)               Your Project (Version Control This)
 └── ...                                │       └── tool.meta.json
                                        ├── prompts/
                                        ├── resources/
+                                       ├── server.d/
+                                       │   └── server.meta.json (optional)
                                        └── .registry/ (auto-generated)
 ```
 
@@ -227,6 +229,35 @@ The [`examples/`](examples/) directory shows common patterns end-to-end:
 | `MCPBASH_TOOL_ENV_ALLOWLIST` | (unset) | Extra env var names permitted when `MCPBASH_TOOL_ENV_MODE=allowlist`. |
 | `MCPBASH_REGISTRY_REFRESH_PATH` | (unset) | Optional subpath to limit `registry refresh` scanning scope (defaults to full tools/resources/prompts trees). |
 | `MCPBASH_COMPAT_BATCHES` | (unset) | Set to `true` to enable legacy batch request support. |
+
+### Server Metadata
+
+Server identity is configured via `server.d/server.meta.json`. All fields are optional—smart defaults are applied when omitted:
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `name` | Project directory name | Server identifier (e.g., `my-server`) |
+| `title` | Titlecase of name | Human-readable display name (e.g., `My Server`) |
+| `version` | `VERSION` file, `package.json`, or `0.0.0` | Server version |
+| `description` | (omitted) | Brief description of the server |
+| `websiteUrl` | (omitted) | URL to server homepage or documentation |
+| `icons` | (omitted) | Array of icon objects for visual identification |
+
+Example `server.d/server.meta.json`:
+```json
+{
+  "name": "weather-api",
+  "title": "Weather API Server",
+  "version": "1.0.0",
+  "description": "Provides weather data for any location",
+  "websiteUrl": "https://example.com/weather-api",
+  "icons": [
+    {"src": "https://example.com/icon.svg", "sizes": ["any"], "mimeType": "image/svg+xml"}
+  ]
+}
+```
+
+If no `server.meta.json` exists, the server uses smart defaults based on your project directory name.
 
 ### Tool SDK environment
 - `MCPBASH_JSON_TOOL` and `MCPBASH_JSON_TOOL_BIN` point to the detected JSON processor (`gojq`/`jq`) and are injected into tool processes when available.

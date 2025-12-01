@@ -67,6 +67,11 @@ mcp_runtime_stage_bootstrap_project() {
 	cp -a "${bootstrap_dir}/." "${tmp_root}/" 2>/dev/null || true
 	mkdir -p "${tmp_root}/tools" "${tmp_root}/resources" "${tmp_root}/prompts" "${tmp_root}/server.d"
 
+	# Copy VERSION file so smart defaults can detect framework version.
+	if [ -f "${MCPBASH_HOME}/VERSION" ]; then
+		cp "${MCPBASH_HOME}/VERSION" "${tmp_root}/VERSION" 2>/dev/null || true
+	fi
+
 	MCPBASH_PROJECT_ROOT="${tmp_root}"
 	export MCPBASH_PROJECT_ROOT
 
@@ -450,4 +455,106 @@ mcp_runtime_signal_group() {
 
 	kill -"${signal}" "${fallback_pid}" 2>/dev/null || true
 	return 0
+}
+
+# Server metadata variables (populated by mcp_runtime_load_server_meta)
+: "${MCPBASH_SERVER_NAME:=}"
+: "${MCPBASH_SERVER_VERSION:=}"
+: "${MCPBASH_SERVER_TITLE:=}"
+: "${MCPBASH_SERVER_DESCRIPTION:=}"
+: "${MCPBASH_SERVER_WEBSITE_URL:=}"
+: "${MCPBASH_SERVER_ICONS:=}"
+
+mcp_runtime_load_server_meta() {
+	# Load server metadata from server.d/server.meta.json with smart defaults.
+	# Called after mcp_runtime_init_paths() to ensure MCPBASH_SERVER_DIR is set.
+	local meta_file="${MCPBASH_SERVER_DIR}/server.meta.json"
+
+	# Smart defaults
+	local default_name default_title default_version
+
+	# name: basename of project root
+	default_name="$(basename "${MCPBASH_PROJECT_ROOT}")"
+
+	# title: titlecase of name (replace hyphens/underscores with spaces, capitalize words)
+	default_title="$(mcp_runtime_titlecase "${default_name}")"
+
+	# version: check VERSION file, then package.json, else 0.0.0
+	default_version="$(mcp_runtime_detect_version)"
+
+	# Load from server.meta.json if it exists and we have JSON tooling
+	if [ -f "${meta_file}" ] && [ "${MCPBASH_JSON_TOOL:-none}" != "none" ]; then
+		local json_content
+		json_content="$(cat "${meta_file}" 2>/dev/null || true)"
+
+		if [ -n "${json_content}" ]; then
+			# Extract each field, falling back to defaults
+			MCPBASH_SERVER_NAME="$("${MCPBASH_JSON_TOOL_BIN}" -r '.name // empty' <<<"${json_content}" 2>/dev/null || true)"
+			MCPBASH_SERVER_VERSION="$("${MCPBASH_JSON_TOOL_BIN}" -r '.version // empty' <<<"${json_content}" 2>/dev/null || true)"
+			MCPBASH_SERVER_TITLE="$("${MCPBASH_JSON_TOOL_BIN}" -r '.title // empty' <<<"${json_content}" 2>/dev/null || true)"
+			MCPBASH_SERVER_DESCRIPTION="$("${MCPBASH_JSON_TOOL_BIN}" -r '.description // empty' <<<"${json_content}" 2>/dev/null || true)"
+			MCPBASH_SERVER_WEBSITE_URL="$("${MCPBASH_JSON_TOOL_BIN}" -r '.websiteUrl // empty' <<<"${json_content}" 2>/dev/null || true)"
+			# icons is an array, keep as JSON
+			local icons_json
+			icons_json="$("${MCPBASH_JSON_TOOL_BIN}" -c '.icons // empty' <<<"${json_content}" 2>/dev/null || true)"
+			if [ -n "${icons_json}" ] && [ "${icons_json}" != "null" ]; then
+				MCPBASH_SERVER_ICONS="${icons_json}"
+			fi
+		fi
+	fi
+
+	# Apply defaults for required fields if not set
+	[ -z "${MCPBASH_SERVER_NAME}" ] && MCPBASH_SERVER_NAME="${default_name}"
+	[ -z "${MCPBASH_SERVER_VERSION}" ] && MCPBASH_SERVER_VERSION="${default_version}"
+	[ -z "${MCPBASH_SERVER_TITLE}" ] && MCPBASH_SERVER_TITLE="${default_title}"
+
+	export MCPBASH_SERVER_NAME MCPBASH_SERVER_VERSION MCPBASH_SERVER_TITLE
+	export MCPBASH_SERVER_DESCRIPTION MCPBASH_SERVER_WEBSITE_URL MCPBASH_SERVER_ICONS
+}
+
+mcp_runtime_titlecase() {
+	# Convert "my-cool-server" or "my_cool_server" to "My Cool Server"
+	local input="$1"
+	local result=""
+	local word
+
+	# Replace hyphens and underscores with spaces, then capitalize each word
+	input="${input//-/ }"
+	input="${input//_/ }"
+
+	for word in ${input}; do
+		# Capitalize first letter
+		local first="${word:0:1}"
+		local rest="${word:1}"
+		first="$(printf '%s' "${first}" | tr '[:lower:]' '[:upper:]')"
+		result="${result}${result:+ }${first}${rest}"
+	done
+
+	printf '%s' "${result}"
+}
+
+mcp_runtime_detect_version() {
+	# Try to detect version from common sources
+	local version=""
+
+	# 1. Check VERSION file in project root
+	if [ -f "${MCPBASH_PROJECT_ROOT}/VERSION" ]; then
+		version="$(tr -d '[:space:]' <"${MCPBASH_PROJECT_ROOT}/VERSION" 2>/dev/null || true)"
+		if [ -n "${version}" ]; then
+			printf '%s' "${version}"
+			return 0
+		fi
+	fi
+
+	# 2. Check package.json if we have JSON tooling
+	if [ -f "${MCPBASH_PROJECT_ROOT}/package.json" ] && [ "${MCPBASH_JSON_TOOL:-none}" != "none" ]; then
+		version="$("${MCPBASH_JSON_TOOL_BIN}" -r '.version // empty' <"${MCPBASH_PROJECT_ROOT}/package.json" 2>/dev/null || true)"
+		if [ -n "${version}" ]; then
+			printf '%s' "${version}"
+			return 0
+		fi
+	fi
+
+	# 3. Default
+	printf '0.0.0'
 }
