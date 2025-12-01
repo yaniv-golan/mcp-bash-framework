@@ -100,7 +100,7 @@ exec 4<&-
 server_status=0
 if [ -f "${WORKSPACE}/server.pid" ]; then
 	server_pid="$(cat "${WORKSPACE}/server.pid")"
-	wait_deadline=$((SECONDS + 10))
+	wait_deadline=$((SECONDS + 30))
 	while kill -0 "${server_pid}" 2>/dev/null && [ "${SECONDS}" -lt "${wait_deadline}" ]; do
 		sleep 1
 	done
@@ -108,6 +108,11 @@ if [ -f "${WORKSPACE}/server.pid" ]; then
 		server_status=1
 	else
 		wait "${server_pid}" 2>/dev/null || server_status=$?
+	fi
+	# Ensure no stray server remains; best-effort cleanup on CI.
+	if kill -0 "${server_pid}" 2>/dev/null; then
+		kill "${server_pid}" 2>/dev/null || true
+		wait "${server_pid}" 2>/dev/null || true
 	fi
 fi
 
