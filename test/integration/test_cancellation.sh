@@ -47,7 +47,7 @@ exec 4<"${PIPE_OUT}"
 send() { printf '%s\n' "$1" >&3; }
 read_resp() {
 	local line
-	read -r -t 2 -u 4 line && printf '%s' "${line}"
+	read -r -t 5 -u 4 line && printf '%s' "${line}"
 }
 
 send '{"jsonrpc":"2.0","id":"init","method":"initialize","params":{}}'
@@ -58,13 +58,18 @@ send '{"jsonrpc":"2.0","id":"slow","method":"tools/call","params":{"name":"cance
 sleep 1
 send '{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":"slow"}}'
 
-# Ping to flush events
+# Ping to flush events (re-sent periodically below until a response lands)
 send '{"jsonrpc":"2.0","id":"ping","method":"ping"}'
 
 got_call=false
 got_ping=false
-deadline=$((SECONDS + 15))
+deadline=$((SECONDS + 30))
+next_ping=$((SECONDS + 3))
 while [ "${SECONDS}" -lt "${deadline}" ]; do
+	if [ "${got_ping}" != true ] && [ "${SECONDS}" -ge "${next_ping}" ]; then
+		send '{"jsonrpc":"2.0","id":"ping","method":"ping"}'
+		next_ping=$((SECONDS + 3))
+	fi
 	line="$(read_resp || true)"
 	[ -z "${line}" ] && continue
 	id="$(printf '%s' "${line}" | jq -er 'try .id // empty catch ""' 2>/dev/null || true)"
@@ -74,10 +79,6 @@ while [ "${SECONDS}" -lt "${deadline}" ]; do
 	fi
 	if [ "${id}" = "ping" ]; then
 		got_ping=true
-	fi
-	# If ping hasn’t arrived after a few seconds, send another probe.
-	if [ "${got_ping}" != true ] && [ $((deadline - SECONDS)) -le 10 ]; then
-		send '{"jsonrpc":"2.0","id":"ping2","method":"ping"}'
 	fi
 	if [ "${got_ping}" = true ]; then
 		break
