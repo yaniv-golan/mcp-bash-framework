@@ -427,13 +427,18 @@ mcp_runtime_signal_group() {
 	local fallback_pid="$3"
 	local main_pgid="$4"
 
+	# Allow opting out of group signaling entirely (e.g., CI without job control).
+	if [ "${MCPBASH_SKIP_PROCESS_GROUP_LOOKUP:-0}" = "1" ]; then
+		pgid=""
+	fi
+
 	# Guard against empty inputs; cancellation/timeout callers are best-effort.
-	if [ -z "${pgid}" ] || [ -z "${signal}" ] || [ -z "${fallback_pid}" ]; then
+	if [ -z "${signal}" ] || [ -z "${fallback_pid}" ]; then
 		return 0
 	fi
 
-	# Never signal the main process group; fall back to the specific pid.
-	if [ -n "${main_pgid}" ] && [ "${pgid}" = "${main_pgid}" ]; then
+	# If we have no pgid or it matches the main group, target only the worker pid.
+	if [ -z "${pgid}" ] || { [ -n "${main_pgid}" ] && [ "${pgid}" = "${main_pgid}" ]; }; then
 		kill -"${signal}" "${fallback_pid}" 2>/dev/null || true
 		return 0
 	fi

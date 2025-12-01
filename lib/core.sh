@@ -826,6 +826,11 @@ mcp_core_cancel_request() {
 		return 0
 	fi
 
+	# Allow environments without reliable process groups to opt into PID-only signals.
+	if [ "${MCPBASH_SKIP_PROCESS_GROUP_LOOKUP:-0}" = "1" ]; then
+		pgid=""
+	fi
+
 	mcp_core_send_signal_chain "${pid}" "${pgid}" TERM
 	sleep 1
 	if mcp_core_process_alive "${pid}"; then
