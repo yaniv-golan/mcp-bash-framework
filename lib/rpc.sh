@@ -95,10 +95,11 @@ mcp_rpc_handle_response() {
 		mcp_logging_warning "mcp.elicitation" "Client error: code=${error_code} message=${error_message}"
 		normalized='{"action":"error","content":null}'
 	else
-		local action content
+		local action content action_json
 		action="$(printf '%s' "${json_payload}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.result.action // "error"' 2>/dev/null || printf '%s' "error")"
 		content="$(printf '%s' "${json_payload}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.result.content // null' 2>/dev/null || printf 'null')"
-		normalized="$(printf '{"action":"%s","content":%s}' "${action}" "${content}")"
+		action_json="$(mcp_json_quote_text "${action}")"
+		normalized="$(printf '{"action":%s,"content":%s}' "${action_json}" "${content}")"
 	fi
 
 	printf '%s' "${normalized}" >"${response_file}"

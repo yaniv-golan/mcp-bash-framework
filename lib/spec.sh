@@ -118,10 +118,15 @@ mcp_spec_build_server_info() {
 
 		"${MCPBASH_JSON_TOOL_BIN}" -c -n "${jq_args[@]}" "${jq_filter}"
 	else
-		# Minimal mode: just required fields with simple printf
-		printf '{"name":"%s","version":"%s","title":"%s"}' \
-			"${MCPBASH_SERVER_NAME}" \
-			"${MCPBASH_SERVER_VERSION}" \
-			"${MCPBASH_SERVER_TITLE}"
+		# Minimal mode: construct JSON using local escaping helpers.
+		# mcp_json_quote_text does not depend on jq/gojq.
+		local name_json version_json title_json
+		name_json="$(mcp_json_quote_text "${MCPBASH_SERVER_NAME}")"
+		version_json="$(mcp_json_quote_text "${MCPBASH_SERVER_VERSION}")"
+		title_json="$(mcp_json_quote_text "${MCPBASH_SERVER_TITLE}")"
+		printf '{"name":%s,"version":%s,"title":%s}' \
+			"${name_json}" \
+			"${version_json}" \
+			"${title_json}"
 	fi
 }

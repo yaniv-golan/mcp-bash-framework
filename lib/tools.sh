@@ -26,6 +26,7 @@ MCP_TOOLS_MANUAL_ACTIVE=false
 MCP_TOOLS_MANUAL_BUFFER=""
 MCP_TOOLS_MANUAL_DELIM=$'\036'
 MCP_TOOLS_LOGGER="${MCP_TOOLS_LOGGER:-mcp.tools}"
+: "${MCPBASH_TOOL_ENV_INHERIT_WARNED:=false}"
 
 if ! command -v mcp_registry_resolve_scan_root >/dev/null 2>&1; then
 	# shellcheck disable=SC1090
@@ -701,6 +702,16 @@ mcp_tools_call() {
 	if [ -z "${tool_path}" ]; then
 		mcp_tools_error -32601 "Tool path unavailable"
 		return 1
+	fi
+
+	# Warn once per process when running in inherit mode, since tools then
+	# receive the full host environment including any secrets present.
+	local env_mode_raw="${MCPBASH_TOOL_ENV_MODE:-minimal}"
+	local env_mode_lc
+	env_mode_lc="$(printf '%s' "${env_mode_raw}" | tr '[:upper:]' '[:lower:]')"
+	if [ "${env_mode_lc}" = "inherit" ] && [ "${MCPBASH_TOOL_ENV_INHERIT_WARNED}" != "true" ]; then
+		MCPBASH_TOOL_ENV_INHERIT_WARNED="true"
+		mcp_logging_warning "${MCP_TOOLS_LOGGER}" "MCPBASH_TOOL_ENV_MODE=inherit; tools receive the full host environment"
 	fi
 
 	local absolute_path="${MCPBASH_TOOLS_DIR}/${tool_path}"

@@ -112,10 +112,11 @@ fi
 
 # Run ffmpeg with a dedicated progress pipe so we can track cancellation and exit codes accurately.
 mcp_progress 0 "Starting transcoding..."
-progress_fifo="$(mktemp -u "${TMPDIR:-/tmp}/mcp-ffmpeg-progress.XXXXXX")"
+fifo_dir="$(mktemp -d "${TMPDIR:-/tmp}/mcp-ffmpeg-progress.XXXXXX")"
+progress_fifo="${fifo_dir}/progress.fifo"
 mkfifo "${progress_fifo}"
 cleanup_fifo() {
-	rm -f "${progress_fifo}"
+	rm -rf "${fifo_dir}"
 }
 trap cleanup_fifo EXIT INT TERM
 
