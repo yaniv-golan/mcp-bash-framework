@@ -50,6 +50,21 @@ mcp_file_uri_from_path() {
 	mcp_uri_file_uri_from_path "$1"
 }
 
+mcp_scaffold_validate_name() {
+	local name="$1"
+	# Allow simple names only: alnum, dot, underscore, dash; no slashes or traversal.
+	if [ -z "${name}" ]; then
+		return 1
+	fi
+	case "${name}" in
+	*/* | *..*) return 1 ;;
+	esac
+	if ! printf '%s' "${name}" | LC_ALL=C grep -Eq '^[A-Za-z0-9._-]+$'; then
+		return 1
+	fi
+	return 0
+}
+
 # Require MCPBASH_PROJECT_ROOT for scaffolding commands
 mcp_scaffold_require_project_root() {
 	if [ -z "${MCPBASH_PROJECT_ROOT:-}" ]; then
@@ -97,6 +112,10 @@ mcp_scaffold_tool() {
 		printf 'Tool name required\n' >&2
 		exit 1
 	fi
+	if ! mcp_scaffold_validate_name "${name}"; then
+		printf 'Invalid tool name: use alphanumerics, dot, underscore, dash only; no paths or traversal.\n' >&2
+		exit 1
+	fi
 	mcp_scaffold_require_project_root
 	initialize_scaffold_paths
 	local scaffold_dir="${MCPBASH_HOME}/scaffold/tool"
@@ -124,6 +143,10 @@ mcp_scaffold_prompt() {
 		printf 'Prompt name required\n' >&2
 		exit 1
 	fi
+	if ! mcp_scaffold_validate_name "${name}"; then
+		printf 'Invalid prompt name: use alphanumerics, dot, underscore, dash only; no paths or traversal.\n' >&2
+		exit 1
+	fi
 	mcp_scaffold_require_project_root
 	initialize_scaffold_paths
 	local scaffold_dir="${MCPBASH_HOME}/scaffold/prompt"
@@ -148,6 +171,10 @@ mcp_scaffold_resource() {
 	local name="$1"
 	if [ -z "${name}" ]; then
 		printf 'Resource name required\n' >&2
+		exit 1
+	fi
+	if ! mcp_scaffold_validate_name "${name}"; then
+		printf 'Invalid resource name: use alphanumerics, dot, underscore, dash only; no paths or traversal.\n' >&2
 		exit 1
 	fi
 	mcp_scaffold_require_project_root
@@ -356,7 +383,7 @@ initialize_runtime_paths() {
 	script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 	MCPBASH_HOME="$(cd "${script_dir}/.." && pwd)"
 
-	local required_libs="runtime json hash ids lock io paginate logging uri registry spec tools resources prompts completion timeout rpc core"
+	local required_libs="runtime json hash ids lock io paginate logging uri policy registry spec tools resources prompts completion timeout rpc core"
 	local lib
 
 	for lib in ${required_libs}; do
@@ -496,10 +523,14 @@ if [ "${1-}" = "debug" ]; then
 	shift
 	export MCPBASH_DEBUG_PAYLOADS=true
 	export MCPBASH_PRESERVE_STATE=true
-	# Create predictable debug directory
-	MCPBASH_STATE_DIR="${TMPDIR:-/tmp}/mcpbash.debug.$$"
+	# Create isolated debug directory with restrictive perms
+	MCPBASH_STATE_DIR="$(
+		(
+			umask 077
+			TMPDIR="${TMPDIR:-/tmp}" mktemp -d "${TMPDIR:-/tmp}/mcpbash.debug.XXXXXX"
+		)
+	)"
 	export MCPBASH_STATE_DIR
-	mkdir -p "${MCPBASH_STATE_DIR}"
 	# Print location to stderr immediately (safe for stdio servers)
 	printf 'mcp-bash debug: logging to %s/payload.debug.log\n' "${MCPBASH_STATE_DIR}" >&2
 	main "$@"

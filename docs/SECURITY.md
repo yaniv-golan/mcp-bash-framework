@@ -18,13 +18,15 @@ mcp-bash keeps the attack surface small: every tool is a subprocess with a contr
 - Logging defaults to `info` and follows RFC-5424 levels via `logging/setLevel`. Paths and manual-registration script output are redacted unless `MCPBASH_LOG_VERBOSE=true`; avoid enabling verbose mode in shared or remote environments as it exposes file paths, usernames, and cache locations.
 - Manual registration scripts run in-process; only enable trusted code or wrap it to sanitize output.
 - Outbound JSON is escaped and newline-compacted before hitting stdout to keep consumers safe.
+- State/lock/registry directories are created with `umask 077`; debug mode uses a randomized 0700 directory rather than a predictable path.
 
 ## Supply chain & tool audits
 - Pin tool dependencies (container digests, package versions) and verify checksums before running `bin/mcp-bash` in CI or production.
 - Treat `server.d/register.sh` and provider scripts as privileged code paths; require code review and signing, and avoid executing from writable shared volumes.
 - Run `shellcheck`/`shfmt`/`pre-commit run --all-files` on contributed tools/resources to prevent obvious injection vectors.
 - Periodically review `.registry/*.json` contents for unexpected providers/URIs and revoke filesystem roots that are no longer required.
-- Git resource provider is intentionally not constrained by local resource roots; only enable it in trusted environments or sandbox the server to limit which repositories can be fetched. It performs a fresh shallow clone per request; for large or frequently accessed repos, run behind an allowlisted proxy/cache or add a small TMPDIR cache keyed by repo/ref to avoid repeated network pulls.
+- HTTPS provider hardening: private/loopback hosts are blocked; optional allow/deny lists via `MCPBASH_HTTPS_ALLOW_HOSTS` / `MCPBASH_HTTPS_DENY_HOSTS`; timeouts and size are bounded (timeouts capped at 60s, max bytes capped at 20MB), redirects/protocol downgrades disabled.
+- Git resource provider: disabled by default; enable with `MCPBASH_ENABLE_GIT_PROVIDER=true`. Private/loopback blocked; optional allow/deny lists via `MCPBASH_GIT_ALLOW_HOSTS` / `MCPBASH_GIT_DENY_HOSTS`; shallow clone enforced, timeout bounded (default 30s, max 60s), repository size capped via `MCPBASH_GIT_MAX_KB` (default 50MB, max 1GB). Use behind an allowlisted proxy/cache where possible.
 
 ## Expectations for extensions
 - Validate inputs inside your tools; the framework does not guess what your scripts should accept or reject.

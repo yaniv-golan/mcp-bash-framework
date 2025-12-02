@@ -189,14 +189,15 @@ mcp_runtime_init_paths() {
 	fi
 
 	# Create state directory (needed for fastpath caching in registry refresh)
-	mkdir -p "${MCPBASH_STATE_DIR}" >/dev/null 2>&1 || true
+	(umask 077 && mkdir -p "${MCPBASH_STATE_DIR}") >/dev/null 2>&1 || true
+	(umask 077 && mkdir -p "${MCPBASH_LOCK_ROOT}") >/dev/null 2>&1 || true
 
 	# Content directories: explicit override → project default
 	# Registry: hidden .registry in project for cache files
 	if [ -z "${MCPBASH_REGISTRY_DIR}" ]; then
 		MCPBASH_REGISTRY_DIR="${MCPBASH_PROJECT_ROOT}/.registry"
 	fi
-	mkdir -p "${MCPBASH_REGISTRY_DIR}"
+	(umask 077 && mkdir -p "${MCPBASH_REGISTRY_DIR}") >/dev/null 2>&1 || true
 
 	# Tools directory
 	if [ -z "${MCPBASH_TOOLS_DIR}" ]; then

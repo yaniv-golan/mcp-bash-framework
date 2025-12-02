@@ -66,4 +66,14 @@ fi
 if [ ! -f "${path}" ]; then
 	exit 3
 fi
-cat "${path}"
+
+# Reject symlinks up front; prevents swapping a validated path to an external target.
+if [ -L "${path}" ]; then
+	exit 2
+fi
+
+# Best-effort: recheck symlink just before read, then read.
+if [ -L "${path}" ]; then
+	exit 2
+fi
+cat -- "${path}"
