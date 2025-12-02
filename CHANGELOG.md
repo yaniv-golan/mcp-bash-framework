@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Tightened state/lock/registry permissions with `umask 077`; debug mode now uses a randomized 0700 directory.
 - File provider now rejects symlinks and rechecks before read to reduce TOCTOU/symlink escape risk.
 - Scaffold commands validate names to prevent path traversal.
+ - Added `llms.txt` and `llms-full.txt` for LLM-specific repository guidance and compressed, agent-optimized reference content.
 
 ## [0.2.0] - 2025-12-02
 

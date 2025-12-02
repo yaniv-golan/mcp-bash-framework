@@ -1,0 +1,55 @@
+# mcp-bash
+
+> mcp-bash is a pure Bash implementation of the Model Context Protocol (MCP) that lets you expose shell scripts and binaries directly to AI systems with zero ceremony. No runtimes, no dependency chains—just Bash ≥3.2 and a JSON processor (jq/gojq).
+
+Key points:
+
+- **Framework/project separation**: Install the framework once, create unlimited MCP server projects. Your tools stay yours; upgrades are clean.
+- **Stdio transport only**: Standard input/output communication. No daemons, no HTTP servers, no hidden state.
+- **Auto-discovery**: Place scripts in `tools/`, `resources/`, or `prompts/` directories—the framework finds them automatically.
+- **Protocol version**: Targets MCP `2025-06-18` with negotiated downgrades to `2025-03-26` and `2024-11-05`.
+- **Cross-platform**: macOS, Linux, and Windows (Git Bash/WSL) support.
+
+## Docs
+
+- [README](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/README.md): Quick start, client recipes (Claude Desktop, Cursor, Windsurf, etc.), configuration reference, and feature overview.
+- [Architecture Guide](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/docs/ARCHITECTURE.md): Internal architecture, lifecycle loop, worker model, and handler implementation details.
+- [Project Structure Guide](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/docs/PROJECT-STRUCTURE.md): Layouts, Docker deployment, multi-environment setups, and path resolution.
+- [Protocol Compliance](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/SPEC-COMPLIANCE.md): Detailed MCP protocol support breakdown and capability coverage matrix.
+- [Best Practices Guide](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/docs/BEST-PRACTICES.md): Development, testing, operations, and contribution guidance.
+- [Testing Guide](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/TESTING.md): Lint, unit, integration, and stress test commands.
+
+## Examples
+
+- [00-hello-tool](https://github.com/yaniv-golan/mcp-bash-framework/tree/main/examples/00-hello-tool): Basic "Hello World" tool structure and metadata.
+- [01-args-and-validation](https://github.com/yaniv-golan/mcp-bash-framework/tree/main/examples/01-args-and-validation): Handling JSON arguments and input validation.
+- [02-logging-and-levels](https://github.com/yaniv-golan/mcp-bash-framework/tree/main/examples/02-logging-and-levels): Sending logs to the client and managing verbosity.
+- [03-progress-and-cancellation](https://github.com/yaniv-golan/mcp-bash-framework/tree/main/examples/03-progress-and-cancellation): Long-running tasks, reporting progress, and handling user cancellation.
+- [04-resources-basics](https://github.com/yaniv-golan/mcp-bash-framework/tree/main/examples/04-resources-basics): Listing and reading resources via the built-in file provider.
+- [05-prompts-basics](https://github.com/yaniv-golan/mcp-bash-framework/tree/main/examples/05-prompts-basics): Discovering and rendering prompt templates.
+- [06-manual-registration](https://github.com/yaniv-golan/mcp-bash-framework/tree/main/examples/06-manual-registration): Manual registry overrides, live progress streaming, and custom resource providers.
+- [07-elicitation](https://github.com/yaniv-golan/mcp-bash-framework/tree/main/examples/07-elicitation): Client-driven elicitation prompts that gate tool execution.
+- [08-roots-basics](https://github.com/yaniv-golan/mcp-bash-framework/tree/main/examples/08-roots-basics): MCP roots scoping for tools; allows/denies file reads based on configured roots.
+
+## SDK & Scaffolding
+
+- [Tool SDK](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/sdk/tool-sdk.sh): Shared helpers for argument parsing (`mcp_args_get`), output (`mcp_emit_json`, `mcp_emit_text`), progress (`mcp_progress`), cancellation (`mcp_is_cancelled`), and logging (`mcp_log_info`, `mcp_log_warn`).
+- [Scaffold Templates](https://github.com/yaniv-golan/mcp-bash-framework/tree/main/scaffold): Templates for generating compliant tools, resources, and prompts via `mcp-bash scaffold <type> <name>`.
+
+## Configuration Reference
+
+- [Registry Contracts](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/docs/REGISTRY.md): Registry JSON schemas, TTL, regeneration, and manual overrides.
+- [Limits & Performance](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/docs/LIMITS.md): Tunable limits for concurrency, payloads, progress throttling.
+- [Logging](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/docs/LOGGING.md): Log levels, verbose mode, and structured logging.
+- [Roots](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/docs/ROOTS.md): MCP roots scoping for filesystem access control.
+- [Minimal Mode](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/docs/MINIMAL-MODE.md): Behavior when jq/gojq is missing or minimal mode is forced.
+
+## Optional
+
+- [Security Policy](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/docs/SECURITY.md): Input validation, execution safety, and threat model.
+- [Windows Support](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/docs/WINDOWS.md): Running on Git Bash/WSL, path normalization, and known limitations.
+- [Remote Connectivity](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/docs/REMOTE.md): Exposing mcp-bash over HTTP/SSE via external gateways.
+- [Debugging Guide](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/docs/DEBUGGING.md): Debug mode, payload tracing, and log analysis.
+- [Changelog](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/CHANGELOG.md): Notable changes between releases.
+- [Contributing](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/CONTRIBUTING.md): Development setup, coding conventions, and PR workflow.
+
