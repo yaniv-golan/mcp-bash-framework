@@ -4,10 +4,10 @@ set -euo pipefail
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 
 # Source SDK (MCP_SDK is set by the framework when running tools)
-# shellcheck source=../../../sdk/tool-sdk.sh disable=SC1091
+# shellcheck source=../../../../../sdk/tool-sdk.sh disable=SC1091
 source "${MCP_SDK:?MCP_SDK environment variable not set}/tool-sdk.sh"
-# shellcheck source=../lib/roots.sh disable=SC1091
-source "${script_dir}/../lib/roots.sh"
+# shellcheck source=../../lib/roots.sh disable=SC1091
+source "${script_dir}/../../lib/roots.sh"
 
 input_path="$(mcp_args_get '.input // empty' 2>/dev/null || true)"
 timestamp="$(mcp_args_get '.time // empty' 2>/dev/null || true)"

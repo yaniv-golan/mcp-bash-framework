@@ -19,11 +19,12 @@ export MCPBASH_PROJECT_ROOT="${TMP}"
 mkdir -p "${TMP}/tools" "${TMP}/resources" "${TMP}/prompts"
 
 # Seed a simple tool
-cat <<'SH' >"${TMP}/tools/hello.sh"
+mkdir -p "${TMP}/tools/hello"
+cat <<'SH' >"${TMP}/tools/hello/tool.sh"
 #!/usr/bin/env bash
 echo "hello"
 SH
-chmod +x "${TMP}/tools/hello.sh"
+chmod +x "${TMP}/tools/hello/tool.sh"
 
 assert_json_value() {
 	local json="$1"
@@ -48,11 +49,12 @@ output2="$("${BIN}" registry refresh --project-root "${TMP}" --no-notify)"
 assert_json_value "${output2}" '.tools.count' '1'
 
 # Add a new tool to force change
-cat <<'SH' >"${TMP}/tools/hi.sh"
+mkdir -p "${TMP}/tools/hi"
+cat <<'SH' >"${TMP}/tools/hi/tool.sh"
 #!/usr/bin/env bash
 echo "hi"
 SH
-chmod +x "${TMP}/tools/hi.sh"
+chmod +x "${TMP}/tools/hi/tool.sh"
 
 output3="$("${BIN}" registry refresh --project-root "${TMP}" --no-notify)"
 assert_json_value "${output3}" '.tools.count' '2'

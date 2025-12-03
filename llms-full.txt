@@ -27,7 +27,7 @@ Pure Bash MCP server framework. Bash≥3.2 + jq/gojq. Stdio transport only.
 ## TOOL STRUCTURE
 
 - Tools are Bash scripts invoked by the framework via stdio.
-- Standard pattern (see `scaffold/tool/tool.sh` or `examples/00-hello-tool/tools/hello.sh`):
+- Standard pattern (see `scaffold/tool/tool.sh` or `examples/00-hello-tool/tools/hello/tool.sh`):
   - `#!/usr/bin/env bash`, `set -euo pipefail`.
   - Assume `MCP_SDK` is set by the framework to the `sdk/` directory; exit with a clear error if it is not.
   - `source "${MCP_SDK}/tool-sdk.sh"` to load SDK helpers.
@@ -201,9 +201,9 @@ Pure Bash MCP server framework. Bash≥3.2 + jq/gojq. Stdio transport only.
 ## PATTERNS & EXAMPLES
 
 - Common patterns (see `examples/` for full code):
-  - Args + validation: `examples/01-args-and-validation/tools/echo-arg.sh`.
-  - Logging + levels: `examples/02-logging-and-levels/tools/logger.sh`.
-  - Progress + cancellation: `examples/03-progress-and-cancellation/tools/slow.sh`.
+  - Args + validation: `examples/01-args-and-validation/tools/echo-arg/tool.sh`.
+  - Logging + levels: `examples/02-logging-and-levels/tools/logger/tool.sh`.
+  - Progress + cancellation: `examples/03-progress-and-cancellation/tools/slow/tool.sh`.
   - Resources basics: `examples/04-resources-basics`.
   - Prompts basics: `examples/05-prompts-basics`.
   - Manual registration + live progress: `examples/06-manual-registration`.

@@ -436,6 +436,11 @@ mcp_tools_scan() {
 				fi
 			fi
 			local rel_path="${path#"${MCPBASH_TOOLS_DIR}"/}"
+			# Enforce per-tool subdirectories under tools/ (ignore root-level scripts)
+			case "${rel_path}" in
+			*/*) ;;
+			*) continue ;;
+			esac
 			local base_name
 			base_name="$(basename "${path}")"
 			local name="${base_name%.*}"

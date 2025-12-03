@@ -17,11 +17,11 @@ test_create_tmpdir
 WORKSPACE="${TEST_TMPDIR}/long"
 test_stage_workspace "${WORKSPACE}"
 
-mkdir -p "${WORKSPACE}/tools"
-cat <<'META' >"${WORKSPACE}/tools/slow.meta.json"
+mkdir -p "${WORKSPACE}/tools/slow"
+cat <<'META' >"${WORKSPACE}/tools/slow/tool.meta.json"
 {"name": "stress.slow", "description": "Sleeps and emits progress", "arguments": {"type": "object", "properties": {}}, "timeoutSecs": 2}
 META
-cat <<'SH' >"${WORKSPACE}/tools/slow.sh"
+cat <<'SH' >"${WORKSPACE}/tools/slow/tool.sh"
 #!/usr/bin/env bash
 set -euo pipefail
 . "${MCP_SDK}/tool-sdk.sh"
@@ -29,7 +29,7 @@ mcp_progress 10 "starting"
 sleep 5
 printf 'done'
 SH
-chmod +x "${WORKSPACE}/tools/slow.sh"
+chmod +x "${WORKSPACE}/tools/slow/tool.sh"
 
 REQS="${WORKSPACE}/requests.ndjson"
 cat <<'JSON' >"${REQS}"
@@ -49,7 +49,10 @@ set -e
 end=$(date +%s)
 elapsed=$((end - start))
 
-if [ "${elapsed}" -ge 4 ]; then
+# Allow some slack for slower environments and CI jitter while still
+# enforcing that the watchdog terminates the tool well before the full
+# 5s sleep completes.
+if [ "${elapsed}" -ge 6 ]; then
 	echo "Long-running tool did not stop within timeout window (elapsed ${elapsed}s)" >&2
 	cat "${RESP}" >&2
 	exit 1

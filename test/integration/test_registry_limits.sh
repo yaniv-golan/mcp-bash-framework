@@ -19,14 +19,15 @@ test_stage_workspace "${WORKSPACE}"
 
 mkdir -p "${WORKSPACE}/tools"
 for i in $(seq 1 5); do
-	cat <<META >"${WORKSPACE}/tools/tool${i}.meta.json"
+	mkdir -p "${WORKSPACE}/tools/tool${i}"
+	cat <<META >"${WORKSPACE}/tools/tool${i}/tool.meta.json"
 {"name":"tool${i}","description":"x","arguments":{"type":"object","properties":{}}}
 META
-	cat <<'SH' >"${WORKSPACE}/tools/tool${i}.sh"
+	cat <<'SH' >"${WORKSPACE}/tools/tool${i}/tool.sh"
 #!/usr/bin/env bash
 echo ok
 SH
-	chmod +x "${WORKSPACE}/tools/tool${i}.sh"
+	chmod +x "${WORKSPACE}/tools/tool${i}/tool.sh"
 done
 
 output="$(

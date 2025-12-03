@@ -19,15 +19,15 @@ test_create_tmpdir
 WORKSPACE="${TEST_TMPDIR}/tools-schema"
 test_stage_workspace "${WORKSPACE}"
 
-mkdir -p "${WORKSPACE}/tools"
-cat <<'META' >"${WORKSPACE}/tools/schema.meta.json"
+mkdir -p "${WORKSPACE}/tools/schema"
+cat <<'META' >"${WORKSPACE}/tools/schema/tool.meta.json"
 {"name":"schema.tool","description":"structured","arguments":{"type":"object","properties":{}},"outputSchema":{"type":"object","properties":{"message":{"type":"string"}},"required":["message"]}}
 META
-cat <<'SH' >"${WORKSPACE}/tools/schema.sh"
+cat <<'SH' >"${WORKSPACE}/tools/schema/tool.sh"
 #!/usr/bin/env bash
 echo '{"msg":"bad"}'
 SH
-chmod +x "${WORKSPACE}/tools/schema.sh"
+chmod +x "${WORKSPACE}/tools/schema/tool.sh"
 
 # Build initial registry and call tool synchronously
 cat <<'JSON' >"${WORKSPACE}/requests.ndjson"
@@ -47,14 +47,14 @@ if [ "${call_error}" = "" ]; then
 fi
 
 # Modify tool metadata and script to force list_changed via TTL
-cat <<'META' >"${WORKSPACE}/tools/schema.meta.json"
+cat <<'META' >"${WORKSPACE}/tools/schema/tool.meta.json"
 {"name":"schema.tool","description":"structured (updated)","arguments":{"type":"object","properties":{}},"outputSchema":{"type":"object","properties":{"message":{"type":"string"}},"required":["message"]}}
 META
-cat <<'SH' >"${WORKSPACE}/tools/schema.sh"
+cat <<'SH' >"${WORKSPACE}/tools/schema/tool.sh"
 #!/usr/bin/env bash
 echo '{"message":"ok"}'
 SH
-chmod +x "${WORKSPACE}/tools/schema.sh"
+chmod +x "${WORKSPACE}/tools/schema/tool.sh"
 
 cat <<'JSON' >"${WORKSPACE}/followup.ndjson"
 {"jsonrpc":"2.0","id":"init","method":"initialize","params":{}}

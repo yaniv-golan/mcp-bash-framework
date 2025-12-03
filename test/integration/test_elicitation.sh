@@ -26,7 +26,8 @@ WORKROOT="${TEST_TMPDIR}/elicitation"
 test_stage_workspace "${WORKROOT}"
 
 # Create elicitation test tool
-cat <<'META' >"${WORKROOT}/tools/elicitation.meta.json"
+mkdir -p "${WORKROOT}/tools/elicitation"
+cat <<'META' >"${WORKROOT}/tools/elicitation/tool.meta.json"
 {
   "name": "elicitation.test",
   "description": "Asks for confirmation via elicitation",
@@ -34,7 +35,7 @@ cat <<'META' >"${WORKROOT}/tools/elicitation.meta.json"
 }
 META
 
-cat <<'SH' >"${WORKROOT}/tools/elicitation.sh"
+cat <<'SH' >"${WORKROOT}/tools/elicitation/tool.sh"
 #!/usr/bin/env bash
 set -euo pipefail
 source "${MCP_SDK}/tool-sdk.sh"
@@ -53,7 +54,7 @@ fi
 mcp_emit_text "not-confirmed:${action}"
 exit 0
 SH
-chmod +x "${WORKROOT}/tools/elicitation.sh"
+chmod +x "${WORKROOT}/tools/elicitation/tool.sh"
 
 IN_FIFO="${TEST_TMPDIR}/elicitation.in"
 OUT_FIFO="${TEST_TMPDIR}/elicitation.out"

@@ -17,16 +17,16 @@ test_create_tmpdir
 WORKSPACE="${TEST_TMPDIR}/guard"
 test_stage_workspace "${WORKSPACE}"
 
-mkdir -p "${WORKSPACE}/tools"
-cat <<'META' >"${WORKSPACE}/tools/big.meta.json"
+mkdir -p "${WORKSPACE}/tools/big"
+cat <<'META' >"${WORKSPACE}/tools/big/tool.meta.json"
 {"name": "stress.big", "description": "Emit huge output", "arguments": {"type": "object", "properties": {}}}
 META
-cat <<'SH' >"${WORKSPACE}/tools/big.sh"
+cat <<'SH' >"${WORKSPACE}/tools/big/tool.sh"
 #!/usr/bin/env bash
 set -euo pipefail
 yes A | head -c 15000000
 SH
-chmod +x "${WORKSPACE}/tools/big.sh"
+chmod +x "${WORKSPACE}/tools/big/tool.sh"
 
 REQS="${WORKSPACE}/requests.ndjson"
 cat <<'JSON' >"${REQS}"

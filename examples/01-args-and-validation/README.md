@@ -27,6 +27,6 @@
 - Valid call echoes the provided value; missing argument yields a validation error
 
 **Troubleshooting**
-- Ensure scripts are executable (`chmod +x examples/run examples/01-args-and-validation/tools/*.sh`).
+- Ensure scripts are executable (`chmod +x examples/run examples/01-args-and-validation/tools/*/tool.sh`).
 - Install jq/gojq; minimal mode disables tools/resources/prompts.
 - Avoid CRLF in requests; send LF-only NDJSON.

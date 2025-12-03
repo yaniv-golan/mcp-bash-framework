@@ -139,7 +139,7 @@ Framework (Install Once)               Your Project (Version Control This)
                                        └── .registry/ (auto-generated)
 ```
 
-The scaffolder creates nested directories per tool (e.g., `tools/check-disk/tool.sh`); the examples stay flat for readability. Both layouts are supported by discovery.
+The scaffolder and examples use per-tool directories (e.g., `tools/check-disk/tool.sh`); automatic discovery requires tools to live under subdirectories of `tools/` (root-level scripts are not discovered).
 
 See [**Project Structure Guide**](docs/PROJECT-STRUCTURE.md) for detailed layouts, Docker deployment, and multi-environment setups.
 

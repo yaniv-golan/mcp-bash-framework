@@ -19,29 +19,30 @@ test_create_tmpdir
 WORKSPACE="${TEST_TMPDIR}/tool-errors"
 test_stage_workspace "${WORKSPACE}"
 
-mkdir -p "${WORKSPACE}/tools"
+mkdir -p "${WORKSPACE}/tools/fail"
 
 # Tool exits non-zero and prints stderr
-cat <<'META' >"${WORKSPACE}/tools/fail.meta.json"
+cat <<'META' >"${WORKSPACE}/tools/fail/tool.meta.json"
 {"name":"fail.tool","description":"fail","arguments":{"type":"object","properties":{}}}
 META
-cat <<'SH' >"${WORKSPACE}/tools/fail.sh"
+cat <<'SH' >"${WORKSPACE}/tools/fail/tool.sh"
 #!/usr/bin/env bash
 echo "nope" >&2
 exit 7
 SH
-chmod +x "${WORKSPACE}/tools/fail.sh"
+chmod +x "${WORKSPACE}/tools/fail/tool.sh"
 
 # Tool with metadata timeout overridden by request
-cat <<'META' >"${WORKSPACE}/tools/slow.meta.json"
+mkdir -p "${WORKSPACE}/tools/slow"
+cat <<'META' >"${WORKSPACE}/tools/slow/tool.meta.json"
 {"name":"slow.tool","description":"slow","arguments":{"type":"object","properties":{}},"timeoutSecs":5}
 META
-cat <<'SH' >"${WORKSPACE}/tools/slow.sh"
+cat <<'SH' >"${WORKSPACE}/tools/slow/tool.sh"
 #!/usr/bin/env bash
 sleep 10
 echo "should-timeout"
 SH
-chmod +x "${WORKSPACE}/tools/slow.sh"
+chmod +x "${WORKSPACE}/tools/slow/tool.sh"
 
 cat <<'JSON' >"${WORKSPACE}/requests.ndjson"
 {"jsonrpc":"2.0","id":"init","method":"initialize","params":{}}

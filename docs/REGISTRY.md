@@ -39,7 +39,7 @@ Each entry describes an executable tool. Paths are relative to `MCPBASH_TOOLS_DI
     {
       "name": "example.hello",
       "description": "Return a friendly greeting",
-      "path": "hello/hello.sh",
+      "path": "hello/tool.sh",
       "inputSchema": {
         "type": "object",
         "properties": {}

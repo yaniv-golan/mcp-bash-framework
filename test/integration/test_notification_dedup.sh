@@ -17,13 +17,13 @@ test_fast_sequence_notification_count() {
 	# Set up a workspace with at least one tool to ensure registries exist
 	local test_dir
 	test_dir="$(mktemp -d)"
-	mkdir -p "${test_dir}/tools"
-	cat >"${test_dir}/tools/test_tool.sh" <<'TOOL'
+	mkdir -p "${test_dir}/tools/test-tool"
+	cat >"${test_dir}/tools/test-tool/tool.sh" <<'TOOL'
 #!/usr/bin/env bash
 # @describe A test tool
 echo "ok"
 TOOL
-	chmod +x "${test_dir}/tools/test_tool.sh"
+	chmod +x "${test_dir}/tools/test-tool/tool.sh"
 
 	local output_file="${test_dir}/output.json"
 

@@ -27,6 +27,6 @@
 - Calling `example.hello` returns a greeting (text or structured if jq/gojq is present)
 
 **Troubleshooting**
-- Ensure scripts are executable (`chmod +x examples/run examples/00-hello-tool/tools/*.sh`).
+- Ensure scripts are executable (`chmod +x examples/run examples/00-hello-tool/tools/*/tool.sh`).
 - If you see minimal-mode warnings, install jq/gojq; minimal mode disables tools/resources/prompts entirely.
 - Avoid CRLF in requests; send LF-only NDJSON.

@@ -31,7 +31,8 @@ rm -f "${AUTO_ROOT}/server.d/register.sh"
 mkdir -p "${AUTO_ROOT}/tools"
 cp -a "${MCPBASH_HOME}/examples/00-hello-tool/tools/." "${AUTO_ROOT}/tools/"
 
-cat <<'METADATA' >"${AUTO_ROOT}/tools/world.meta.json"
+mkdir -p "${AUTO_ROOT}/tools/world"
+cat <<'METADATA' >"${AUTO_ROOT}/tools/world/tool.meta.json"
 {
   "name": "world",
   "description": "Structured world tool",
@@ -49,11 +50,11 @@ cat <<'METADATA' >"${AUTO_ROOT}/tools/world.meta.json"
 }
 METADATA
 
-cat <<'SH' >"${AUTO_ROOT}/tools/world.sh"
+cat <<'SH' >"${AUTO_ROOT}/tools/world/tool.sh"
 #!/usr/bin/env bash
 printf '{"message":"world"}'
 SH
-chmod +x "${AUTO_ROOT}/tools/world.sh"
+chmod +x "${AUTO_ROOT}/tools/world/tool.sh"
 
 cat <<'JSON' >"${AUTO_ROOT}/requests.ndjson"
 {"jsonrpc":"2.0","id":"auto-init","method":"initialize","params":{}}
@@ -170,9 +171,9 @@ test_assert_eq "$exit_code" "0"
 # --- Tool environment isolation (minimal vs allowlist) ---
 ENV_ROOT="${TEST_TMPDIR}/env"
 test_stage_workspace "${ENV_ROOT}"
-mkdir -p "${ENV_ROOT}/tools"
+mkdir -p "${ENV_ROOT}/tools/env"
 
-cat <<'META' >"${ENV_ROOT}/tools/env.meta.json"
+cat <<'META' >"${ENV_ROOT}/tools/env/tool.meta.json"
 {
   "name": "env.echo",
   "description": "Echo selected env",
@@ -188,12 +189,12 @@ cat <<'META' >"${ENV_ROOT}/tools/env.meta.json"
 }
 META
 
-cat <<'SH' >"${ENV_ROOT}/tools/env.sh"
+cat <<'SH' >"${ENV_ROOT}/tools/env/tool.sh"
 #!/usr/bin/env bash
 set -euo pipefail
 printf '{"foo":"%s","bar":"%s"}' "${FOO:-}" "${BAR:-}"
 SH
-chmod +x "${ENV_ROOT}/tools/env.sh"
+chmod +x "${ENV_ROOT}/tools/env/tool.sh"
 
 cat <<'JSON' >"${ENV_ROOT}/requests.ndjson"
 {"jsonrpc":"2.0","id":"init","method":"initialize","params":{}}
@@ -235,8 +236,9 @@ fi
 # --- Structured tool error propagation ---
 FAIL_ROOT="${TEST_TMPDIR}/fail"
 test_stage_workspace "${FAIL_ROOT}"
+mkdir -p "${FAIL_ROOT}/tools/fail"
 
-cat <<'META' >"${FAIL_ROOT}/tools/fail.meta.json"
+cat <<'META' >"${FAIL_ROOT}/tools/fail/tool.meta.json"
 {
   "name": "fail-tool",
   "description": "Returns a structured error",
@@ -247,13 +249,13 @@ cat <<'META' >"${FAIL_ROOT}/tools/fail.meta.json"
 }
 META
 
-cat <<'SH' >"${FAIL_ROOT}/tools/fail.sh"
+cat <<'SH' >"${FAIL_ROOT}/tools/fail/tool.sh"
 #!/usr/bin/env bash
 set -euo pipefail
 source "${MCP_SDK}/tool-sdk.sh"
 mcp_fail_invalid_args "bad input" '{"hint":"fix it"}'
 SH
-chmod +x "${FAIL_ROOT}/tools/fail.sh"
+chmod +x "${FAIL_ROOT}/tools/fail/tool.sh"
 
 cat <<'JSON' >"${FAIL_ROOT}/requests.ndjson"
 {"jsonrpc":"2.0","id":"fail-init","method":"initialize","params":{}}

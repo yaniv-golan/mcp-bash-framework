@@ -28,7 +28,7 @@
 - Cancellation returns `-32001` and stops further progress updates
 
 **Troubleshooting**
-- Ensure scripts are executable (`chmod +x examples/run examples/03-progress-and-cancellation/tools/*.sh`).
+- Ensure scripts are executable (`chmod +x examples/run examples/03-progress-and-cancellation/tools/*/tool.sh`).
 - If you don’t see progress, include `_meta.progressToken` in the call.
 - If you see minimal-mode warnings, install jq/gojq; minimal mode disables tools/resources/prompts.
 - Avoid CRLF in requests; send LF-only NDJSON.
