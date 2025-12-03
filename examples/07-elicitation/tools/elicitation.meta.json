@@ -1,7 +1,7 @@
 {
   "name": "example.elicitation",
   "description": "Demonstrates elicitation confirm + choice",
-  "arguments": {
+  "inputSchema": {
     "type": "object",
     "properties": {},
     "additionalProperties": false

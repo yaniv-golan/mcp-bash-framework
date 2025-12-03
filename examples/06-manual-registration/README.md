@@ -10,10 +10,8 @@
 - jq or gojq required; otherwise the server enters minimal mode and manual registry entries are not exposed
 
 **Run**
-```
-export MCPBASH_PROJECT_ROOT=$(pwd)/examples/06-manual-registration
-export MCPBASH_ENABLE_LIVE_PROGRESS=true   # optional
-bin/mcp-bash
+```bash
+./examples/run 06-manual-registration
 ```
 
 **Transcript (abridged)**

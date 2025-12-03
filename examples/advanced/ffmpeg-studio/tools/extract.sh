@@ -36,16 +36,7 @@ fi
 
 # Run ffmpeg to extract single frame
 if ffmpeg -ss "${timestamp}" -i "${full_input}" -frames:v 1 -y "${full_output}" >/dev/null 2>&1; then
-	json_tool="${MCPBASH_JSON_TOOL_BIN:-}"
-	if [ -z "${json_tool}" ] || ! command -v "${json_tool}" >/dev/null 2>&1; then
-		json_tool=""
-	fi
-
-	if [ -n "${json_tool}" ]; then
-		mcp_emit_json "$("${json_tool}" -n --arg message "Frame extracted to ${output_path}" '{message:$message}')" || mcp_emit_text "Frame extracted to ${output_path}"
-	else
-		mcp_emit_text "Frame extracted to ${output_path}"
-	fi
+	mcp_emit_json "$(mcp_json_obj message "Frame extracted to ${output_path}")"
 else
 	mcp_fail -32603 "Failed to extract frame"
 fi

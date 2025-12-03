@@ -144,18 +144,4 @@ if [ "${wait_status}" -ne 0 ]; then
 	mcp_fail -32603 "Transcode failed (ffmpeg exit ${wait_status})"
 fi
 
-json_tool="${MCPBASH_JSON_TOOL_BIN:-}"
-if [ -z "${json_tool}" ] || ! command -v "${json_tool}" >/dev/null 2>&1; then
-	json_tool=""
-fi
-
-emit_message_json() {
-	local message="$1"
-	if [ -n "${json_tool}" ]; then
-		mcp_emit_json "$("${json_tool}" -n --arg message "${message}" '{message:$message}')" || mcp_emit_text "${message}"
-	else
-		mcp_emit_text "${message}"
-	fi
-}
-
-emit_message_json "Transcoding complete: ${output_path}"
+mcp_emit_json "$(mcp_json_obj message "Transcoding complete: ${output_path}")"
