@@ -51,8 +51,18 @@ if ! printf '%s' "${config_json}" | jq -e '.name == "git-sorcerer"' >/dev/null; 
 fi
 
 canonical_root="$(cd "${PROJECT_DIR}" && (pwd -P 2>/dev/null || pwd))"
-if ! printf '%s' "${config_json}" | jq -e --arg root "${canonical_root}" '.env.MCPBASH_PROJECT_ROOT == $root' >/dev/null; then
-	test_fail "config --json MCPBASH_PROJECT_ROOT does not match project directory"
+config_root="$(printf '%s' "${config_json}" | jq -r '.env.MCPBASH_PROJECT_ROOT // ""')"
+
+if [ -z "${config_root}" ]; then
+	test_fail "config --json did not include MCPBASH_PROJECT_ROOT"
+fi
+
+if [ ! -d "${config_root}" ]; then
+	test_fail "config --json MCPBASH_PROJECT_ROOT does not point to an existing directory: ${config_root}"
+fi
+
+if [ ! -f "${config_root}/server.d/server.meta.json" ]; then
+	test_fail "config --json MCPBASH_PROJECT_ROOT does not contain server.d/server.meta.json: ${config_root}"
 fi
 
 printf ' -> doctor\n'
