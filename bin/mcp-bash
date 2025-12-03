@@ -1140,7 +1140,10 @@ mcp_cli_doctor() {
 	if [ -n "${resolved}" ] && [ "${resolved}" = "${framework_home}/bin/mcp-bash" ]; then
 		printf '  ✓ PATH configured correctly\n'
 	else
-		printf '  ✗ PATH not configured (run: export PATH="%s/bin:$PATH")\n' "${framework_home}"
+		# PATH is recommended but not strictly required when invoking the
+		# framework via an absolute path, so treat this as a warning rather
+		# than a hard error to avoid failing doctor in local dev setups.
+		printf '  ⚠ PATH not configured (run: export PATH="%s/bin:$PATH")\n' "${framework_home}"
 		warnings=$((warnings + 1))
 	fi
 
@@ -1237,7 +1240,11 @@ mcp_cli_doctor() {
 		exit 1
 	fi
 
-	printf 'All checks passed! Ready to build MCP servers. (warnings: %d)\n' "${warnings}"
+	if [ "${warnings}" -gt 0 ]; then
+		printf 'Checks passed with %d warning(s). Review the notes above before production use.\n' "${warnings}"
+	else
+		printf 'All checks passed! Ready to build MCP servers.\n'
+	fi
 	exit 0
 }
 
