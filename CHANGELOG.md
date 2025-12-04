@@ -5,7 +5,7 @@ All notable changes to mcp-bash-framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.3.0] - Unreleased
+## [0.3.0] - 2025-12-05
 
 ### Added
 - CLI project tooling for standalone servers:
@@ -39,7 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - All bundled examples and stress/integration tests have been updated to use the per-tool directory layout, matching the scaffolder output (`mcp-bash scaffold tool <name>`).
 - Documentation (README, best practices, registry contracts, LLM guide) no longer advertises flat layouts as supported; the canonical layout is `tools/<name>/tool.sh` + `tools/<name>/tool.meta.json`.
 
-## [0.2.1] - 2025-12-09
+## [0.2.1] - 2025-12-03
 
 ### Changed
 - Hardened HTTPS provider: blocks private/loopback hosts, optional host allow/deny via `MCPBASH_HTTPS_ALLOW_HOSTS` / `MCPBASH_HTTPS_DENY_HOSTS`, disables redirects/protocol downgrades, and caps timeouts/size (timeout ≤60s, max bytes ≤20MB).
