@@ -18,16 +18,16 @@ WORKSPACE="${TEST_TMPDIR}/concurrency"
 test_stage_workspace "${WORKSPACE}"
 
 # Install a simple tool
-mkdir -p "${WORKSPACE}/tools"
-cat <<'META' >"${WORKSPACE}/tools/echo.meta.json"
+mkdir -p "${WORKSPACE}/tools/echo"
+cat <<'META' >"${WORKSPACE}/tools/echo/tool.meta.json"
 {"name": "stress.echo", "description": "Echo args", "arguments": {"type": "object", "properties": {"msg": {"type": "string"}}}}
 META
-cat <<'SH' >"${WORKSPACE}/tools/echo.sh"
+cat <<'SH' >"${WORKSPACE}/tools/echo/tool.sh"
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s' "$(jq -r '.msg // "ok"' <<<"${MCP_TOOL_ARGS_JSON:-"{}"}")"
 SH
-chmod +x "${WORKSPACE}/tools/echo.sh"
+chmod +x "${WORKSPACE}/tools/echo/tool.sh"
 
 # Launch server
 PIPE_IN="${WORKSPACE}/pipe_in"

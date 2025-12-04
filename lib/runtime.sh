@@ -43,6 +43,57 @@ mcp_runtime_log_allowed() {
 	return 0
 }
 
+mcp_runtime_find_project_root() {
+	# Walk up from the given directory to find a project marker (server.d/server.meta.json),
+	# skipping any paths that live under MCPBASH_HOME (framework layout, examples, scaffold).
+	# Prints the detected project root on success.
+	local start_dir="${1:-${PWD}}"
+	local dir="${start_dir}"
+
+	# Resolve symlinks where possible for predictable behavior across platforms.
+	if command -v realpath >/dev/null 2>&1 && realpath -m / >/dev/null 2>&1; then
+		dir="$(realpath -m "${dir}" 2>/dev/null || printf '%s' "${dir}")"
+	elif command -v readlink >/dev/null 2>&1 && readlink -f / >/dev/null 2>&1; then
+		dir="$(readlink -f "${dir}" 2>/dev/null || printf '%s' "${dir}")"
+	fi
+
+	while [ -n "${dir}" ] && [ "${dir}" != "/" ]; do
+		# Skip framework-internal paths (bootstrap/, examples/, scaffold/, etc.)
+		if [ -n "${MCPBASH_HOME:-}" ]; then
+			case "${dir}" in
+			"${MCPBASH_HOME}" | "${MCPBASH_HOME}/"*)
+				dir="$(dirname "${dir}")"
+				continue
+				;;
+			esac
+		fi
+
+		if [ -f "${dir}/server.d/server.meta.json" ]; then
+			printf '%s' "${dir}"
+			return 0
+		fi
+
+		dir="$(dirname "${dir}")"
+	done
+
+	return 1
+}
+
+mcp_runtime_project_not_found_error() {
+	cat >&2 <<'EOF'
+Error: No MCP project found.
+
+Could not find server.d/server.meta.json in the current directory or any parent.
+
+To create a new project here:
+  mcp-bash init --name my-server
+
+To specify a project explicitly:
+  use --project-root /path/to/project or set MCPBASH_PROJECT_ROOT
+EOF
+	exit 1
+}
+
 mcp_runtime_stage_bootstrap_project() {
 	if [ "${MCPBASH_BOOTSTRAP_STAGED}" = "true" ]; then
 		return 0
@@ -88,48 +139,6 @@ mcp_runtime_stage_bootstrap_project() {
 	fi
 }
 
-# Validate that MCPBASH_PROJECT_ROOT is set and exists.
-# Called early in startup; exits with helpful error if not configured.
-mcp_runtime_require_project_root() {
-	local bootstrap_hint="${1:-false}"
-
-	if [ -z "${MCPBASH_PROJECT_ROOT:-}" ]; then
-		cat >&2 <<'EOF'
-mcp-bash: MCPBASH_PROJECT_ROOT is not set.
-
-mcp-bash requires a project directory separate from the framework.
-Set MCPBASH_PROJECT_ROOT to your project directory containing tools/, prompts/, resources/.
-EOF
-		if [ "${bootstrap_hint}" = "true" ]; then
-			cat >&2 <<'EOF'
-Tip: run mcp-bash without MCPBASH_PROJECT_ROOT to open a temporary getting-started helper with setup instructions.
-EOF
-		fi
-		cat >&2 <<'EOF'
-Example (Claude Desktop config):
-{
-  "mcpServers": {
-    "my-server": {
-      "command": "/Users/you/mcp-bash-framework/bin/mcp-bash",
-      "env": {
-        "MCPBASH_PROJECT_ROOT": "/path/to/my-project"
-      }
-    }
-  }
-}
-
-See: https://github.com/yaniv-golan/mcp-bash-framework#quick-start
-EOF
-		exit 1
-	fi
-
-	if [ ! -d "${MCPBASH_PROJECT_ROOT}" ]; then
-		printf 'mcp-bash: MCPBASH_PROJECT_ROOT directory does not exist: %s\n' "${MCPBASH_PROJECT_ROOT}" >&2
-		printf 'Set MCPBASH_PROJECT_ROOT to an existing project directory or create it first.\n' >&2
-		exit 1
-	fi
-}
-
 mcp_runtime_init_paths() {
 	local mode="${1:-server}"
 	local allow_bootstrap="${2:-}"
@@ -142,12 +151,24 @@ mcp_runtime_init_paths() {
 		fi
 	fi
 
-	if [ "${allow_bootstrap}" = "true" ] && [ -z "${MCPBASH_PROJECT_ROOT:-}" ]; then
+	# Resolve project root:
+	# 1. Respect MCPBASH_PROJECT_ROOT if set (and ensure it exists)
+	# 2. Otherwise, auto-detect from current directory
+	# 3. For server mode with bootstrap allowed, stage bootstrap project
+	# 4. Otherwise, emit a clear error
+	if [ -n "${MCPBASH_PROJECT_ROOT:-}" ]; then
+		if [ ! -d "${MCPBASH_PROJECT_ROOT}" ]; then
+			printf 'mcp-bash: MCPBASH_PROJECT_ROOT directory does not exist: %s\n' "${MCPBASH_PROJECT_ROOT}" >&2
+			printf 'Set MCPBASH_PROJECT_ROOT to an existing project directory or create it first.\n' >&2
+			exit 1
+		fi
+	elif MCPBASH_PROJECT_ROOT="$(mcp_runtime_find_project_root "${PWD}")"; then
+		export MCPBASH_PROJECT_ROOT
+	elif [ "${allow_bootstrap}" = "true" ] && [ "${mode}" = "server" ]; then
 		mcp_runtime_stage_bootstrap_project
+	else
+		mcp_runtime_project_not_found_error
 	fi
-
-	# Require MCPBASH_PROJECT_ROOT to be set
-	mcp_runtime_require_project_root "${allow_bootstrap}"
 
 	# Normalize PROJECT_ROOT (strip trailing slash for consistent path construction)
 	MCPBASH_PROJECT_ROOT="${MCPBASH_PROJECT_ROOT%/}"

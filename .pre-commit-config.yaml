@@ -1,16 +1,9 @@
 repos:
-  - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.6.0
+  - repo: local
     hooks:
-      - id: trailing-whitespace
-      - id: end-of-file-fixer
-      - id: check-yaml
-  - repo: https://github.com/koalaman/shellcheck-precommit
-    rev: v0.10.0
-    hooks:
-      - id: shellcheck
-        files: \.sh$
-  - repo: https://github.com/scop/pre-commit-shfmt
-    rev: v3.8.0-1
-    hooks:
-      - id: shfmt
+      - id: lint
+        name: Run lint.sh (shellcheck + shfmt)
+        entry: test/lint.sh
+        language: system
+        types: [shell]
+        pass_filenames: false

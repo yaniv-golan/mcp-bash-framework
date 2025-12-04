@@ -19,16 +19,16 @@ test_create_tmpdir
 WORKSPACE="${TEST_TMPDIR}/cancel"
 test_stage_workspace "${WORKSPACE}"
 
-mkdir -p "${WORKSPACE}/tools"
-cat <<'META' >"${WORKSPACE}/tools/slow.meta.json"
+mkdir -p "${WORKSPACE}/tools/slow"
+cat <<'META' >"${WORKSPACE}/tools/slow/tool.meta.json"
 {"name":"cancel.slow","description":"slow","arguments":{"type":"object","properties":{}}}
 META
-cat <<'SH' >"${WORKSPACE}/tools/slow.sh"
+cat <<'SH' >"${WORKSPACE}/tools/slow/tool.sh"
 #!/usr/bin/env bash
 sleep 10
 echo "done"
 SH
-chmod +x "${WORKSPACE}/tools/slow.sh"
+chmod +x "${WORKSPACE}/tools/slow/tool.sh"
 
 # Use a temp dir for pipes; some runners dislike mkfifo directly under /tmp.
 FIFO_ROOT="${WORKSPACE}/pipes"

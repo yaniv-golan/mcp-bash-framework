@@ -11,10 +11,19 @@ Usage:
   mcp-bash                 # launch server
   mcp-bash --help          # show this help
   mcp-bash --version       # show version
+  mcp-bash init [--name NAME] [--no-hello]
+                           # initialize project in current directory
+  mcp-bash scaffold server <name>
+                           # create new project directory with full structure
   mcp-bash debug           # launch server with debug logging (see docs/DEBUGGING.md)
   mcp-bash scaffold tool <name>
   mcp-bash scaffold prompt <name>
   mcp-bash scaffold resource <name>
+  mcp-bash validate [--project-root DIR]
+                           # validate project structure and metadata
+  mcp-bash config [--project-root DIR] [--show|--json|--client NAME]
+                           # print MCP client configuration snippets
+  mcp-bash doctor          # diagnose environment and installation issues
   mcp-bash registry refresh [--project-root DIR] [--no-notify] [--quiet] [--filter PATH]
 
 Note: running without MCPBASH_PROJECT_ROOT starts a temporary getting-started helper tool.
@@ -67,25 +76,28 @@ mcp_scaffold_validate_name() {
 
 # Require MCPBASH_PROJECT_ROOT for scaffolding commands
 mcp_scaffold_require_project_root() {
-	if [ -z "${MCPBASH_PROJECT_ROOT:-}" ]; then
-		cat >&2 <<'EOF'
-mcp-bash scaffold: MCPBASH_PROJECT_ROOT is not set.
-
-Scaffolding requires a project directory. Set MCPBASH_PROJECT_ROOT first:
-
-  export MCPBASH_PROJECT_ROOT=/path/to/my-project
-  mcp-bash scaffold tool my-tool
-
-See: https://github.com/yaniv-golan/mcp-bash-framework#quick-start
-EOF
-		exit 1
+	# Prefer explicit MCPBASH_PROJECT_ROOT when set, otherwise auto-detect based
+	# on the current directory. Scaffolding never falls back to the bootstrap
+	# project – a real project root is required.
+	if [ -n "${MCPBASH_PROJECT_ROOT:-}" ]; then
+		if [ ! -d "${MCPBASH_PROJECT_ROOT}" ]; then
+			printf 'mcp-bash scaffold: MCPBASH_PROJECT_ROOT directory does not exist: %s\n' "${MCPBASH_PROJECT_ROOT}" >&2
+			printf 'Create it first: mkdir -p %s\n' "${MCPBASH_PROJECT_ROOT}" >&2
+			exit 1
+		fi
+		return 0
 	fi
 
-	if [ ! -d "${MCPBASH_PROJECT_ROOT}" ]; then
-		printf 'mcp-bash scaffold: MCPBASH_PROJECT_ROOT directory does not exist: %s\n' "${MCPBASH_PROJECT_ROOT}" >&2
-		printf 'Create it first: mkdir -p %s\n' "${MCPBASH_PROJECT_ROOT}" >&2
-		exit 1
+	# Load runtime helpers so we can reuse the project root discovery logic.
+	require_bash_runtime
+	initialize_runtime_paths
+
+	if MCPBASH_PROJECT_ROOT="$(mcp_runtime_find_project_root "${PWD}")"; then
+		export MCPBASH_PROJECT_ROOT
+		return 0
 	fi
+
+	mcp_runtime_project_not_found_error
 }
 
 # Initialize paths for scaffolding (lighter than full runtime init)
@@ -134,6 +146,45 @@ mcp_scaffold_tool() {
 	mcp_template_render "${scaffold_dir}/tool.meta.json" "${target_dir}/tool.meta.json" "__NAME__=${name}"
 	mcp_template_render "${scaffold_dir}/README.md" "${target_dir}/README.md" "__NAME__=${name}"
 	printf 'Scaffolded tool at %s\n' "${target_dir}"
+	exit 0
+}
+
+mcp_scaffold_server() {
+	local name="$1"
+	if [ -z "${name}" ]; then
+		printf 'Server name required\n' >&2
+		exit 1
+	fi
+	if ! mcp_scaffold_validate_name "${name}"; then
+		printf 'Invalid server name: use alphanumerics, dot, underscore, dash only; no paths or traversal.\n' >&2
+		exit 1
+	fi
+
+	local project_root="${PWD%/}/${name}"
+	if [ -e "${project_root}" ]; then
+		printf 'Target %s already exists (remove it or choose a new server name)\n' "${project_root}" >&2
+		exit 1
+	fi
+
+	mkdir -p "${project_root}"
+	printf 'Created project at ./%s/\n\n' "${name}"
+
+	# Reuse the same skeleton initializer as `init`, always creating the hello tool.
+	mcp_init_project_skeleton "${project_root}" "${name}" "true"
+
+	# Optional README from scaffold templates, if present.
+	local server_scaffold_dir="${MCPBASH_HOME:-}"
+	if [ -n "${server_scaffold_dir}" ]; then
+		server_scaffold_dir="${server_scaffold_dir}/scaffold/server"
+		if [ -d "${server_scaffold_dir}" ] && [ -f "${server_scaffold_dir}/README.md" ]; then
+			cp "${server_scaffold_dir}/README.md" "${project_root}/README.md"
+		fi
+	fi
+
+	printf '\nNext steps:\n'
+	printf '  cd %s\n' "${name}"
+	printf '  mcp-bash scaffold tool <name>\n'
+
 	exit 0
 }
 
@@ -354,6 +405,849 @@ EOF
 	exit 0
 }
 
+mcp_init_project_skeleton() {
+	local project_root="$1"
+	local name="$2"
+	local create_hello="${3:-true}"
+
+	# Load runtime helpers for title-casing.
+	require_bash_runtime
+	initialize_runtime_paths
+
+	local title
+	title="$(mcp_runtime_titlecase "${name}")"
+
+	# server.d/server.meta.json
+	local server_dir="${project_root}/server.d"
+	local server_meta="${server_dir}/server.meta.json"
+	if [ -f "${server_meta}" ]; then
+		printf '  Skipped existing %s\n' "${server_meta}"
+	else
+		mkdir -p "${server_dir}"
+		local server_template="${MCPBASH_HOME}/scaffold/server/server.meta.json"
+		if [ -f "${server_template}" ]; then
+			mcp_template_render "${server_template}" "${server_meta}" "__NAME__=${name}" "__TITLE__=${title}"
+		else
+			cat >"${server_meta}" <<EOF
+{
+  "name": "${name}",
+  "title": "${title}",
+  "version": "0.1.0",
+  "description": "Description of your MCP server"
+}
+EOF
+		fi
+		printf '  Created %s\n' "${server_meta}"
+	fi
+
+	# tools/ directory
+	local tools_dir="${project_root}/tools"
+	if [ ! -d "${tools_dir}" ]; then
+		mkdir -p "${tools_dir}"
+		printf '  Created %s\n' "${tools_dir}"
+	fi
+
+	# .gitignore with registry/log entries
+	local gitignore="${project_root}/.gitignore"
+	if [ ! -f "${gitignore}" ]; then
+		cat >"${gitignore}" <<'EOF'
+# mcp-bash registry cache
+.registry/
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+EOF
+		printf '  Created %s\n' "${gitignore}"
+	else
+		local updated_gitignore="false"
+		if ! grep -qF '.registry/' "${gitignore}" 2>/dev/null; then
+			printf '\n# mcp-bash registry cache\n.registry/\n' >>"${gitignore}"
+			updated_gitignore="true"
+		fi
+		if ! grep -qF '*.log' "${gitignore}" 2>/dev/null; then
+			printf '\n# Logs\n*.log\n' >>"${gitignore}"
+			updated_gitignore="true"
+		fi
+		if ! grep -qF '.DS_Store' "${gitignore}" 2>/dev/null; then
+			printf '\n# OS files\n.DS_Store\n' >>"${gitignore}"
+			updated_gitignore="true"
+		fi
+		if ! grep -qF 'Thumbs.db' "${gitignore}" 2>/dev/null; then
+			if ! grep -qF 'OS files' "${gitignore}" 2>/dev/null; then
+				printf '\n# OS files\n' >>"${gitignore}"
+			fi
+			printf 'Thumbs.db\n' >>"${gitignore}"
+			updated_gitignore="true"
+		fi
+		if [ "${updated_gitignore}" = "true" ]; then
+			printf '  Updated %s\n' "${gitignore}"
+		else
+			printf '  Skipped existing %s\n' "${gitignore}"
+		fi
+	fi
+
+	# Optional hello tool
+	if [ "${create_hello}" = "true" ]; then
+		local hello_dir="${tools_dir}/hello"
+		if [ -d "${hello_dir}" ]; then
+			printf '  Skipped existing hello tool at %s\n' "${hello_dir}"
+		else
+			mkdir -p "${hello_dir}"
+			cat >"${hello_dir}/tool.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+source "${MCP_SDK:?MCP_SDK environment variable not set}/tool-sdk.sh"
+
+name="$(mcp_args_get '.name // "World"')"
+
+mcp_emit_json "$(mcp_json_obj message "Hello, ${name}!")"
+EOF
+			chmod +x "${hello_dir}/tool.sh"
+			cat >"${hello_dir}/tool.meta.json" <<'EOF'
+{
+  "name": "hello",
+  "description": "A simple greeting tool - delete this once you add your own tools",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string",
+        "description": "Name to greet (default: World)"
+      }
+    }
+  }
+}
+EOF
+			printf '  Created hello tool at %s\n' "${hello_dir}"
+		fi
+	fi
+}
+
+mcp_cli_init() {
+	local name=""
+	local create_hello="true"
+
+	while [ $# -gt 0 ]; do
+		case "$1" in
+		--name)
+			shift
+			name="${1:-}"
+			;;
+		--no-hello)
+			create_hello="false"
+			;;
+		--help | -h)
+			cat <<'EOF'
+Usage:
+  mcp-bash init [--name NAME] [--no-hello]
+
+Initialize an MCP server project in the current directory.
+
+Creates:
+  server.d/server.meta.json
+  tools/hello/ (example tool, unless --no-hello)
+  .gitignore (with .registry/ entry)
+EOF
+			exit 0
+			;;
+		*)
+			usage
+			exit 1
+			;;
+		esac
+		shift
+	done
+
+	local project_root
+	project_root="$(pwd)"
+
+	if [ -z "${name}" ]; then
+		name="$(basename "${project_root}")"
+	fi
+
+	printf 'Initializing MCP server project...\n\n'
+	mcp_init_project_skeleton "${project_root}" "${name}" "${create_hello}"
+
+	printf '\nYour MCP server "%s" is ready!\n\n' "${name}"
+	printf 'Test immediately:\n'
+	printf '  npx @modelcontextprotocol/inspector --transport stdio -- mcp-bash\n\n'
+	printf 'Add more tools:\n'
+	printf '  mcp-bash scaffold tool <name>\n'
+
+	exit 0
+}
+
+mcp_cli_validate() {
+	local project_root=""
+	local fix="false"
+
+	while [ $# -gt 0 ]; do
+		case "$1" in
+		--project-root)
+			shift
+			project_root="${1:-}"
+			;;
+		--fix)
+			fix="true"
+			;;
+		--help | -h)
+			cat <<'EOF'
+Usage:
+  mcp-bash validate [--project-root DIR] [--fix]
+
+Validate the current MCP project structure and metadata.
+EOF
+			exit 0
+			;;
+		*)
+			usage
+			exit 1
+			;;
+		esac
+		shift
+	done
+
+	# Allow explicit project override
+	if [ -n "${project_root}" ]; then
+		MCPBASH_PROJECT_ROOT="${project_root}"
+		export MCPBASH_PROJECT_ROOT
+	fi
+
+	require_bash_runtime
+	initialize_runtime_paths
+	mcp_runtime_init_paths "cli"
+	mcp_runtime_detect_json_tool
+
+	project_root="${MCPBASH_PROJECT_ROOT}"
+	printf 'Validating project at %s...\n\n' "${project_root}"
+
+	local errors=0
+	local warnings=0
+	local fixes_applied=0
+	local json_tool_available="false"
+
+	if [ "${MCPBASH_JSON_TOOL:-none}" != "none" ] && [ -n "${MCPBASH_JSON_TOOL_BIN:-}" ]; then
+		json_tool_available="true"
+	fi
+
+	# Server meta ---------------------------------------------------------
+	local server_meta="${MCPBASH_SERVER_DIR}/server.meta.json"
+	if [ -f "${server_meta}" ]; then
+		if [ "${json_tool_available}" = "true" ]; then
+			if ! "${MCPBASH_JSON_TOOL_BIN}" -e '.' "${server_meta}" >/dev/null 2>&1; then
+				printf '✗ server.d/server.meta.json - invalid JSON\n'
+				errors=$((errors + 1))
+			else
+				local srv_name
+				srv_name="$("${MCPBASH_JSON_TOOL_BIN}" -r '.name // ""' "${server_meta}" 2>/dev/null || printf '')"
+				if [ -z "${srv_name}" ]; then
+					printf '✗ server.d/server.meta.json - missing required "name" field\n'
+					errors=$((errors + 1))
+				else
+					printf '✓ server.d/server.meta.json - valid\n'
+				fi
+			fi
+		else
+			printf '⚠ server.d/server.meta.json - skipped JSON validation (no jq/gojq)\n'
+			warnings=$((warnings + 1))
+		fi
+	else
+		printf '⚠ server.d/server.meta.json - missing (using smart defaults)\n'
+		warnings=$((warnings + 1))
+	fi
+
+	# Tools ---------------------------------------------------------------
+	local tools_root="${MCPBASH_TOOLS_DIR}"
+	if [ -d "${tools_root}" ]; then
+		while IFS= read -r tool_dir; do
+			[ -d "${tool_dir}" ] || continue
+			local tool_name
+			tool_name="$(basename "${tool_dir}")"
+			local meta_path="${tool_dir}/tool.meta.json"
+			local script_path="${tool_dir}/tool.sh"
+			local rel_meta="tools/${tool_name}/tool.meta.json"
+			local rel_script="tools/${tool_name}/tool.sh"
+
+			if [ -f "${meta_path}" ]; then
+				if [ "${json_tool_available}" = "true" ]; then
+					if ! "${MCPBASH_JSON_TOOL_BIN}" -e '.' "${meta_path}" >/dev/null 2>&1; then
+						printf '✗ %s - invalid JSON\n' "${rel_meta}"
+						errors=$((errors + 1))
+					else
+						local t_name t_desc has_schema
+						t_name="$("${MCPBASH_JSON_TOOL_BIN}" -r '.name // ""' "${meta_path}" 2>/dev/null || printf '')"
+						t_desc="$("${MCPBASH_JSON_TOOL_BIN}" -r '.description // ""' "${meta_path}" 2>/dev/null || printf '')"
+						has_schema="$("${MCPBASH_JSON_TOOL_BIN}" -r 'if (.inputSchema? // .arguments? // {}) | (has("type") or has("properties")) then "yes" else "" end' "${meta_path}" 2>/dev/null || printf '')"
+
+						if [ -z "${t_name}" ]; then
+							printf '✗ %s - missing required "name"\n' "${rel_meta}"
+							errors=$((errors + 1))
+						fi
+						if [ -z "${t_desc}" ]; then
+							printf '⚠ %s - missing "description"\n' "${rel_meta}"
+							warnings=$((warnings + 1))
+						fi
+						if [ -z "${has_schema}" ]; then
+							printf '⚠ %s - inputSchema has no "type" or "properties"\n' "${rel_meta}"
+							warnings=$((warnings + 1))
+						fi
+						if [ -n "${t_name}" ]; then
+							printf '✓ %s - valid\n' "${rel_meta}"
+						fi
+						if [ -n "${t_name}" ] && [ "${t_name}" != "${tool_name}" ]; then
+							printf '⚠ tools/%s - directory name does not match tool.meta.json name "%s"\n' "${tool_name}" "${t_name}"
+							warnings=$((warnings + 1))
+						fi
+					fi
+				else
+					printf '⚠ %s - skipped JSON validation (no jq/gojq)\n' "${rel_meta}"
+					warnings=$((warnings + 1))
+				fi
+			else
+				printf '✗ %s - missing\n' "${rel_meta}"
+				errors=$((errors + 1))
+			fi
+
+			if [ -f "${script_path}" ]; then
+				if [ -x "${script_path}" ]; then
+					printf '✓ %s - executable\n' "${rel_script}"
+				else
+					if [ "${fix}" = "true" ]; then
+						if [ -L "${script_path}" ]; then
+							printf '⚠ %s - not executable (symlink; skipped auto-fix, please inspect target)\n' "${rel_script}"
+							warnings=$((warnings + 1))
+						elif chmod +x "${script_path}"; then
+							printf '✓ %s - fixed: made executable\n' "${rel_script}"
+							fixes_applied=$((fixes_applied + 1))
+						else
+							printf '✗ %s - not executable (chmod failed)\n' "${rel_script}"
+							errors=$((errors + 1))
+						fi
+					else
+						printf '✗ %s - not executable\n' "${rel_script}"
+						errors=$((errors + 1))
+					fi
+				fi
+
+				local first_line
+				first_line="$(head -n 1 "${script_path}" 2>/dev/null || printf '')"
+				case "${first_line}" in
+				'#!'*) ;;
+				*)
+					printf '⚠ %s - missing shebang\n' "${rel_script}"
+					warnings=$((warnings + 1))
+					;;
+				esac
+			else
+				printf '✗ %s - missing\n' "${rel_script}"
+				errors=$((errors + 1))
+			fi
+		done < <(find "${tools_root}" -mindepth 1 -maxdepth 1 -type d | sort)
+	fi
+
+	# Prompts -------------------------------------------------------------
+	local prompts_root="${MCPBASH_PROMPTS_DIR}"
+	if [ -d "${prompts_root}" ]; then
+		while IFS= read -r prompt_dir; do
+			[ -d "${prompt_dir}" ] || continue
+			local prompt_name
+			prompt_name="$(basename "${prompt_dir}")"
+			local meta_path="${prompt_dir}/${prompt_name}.meta.json"
+			local txt_path="${prompt_dir}/${prompt_name}.txt"
+			local sh_path="${prompt_dir}/${prompt_name}.sh"
+			local rel_meta="prompts/${prompt_name}/${prompt_name}.meta.json"
+
+			if [ -f "${meta_path}" ]; then
+				if [ "${json_tool_available}" = "true" ]; then
+					if ! "${MCPBASH_JSON_TOOL_BIN}" -e '.' "${meta_path}" >/dev/null 2>&1; then
+						printf '✗ %s - invalid JSON\n' "${rel_meta}"
+						errors=$((errors + 1))
+					else
+						local p_name p_desc
+						p_name="$("${MCPBASH_JSON_TOOL_BIN}" -r '.name // ""' "${meta_path}" 2>/dev/null || printf '')"
+						p_desc="$("${MCPBASH_JSON_TOOL_BIN}" -r '.description // ""' "${meta_path}" 2>/dev/null || printf '')"
+						if [ -z "${p_name}" ]; then
+							printf '✗ %s - missing required "name"\n' "${rel_meta}"
+							errors=$((errors + 1))
+						fi
+						if [ -z "${p_desc}" ]; then
+							printf '⚠ %s - missing "description"\n' "${rel_meta}"
+							warnings=$((warnings + 1))
+						fi
+						if [ -n "${p_name}" ]; then
+							printf '✓ %s - valid\n' "${rel_meta}"
+						fi
+					fi
+				else
+					printf '⚠ %s - skipped JSON validation (no jq/gojq)\n' "${rel_meta}"
+					warnings=$((warnings + 1))
+				fi
+			else
+				printf '✗ %s - missing\n' "${rel_meta}"
+				errors=$((errors + 1))
+			fi
+
+			if [ ! -f "${txt_path}" ] && [ ! -f "${sh_path}" ]; then
+				printf '✗ prompts/%s - missing prompt.txt or prompt.sh\n' "${prompt_name}"
+				errors=$((errors + 1))
+			fi
+
+			if [ -f "${sh_path}" ]; then
+				if [ -x "${sh_path}" ]; then
+					printf '✓ prompts/%s/%s.sh - executable\n' "${prompt_name}" "${prompt_name}"
+				else
+					if [ "${fix}" = "true" ]; then
+						if [ -L "${sh_path}" ]; then
+							printf '⚠ prompts/%s/%s.sh - not executable (symlink; skipped auto-fix, please inspect target)\n' "${prompt_name}" "${prompt_name}"
+							warnings=$((warnings + 1))
+						elif chmod +x "${sh_path}"; then
+							printf '✓ prompts/%s/%s.sh - fixed: made executable\n' "${prompt_name}" "${prompt_name}"
+							fixes_applied=$((fixes_applied + 1))
+						else
+							printf '✗ prompts/%s/%s.sh - not executable (chmod failed)\n' "${prompt_name}" "${prompt_name}"
+							errors=$((errors + 1))
+						fi
+					else
+						printf '✗ prompts/%s/%s.sh - not executable\n' "${prompt_name}" "${prompt_name}"
+						errors=$((errors + 1))
+					fi
+				fi
+			fi
+		done < <(find "${prompts_root}" -mindepth 1 -maxdepth 1 -type d | sort)
+	fi
+
+	# Resources -----------------------------------------------------------
+	local resources_root="${MCPBASH_RESOURCES_DIR}"
+	if [ -d "${resources_root}" ]; then
+		while IFS= read -r res_dir; do
+			[ -d "${res_dir}" ] || continue
+			local res_name
+			res_name="$(basename "${res_dir}")"
+			local meta_path="${res_dir}/${res_name}.meta.json"
+			local sh_path="${res_dir}/${res_name}.sh"
+			local rel_meta="resources/${res_name}/${res_name}.meta.json"
+
+			if [ -f "${meta_path}" ]; then
+				if [ "${json_tool_available}" = "true" ]; then
+					if ! "${MCPBASH_JSON_TOOL_BIN}" -e '.' "${meta_path}" >/dev/null 2>&1; then
+						printf '✗ %s - invalid JSON\n' "${rel_meta}"
+						errors=$((errors + 1))
+					else
+						local r_name r_uri
+						r_name="$("${MCPBASH_JSON_TOOL_BIN}" -r '.name // ""' "${meta_path}" 2>/dev/null || printf '')"
+						r_uri="$("${MCPBASH_JSON_TOOL_BIN}" -r '.uri // ""' "${meta_path}" 2>/dev/null || printf '')"
+						if [ -z "${r_name}" ]; then
+							printf '✗ %s - missing required "name"\n' "${rel_meta}"
+							errors=$((errors + 1))
+						fi
+						if [ -z "${r_uri}" ]; then
+							printf '✗ %s - missing required "uri"\n' "${rel_meta}"
+							errors=$((errors + 1))
+						else
+							case "${r_uri}" in
+							*://*)
+								;;
+							*)
+								printf '⚠ %s - uri does not look like scheme://...\n' "${rel_meta}"
+								warnings=$((warnings + 1))
+								;;
+							esac
+						fi
+						if [ -n "${r_name}" ] && [ -n "${r_uri}" ]; then
+							printf '✓ %s - valid\n' "${rel_meta}"
+						fi
+					fi
+				else
+					printf '⚠ %s - skipped JSON validation (no jq/gojq)\n' "${rel_meta}"
+					warnings=$((warnings + 1))
+				fi
+			else
+				printf '✗ %s - missing\n' "${rel_meta}"
+				errors=$((errors + 1))
+			fi
+
+			if [ -f "${sh_path}" ]; then
+				if [ -x "${sh_path}" ]; then
+					printf '✓ resources/%s/%s.sh - executable\n' "${res_name}" "${res_name}"
+				else
+					if [ "${fix}" = "true" ]; then
+						if [ -L "${sh_path}" ]; then
+							printf '⚠ resources/%s/%s.sh - not executable (symlink; skipped auto-fix, please inspect target)\n' "${res_name}" "${res_name}"
+							warnings=$((warnings + 1))
+						elif chmod +x "${sh_path}"; then
+							printf '✓ resources/%s/%s.sh - fixed: made executable\n' "${res_name}" "${res_name}"
+							fixes_applied=$((fixes_applied + 1))
+						else
+							printf '✗ resources/%s/%s.sh - not executable (chmod failed)\n' "${res_name}" "${res_name}"
+							errors=$((errors + 1))
+						fi
+					else
+						printf '✗ resources/%s/%s.sh - not executable\n' "${res_name}" "${res_name}"
+						errors=$((errors + 1))
+					fi
+				fi
+			fi
+		done < <(find "${resources_root}" -mindepth 1 -maxdepth 1 -type d | sort)
+	fi
+
+	printf '\n'
+	if [ "${fix}" = "true" ]; then
+		if [ "${errors}" -gt 0 ]; then
+			printf '%d error(s) remaining. Please fix manually.\n' "${errors}"
+			exit 1
+		fi
+		if [ "${fixes_applied}" -gt 0 ]; then
+			printf 'All remaining issues are warnings. %d file(s) were auto-fixed.\n' "${fixes_applied}"
+		else
+			printf 'All checks passed (no errors).\n'
+		fi
+		exit 0
+	fi
+
+	if [ "${errors}" -gt 0 ]; then
+		printf '%d error(s) found. Run '\''mcp-bash validate --fix'\'' to fix auto-fixable issues.\n' "${errors}"
+		exit 1
+	fi
+
+	printf 'All checks passed (warnings: %d).\n' "${warnings}"
+	exit 0
+}
+
+mcp_cli_config() {
+	local project_root=""
+	local mode="show" # show | json
+	local client_filter=""
+
+	while [ $# -gt 0 ]; do
+		case "$1" in
+		--project-root)
+			shift
+			project_root="${1:-}"
+			;;
+		--show)
+			mode="show"
+			;;
+		--json)
+			mode="json"
+			;;
+		--client)
+			shift
+			client_filter="${1:-}"
+			;;
+		--help | -h)
+			cat <<'EOF'
+Usage:
+  mcp-bash config [--project-root DIR] [--show|--json|--client NAME]
+
+Print MCP client configuration snippets for the current project.
+EOF
+			exit 0
+			;;
+		*)
+			usage
+			exit 1
+			;;
+		esac
+		shift
+	done
+
+	# Allow explicit project override
+	if [ -n "${project_root}" ]; then
+		MCPBASH_PROJECT_ROOT="${project_root}"
+		export MCPBASH_PROJECT_ROOT
+	fi
+
+	require_bash_runtime
+	initialize_runtime_paths
+	mcp_runtime_init_paths "cli"
+	mcp_runtime_detect_json_tool
+	mcp_runtime_load_server_meta
+
+	project_root="${MCPBASH_PROJECT_ROOT}"
+	local server_name="${MCPBASH_SERVER_NAME:-$(basename "${project_root}")}"
+	local command_path="${MCPBASH_HOME}/bin/mcp-bash"
+
+	if [ "${mode}" = "json" ]; then
+		# Emit a machine-readable descriptor for scripting.
+		local name_json cmd_json root_json
+		name_json="$(mcp_json_escape_string "${server_name}")"
+		cmd_json="$(mcp_json_escape_string "${command_path}")"
+		root_json="$(mcp_json_escape_string "${project_root}")"
+		printf '{ "name": %s, "command": %s, "env": { "MCPBASH_PROJECT_ROOT": %s } }\n' "${name_json}" "${cmd_json}" "${root_json}"
+		exit 0
+	fi
+
+	printf 'MCP Client Configuration for "%s"\n' "${server_name}"
+	printf '============================================\n\n'
+
+	# Platform detection for config paths
+	local os platform
+	os="$(uname -s 2>/dev/null || printf '')"
+	case "${os}" in
+	Darwin) platform="macos" ;;
+	Linux) platform="linux" ;;
+	MINGW* | MSYS* | CYGWIN*) platform="windows" ;;
+	*) platform="unknown" ;;
+	esac
+
+	local print_client
+	print_client() {
+		local client="$1"
+		case "${client}" in
+		claude-desktop)
+			local cfg=""
+			case "${platform}" in
+			macos)
+				cfg="${HOME}/Library/Application Support/Claude/claude_desktop_config.json"
+				;;
+			linux)
+				cfg="${HOME}/.config/Claude/claude_desktop_config.json"
+				;;
+			windows)
+				cfg='%APPDATA%\Claude\claude_desktop_config.json'
+				;;
+			*)
+				cfg="<see Claude Desktop docs for config path>"
+				;;
+			esac
+			local display_cfg="${cfg}"
+			if [ "${platform}" != "windows" ]; then
+				display_cfg="${display_cfg/#${HOME}/~}"
+			fi
+			printf 'Claude Desktop (%s):\n' "${platform}"
+			printf '  Config file: %s\n\n' "${display_cfg}"
+			printf '  Add this to "mcpServers":\n'
+			printf '  {\n'
+			printf '    "%s": {\n' "${server_name}"
+			printf '      "command": "%s",\n' "${command_path}"
+			printf '      "env": {\n'
+			printf '        "MCPBASH_PROJECT_ROOT": "%s"\n' "${project_root}"
+			printf '      }\n'
+			printf '    }\n'
+			printf '  }\n\n'
+			;;
+		claude-cli)
+			printf 'Claude CLI:\n'
+			printf '  Run this command:\n'
+			printf '  claude mcp add --transport stdio %s \\\n' "${server_name}"
+			printf '    --env MCPBASH_PROJECT_ROOT=\"%s\" \\\n' "${project_root}"
+			printf '    -- \"%s\"\n\n' "${command_path}"
+			;;
+		cursor)
+			local cfg_cursor="${HOME}/.cursor/mcp.json"
+			local display_cursor="${cfg_cursor/#${HOME}/~}"
+			printf 'Cursor:\n'
+			printf '  Config file: %s\n\n' "${display_cursor}"
+			printf '  Add this to "mcpServers":\n'
+			printf '  {\n'
+			printf '    "%s": {\n' "${server_name}"
+			printf '      "command": "%s",\n' "${command_path}"
+			printf '      "env": {\n'
+			printf '        "MCPBASH_PROJECT_ROOT": "%s"\n' "${project_root}"
+			printf '      }\n'
+			printf '    }\n'
+			printf '  }\n\n'
+			;;
+		windsurf)
+			local cfg_ws
+			case "${platform}" in
+			macos | linux)
+				cfg_ws="${HOME}/.windsurf/mcp.json"
+				;;
+			*)
+				cfg_ws="<see Windsurf docs for config path>"
+				;;
+			esac
+			local display_ws="${cfg_ws}"
+			if [ "${cfg_ws#${HOME}}" != "${cfg_ws}" ]; then
+				display_ws="${cfg_ws/#${HOME}/~}"
+			fi
+			printf 'Windsurf:\n'
+			printf '  Config file: %s\n\n' "${display_ws}"
+			printf '  Add this to "mcpServers":\n'
+			printf '  {\n'
+			printf '    "%s": {\n' "${server_name}"
+			printf '      "command": "%s",\n' "${command_path}"
+			printf '      "env": {\n'
+			printf '        "MCPBASH_PROJECT_ROOT": "%s"\n' "${project_root}"
+			printf '      }\n'
+			printf '    }\n'
+			printf '  }\n\n'
+			;;
+		librechat)
+			printf 'LibreChat:\n'
+			printf '  Use the following server descriptor (see LibreChat MCP docs for where to place it):\n\n'
+			printf '  {\n'
+			printf '    "name": "%s",\n' "${server_name}"
+			printf '    "command": "%s",\n' "${command_path}"
+			printf '    "env": {\n'
+			printf '      "MCPBASH_PROJECT_ROOT": "%s"\n' "${project_root}"
+			printf '    }\n'
+			printf '  }\n\n'
+			;;
+		esac
+	}
+
+	if [ -n "${client_filter}" ]; then
+		print_client "${client_filter}"
+	else
+		print_client "claude-desktop"
+		print_client "cursor"
+		print_client "claude-cli"
+		print_client "windsurf"
+		print_client "librechat"
+	fi
+
+	exit 0
+}
+
+mcp_cli_doctor() {
+	require_bash_runtime
+	initialize_runtime_paths
+
+	local errors=0
+	local warnings=0
+
+	printf 'mcp-bash Environment Check\n'
+	printf '==========================\n\n'
+
+	# Framework -----------------------------------------------------------
+	printf 'Framework:\n'
+	local framework_home="${MCPBASH_HOME}"
+	if [ -d "${framework_home}" ]; then
+		printf '  ✓ Location: %s\n' "${framework_home}"
+	else
+		printf '  ✗ Location not found: %s\n' "${framework_home}"
+		errors=$((errors + 1))
+	fi
+
+	local version_file="${framework_home}/VERSION"
+	local framework_version="unknown"
+	if [ -f "${version_file}" ]; then
+		framework_version="$(tr -d '[:space:]' <"${version_file}" 2>/dev/null || printf 'unknown')"
+		printf '  ✓ Version: %s\n' "${framework_version}"
+	else
+		printf '  ⚠ VERSION file missing at %s\n' "${version_file}"
+		warnings=$((warnings + 1))
+	fi
+
+	local resolved
+	resolved="$(command -v mcp-bash 2>/dev/null || printf '')"
+	if [ -n "${resolved}" ] && [ "${resolved}" = "${framework_home}/bin/mcp-bash" ]; then
+		printf '  ✓ PATH configured correctly\n'
+	else
+		# PATH is recommended but not strictly required when invoking the
+		# framework via an absolute path, so treat this as a warning rather
+		# than a hard error to avoid failing doctor in local dev setups.
+		printf '  ⚠ PATH not configured (run: export PATH="%s/bin:$PATH")\n' "${framework_home}"
+		warnings=$((warnings + 1))
+	fi
+
+	# Runtime -------------------------------------------------------------
+	printf '\nRuntime:\n'
+	printf '  ✓ Bash version: %s (>= 3.2 required)\n' "${BASH_VERSION}"
+
+	local jq_path gojq_path
+	jq_path="$(command -v jq 2>/dev/null || printf '')"
+	gojq_path="$(command -v gojq 2>/dev/null || printf '')"
+
+	if [ -n "${jq_path}" ] || [ -n "${gojq_path}" ]; then
+		if [ -n "${jq_path}" ]; then
+			printf '  ✓ jq installed: %s\n' "${jq_path}"
+		else
+			printf '  ⚠ jq not installed (gojq will be used)\n'
+			warnings=$((warnings + 1))
+		fi
+		if [ -n "${gojq_path}" ]; then
+			printf '  ✓ gojq installed: %s\n' "${gojq_path}"
+		else
+			printf '  ⚠ gojq not installed (optional, faster than jq)\n'
+			warnings=$((warnings + 1))
+		fi
+	else
+		printf '  ✗ jq/gojq not installed (required for full functionality)\n'
+		printf '    Install: brew install jq  OR  apt install jq\n'
+		errors=$((errors + 1))
+	fi
+
+	# Project (optional) --------------------------------------------------
+	printf '\nProject (if in project directory):\n'
+	local detected_root=""
+	if detected_root="$(mcp_runtime_find_project_root "${PWD}" 2>/dev/null)"; then
+		printf '  ✓ Project root: %s\n' "${detected_root}"
+		local meta="${detected_root}/server.d/server.meta.json"
+		if [ -f "${meta}" ] && { [ -n "${jq_path}" ] || [ -n "${gojq_path}" ]; }; then
+			local meta_tool=""
+			if [ -n "${gojq_path}" ]; then
+				meta_tool="${gojq_path}"
+			else
+				meta_tool="${jq_path}"
+			fi
+			if "${meta_tool}" -e '.' "${meta}" >/dev/null 2>&1; then
+				printf '  ✓ server.d/server.meta.json: valid\n'
+			else
+				printf '  ⚠ server.d/server.meta.json: invalid JSON\n'
+				warnings=$((warnings + 1))
+			fi
+		else
+			printf '  ⚠ server.d/server.meta.json: not found or JSON tooling unavailable\n'
+			warnings=$((warnings + 1))
+		fi
+
+		local tools_count=0
+		if [ -d "${detected_root}/tools" ]; then
+			tools_count="$(find "${detected_root}/tools" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')"
+		fi
+		printf '  ✓ Tools found: %s\n' "${tools_count}"
+
+		if [ -d "${detected_root}/.registry" ]; then
+			printf '  ✓ Registry: .registry/ exists\n'
+		else
+			printf '  ⚠ Registry: .registry/ does not exist (will be created on demand)\n'
+			warnings=$((warnings + 1))
+		fi
+	else
+		printf '  (no project detected in current directory)\n'
+	fi
+
+	# Optional dependencies -----------------------------------------------
+	printf '\nOptional dependencies:\n'
+	local shellcheck_path npx_path
+	shellcheck_path="$(command -v shellcheck 2>/dev/null || printf '')"
+	if [ -n "${shellcheck_path}" ]; then
+		printf '  ✓ shellcheck: %s (for validation)\n' "${shellcheck_path}"
+	else
+		printf '  ⚠ shellcheck: not found (for validation)\n'
+		warnings=$((warnings + 1))
+	fi
+
+	npx_path="$(command -v npx 2>/dev/null || printf '')"
+	if [ -n "${npx_path}" ]; then
+		printf '  ✓ npx: %s (for MCP Inspector)\n' "${npx_path}"
+	else
+		printf '  ⚠ npx: not found (for MCP Inspector)\n'
+		warnings=$((warnings + 1))
+	fi
+
+	printf '\n'
+	if [ "${errors}" -gt 0 ]; then
+		printf '%d error(s), %d warning(s) found.\n' "${errors}" "${warnings}"
+		printf '\nTip: Run '\''mcp-bash validate'\'' to check your project structure.\n'
+		exit 1
+	fi
+
+	if [ "${warnings}" -gt 0 ]; then
+		printf 'Checks passed with %d warning(s). Review the notes above before production use.\n' "${warnings}"
+	else
+		printf 'All checks passed! Ready to build MCP servers.\n'
+	fi
+	exit 0
+}
+
 # Keep a stable, versioned core separated from extension directories.
 # Server metadata (name, version, title, etc.) is loaded from server.d/server.meta.json
 # with smart defaults derived from the project structure. See mcp_runtime_load_server_meta().
@@ -483,6 +1377,26 @@ case "${1-}" in
 	;;
 esac
 
+if [ "${1-}" = "init" ]; then
+	shift
+	mcp_cli_init "$@"
+fi
+
+if [ "${1-}" = "validate" ]; then
+	shift
+	mcp_cli_validate "$@"
+fi
+
+if [ "${1-}" = "config" ]; then
+	shift
+	mcp_cli_config "$@"
+fi
+
+if [ "${1-}" = "doctor" ]; then
+	shift
+	mcp_cli_doctor "$@"
+fi
+
 if [ "${1-}" = "registry" ]; then
 	shift
 	case "${1-}" in
@@ -500,6 +1414,10 @@ fi
 if [ "${1-}" = "scaffold" ]; then
 	shift
 	case "${1-}" in
+	server)
+		shift
+		mcp_scaffold_server "${1:-}"
+		;;
 	tool)
 		shift
 		mcp_scaffold_tool "${1:-}"

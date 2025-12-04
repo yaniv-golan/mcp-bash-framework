@@ -19,11 +19,11 @@ test_create_tmpdir
 WORKSPACE="${TEST_TMPDIR}/progress"
 test_stage_workspace "${WORKSPACE}"
 
-mkdir -p "${WORKSPACE}/tools"
-cat <<'META' >"${WORKSPACE}/tools/progress.meta.json"
+mkdir -p "${WORKSPACE}/tools/progress"
+cat <<'META' >"${WORKSPACE}/tools/progress/tool.meta.json"
 {"name":"progress.demo","description":"Emits progress and logs","arguments":{"type":"object","properties":{}}}
 META
-cat <<'SH' >"${WORKSPACE}/tools/progress.sh"
+cat <<'SH' >"${WORKSPACE}/tools/progress/tool.sh"
 #!/usr/bin/env bash
 set -euo pipefail
 source "${MCP_SDK}/tool-sdk.sh"
@@ -33,7 +33,7 @@ mcp_log_info "progress.demo" "log-one"
 mcp_log_info "progress.demo" "log-two"
 printf 'done'
 SH
-chmod +x "${WORKSPACE}/tools/progress.sh"
+chmod +x "${WORKSPACE}/tools/progress/tool.sh"
 
 cat <<'JSON' >"${WORKSPACE}/requests.ndjson"
 {"jsonrpc":"2.0","id":"init","method":"initialize","params":{}}

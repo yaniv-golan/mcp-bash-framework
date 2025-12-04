@@ -436,6 +436,11 @@ mcp_tools_scan() {
 				fi
 			fi
 			local rel_path="${path#"${MCPBASH_TOOLS_DIR}"/}"
+			# Enforce per-tool subdirectories under tools/ (ignore root-level scripts)
+			case "${rel_path}" in
+			*/*) ;;
+			*) continue ;;
+			esac
 			local base_name
 			base_name="$(basename "${path}")"
 			local name="${base_name%.*}"
@@ -601,6 +606,10 @@ mcp_tools_list() {
 	# Args:
 	#   limit  - optional max items per page (stringified number).
 	#   cursor - opaque pagination cursor from previous response.
+	# Note: The MCP schema for ListToolsResult requires a `tools` array and
+	# allows additional properties. We include a `total` field as a
+	# spec-compliant extension so clients can see the full count without
+	# extra round trips; strict clients may ignore it safely.
 	# shellcheck disable=SC2034
 	_MCP_TOOLS_ERROR_CODE=0
 	# shellcheck disable=SC2034

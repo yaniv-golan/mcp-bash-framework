@@ -12,20 +12,89 @@ MCP_LOG_STREAM="${MCP_LOG_STREAM:-}"
 MCP_PROGRESS_TOKEN="${MCP_PROGRESS_TOKEN:-}"
 
 __mcp_sdk_json_escape() {
-	local value="$1"
-	if command -v jq >/dev/null 2>&1; then
-		jq -n --arg val "$value" '$val'
+	# Return a quoted JSON string literal for the given value.
+	# Prefer the framework-selected JSON tool, then fall back to jq, then a
+	# best-effort manual escape (ASCII control chars + quotes + backslashes).
+	local value="${1-}"
+
+	if [ -n "${MCPBASH_JSON_TOOL_BIN:-}" ] && command -v "${MCPBASH_JSON_TOOL_BIN}" >/dev/null 2>&1; then
+		"${MCPBASH_JSON_TOOL_BIN}" -n --arg val "${value}" '$val'
 		return 0
 	fi
+
+	if command -v jq >/dev/null 2>&1; then
+		jq -n --arg val "${value}" '$val'
+		return 0
+	fi
+
+	# Fallback: handle core escapes; non-ASCII is passed through assuming UTF-8.
 	local escaped="${value//\\/\\\\}"
 	escaped="${escaped//\"/\\\"}"
 	escaped="${escaped//$'\n'/\\n}"
 	escaped="${escaped//$'\r'/\\r}"
+	escaped="${escaped//$'\t'/\\t}"
 	printf '"%s"' "${escaped}"
 }
 
 __mcp_sdk_warn() {
 	printf '%s\n' "$1" >&2
+}
+
+# Public JSON helpers --------------------------------------------------------
+#
+# These helpers are intentionally simple and treat all values as strings.
+# They are designed for use from short-lived tool scripts; misuse (e.g., odd
+# argument count) is a programming error and terminates the process.
+
+mcp_json_escape() {
+	# Escape a string for JSON; returns a quoted string literal.
+	__mcp_sdk_json_escape "${1-}"
+}
+
+mcp_json_obj() {
+	# Build a JSON object from key/value pairs. All keys and values are treated
+	# as strings and JSON-escaped. Odd argument counts are fatal.
+	if [ $(($# % 2)) -ne 0 ]; then
+		__mcp_sdk_warn "mcp_json_obj: expected even number of arguments (key value ...), got $#"
+		# Exit rather than return so that misuse inside $(...) is not silently ignored.
+		exit 1
+	fi
+
+	local json="{"
+	local sep=""
+	local key value key_json value_json
+
+	while [ "$#" -gt 0 ]; do
+		key="$1"
+		value="$2"
+		shift 2
+		key_json="$(__mcp_sdk_json_escape "${key}")"
+		value_json="$(__mcp_sdk_json_escape "${value}")"
+		json="${json}${sep}${key_json}:${value_json}"
+		sep=","
+	done
+
+	json="${json}}"
+	printf '%s' "${json}"
+}
+
+mcp_json_arr() {
+	# Build a JSON array from values. All values are treated as strings and
+	# JSON-escaped.
+	local json="["
+	local sep=""
+	local value value_json
+
+	while [ "$#" -gt 0 ]; do
+		value="$1"
+		shift
+		value_json="$(__mcp_sdk_json_escape "${value}")"
+		json="${json}${sep}${value_json}"
+		sep=","
+	done
+
+	json="${json}]"
+	printf '%s' "${json}"
 }
 
 __mcp_sdk_payload_from_env() {

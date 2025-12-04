@@ -54,7 +54,7 @@ This guide distils hands-on recommendations for designing, building, and operati
 - **Minimal mode** – server only exposes lifecycle/ping/logging; often triggered by missing `jq`/`gojq` or forced via `MCPBASH_FORCE_MINIMAL`.
 - **Compatibility toggles** – `MCPBASH_COMPAT_BATCHES` re-enables legacy JSON-RPC batch arrays for older clients.
 - **Discovery churn** – `notifications/*/list_changed` loops may indicate fast TTLs or manual registry overrides; inspect `.registry/*.json`.
-- **Cancellation** – `mcp_is_cancelled` returning true mid-tool (see `examples/03-progress-and-cancellation/tools/slow.sh:5`) highlights clients timing out; revisit tool timeouts and progress cadence.
+- **Cancellation** – `mcp_is_cancelled` returning true mid-tool (see `examples/03-progress-and-cancellation/tools/slow/tool.sh:5`) highlights clients timing out; revisit tool timeouts and progress cadence.
 - **Progress throttling** – hitting the 100/minute default triggers warning logs and truncated progress; adjust `MCPBASH_MAX_PROGRESS_PER_MIN` when high-frequency updates matter.
 
 ## 1. Introduction
@@ -91,25 +91,25 @@ This guide distils hands-on recommendations for designing, building, and operati
 
 ### 4.1 Scaffold workflow
 1. Run `bin/mcp-bash scaffold <type> <name>` to create the initial directory structure.
-2. Inspect the generated README/snippets, then layer your logic into `tools/<name>/<script>.sh` (or equivalent prompts/resources).
+2. Inspect the generated README/snippets, then layer your logic into `tools/<name>/tool.sh` (or equivalent prompts/resources).
 3. Add unit/integration coverage hitting the new artifacts (see [§5](#5-testing--quality-gates)).
 4. Update docs referencing the new capability, especially if operator steps, limits, or troubleshooting expectations shift.
 
-The scaffolder uses a per-asset directory (for example `tools/hello/hello.sh`), while some examples remain flat (for example `examples/00-hello-tool/tools/hello.sh`). Both layouts are supported by discovery; choose one and stay consistent within a project.
+The scaffolder and examples use a per-tool directory (for example `tools/hello/tool.sh`), and automatic discovery now requires tools to live under subdirectories of `tools/` (root-level scripts like `tools/foo.sh` are ignored). Stay consistent within a project.
 
 _Asciinema tip_: Record a short run of `bin/mcp-bash scaffold tool sample.hello` plus `./test/examples/test_examples.sh` so newcomers can view the workflow end-to-end.
 
 ### 4.2 SDK usage patterns
-- **Argument parsing** – Use `mcp_args_get` with JSONPointer queries; defensively validate required fields like `examples/01-args-and-validation/tools/echo-arg.sh:18-24`.
+- **Argument parsing** – Use `mcp_args_get` with JSONPointer queries; defensively validate required fields like `examples/01-args-and-validation/tools/echo-arg/tool.sh:18-24`.
 - **Structured outputs** – Emit JSON via `mcp_emit_json` when returning typed data. For plain text, call `mcp_emit_text`.
-- **Progress & cancellation** – Emit throttled `mcp_progress` calls (10–20 updates/request) and exit early when `mcp_is_cancelled` flips true as shown in `examples/03-progress-and-cancellation/tools/slow.sh:5`. Enable streaming progress mid-flight with `MCPBASH_ENABLE_LIVE_PROGRESS=true` and tune cadence via `MCPBASH_PROGRESS_FLUSH_INTERVAL`.
+- **Progress & cancellation** – Emit throttled `mcp_progress` calls (10–20 updates/request) and exit early when `mcp_is_cancelled` flips true as shown in `examples/03-progress-and-cancellation/tools/slow/tool.sh:5`. Enable streaming progress mid-flight with `MCPBASH_ENABLE_LIVE_PROGRESS=true` and tune cadence via `MCPBASH_PROGRESS_FLUSH_INTERVAL`.
 - **Logging** – Prefer `mcp_log_info`/`mcp_log_warn` so entries pass through the logging handler filters; avoid `echo` unless writing to stderr for fatal errors.
 - **Timeouts** – Set per-tool `timeoutSecs` inside `<tool>.meta.json` when default (30 seconds) is too high/low. Align metadata with `lib/timeout.sh` expectations.
 
 ### 4.3 Error handling patterns
 - Use `mcp_fail` (or `mcp_fail_invalid_args`) to return structured JSON-RPC errors with proper `code/message/data` directly from tools; it survives `tool_env_mode=minimal/allowlist` via the injected `MCP_TOOL_ERROR_FILE`.
 - Only return `-32603` (internal error) for unknown failures; otherwise map to specific JSON-RPC errors spelled out in the protocol.
-- Capture stderr and propagate actionable diagnostics; see `examples/01-args-and-validation/tools/echo-arg.sh:30-36` for human-readable error surfaces.
+- Capture stderr and propagate actionable diagnostics; see `examples/01-args-and-validation/tools/echo-arg/tool.sh:30-36` for human-readable error surfaces.
 - Wrap risky filesystem/network calls in helper functions so they can be retried or mocked in unit tests.
 
 ### 4.4 Logging & instrumentation
@@ -199,6 +199,9 @@ Document configuration in `server.d/README.md` (if present) so on-call operators
 - Secrets management: rely on OS keychains or inject short-lived tokens at launch. Avoid long-lived tokens in `.env` files that might leak through scaffolds.
 - Validate third-party scaffolds before execution. Run `shellcheck` manually on contributions and require signed commits for sensitive providers.
 - For compliance regimes, map MCP logs and payload dumps to your retention policies; scrub `mcpbash.state.*` directories after incidents.
+- Treat local validation helpers as privileged operations:
+  - `mcp-bash validate --fix` is intended for trusted project trees; it will make scripts executable but deliberately skips auto-fixing symlinked scripts and warns instead so you can audit the targets.
+  - `mcp-bash doctor` surfaces framework location, version, PATH wiring, and basic project layout for quick diagnosis; it is designed for local operators and should not be exposed as a public-facing tool in multi-tenant environments.
 
 ## 8. Performance & limits
 - Consult [docs/LIMITS.md](LIMITS.md) before tuning concurrency, payload sizes, or progress frequency.
@@ -230,7 +233,7 @@ sequenceDiagram
 
 ## 10. Contribution workflow
 
-- Follow repository coding style (2-space indent, `set -euo pipefail` headers, `shellcheck` visible directives). Use `# shellcheck disable=…` only with in-line justification (see `examples/01-args-and-validation/tools/echo-arg.sh:3`).
+- Follow repository coding style (2-space indent, `set -euo pipefail` headers, `shellcheck` visible directives). Use `# shellcheck disable=…` only with in-line justification (see `examples/01-args-and-validation/tools/echo-arg/tool.sh:3`).
 - Update documentation anytime you change behaviour surfaced in [README.md](../README.md), [SPEC-COMPLIANCE.md](../SPEC-COMPLIANCE.md), or this guide.
 - Keep commits focused; each should include docs/tests when touching behaviour.
 - Release cadence suggestion: tag monthly and document release notes referencing limits, operational changes, and compatibility toggles.

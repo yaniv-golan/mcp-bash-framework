@@ -5,6 +5,40 @@ All notable changes to mcp-bash-framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - Unreleased
+
+### Added
+- CLI project tooling for standalone servers:
+  - `mcp-bash init [--name NAME] [--no-hello]` initializes a project in the current directory with `server.d/server.meta.json`, a `tools/` directory, a `.gitignore`, and a working `hello` tool by default.
+  - `mcp-bash scaffold server <name>` creates a new project directory with the same structure and example tool, wired to the existing scaffold templates.
+  - `mcp-bash validate [--project-root DIR] [--fix]` validates server metadata and all tools/prompts/resources (JSON shape, required fields, script presence, executability, basic schema checks) and can auto-fix missing executable bits.
+  - `mcp-bash config [--project-root DIR] [--show|--json|--client NAME]` emits ready-to-paste MCP client configuration snippets (Claude Desktop/CLI, Cursor, Windsurf, LibreChat) and a machine-readable JSON descriptor including `MCPBASH_PROJECT_ROOT`.
+  - `mcp-bash doctor` performs environment diagnostics (framework location/version, PATH wiring, jq/gojq availability, basic project metadata, shellcheck/npx presence).
+- One-line installer script `install.sh`:
+  - Clones the framework into a safe, dedicated install directory, configures shell PATH for common shells, verifies `mcp-bash --version`, and warns when jq/gojq is missing.
+  - Supports `--dir`, `--branch`, and `--yes` flags for CI and advanced setups.
+- New SDK JSON helpers in `sdk/tool-sdk.sh`:
+  - `mcp_json_escape` for quoting strings as JSON string literals.
+  - `mcp_json_obj` / `mcp_json_arr` for building simple string-keyed objects and string-only arrays, using gojq/jq when available with a safe fallback when not.
+- Test coverage for the new behavior:
+  - Unit tests for the SDK JSON helpers.
+  - Integration tests for the new CLI commands (`init`, `validate`, `config`, `doctor`) and their happy-path behavior across platforms.
+
+### Changed
+- Project root handling:
+  - Runtime now auto-detects `MCPBASH_PROJECT_ROOT` by walking up from the current directory to find `server.d/server.meta.json`, explicitly skipping framework-internal paths (bootstrap, examples, scaffold).
+  - CLI commands that require a project (`scaffold tool/prompt/resource`, `validate`, `config`, `registry refresh`) now work out of the box inside a project directory without exporting `MCPBASH_PROJECT_ROOT`, while still honoring an explicit env var or `--project-root` when provided.
+- Tool and example boilerplate:
+  - Scaffolded tools and all shipped examples now use a minimal, canonical pattern: `source "${MCP_SDK:?...}/tool-sdk.sh"`, `mcp_args_get` for input, and the new `mcp_json_*` helpers for structured output, instead of in-repo `../../sdk` fallbacks and ad-hoc JSON builders.
+  - `scaffold/tool/README.md` and example READMEs point to the new pattern and SDK helpers as the recommended starting point for standalone servers.
+- Documentation and metadata:
+  - `README.md` Quick Start updated to favor the installer, `mcp-bash init`, auto-detected project roots, `mcp-bash config`, and `mcp-bash doctor` as the primary workflow for third-party servers.
+  - `docs/PROJECT-STRUCTURE.md` updated to reflect `init`/`scaffold server`, the presence of `server.d/server.meta.json` in minimal projects, and the simplified SDK discovery model.
+  - `scaffold/server/server.meta.json` simplified to match the defaults produced by `mcp-bash init`/`mcp-bash scaffold server`, leaving optional fields like `websiteUrl`/`icons` for authors to add explicitly.
+- Tool discovery now ignores root-level scripts under `tools/`; automatic discovery requires each tool to live in a subdirectory (for example `tools/hello/tool.sh` with `tools/hello/tool.meta.json`). This is a breaking change for projects that relied on flat layouts like `tools/foo.sh`.
+- All bundled examples and stress/integration tests have been updated to use the per-tool directory layout, matching the scaffolder output (`mcp-bash scaffold tool <name>`).
+- Documentation (README, best practices, registry contracts, LLM guide) no longer advertises flat layouts as supported; the canonical layout is `tools/<name>/tool.sh` + `tools/<name>/tool.meta.json`.
+
 ## [0.2.1] - 2025-12-09
 
 ### Changed

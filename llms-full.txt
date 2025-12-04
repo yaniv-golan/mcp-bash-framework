@@ -4,11 +4,17 @@ Pure Bash MCP server framework. Bash≥3.2 + jq/gojq. Stdio transport only.
 
 ## SETUP & LAYOUT
 
-- Required env: `MCPBASH_PROJECT_ROOT=/path/to/project` (server refuses to start without it).
 - Framework install (read-only): `~/mcp-bash-framework/`.
-- Project tree under `MCPBASH_PROJECT_ROOT` typically includes:
+- Project tree (project root auto-detected when you run `mcp-bash` inside it; for MCP clients set `MCPBASH_PROJECT_ROOT=/path/to/project` explicitly) typically includes:
   - `tools/`, `resources/`, `prompts/`, `server.d/`, optional `lib/`, `config/`, `.registry/` (generated).
-- Scaffold new assets: `bin/mcp-bash scaffold tool|prompt|resource <name>`.
+- Project creation & scaffolding:
+  - Initialize in current directory: `bin/mcp-bash init [--name NAME] [--no-hello]`.
+  - Scaffold full project in new directory: `bin/mcp-bash scaffold server <name>`.
+  - Scaffold assets in an existing project: `bin/mcp-bash scaffold tool|prompt|resource <name>`.
+- Validation & config:
+  - Validate project: `bin/mcp-bash validate [--project-root DIR] [--fix]`.
+  - Generate MCP client config snippets / JSON descriptor: `bin/mcp-bash config [--project-root DIR] [--show|--json|--client NAME]`.
+  - Environment diagnostics: `bin/mcp-bash doctor` (local operator use; exposes paths and env).
 - Framework files:
   - `bin/mcp-bash`, `lib/*.sh`, `handlers/*.sh`, `sdk/tool-sdk.sh`, `providers/file.sh|git.sh|https.sh`, `scaffold/*`.
 - Project files:
@@ -21,13 +27,13 @@ Pure Bash MCP server framework. Bash≥3.2 + jq/gojq. Stdio transport only.
 ## TOOL STRUCTURE
 
 - Tools are Bash scripts invoked by the framework via stdio.
-- Standard pattern (see `scaffold/tool/tool.sh` or `examples/00-hello-tool/tools/hello.sh`):
+- Standard pattern (see `scaffold/tool/tool.sh` or `examples/00-hello-tool/tools/hello/tool.sh`):
   - `#!/usr/bin/env bash`, `set -euo pipefail`.
-  - Resolve `MCP_SDK` (framework `sdk/` path) or exit with a clear error.
-  - `. "${MCP_SDK}/tool-sdk.sh"` to load SDK helpers.
+  - Assume `MCP_SDK` is set by the framework to the `sdk/` directory; exit with a clear error if it is not.
+  - `source "${MCP_SDK}/tool-sdk.sh"` to load SDK helpers.
   - Read args via `mcp_args_get` / `mcp_args_raw`.
   - Validate inputs; call `mcp_fail_invalid_args` or `mcp_fail <code> "msg" [data_json]` on error.
-  - Emit results via `mcp_emit_json` (preferred) or `mcp_emit_text`.
+  - Build structured results via `mcp_json_obj` / `mcp_json_arr` and emit via `mcp_emit_json` (preferred), or use `mcp_emit_text` for plain text.
 
 ## METADATA (TOOLS/RESOURCES/PROMPTS/COMPLETIONS)
 
@@ -60,6 +66,10 @@ Pure Bash MCP server framework. Bash≥3.2 + jq/gojq. Stdio transport only.
 - Output:
   - `mcp_emit_text "string"` → plain text result.
   - `mcp_emit_json '{"k":"v"}'` → JSON result (compacted).
+- JSON construction helpers:
+  - `mcp_json_escape "value"` → returns a quoted JSON string literal using the framework’s JSON tool (or a safe fallback).
+  - `mcp_json_obj key1 "val1" key2 "val2" ...` → returns `{"key1":"val1","key2":"val2",...}` (all values treated as strings; odd arg count is a fatal error).
+  - `mcp_json_arr "v1" "v2" ...` → returns `["v1","v2",...]` (all values treated as strings).
 - Errors:
   - `mcp_fail <code> "msg" [data_json]` → JSON-RPC error.
   - `mcp_fail_invalid_args "msg"` → `-32602` invalid params.
@@ -111,8 +121,9 @@ Pure Bash MCP server framework. Bash≥3.2 + jq/gojq. Stdio transport only.
 
 ## ENV VARS & LIMITS
 
-- Required:
-  - `MCPBASH_PROJECT_ROOT` → project directory containing `tools/`, `resources/`, `prompts/`.
+- Project root:
+  - For MCP clients (Claude Desktop, Cursor, Windsurf, etc.), set `MCPBASH_PROJECT_ROOT` to the project directory containing `tools/`, `resources/`, `prompts/`.
+  - For local CLI usage (`mcp-bash init`, `mcp-bash scaffold`, `mcp-bash validate`, `mcp-bash config`, etc.), the framework auto-detects the project root when run from inside a project directory (looks for `server.d/server.meta.json` up the tree).
 - Directory overrides:
   - `MCPBASH_TOOLS_DIR`, `MCPBASH_RESOURCES_DIR`, `MCPBASH_PROMPTS_DIR`, `MCPBASH_SERVER_DIR`, `MCPBASH_REGISTRY_DIR`.
 - Concurrency, timeouts, sizes:
@@ -190,9 +201,9 @@ Pure Bash MCP server framework. Bash≥3.2 + jq/gojq. Stdio transport only.
 ## PATTERNS & EXAMPLES
 
 - Common patterns (see `examples/` for full code):
-  - Args + validation: `examples/01-args-and-validation/tools/echo-arg.sh`.
-  - Logging + levels: `examples/02-logging-and-levels/tools/logger.sh`.
-  - Progress + cancellation: `examples/03-progress-and-cancellation/tools/slow.sh`.
+  - Args + validation: `examples/01-args-and-validation/tools/echo-arg/tool.sh`.
+  - Logging + levels: `examples/02-logging-and-levels/tools/logger/tool.sh`.
+  - Progress + cancellation: `examples/03-progress-and-cancellation/tools/slow/tool.sh`.
   - Resources basics: `examples/04-resources-basics`.
   - Prompts basics: `examples/05-prompts-basics`.
   - Manual registration + live progress: `examples/06-manual-registration`.
@@ -203,9 +214,15 @@ Pure Bash MCP server framework. Bash≥3.2 + jq/gojq. Stdio transport only.
 ## COMMANDS & TESTING
 
 - Core commands:
-  - Run server: `bin/mcp-bash` (with `MCPBASH_PROJECT_ROOT` set).
+  - Initialize project in current directory: `bin/mcp-bash init [--name NAME] [--no-hello]`.
+  - Scaffold full project into new directory: `bin/mcp-bash scaffold server <name>`.
+  - Scaffold assets in a project: `bin/mcp-bash scaffold tool|prompt|resource <name>`.
+  - Run server: `bin/mcp-bash` (auto-detects project root when run inside a project directory; for MCP clients set `MCPBASH_PROJECT_ROOT` explicitly).
   - Debug mode: `bin/mcp-bash debug` (enables payload logging and preserved state; see `docs/DEBUGGING.md`).
   - Registry refresh: `bin/mcp-bash registry refresh [--project-root DIR] [--no-notify] [--quiet] [--filter SUBPATH]`.
+  - Validate project: `bin/mcp-bash validate [--project-root DIR] [--fix]`.
+  - Generate MCP client config snippets / JSON descriptor: `bin/mcp-bash config [--project-root DIR] [--show|--json|--client NAME]`.
+  - Diagnose environment: `bin/mcp-bash doctor` (local diagnostic; reveals paths/env).
   - Run examples via MCP Inspector:
     - `npx @modelcontextprotocol/inspector --transport stdio -- ./examples/run 00-hello-tool` (or other example).
 - Test suites (from repo root; see `TESTING.md`):
@@ -235,4 +252,3 @@ Pure Bash MCP server framework. Bash≥3.2 + jq/gojq. Stdio transport only.
 - Discovery:
   - Auto-discovered: tools, resources, prompts (from configured dirs).
   - Manual-only: completions and any custom overrides via `server.d/register.sh`.
-

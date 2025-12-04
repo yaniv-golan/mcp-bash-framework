@@ -44,6 +44,7 @@ TESTS=(
 	"test_capabilities.sh"
 	"test_core_errors.sh"
 	"test_completion.sh"
+	"test_installer.sh"
 	"test_tools.sh"
 	"test_tools_errors.sh"
 	"test_tools_schema.sh"
@@ -60,6 +61,12 @@ TESTS=(
 	"test_notification_dedup.sh"
 	"test_cancellation.sh"
 	"test_cli_guards.sh"
+	"test_cli_init_scaffold_server.sh"
+	"test_cli_init_config_doctor.sh"
+	"test_cli_config_variants.sh"
+	"test_cli_validate_fix.sh"
+	"test_cli_validate_errors.sh"
+	"test_project_root_detection.sh"
 	"test_elicitation.sh"
 )
 

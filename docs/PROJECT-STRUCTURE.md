@@ -4,7 +4,7 @@
 
 mcp-bash keeps the framework and your project separate so upgrades stay painless and your code stays yours. The project tree is intentionally small: tools, resources, prompts, optional server hooks, nothing else.
 
-If you run `mcp-bash` without `MCPBASH_PROJECT_ROOT` set, it will launch a temporary getting-started helper project with a single tool that points you back to these docs. Set `MCPBASH_PROJECT_ROOT` to your own project to run a real server.
+When you run `mcp-bash` from inside a project directory (one that contains `server.d/server.meta.json`), the framework automatically detects the project root. If no project can be detected, running `mcp-bash` without `MCPBASH_PROJECT_ROOT` launches a temporary getting-started helper project with a single tool that points you back to these docs. For MCP clients, you should still set `MCPBASH_PROJECT_ROOT` explicitly so the server can find the right project regardless of working directory.
 
 ## Overview
 
@@ -28,7 +28,14 @@ MCPBASH_HOME (Read-Only)                   MCPBASH_PROJECT_ROOT (Your Code)
 
 ## Required configuration
 
-Set `MCPBASH_PROJECT_ROOT` to your project directory; the server refuses to start without it.
+For **MCP clients** (Claude Desktop, Cursor, Windsurf, etc.), set `MCPBASH_PROJECT_ROOT` to your project directory so the server can locate your tools/prompts/resources no matter where the client launches it from. The recommended way to obtain a correct configuration block is:
+
+```bash
+cd /path/to/my-mcp-server
+mcp-bash config --show
+```
+
+CLI commands (`mcp-bash init`, `mcp-bash scaffold`, `mcp-bash validate`, etc.) automatically detect the project root when you run them from inside a project directory and do not require `MCPBASH_PROJECT_ROOT` for local development.
 
 ### Example: Claude Desktop configuration
 
@@ -106,7 +113,7 @@ Paths in `path` are resolved relative to `MCPBASH_PROJECT_ROOT`. Registry refres
 
 ## Tool SDK discovery
 
-`lib/tools.sh` exports `MCP_SDK` to the framework's `sdk/` directory so tools can `source "${MCP_SDK}/tool-sdk.sh"`. Templates fall back to resolving `sdk/` relative to the script when executed directly. When copying tools into another tree, set `MCP_SDK` yourself (see [SDK Discovery](../README.md#sdk-discovery)) to keep helpers locatable.
+`lib/tools.sh` exports `MCP_SDK` to the framework's `sdk/` directory so tools can `source "${MCP_SDK}/tool-sdk.sh"`. When copying tools into another tree (or running them directly), set `MCP_SDK` yourself (see [SDK Discovery](../README.md#sdk-discovery)) to keep helpers locatable.
 
 ## Example project layouts
 
@@ -114,6 +121,8 @@ Paths in `path` are resolved relative to `MCPBASH_PROJECT_ROOT`. Registry refres
 
 ```
 my-server/
+├── server.d/
+│   └── server.meta.json
 ├── tools/
 │   └── hello/
 │       ├── tool.sh
@@ -124,9 +133,9 @@ my-server/
 Create this structure:
 
 ```bash
-mkdir -p my-server/tools
-export MCPBASH_PROJECT_ROOT=$(pwd)/my-server
-~/mcp-bash-framework/bin/mcp-bash scaffold tool hello
+mkdir my-server
+cd my-server
+mcp-bash init --name my-server
 ```
 
 ### Full-featured project

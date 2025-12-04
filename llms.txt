@@ -4,9 +4,10 @@
 
 Key points:
 
-- **Framework/project separation**: Install the framework once, create unlimited MCP server projects. Your tools stay yours; upgrades are clean.
+- **Framework/project separation**: Install the framework once (e.g., via `install.sh`), create unlimited MCP server projects. Your tools stay yours; upgrades are clean.
 - **Stdio transport only**: Standard input/output communication. No daemons, no HTTP servers, no hidden state.
-- **Auto-discovery**: Place scripts in `tools/`, `resources/`, or `prompts/` directories—the framework finds them automatically.
+- **Auto-discovery & auto-detection**: Tools/resources/prompts are discovered from project directories; project root is auto-detected when you run `mcp-bash` inside a project (for MCP clients, set `MCPBASH_PROJECT_ROOT` explicitly).
+- **Built-in DX commands**: `mcp-bash init`, `mcp-bash scaffold server`, `mcp-bash scaffold tool|prompt|resource`, `mcp-bash validate`, `mcp-bash config`, `mcp-bash doctor`.
 - **Protocol version**: Targets MCP `2025-06-18` with negotiated downgrades to `2025-03-26` and `2024-11-05`.
 - **Cross-platform**: macOS, Linux, and Windows (Git Bash/WSL) support.
 
@@ -33,16 +34,17 @@ Key points:
 
 ## SDK & Scaffolding
 
-- [Tool SDK](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/sdk/tool-sdk.sh): Shared helpers for argument parsing (`mcp_args_get`), output (`mcp_emit_json`, `mcp_emit_text`), progress (`mcp_progress`), cancellation (`mcp_is_cancelled`), and logging (`mcp_log_info`, `mcp_log_warn`).
-- [Scaffold Templates](https://github.com/yaniv-golan/mcp-bash-framework/tree/main/scaffold): Templates for generating compliant tools, resources, and prompts via `mcp-bash scaffold <type> <name>`.
+- [Tool SDK](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/sdk/tool-sdk.sh): Shared helpers for argument parsing (`mcp_args_get`), output (`mcp_emit_json`, `mcp_emit_text`), JSON construction (`mcp_json_escape`, `mcp_json_obj`, `mcp_json_arr`), progress (`mcp_progress`), cancellation (`mcp_is_cancelled`), and logging (`mcp_log_info`, `mcp_log_warn`).
+- [Scaffold Templates](https://github.com/yaniv-golan/mcp-bash-framework/tree/main/scaffold): Templates for generating compliant tools, resources, and prompts via `mcp-bash scaffold <type> <name>` and full server skeleton via `mcp-bash scaffold server <name>`.
 
-## Configuration Reference
+## Configuration & Operations
 
 - [Registry Contracts](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/docs/REGISTRY.md): Registry JSON schemas, TTL, regeneration, and manual overrides.
 - [Limits & Performance](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/docs/LIMITS.md): Tunable limits for concurrency, payloads, progress throttling.
 - [Logging](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/docs/LOGGING.md): Log levels, verbose mode, and structured logging.
 - [Roots](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/docs/ROOTS.md): MCP roots scoping for filesystem access control.
 - [Minimal Mode](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/docs/MINIMAL-MODE.md): Behavior when jq/gojq is missing or minimal mode is forced.
+- [Security](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/docs/SECURITY.md): Threat model, provider hardening, and guidance around local diagnostics (`mcp-bash doctor`, debug mode).
 
 ## Optional
 
@@ -52,4 +54,3 @@ Key points:
 - [Debugging Guide](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/docs/DEBUGGING.md): Debug mode, payload tracing, and log analysis.
 - [Changelog](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/CHANGELOG.md): Notable changes between releases.
 - [Contributing](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/CONTRIBUTING.md): Development setup, coding conventions, and PR workflow.
-

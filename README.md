@@ -30,24 +30,30 @@ Most MCP servers assume you’re willing to spin up heavyweight runtimes and fra
 
 ## Quick Start
 
-If you launch `mcp-bash` without `MCPBASH_PROJECT_ROOT`, it will start a temporary getting-started helper tool that explains how to configure your project. Set `MCPBASH_PROJECT_ROOT` to build a real server.
+When you run `mcp-bash` from inside a project (a directory containing `server.d/server.meta.json`), it auto-detects the project root. Running `mcp-bash` outside any project starts a temporary getting-started helper tool. For MCP clients, set `MCPBASH_PROJECT_ROOT` so the server can find your project regardless of working directory.
 
 ### 1. Install the Framework
 
+Recommended one-line installer:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/yaniv-golan/mcp-bash-framework/main/install.sh | bash
+```
+
+Manual install (for security-conscious environments):
+
 ```bash
 git clone https://github.com/yaniv-golan/mcp-bash-framework.git ~/mcp-bash-framework
+echo 'export PATH="$HOME/mcp-bash-framework/bin:$PATH"' >> ~/.bashrc  # or ~/.zshrc
 ```
 
 ### 1.5 (Optional) Verify Your Install
 
-Run the tiny hello example to confirm `mcp-bash` starts, registers a tool, and returns a response:
-
 ```bash
-cd ~/mcp-bash-framework
-npx @modelcontextprotocol/inspector --transport stdio -- ./examples/run 00-hello-tool
+mcp-bash doctor
 ```
 
-If you don't have Node/npx, you can also point any stdio MCP client at `./examples/run 00-hello-tool`.
+You should see green checks for required dependencies (or clear errors if something is missing).
 
 ### 2. Create Your Project
 
@@ -56,20 +62,24 @@ Your server code lives in a separate project directory:
 ```bash
 mkdir ~/my-mcp-server
 cd ~/my-mcp-server
-export MCPBASH_PROJECT_ROOT=$(pwd)
+mcp-bash init --name my-mcp-server
 ```
 
 ### 3. Scaffold Your First Tool
 
 ```bash
-~/mcp-bash-framework/bin/mcp-bash scaffold tool check-disk
+mcp-bash scaffold tool check-disk
 ```
 
 This scaffolds `tools/check-disk/tool.sh` and `tools/check-disk/tool.meta.json` in your project. You write the logic.
 
 ### 4. Configure Your MCP Client
 
-Set `MCPBASH_PROJECT_ROOT=/path/to/your/project` and point your MCP client at `/path/to/mcp-bash-framework/bin/mcp-bash`. See [Client Recipes](#client-recipes) for one-line configs for Claude Desktop/CLI/Code, Cursor, Windsurf, LibreChat, and OpenAI Agents SDK.
+```bash
+mcp-bash config --show
+```
+
+Copy the snippet for your client (Claude Desktop/CLI/Code, Cursor, Windsurf, LibreChat, etc.) and paste it into the appropriate config file. This sets `MCPBASH_PROJECT_ROOT` and the `mcp-bash` command path for you.
 
 ## Client Recipes
 
@@ -129,7 +139,7 @@ Framework (Install Once)               Your Project (Version Control This)
                                        └── .registry/ (auto-generated)
 ```
 
-The scaffolder creates nested directories per tool (e.g., `tools/check-disk/tool.sh`); the examples stay flat for readability. Both layouts are supported by discovery.
+The scaffolder and examples use per-tool directories (e.g., `tools/check-disk/tool.sh`); automatic discovery requires tools to live under subdirectories of `tools/` (root-level scripts are not discovered).
 
 See [**Project Structure Guide**](docs/PROJECT-STRUCTURE.md) for detailed layouts, Docker deployment, and multi-environment setups.
 
@@ -141,10 +151,11 @@ Every tool sources shared helpers from `sdk/tool-sdk.sh`. When `mcp-bash` launch
 source "${MCP_SDK}/tool-sdk.sh"
 ```
 
-When you run the bundled examples or scaffolded scripts directly, they automatically fall back to locating `sdk/` relative to their location so you can prototype without additional setup. If you copy a tool out of this repository (or build your own project layout), set `MCP_SDK` before executing the script:
+If you copy a tool out of this repository (or build your own project layout) and run it directly, set `MCP_SDK` before executing the script:
 
 ```bash
 export MCP_SDK=/path/to/mcp-bash-framework/sdk
+./tools/check-disk/tool.sh
 ```
 
 If the SDK can’t be resolved, the script exits with a clear error.
@@ -199,7 +210,7 @@ The [`examples/`](examples/) directory shows common patterns end-to-end:
 
 | Variable | Description |
 |----------|-------------|
-| `MCPBASH_PROJECT_ROOT` | **Required.** Path to your project directory containing `tools/`, `prompts/`, `resources/`. |
+| `MCPBASH_PROJECT_ROOT` | **Required for MCP clients.** Path to your project directory containing `tools/`, `prompts/`, `resources/`. CLI commands (`mcp-bash scaffold`, `mcp-bash validate`, etc.) auto-detect the project root from the current directory. |
 
 ### Optional Configuration
 

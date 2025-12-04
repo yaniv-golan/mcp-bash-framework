@@ -449,6 +449,9 @@ mcp_prompts_list() {
 
 	local total="${MCP_PROMPTS_TOTAL}"
 	local result_json
+	# ListPromptsResult also allows additional properties. We expose `total`
+	# alongside `prompts` and optional `nextCursor` as a schema-compliant
+	# extension to report the full count.
 	result_json="$(echo "${MCP_PROMPTS_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -c --argjson offset "$offset" --argjson limit "$numeric_limit" --argjson total "${total}" '
 		{
 			prompts: .items[$offset:$offset+$limit],

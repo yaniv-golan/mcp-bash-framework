@@ -68,6 +68,7 @@ The following MCP features are currently out of scope:
 - Roots: Implemented as a server→client request (`roots/list`) per spec; server capabilities do not advertise a roots surface.
 - Elicitation: Implemented when clients advertise support; tools can pause and request additional user input.
 - Resource templates: `resources/templates/list` is implemented but returns an empty `resourceTemplates` array; capability is no longer advertised until discovery is implemented.
+- List pagination: `tools/list`, `resources/list`, and `prompts/list` include a `total` field alongside the required arrays and optional `nextCursor`. The MCP list result schemas permit additional properties, so `total` is an intentional, spec-compliant extension for clients that want the full count.
 - “Partial” surfaces (e.g., older protocol versions without `listChanged`) are intentionally reduced per back-compat behavior.
 
 ## Verification

@@ -9,6 +9,7 @@ MCPBASH_NO_RESPONSE="__MCP_NO_RESPONSE__"
 MCPBASH_INITIALIZE_HANDSHAKE_DONE=false
 MCPBASH_HANDLER_OUTPUT=""
 MCPBASH_SHUTDOWN_WATCHDOG_PID=""
+MCPBASH_SHUTDOWN_WATCHDOG_CANCEL=""
 MCPBASH_EXIT_REQUESTED=false
 MCPBASH_PROGRESS_FLUSHER_PID=""
 MCPBASH_RESOURCE_POLL_PID=""
@@ -234,12 +235,27 @@ mcp_core_start_shutdown_watchdog() {
 		fi
 		MCPBASH_SHUTDOWN_WATCHDOG_PID=""
 	fi
+	# Use a cancel file for reliable cross-platform cancellation (Windows signals are flaky)
+	local cancel_file="${MCPBASH_STATE_DIR}/shutdown_watchdog.cancel"
+	rm -f "${cancel_file}"
+	MCPBASH_SHUTDOWN_WATCHDOG_CANCEL="${cancel_file}"
+	local parent_pid="$$"
 	(
-		sleep "${timeout}"
+		# Poll in small increments so we can check the cancel file
+		local elapsed=0
+		while [ "${elapsed}" -lt "${timeout}" ]; do
+			sleep 1
+			elapsed=$((elapsed + 1))
+			# Check if cancellation was requested via file (more reliable than signals on Windows)
+			if [ -f "${cancel_file}" ]; then
+				rm -f "${cancel_file}" 2>/dev/null || true
+				exit 0
+			fi
+		done
 		printf '%s\n' "mcp-bash: shutdown timeout (${timeout}s) elapsed; terminating." >&2
-		kill -TERM "${PPID}" 2>/dev/null || true
+		kill -TERM "${parent_pid}" 2>/dev/null || true
 		sleep 1
-		kill -KILL "${PPID}" 2>/dev/null || true
+		kill -KILL "${parent_pid}" 2>/dev/null || true
 	) &
 	MCPBASH_SHUTDOWN_WATCHDOG_PID=$!
 }
@@ -248,10 +264,16 @@ mcp_core_cancel_shutdown_watchdog() {
 	if [ -z "${MCPBASH_SHUTDOWN_WATCHDOG_PID}" ]; then
 		return 0
 	fi
+	# Signal cancellation via file (reliable on Windows where kill may not interrupt sleep)
+	if [ -n "${MCPBASH_SHUTDOWN_WATCHDOG_CANCEL:-}" ]; then
+		touch "${MCPBASH_SHUTDOWN_WATCHDOG_CANCEL}" 2>/dev/null || true
+	fi
+	# Also try to kill directly (works on Unix, may fail on Windows)
 	if kill "${MCPBASH_SHUTDOWN_WATCHDOG_PID}" 2>/dev/null; then
 		wait "${MCPBASH_SHUTDOWN_WATCHDOG_PID}" 2>/dev/null || true
 	fi
 	MCPBASH_SHUTDOWN_WATCHDOG_PID=""
+	MCPBASH_SHUTDOWN_WATCHDOG_CANCEL=""
 }
 
 mcp_core_process_legacy_batch() {

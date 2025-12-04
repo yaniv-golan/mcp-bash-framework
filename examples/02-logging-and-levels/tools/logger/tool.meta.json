@@ -1,6 +1,6 @@
 {
-  "name": "example.hello",
-  "description": "Return a friendly greeting",
+  "name": "example.logger",
+  "description": "Emits an informational log entry",
   "inputSchema": {
     "type": "object",
     "properties": {}
@@ -11,9 +11,10 @@
     "properties": {
       "message": {
         "type": "string",
-        "description": "Greeting text"
+        "description": "Confirmation text"
       }
     }
   },
   "timeoutSecs": 5
 }
+

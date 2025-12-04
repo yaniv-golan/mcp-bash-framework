@@ -3,23 +3,11 @@ set -euo pipefail
 
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 
-if [ -z "${MCP_SDK:-}" ] || [ ! -f "${MCP_SDK}/tool-sdk.sh" ]; then
-	if fallback_sdk="$(cd "${script_dir}/../../../sdk" 2>/dev/null && pwd)"; then
-		if [ -f "${fallback_sdk}/tool-sdk.sh" ]; then
-			MCP_SDK="${fallback_sdk}"
-		fi
-	fi
-fi
-
-if [ -z "${MCP_SDK:-}" ] || [ ! -f "${MCP_SDK}/tool-sdk.sh" ]; then
-	printf 'mcp: SDK helpers not found (set MCP_SDK to your framework sdk/ path or keep this example inside the framework repo; expected %s/tool-sdk.sh)\n' "${MCP_SDK:-<unset>}" >&2
-	exit 1
-fi
-
-# shellcheck source=../../../sdk/tool-sdk.sh disable=SC1091
-source "${MCP_SDK}/tool-sdk.sh"
-# shellcheck source=../lib/roots.sh disable=SC1091
-source "${script_dir}/../lib/roots.sh"
+# Source SDK (MCP_SDK is set by the framework when running tools)
+# shellcheck source=../../../../../sdk/tool-sdk.sh disable=SC1091
+source "${MCP_SDK:?MCP_SDK environment variable not set}/tool-sdk.sh"
+# shellcheck source=../../lib/roots.sh disable=SC1091
+source "${script_dir}/../../lib/roots.sh"
 
 path="$(mcp_args_get '.path // empty' 2>/dev/null || true)"
 if [ -z "${path}" ] && [ $# -ge 1 ]; then

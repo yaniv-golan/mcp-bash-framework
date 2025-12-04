@@ -27,6 +27,7 @@ mcp-bash keeps the attack surface small: every tool is a subprocess with a contr
 - Periodically review `.registry/*.json` contents for unexpected providers/URIs and revoke filesystem roots that are no longer required.
 - HTTPS provider hardening: private/loopback hosts are blocked; optional allow/deny lists via `MCPBASH_HTTPS_ALLOW_HOSTS` / `MCPBASH_HTTPS_DENY_HOSTS`; timeouts and size are bounded (timeouts capped at 60s, max bytes capped at 20MB), redirects/protocol downgrades disabled.
 - Git resource provider: disabled by default; enable with `MCPBASH_ENABLE_GIT_PROVIDER=true`. Private/loopback blocked; optional allow/deny lists via `MCPBASH_GIT_ALLOW_HOSTS` / `MCPBASH_GIT_DENY_HOSTS`; shallow clone enforced, timeout bounded (default 30s, max 60s), repository size capped via `MCPBASH_GIT_MAX_KB` (default 50MB, max 1GB). Use behind an allowlisted proxy/cache where possible.
+- Diagnostic commands like `mcp-bash doctor` and `mcp-bash validate` are intended for local use; they reveal filesystem paths, environment details, and project layout. Avoid exposing them as remotely callable tools in multi-tenant or untrusted environments.
 
 ## Expectations for extensions
 - Validate inputs inside your tools; the framework does not guess what your scripts should accept or reject.
