@@ -834,7 +834,7 @@ mcp_tools_call() {
 	}
 
 	local exit_code
-	# shellcheck disable=SC2030,SC2031
+	# shellcheck disable=SC2030,SC2031,SC2094
 	(
 		# Environment mutations here are intentionally scoped to this subshell.
 		# Ignore SIGTERM in this subshell - only the tool process should be killed
@@ -942,16 +942,30 @@ mcp_tools_call() {
 			fi
 		fi
 
+		# Helper to execute the tool with optional streaming; retries without streaming if process substitution fails.
+		run_with_stderr_streaming() {
+			if ! "$@"; then
+				# If streaming failed (e.g., process substitution unavailable), retry without streaming and append a note.
+				printf 'stream-stderr unavailable; retrying without streaming\n' >>"${stderr_file}"
+				return 1
+			fi
+			return 0
+		}
+
 		if [ -n "${effective_timeout}" ]; then
 			if [ "${tool_env_mode}" != "inherit" ]; then
 				if [ "${stream_stderr}" = "true" ]; then
-					with_timeout "${effective_timeout}" -- "${env_exec[@]}" "${tool_runner[@]}" 2> >(tee "${stderr_file}" >&2)
+					if ! run_with_stderr_streaming with_timeout "${effective_timeout}" -- "${env_exec[@]}" "${tool_runner[@]}" 2> >(tee "${stderr_file}" >&2); then
+						with_timeout "${effective_timeout}" -- "${env_exec[@]}" "${tool_runner[@]}" 2>"${stderr_file}"
+					fi
 				else
 					with_timeout "${effective_timeout}" -- "${env_exec[@]}" "${tool_runner[@]}" 2>"${stderr_file}"
 				fi
 			else
 				if [ "${stream_stderr}" = "true" ]; then
-					with_timeout "${effective_timeout}" -- "${tool_runner[@]}" 2> >(tee "${stderr_file}" >&2)
+					if ! run_with_stderr_streaming with_timeout "${effective_timeout}" -- "${tool_runner[@]}" 2> >(tee "${stderr_file}" >&2); then
+						with_timeout "${effective_timeout}" -- "${tool_runner[@]}" 2>"${stderr_file}"
+					fi
 				else
 					with_timeout "${effective_timeout}" -- "${tool_runner[@]}" 2>"${stderr_file}"
 				fi
@@ -959,19 +973,23 @@ mcp_tools_call() {
 		else
 			if [ "${tool_env_mode}" != "inherit" ]; then
 				if [ "${stream_stderr}" = "true" ]; then
-					"${env_exec[@]}" "${tool_runner[@]}" 2> >(tee "${stderr_file}" >&2)
+					if ! run_with_stderr_streaming "${env_exec[@]}" "${tool_runner[@]}" 2> >(tee "${stderr_file}" >&2); then
+						"${env_exec[@]}" "${tool_runner[@]}" 2>"${stderr_file}"
+					fi
 				else
 					"${env_exec[@]}" "${tool_runner[@]}" 2>"${stderr_file}"
 				fi
 			else
 				if [ "${stream_stderr}" = "true" ]; then
-					"${tool_runner[@]}" 2> >(tee "${stderr_file}" >&2)
+					if ! run_with_stderr_streaming "${tool_runner[@]}" 2> >(tee "${stderr_file}" >&2); then
+						"${tool_runner[@]}" 2>"${stderr_file}"
+					fi
 				else
 					"${tool_runner[@]}" 2>"${stderr_file}"
 				fi
 			fi
 		fi
-	) >"${stdout_file}" || exit_code=$?
+	) >"${stdout_file}" 2>>"${stderr_file}" || exit_code=$?
 	exit_code=${exit_code:-0}
 
 	if mcp_logging_is_enabled "debug"; then
