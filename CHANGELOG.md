@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - SDK helper `mcp_require_path` for consistent path normalization, optional single-root defaulting, and roots enforcement in tools.
+- Shared path normalization helpers (`lib/path.sh`) with consistent fallback chain (realpath -m → realpath → readlink -f → manual collapse) used by SDK/runtime/installer; added unit coverage.
 
 ## [0.3.0] - 2025-12-05
 

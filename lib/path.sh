@@ -22,9 +22,7 @@ mcp_path_collapse() {
 	fi
 
 	# squash multiple slashes
-	while [[ $raw == *//* ]]; do
-		raw="${raw//\/\//\/}"
-	done
+	raw="$(printf '%s' "${raw}" | tr -s '/')"
 
 	IFS='/' read -r -a parts <<<"${raw}"
 	local -a stack=()
