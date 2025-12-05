@@ -1193,7 +1193,7 @@ EOF
 	fi
 
 	local result_json=""
-	if mcp_tools_call "${tool_name}" "${args_json}" "${timeout_override}"; then
+	if mcp_tools_call "${tool_name}" "${args_json}" "${effective_timeout}"; then
 		result_json="${_MCP_TOOLS_RESULT:-}"
 		printf '%s\n' "${result_json}"
 		exit 0
