@@ -10,6 +10,7 @@ Key points:
 - **Built-in DX commands**: `mcp-bash init`, `mcp-bash scaffold server`, `mcp-bash scaffold tool|prompt|resource`, `mcp-bash validate`, `mcp-bash config`, `mcp-bash doctor`.
 - **Protocol version**: Targets MCP `2025-06-18` with negotiated downgrades to `2025-03-26` and `2024-11-05`.
 - **Cross-platform**: macOS, Linux, and Windows (Git Bash/WSL) support.
+- **CLI `run-tool`**: Direct tool invocation with roots, dry-run, timeout override, verbose stderr; covered by unit and example smoke tests.
 
 ## Docs
 

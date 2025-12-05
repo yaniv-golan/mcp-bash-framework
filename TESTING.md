@@ -43,6 +43,10 @@ Includes coverage for the CLI `run-tool` entrypoint, SDK helpers, path normaliza
 ./test/examples/run.sh
 ```
 
+The examples runner now includes:
+- `test_examples.sh` (protocol NDJSON harness across all examples)
+- `test_run_tool_smoke.sh` (run-tool CLI smoke on the hello example with dry-run + roots)
+
 ## Compatibility Suite
 
 ```
