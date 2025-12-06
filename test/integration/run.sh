@@ -50,6 +50,7 @@ TESTS=(
 	"test_completion.sh"
 	"test_installer.sh"
 	"test_tools.sh"
+	"test_tools_policy.sh"
 	"test_tools_errors.sh"
 	"test_tools_schema.sh"
 	"test_prompts.sh"

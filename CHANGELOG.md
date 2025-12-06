@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `mcp-bash config` gains richer `--json` output, pasteable JSON for `--client`, and `--wrapper` generator for auto-install scripts.
 - `mcp-bash registry status` subcommand to inspect registry cache (hash/mtime/counts) without refresh.
 - `mcp-bash doctor --json` for machine-readable environment/project readiness (absorbs readiness summary).
+- Tool policy hook (`server.d/policy.sh` + `mcp_tools_policy_check`) invoked before every tool run; default allows all, enabling read-only/allowlist/audit policies without per-tool code.
 - Docs for `run-tool` usage/flags and unit coverage for the CLI wrapper.
 - `mcp-bash scaffold test` CLI to generate a minimal test harness (`test/run.sh`, `test/README.md`) wrapping `run-tool`, plus integration coverage.
 

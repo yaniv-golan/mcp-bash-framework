@@ -22,7 +22,7 @@ Pure Bash MCP server framework. Bash≥3.2 + jq/gojq. Stdio transport only.
   - `tools/<name>/tool.sh` + `tools/<name>/tool.meta.json`.
   - `resources/<name>.meta.json` + content files.
   - `prompts/<name>.meta.json` + template files.
-  - `server.d/register.sh`, `server.d/env.sh`, `server.d/server.meta.json`.
+  - `server.d/register.sh`, `server.d/env.sh`, `server.d/server.meta.json`, optional `server.d/policy.sh` (defines `mcp_tools_policy_check` to allow/deny tools centrally).
   - `config/roots.json`, `.registry/` (registry cache, not committed).
 
 ## TOOL STRUCTURE

@@ -198,6 +198,25 @@ repo_path="$(mcp_require_path '.repoPath' --default-to-single-root)"
 optional_path="$(mcp_require_path '.outputPath' --allow-empty)"
 ```
 
+#### Centralized tool policy (server.d/policy.sh)
+
+- Use `server.d/policy.sh` with `mcp_tools_policy_check()` to gate tool invocations in one place (read-only modes, allowlists, audit hooks). The framework sources this once per process and calls it before every tool run.
+- Keep the hook fast and deterministic; it runs on every invocation.
+- Use `-32602` for policy/invalid-params blocks; `-32600` for capability/auth failures.
+- Example read-only mode:
+
+```bash
+# server.d/policy.sh
+mcp_tools_policy_check() {
+	local tool_name="$1"
+	if [ "${MYPROJECT_READ_ONLY:-0}" = "1" ] && [[ "${tool_name}" != myProj.get* ]]; then
+		mcp_tools_error -32602 "Read-only mode: ${tool_name} disabled"
+		return 1
+	fi
+	return 0
+}
+```
+
 This single helper replaces 15-20 lines of boilerplate:
 
 ```bash

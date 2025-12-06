@@ -226,6 +226,24 @@ mcp_completion_manual_finalize
 
 Paths are resolved relative to `MCPBASH_PROJECT_ROOT`, and registry refreshes pick them up automatically.
 
+## Tool Policy Hook (optional)
+
+Projects can gate tool execution centrally by adding `server.d/policy.sh` with `mcp_tools_policy_check()`. The framework calls this before every tool run (default: allow all).
+
+```bash
+# server.d/policy.sh
+mcp_tools_policy_check() {
+	local tool_name="$1"
+	if [ "${MYPROJECT_READ_ONLY:-0}" = "1" ] && [[ "${tool_name}" != myProj.get* ]]; then
+		mcp_tools_error -32602 "Read-only mode: ${tool_name} disabled"
+		return 1
+	fi
+	return 0
+}
+```
+
+Use `-32602` for policy/invalid-params blocks, `-32600` for capability/auth failures. Keep logic lightweight; the hook runs on every invocation.
+
 ## Learn by Example
 
 The [`examples/`](examples/) directory shows common patterns end-to-end:

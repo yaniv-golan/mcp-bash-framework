@@ -38,6 +38,14 @@ if ! command -v mcp_registry_resolve_scan_root >/dev/null 2>&1; then
 	. "${MCPBASH_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/lib/registry.sh"
 fi
 
+# Provide defaults if policy helpers were not sourced (older bootstraps).
+if ! declare -F mcp_tools_policy_check >/dev/null 2>&1; then
+	mcp_tools_policy_check() { return 0; }
+fi
+if ! declare -F mcp_tools_policy_init >/dev/null 2>&1; then
+	mcp_tools_policy_init() { return 0; }
+fi
+
 mcp_tools_scan_root() {
 	mcp_registry_resolve_scan_root "${MCPBASH_TOOLS_DIR}"
 }
@@ -780,6 +788,18 @@ mcp_tools_call() {
 	if [ "${env_mode_lc}" = "inherit" ] && [ "${MCPBASH_TOOL_ENV_INHERIT_WARNED}" != "true" ]; then
 		MCPBASH_TOOL_ENV_INHERIT_WARNED="true"
 		mcp_logging_warning "${MCP_TOOLS_LOGGER}" "MCPBASH_TOOL_ENV_MODE=inherit; tools receive the full host environment"
+	fi
+
+	# Initialize and enforce project policy (server.d/policy.sh can override).
+	mcp_tools_policy_init
+	if ! mcp_tools_policy_check "${name}" "${metadata}"; then
+		if [ "${_MCP_TOOLS_ERROR_CODE:-0}" -eq 0 ]; then
+			mcp_tools_error -32602 "Tool '${name}' blocked by policy"
+		fi
+		local policy_data="${_MCP_TOOLS_ERROR_DATA:-null}"
+		[ -z "${policy_data}" ] && policy_data="null"
+		_mcp_tools_emit_error "${_MCP_TOOLS_ERROR_CODE}" "${_MCP_TOOLS_ERROR_MESSAGE}" "${policy_data}"
+		return 1
 	fi
 
 	local absolute_path="${MCPBASH_TOOLS_DIR}/${tool_path}"
