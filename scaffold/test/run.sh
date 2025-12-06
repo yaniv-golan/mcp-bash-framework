@@ -144,6 +144,15 @@ printf "\nRunning tests...\n"
 #
 #   # Pass roots (comma-separated) and timeout overrides
 #   # run_test "hello" '{"name":"Roots"}' "" "--roots" "/repo,/other" "--timeout" "15"
+#   # Extract structuredContent from run-tool output
+#   # output="$(mcp-bash run-tool hello --args '{"name":"World"}')"
+#   # message="$(printf '%s\n' "${output}" | jq -r '.structuredContent.message // .content[0].text')"
+#   # test_assert_eq "Hello World" "${message}"
+#
+#   # Expected failure pattern
+#   # if mcp-bash run-tool hello --args '"not-an-object"' >/dev/null 2>&1; then
+#   #     test_fail "hello should reject non-object args"
+#   # fi
 #
 #   # Skip a test conditionally
 #   if [[ -z "${API_KEY:-}" ]]; then
@@ -151,6 +160,10 @@ printf "\nRunning tests...\n"
 #   else
 #       run_test "api-tool" '{"query":"test"}'
 #   fi
+#
+#   # Git fixtures: disable signing to avoid global gpg/1Password hooks breaking tests
+#   # git config commit.gpgsign false
+#   # git config tag.gpgsign false
 #
 # ============================================================================
 
