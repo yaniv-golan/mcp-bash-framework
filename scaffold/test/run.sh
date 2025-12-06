@@ -20,6 +20,9 @@ fi
 if [[ -z "${MCPBASH_BIN}" ]] && [[ -x "${PROJECT_ROOT}/../bin/mcp-bash" ]]; then
 	MCPBASH_BIN="${PROJECT_ROOT}/../bin/mcp-bash"
 fi
+if [[ -z "${MCPBASH_BIN}" ]] && [[ -x "${PROJECT_ROOT}/bin/mcp-bash" ]]; then
+	MCPBASH_BIN="${PROJECT_ROOT}/bin/mcp-bash"
+fi
 if [[ -z "${MCPBASH_BIN}" ]]; then
 	printf 'mcp-bash not found; add to PATH or set MCPBASH_HOME.\n' >&2
 	exit 1
