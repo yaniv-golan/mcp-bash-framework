@@ -61,25 +61,34 @@ cursor_output="$(
 	"${MCPBASH_TEST_ROOT}/bin/mcp-bash" config --client cursor
 )"
 
-assert_contains "Cursor:" "${cursor_output}" "config --client cursor missing heading"
+# --client now outputs pasteable JSON (no prose headings)
+if ! printf '%s' "${cursor_output}" | jq -e '.' >/dev/null 2>&1; then
+	test_fail "config --client cursor is not valid JSON"
+fi
 assert_contains "cfg-demo" "${cursor_output}" "config --client cursor missing project name"
 assert_contains "MCPBASH_PROJECT_ROOT" "${cursor_output}" "config --client cursor missing env var"
+assert_contains "mcpServers" "${cursor_output}" "config --client cursor missing mcpServers wrapper"
 
 printf ' -> config --client claude-desktop\n'
 desktop_output="$(
 	cd "${PROJECT_DIR}" || exit 1
 	"${MCPBASH_TEST_ROOT}/bin/mcp-bash" config --client claude-desktop
 )"
-assert_contains "Claude Desktop" "${desktop_output}" "config --client claude-desktop missing heading"
+if ! printf '%s' "${desktop_output}" | jq -e '.' >/dev/null 2>&1; then
+	test_fail "config --client claude-desktop is not valid JSON"
+fi
 assert_contains "cfg-demo" "${desktop_output}" "config --client claude-desktop missing project name"
 assert_contains "MCPBASH_PROJECT_ROOT" "${desktop_output}" "config --client claude-desktop missing env var"
+assert_contains "mcpServers" "${desktop_output}" "config --client claude-desktop missing mcpServers wrapper"
 
 printf ' -> config --client claude-cli\n'
 cli_output="$(
 	cd "${PROJECT_DIR}" || exit 1
 	"${MCPBASH_TEST_ROOT}/bin/mcp-bash" config --client claude-cli
 )"
-assert_contains "Claude CLI" "${cli_output}" "config --client claude-cli missing heading"
+if ! printf '%s' "${cli_output}" | jq -e '.' >/dev/null 2>&1; then
+	test_fail "config --client claude-cli is not valid JSON"
+fi
 assert_contains "cfg-demo" "${cli_output}" "config --client claude-cli missing project name"
 assert_contains "MCPBASH_PROJECT_ROOT" "${cli_output}" "config --client claude-cli missing env var"
 
@@ -88,16 +97,21 @@ windsurf_output="$(
 	cd "${PROJECT_DIR}" || exit 1
 	"${MCPBASH_TEST_ROOT}/bin/mcp-bash" config --client windsurf
 )"
-assert_contains "Windsurf" "${windsurf_output}" "config --client windsurf missing heading"
+if ! printf '%s' "${windsurf_output}" | jq -e '.' >/dev/null 2>&1; then
+	test_fail "config --client windsurf is not valid JSON"
+fi
 assert_contains "cfg-demo" "${windsurf_output}" "config --client windsurf missing project name"
 assert_contains "MCPBASH_PROJECT_ROOT" "${windsurf_output}" "config --client windsurf missing env var"
+assert_contains "mcpServers" "${windsurf_output}" "config --client windsurf missing mcpServers wrapper"
 
 printf ' -> config --client librechat\n'
 librechat_output="$(
 	cd "${PROJECT_DIR}" || exit 1
 	"${MCPBASH_TEST_ROOT}/bin/mcp-bash" config --client librechat
 )"
-assert_contains "LibreChat" "${librechat_output}" "config --client librechat missing heading"
+if ! printf '%s' "${librechat_output}" | jq -e '.' >/dev/null 2>&1; then
+	test_fail "config --client librechat is not valid JSON"
+fi
 assert_contains "cfg-demo" "${librechat_output}" "config --client librechat missing project name"
 assert_contains "MCPBASH_PROJECT_ROOT" "${librechat_output}" "config --client librechat missing env var"
 
