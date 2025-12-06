@@ -1001,51 +1001,50 @@ mcp_tools_call() {
 			fi
 		fi
 
-		# Helper to execute the tool with optional streaming; retries without streaming if
-		# the redirection command fails at runtime (syntax is guaranteed because this file requires bash).
-		run_with_stderr_streaming() {
-			if ! "$@"; then
+		mcp_tools_can_stream_stderr() {
+			if ! command -v tee >/dev/null 2>&1; then
+				return 1
+			fi
+			if ! { : 2> >(cat >/dev/null); } 2>/dev/null; then
 				return 1
 			fi
 			return 0
 		}
 
+		local stderr_streaming_enabled="${stream_stderr}"
+		if [ "${stream_stderr}" = "true" ]; then
+			if mcp_tools_can_stream_stderr; then
+				stderr_streaming_enabled="true"
+			else
+				stderr_streaming_enabled="false"
+				printf 'stream-stderr unavailable; stderr will be buffered\n' >>"${stderr_file}"
+			fi
+		fi
+
 		if [ -n "${effective_timeout}" ]; then
 			if [ "${tool_env_mode}" != "inherit" ]; then
-				if [ "${stream_stderr}" = "true" ]; then
-					if ! run_with_stderr_streaming with_timeout "${effective_timeout}" -- "${env_exec[@]}" "${tool_runner[@]}" 2> >(tee "${stderr_file}" >&2); then
-						with_timeout "${effective_timeout}" -- "${env_exec[@]}" "${tool_runner[@]}" 2>"${stderr_file}"
-						printf 'stream-stderr unavailable; retried without streaming\n' >>"${stderr_file}"
-					fi
+				if [ "${stderr_streaming_enabled}" = "true" ]; then
+					with_timeout "${effective_timeout}" -- "${env_exec[@]}" "${tool_runner[@]}" 2> >(tee "${stderr_file}" >&2)
 				else
 					with_timeout "${effective_timeout}" -- "${env_exec[@]}" "${tool_runner[@]}" 2>"${stderr_file}"
 				fi
 			else
-				if [ "${stream_stderr}" = "true" ]; then
-					if ! run_with_stderr_streaming with_timeout "${effective_timeout}" -- "${tool_runner[@]}" 2> >(tee "${stderr_file}" >&2); then
-						with_timeout "${effective_timeout}" -- "${tool_runner[@]}" 2>"${stderr_file}"
-						printf 'stream-stderr unavailable; retried without streaming\n' >>"${stderr_file}"
-					fi
+				if [ "${stderr_streaming_enabled}" = "true" ]; then
+					with_timeout "${effective_timeout}" -- "${tool_runner[@]}" 2> >(tee "${stderr_file}" >&2)
 				else
 					with_timeout "${effective_timeout}" -- "${tool_runner[@]}" 2>"${stderr_file}"
 				fi
 			fi
 		else
 			if [ "${tool_env_mode}" != "inherit" ]; then
-				if [ "${stream_stderr}" = "true" ]; then
-					if ! run_with_stderr_streaming "${env_exec[@]}" "${tool_runner[@]}" 2> >(tee "${stderr_file}" >&2); then
-						"${env_exec[@]}" "${tool_runner[@]}" 2>"${stderr_file}"
-						printf 'stream-stderr unavailable; retried without streaming\n' >>"${stderr_file}"
-					fi
+				if [ "${stderr_streaming_enabled}" = "true" ]; then
+					"${env_exec[@]}" "${tool_runner[@]}" 2> >(tee "${stderr_file}" >&2)
 				else
 					"${env_exec[@]}" "${tool_runner[@]}" 2>"${stderr_file}"
 				fi
 			else
-				if [ "${stream_stderr}" = "true" ]; then
-					if ! run_with_stderr_streaming "${tool_runner[@]}" 2> >(tee "${stderr_file}" >&2); then
-						"${tool_runner[@]}" 2>"${stderr_file}"
-						printf 'stream-stderr unavailable; retried without streaming\n' >>"${stderr_file}"
-					fi
+				if [ "${stderr_streaming_enabled}" = "true" ]; then
+					"${tool_runner[@]}" 2> >(tee "${stderr_file}" >&2)
 				else
 					"${tool_runner[@]}" 2>"${stderr_file}"
 				fi
