@@ -51,6 +51,7 @@ echo 'export PATH="$HOME/mcp-bash-framework/bin:$PATH"' >> ~/.bashrc  # or ~/.zs
 
 ```bash
 mcp-bash doctor
+mcp-bash doctor --json    # machine-readable readiness (framework/runtime/project)
 ```
 
 You should see green checks for required dependencies (or clear errors if something is missing).
@@ -88,6 +89,9 @@ The harness wraps `mcp-bash run-tool`, validates your project before running, an
 
 ```bash
 mcp-bash config --show
+mcp-bash config --json           # machine-readable descriptor (name/command/env)
+mcp-bash config --client cursor  # client-specific snippet
+mcp-bash config --wrapper        # generate wrapper script that auto-installs framework
 ```
 
 Copy the snippet for your client (Claude Desktop/CLI/Code, Cursor, Windsurf, LibreChat, etc.) and paste it into the appropriate config file. This sets `MCPBASH_PROJECT_ROOT` and the `mcp-bash` command path for you.
@@ -158,18 +162,27 @@ Use `run-tool` to invoke a single tool without starting the full MCP server. Thi
 # Basic invocation (project inferred from CWD or MCPBASH_PROJECT_ROOT)
 mcp-bash run-tool my.tool --args '{"value":"hello"}'
 
-# Simulate roots (comma-separated), stream stderr, override timeout
+# Simulate roots (comma-separated), stream stderr, override timeout, or print env
 mcp-bash run-tool my.tool --args '{"value":"hi"}' --roots /tmp/project,/data/shared --verbose --timeout 15
+# Inspect wiring without executing
+mcp-bash run-tool my.tool --print-env --dry-run
 
 # Dry-run validates metadata/args without executing the tool
 mcp-bash run-tool my.tool --dry-run
 ```
 
-Flags: `--args` (JSON object), `--roots` (comma-separated paths), `--dry-run`, `--timeout <secs>`, `--verbose` (stream tool stderr), `--no-refresh` (reuse cached registry), `--minimal` (force degraded mode), `--project-root <dir>`. Elicitation is not supported in CLI mode.
+Flags: `--args` (JSON object), `--roots` (comma-separated paths), `--dry-run`, `--timeout <secs>`, `--verbose` (stream tool stderr), `--no-refresh` (reuse cached registry), `--minimal` (force degraded mode), `--project-root <dir>`, `--print-env` (dump wiring without executing). Elicitation is not supported in CLI mode.
 
 The scaffolder and examples use per-tool directories (e.g., `tools/check-disk/tool.sh`); automatic discovery requires tools to live under subdirectories of `tools/` (root-level scripts are not discovered).
 
 See [**Project Structure Guide**](docs/PROJECT-STRUCTURE.md) for detailed layouts, Docker deployment, and multi-environment setups.
+
+## Diagnostics & Validation
+
+- Project checks: `mcp-bash validate [--project-root DIR] [--fix] [--json] [--explain-defaults] [--strict]`
+- Environment check: `mcp-bash doctor [--json]`
+- Registry cache introspection: `mcp-bash registry status [--project-root DIR]`
+- Client config: `mcp-bash config --json` (machine-readable), `--client <name>` (pasteable JSON), `--wrapper` (generate auto-install wrapper)
 
 ## SDK Discovery
 

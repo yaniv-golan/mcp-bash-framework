@@ -11,11 +11,128 @@ fi
 # Globals: MCPBASH_HOME, MCPBASH_PROJECT_ROOT (optional), usage() from bin, runtime globals from initialize_runtime_paths.
 
 mcp_cli_doctor() {
+	local json_mode="false"
+
+	while [ $# -gt 0 ]; do
+		case "$1" in
+		--json)
+			json_mode="true"
+			;;
+		--help | -h)
+			cat <<'EOF'
+Usage:
+  mcp-bash doctor [--json]
+
+Diagnose environment and project setup.
+EOF
+			exit 0
+			;;
+		*)
+			usage
+			exit 1
+			;;
+		esac
+		shift
+	done
+
 	require_bash_runtime
 	initialize_runtime_paths
 
 	local errors=0
 	local warnings=0
+
+	if [ "${json_mode}" = "true" ]; then
+		local framework_home="${MCPBASH_HOME}"
+		local framework_exists="false"
+		local framework_version="unknown"
+		local path_ok="false"
+		local jq_path gojq_path json_tool="none"
+		local project_root="" server_meta_valid="null" tools_count=0 registry_exists="false"
+
+		if [ -d "${framework_home}" ]; then
+			framework_exists="true"
+		fi
+		if [ -f "${framework_home}/VERSION" ]; then
+			framework_version="$(tr -d '[:space:]' <"${framework_home}/VERSION" 2>/dev/null || printf 'unknown')"
+		else
+			warnings=$((warnings + 1))
+		fi
+
+		local resolved
+		resolved="$(command -v mcp-bash 2>/dev/null || printf '')"
+		if [ -n "${resolved}" ] && [ "${resolved}" = "${framework_home}/bin/mcp-bash" ]; then
+			path_ok="true"
+		else
+			warnings=$((warnings + 1))
+		fi
+
+		jq_path="$(command -v jq 2>/dev/null || printf '')"
+		gojq_path="$(command -v gojq 2>/dev/null || printf '')"
+		if [ -n "${jq_path}" ]; then
+			json_tool="jq"
+		elif [ -n "${gojq_path}" ]; then
+			json_tool="gojq"
+		else
+			errors=$((errors + 1))
+		fi
+
+		if project_root="$(mcp_runtime_find_project_root "${PWD}" 2>/dev/null)"; then
+			if [ -f "${project_root}/server.d/server.meta.json" ] && [ -n "${jq_path}${gojq_path}" ]; then
+				if [ -n "${jq_path}" ]; then
+					if jq -e '.' "${project_root}/server.d/server.meta.json" >/dev/null 2>&1; then
+						server_meta_valid="true"
+					else
+						server_meta_valid="false"
+						warnings=$((warnings + 1))
+					fi
+				else
+					if gojq -e '.' "${project_root}/server.d/server.meta.json" >/dev/null 2>&1; then
+						server_meta_valid="true"
+					else
+						server_meta_valid="false"
+						warnings=$((warnings + 1))
+					fi
+				fi
+			fi
+			if [ -d "${project_root}/tools" ]; then
+				tools_count="$(find "${project_root}/tools" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')"
+			fi
+			if [ -d "${project_root}/.registry" ]; then
+				registry_exists="true"
+			else
+				warnings=$((warnings + 1))
+			fi
+		fi
+
+		cat <<EOF
+{
+  "framework": {
+    "path": "${framework_home}",
+    "exists": ${framework_exists},
+    "version": "${framework_version}",
+    "pathConfigured": ${path_ok}
+  },
+  "runtime": {
+    "bashVersion": "${BASH_VERSION}",
+    "jqPath": "${jq_path}",
+    "gojqPath": "${gojq_path}",
+    "jsonTool": "${json_tool}"
+  },
+  "project": {
+    "root": "${project_root}",
+    "serverMetaValid": ${server_meta_valid},
+    "toolsCount": ${tools_count},
+    "registryExists": ${registry_exists}
+  },
+  "errors": ${errors},
+  "warnings": ${warnings}
+}
+EOF
+		if [ "${errors}" -gt 0 ]; then
+			exit 1
+		fi
+		exit 0
+	fi
 
 	printf 'mcp-bash Environment Check\n'
 	printf '==========================\n\n'

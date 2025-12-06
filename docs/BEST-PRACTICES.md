@@ -27,9 +27,10 @@ This guide distils hands-on recommendations for designing, building, and operati
 | `bin/mcp-bash scaffold prompt <name>` | Generate prompt template + `.meta.json` | [§4.1](#41-scaffold-workflow) |
 | `bin/mcp-bash scaffold resource <name>` | Produce resource boilerplate wired to the file provider | [§4.1](#41-scaffold-workflow) |
 | `bin/mcp-bash scaffold test` | Create a lightweight test harness (`test/run.sh`, `test/README.md`) | [§4.1](#41-scaffold-workflow) |
-| `bin/mcp-bash run-tool <name>` | Invoke a tool without starting the server (supports `--dry-run`, `--roots`, `--timeout`, `--verbose`, `--minimal`) | [§5.2](#52-local-workflow) |
-| `bin/mcp-bash validate` | Validate project structure and metadata | [§5.2](#52-local-workflow) |
-| `bin/mcp-bash doctor` | Diagnose environment and installation issues | [§2](#2-environment--tooling) |
+| `bin/mcp-bash run-tool <name>` | Invoke a tool without starting the server (supports `--dry-run`, `--roots`, `--timeout`, `--verbose`, `--minimal`, `--print-env`) | [§5.2](#52-local-workflow) |
+| `bin/mcp-bash validate` | Validate project structure and metadata (`--json`, `--strict`, `--explain-defaults` for CI) | [§5.2](#52-local-workflow) |
+| `bin/mcp-bash doctor` | Diagnose environment and installation issues (`--json` for CI/log parsing) | [§2](#2-environment--tooling) |
+| `bin/mcp-bash registry status` | Show registry cache status (hash/mtime/counts) | [§5.2](#52-local-workflow) |
 | `./test/lint.sh` | Run shellcheck + shfmt gates; wraps commands from [TESTING.md](../TESTING.md) | [§5.2](#52-local-workflow) |
 | `./test/unit/lock.bats` | Validate lock/serialization primitives (`lib/lock.sh`) | [§5.1](#51-test-pyramid) |
 | `./test/integration/test_capabilities.sh` | End-to-end lifecycle/capability checks | [§5.3](#53-ci-triage-matrix) |

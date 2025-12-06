@@ -13,6 +13,9 @@ fi
 mcp_cli_validate() {
 	local project_root=""
 	local fix="false"
+	local json_mode="false"
+	local explain_defaults="false"
+	local strict="false"
 
 	while [ $# -gt 0 ]; do
 		case "$1" in
@@ -23,10 +26,20 @@ mcp_cli_validate() {
 		--fix)
 			fix="true"
 			;;
+		--json)
+			json_mode="true"
+			;;
+		--explain-defaults)
+			explain_defaults="true"
+			;;
+		--strict)
+			strict="true"
+			;;
 		--help | -h)
 			cat <<'EOF'
 Usage:
-  mcp-bash validate [--project-root DIR] [--fix]
+  mcp-bash validate [--project-root DIR] [--fix] [--json]
+                     [--explain-defaults] [--strict]
 
 Validate the current MCP project structure and metadata.
 EOF
@@ -40,7 +53,6 @@ EOF
 		shift
 	done
 
-	# Allow explicit project override
 	if [ -n "${project_root}" ]; then
 		MCPBASH_PROJECT_ROOT="${project_root}"
 		export MCPBASH_PROJECT_ROOT
@@ -50,9 +62,12 @@ EOF
 	initialize_runtime_paths
 	mcp_runtime_init_paths "cli"
 	mcp_runtime_detect_json_tool
+	mcp_runtime_load_server_meta
 
 	project_root="${MCPBASH_PROJECT_ROOT}"
-	printf 'Validating project at %s...\n\n' "${project_root}"
+	if [ "${json_mode}" != "true" ]; then
+		printf 'Validating project at %s...\n\n' "${project_root}"
+	fi
 
 	local errors=0
 	local warnings=0
@@ -67,9 +82,57 @@ EOF
 	fi
 
 	local output counts
+	local messages_json="[]"
+	local server_defaults=""
+
+	if [ "${explain_defaults}" = "true" ] || [ "${json_mode}" = "true" ]; then
+		server_defaults="$(printf '{\"name\":%s,\"title\":%s,\"version\":%s}' \
+			"$(mcp_json_escape_string "${MCPBASH_SERVER_NAME}")" \
+			"$(mcp_json_escape_string "${MCPBASH_SERVER_TITLE}")" \
+			"$(mcp_json_escape_string "${MCPBASH_SERVER_VERSION}")")"
+	fi
+
+	append_to_array() {
+		local arr="$1"
+		local item="$2"
+		if [ "${arr}" = "[]" ]; then
+			printf '[%s]' "${item}"
+		else
+			printf '%s,%s]' "${arr%"]"}" "${item}"
+		fi
+	}
+
+	append_messages() {
+		local section="$1"
+		local lines="$2"
+		local arr="$3"
+		while IFS= read -r line; do
+			[ -z "${line}" ] && continue
+			local symbol="${line%% *}"
+			local msg="${line#"${symbol} "}"
+			if [ "${symbol}" != "✗" ] && [ "${symbol}" != "⚠" ] && [ "${symbol}" != "✓" ]; then
+				msg="${line}"
+				symbol="✓"
+			fi
+			local level="info"
+			case "${symbol}" in
+			✗) level="error" ;;
+			⚠) level="warning" ;;
+			*) level="info" ;;
+			esac
+			local obj
+			obj="$(printf '{"level":"%s","section":"%s","message":%s}' "${level}" "${section}" "$(mcp_json_quote_text "${msg}")")"
+			arr="$(append_to_array "${arr}" "${obj}")"
+		done <<<"${lines}"
+		printf '%s' "${arr}"
+	}
 
 	output="$(mcp_validate_server_meta "${json_tool_available}")"
-	printf '%s\n' "${output}" | sed '$d'
+	if [ "${json_mode}" != "true" ]; then
+		printf '%s\n' "${output}" | sed '$d'
+	else
+		messages_json="$(append_messages "server" "$(printf '%s\n' "${output}" | sed '$d')" "${messages_json}")"
+	fi
 	counts="$(printf '%s\n' "${output}" | tail -n 1)"
 	# shellcheck disable=SC2086  # Intentional splitting of counts
 	set -- ${counts}
@@ -77,7 +140,11 @@ EOF
 	warnings=$((warnings + $2))
 
 	output="$(mcp_validate_tools "${tools_root}" "${json_tool_available}" "${fix}")"
-	printf '%s\n' "${output}" | sed '$d'
+	if [ "${json_mode}" != "true" ]; then
+		printf '%s\n' "${output}" | sed '$d'
+	else
+		messages_json="$(append_messages "tools" "$(printf '%s\n' "${output}" | sed '$d')" "${messages_json}")"
+	fi
 	counts="$(printf '%s\n' "${output}" | tail -n 1)"
 	# shellcheck disable=SC2086  # Intentional splitting of counts
 	set -- ${counts}
@@ -86,7 +153,11 @@ EOF
 	fixes_applied=$((fixes_applied + $3))
 
 	output="$(mcp_validate_prompts "${prompts_root}" "${json_tool_available}" "${fix}")"
-	printf '%s\n' "${output}" | sed '$d'
+	if [ "${json_mode}" != "true" ]; then
+		printf '%s\n' "${output}" | sed '$d'
+	else
+		messages_json="$(append_messages "prompts" "$(printf '%s\n' "${output}" | sed '$d')" "${messages_json}")"
+	fi
 	counts="$(printf '%s\n' "${output}" | tail -n 1)"
 	# shellcheck disable=SC2086  # Intentional splitting of counts
 	set -- ${counts}
@@ -95,7 +166,11 @@ EOF
 	fixes_applied=$((fixes_applied + $3))
 
 	output="$(mcp_validate_resources "${resources_root}" "${json_tool_available}" "${fix}")"
-	printf '%s\n' "${output}" | sed '$d'
+	if [ "${json_mode}" != "true" ]; then
+		printf '%s\n' "${output}" | sed '$d'
+	else
+		messages_json="$(append_messages "resources" "$(printf '%s\n' "${output}" | sed '$d')" "${messages_json}")"
+	fi
 	counts="$(printf '%s\n' "${output}" | tail -n 1)"
 	# shellcheck disable=SC2086  # Intentional splitting of counts
 	set -- ${counts}
@@ -103,7 +178,10 @@ EOF
 	warnings=$((warnings + $2))
 	fixes_applied=$((fixes_applied + $3))
 
-	printf '\n'
+	if [ "${json_mode}" != "true" ]; then
+		printf '\n'
+	fi
+
 	if [ "${fix}" = "true" ]; then
 		if [ "${errors}" -gt 0 ]; then
 			printf '%d error(s) remaining. Please fix manually.\n' "${errors}"
@@ -115,6 +193,59 @@ EOF
 			printf 'All checks passed (no errors).\n'
 		fi
 		exit 0
+	fi
+
+	if [ "${json_mode}" = "true" ]; then
+		local exit_errors="${errors}"
+		if [ "${strict}" = "true" ] && [ "${warnings}" -gt 0 ]; then
+			exit_errors=$((exit_errors + warnings))
+		fi
+		local payload=""
+		if [ "${json_tool_available}" = "true" ]; then
+			payload="$("${MCPBASH_JSON_TOOL_BIN}" -n \
+				--arg projectRoot "${project_root}" \
+				--arg errors "${errors}" \
+				--arg warnings "${warnings}" \
+				--arg fixes "${fixes_applied}" \
+				--arg strict "${strict}" \
+				--argjson defaults "${server_defaults:-{}}" \
+				--argjson messages "${messages_json}" \
+				'$ARGS.named
+				| .errors = (.errors|tonumber)
+				| .warnings = (.warnings|tonumber)
+				| .fixesApplied = (.fixes|tonumber)
+				| .strict = (.strict == "true")
+				| .defaults = $defaults
+				| .messages = $messages' 2>/dev/null || printf '')"
+		fi
+		if [ -z "${payload}" ]; then
+			payload="$(
+				cat <<EOF
+{
+  "projectRoot": $(mcp_json_escape_string "${project_root}"),
+  "errors": ${errors},
+  "warnings": ${warnings},
+  "fixesApplied": ${fixes_applied},
+  "strict": ${strict},
+  "defaults": ${server_defaults:-{}},
+  "messages": ${messages_json}
+}
+EOF
+			)"
+		fi
+		printf '%s\n' "${payload}"
+		if [ "${exit_errors}" -gt 0 ]; then
+			exit 1
+		fi
+		exit 0
+	fi
+
+	if [ "${explain_defaults}" = "true" ] && [ -n "${server_defaults}" ]; then
+		printf 'Defaults used: name=%s, title=%s, version=%s\n' "${MCPBASH_SERVER_NAME}" "${MCPBASH_SERVER_TITLE}" "${MCPBASH_SERVER_VERSION}"
+	fi
+
+	if [ "${strict}" = "true" ] && [ "${warnings}" -gt 0 ]; then
+		errors=$((errors + warnings))
 	fi
 
 	if [ "${errors}" -gt 0 ]; then

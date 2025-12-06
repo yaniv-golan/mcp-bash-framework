@@ -141,9 +141,7 @@ mcp_registry_refresh_cli() {
 		prompts_error_json="$(mcp_json_quote_text "${prompts_error}")"
 	fi
 
-	local json_output
-	json_output="$(
-		cat <<EOF
+	cat <<EOF
 {
   "tools": {"status":"${tools_status}","count":${MCP_TOOLS_TOTAL:-0},"error":${tools_error_json}},
   "resources": {"status":"${resources_status}","count":${MCP_RESOURCES_TOTAL:-0},"error":${resources_error_json}},
@@ -152,9 +150,6 @@ mcp_registry_refresh_cli() {
   "mode": "${mode}"
 }
 EOF
-	)"
-
-	printf '%s\n' "${json_output}"
 
 	if [ "${fatal}" -eq 1 ]; then
 		exit 2
@@ -163,4 +158,72 @@ EOF
 		exit 1
 	fi
 	exit 0
+}
+
+mcp_registry_status_cli() {
+	local project_root=""
+
+	while [ $# -gt 0 ]; do
+		case "$1" in
+		--project-root)
+			shift
+			project_root="${1:-}"
+			;;
+		*)
+			usage
+			exit 1
+			;;
+		esac
+		shift
+	done
+
+	if [ -n "${project_root}" ]; then
+		MCPBASH_PROJECT_ROOT="${project_root}"
+		export MCPBASH_PROJECT_ROOT
+	fi
+
+	require_bash_runtime
+	initialize_runtime_paths
+	mcp_runtime_init_paths "cli"
+	mcp_runtime_detect_json_tool
+
+	local json_ok="false"
+	if [ "${MCPBASH_JSON_TOOL:-none}" != "none" ] && [ -n "${MCPBASH_JSON_TOOL_BIN:-}" ]; then
+		json_ok="true"
+	fi
+
+	read_registry_file() {
+		local kind="$1"
+		local path="${MCPBASH_PROJECT_ROOT}/.registry/${kind}.json"
+		local status="missing"
+		local count=0
+		local hash=""
+		local mtime=0
+		if [ -f "${path}" ]; then
+			status="present"
+			mtime="$(mcp_registry_stat_mtime "${path}")"
+			if [ "${json_ok}" = "true" ]; then
+				count="$("${MCPBASH_JSON_TOOL_BIN}" -r '.total // (.tools? // .resources? // .prompts? // [] | length) // 0' "${path}" 2>/dev/null || printf '0')"
+				hash="$("${MCPBASH_JSON_TOOL_BIN}" -r '.hash // ""' "${path}" 2>/dev/null || printf '')"
+			fi
+		fi
+		cat <<EOF
+{"status":"${status}","path":"${path}","count":${count:-0},"hash":"${hash}","mtime":${mtime:-0}}
+EOF
+	}
+
+	local tools_json resources_json prompts_json
+	tools_json="$(read_registry_file "tools")"
+	resources_json="$(read_registry_file "resources")"
+	prompts_json="$(read_registry_file "prompts")"
+
+	cat <<EOF
+{
+  "projectRoot": "${MCPBASH_PROJECT_ROOT}",
+  "jsonTool": "${MCPBASH_JSON_TOOL:-none}",
+  "tools": ${tools_json},
+  "resources": ${resources_json},
+  "prompts": ${prompts_json}
+}
+EOF
 }

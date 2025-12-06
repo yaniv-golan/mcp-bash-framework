@@ -12,6 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - SDK type coercion helpers (`mcp_args_bool`, `mcp_args_int`, `mcp_args_require`) for common argument parsing patterns.
 - Shared path normalization helpers (`lib/path.sh`) with consistent fallback chain (realpath -m → realpath → readlink -f → manual collapse) used by SDK/runtime/installer; added unit coverage.
 - CLI `run-tool` command for direct tool invocation with optional roots, dry-run, timeout override, and verbose stderr streaming.
+- CLI `run-tool --print-env` to inspect wiring without executing tools; help/examples updated.
+- `mcp-bash validate` now supports `--json`, `--explain-defaults`, and `--strict`; tool naming validation warns on missing namespace/format/length; outputs include defaults in JSON.
+- `mcp-bash config` gains richer `--json` output, pasteable JSON for `--client`, and `--wrapper` generator for auto-install scripts.
+- `mcp-bash registry status` subcommand to inspect registry cache (hash/mtime/counts) without refresh.
+- `mcp-bash doctor --json` for machine-readable environment/project readiness (absorbs readiness summary).
 - Docs for `run-tool` usage/flags and unit coverage for the CLI wrapper.
 - `mcp-bash scaffold test` CLI to generate a minimal test harness (`test/run.sh`, `test/README.md`) wrapping `run-tool`, plus integration coverage.
 

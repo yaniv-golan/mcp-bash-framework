@@ -12,9 +12,10 @@ Pure Bash MCP server framework. Bash≥3.2 + jq/gojq. Stdio transport only.
   - Scaffold full project in new directory: `bin/mcp-bash scaffold server <name>`.
   - Scaffold assets in an existing project: `bin/mcp-bash scaffold tool|prompt|resource <name>`.
 - Validation & config:
-  - Validate project: `bin/mcp-bash validate [--project-root DIR] [--fix]`.
-  - Generate MCP client config snippets / JSON descriptor: `bin/mcp-bash config [--project-root DIR] [--show|--json|--client NAME]`.
-  - Environment diagnostics: `bin/mcp-bash doctor` (local operator use; exposes paths and env).
+  - Validate project: `bin/mcp-bash validate [--project-root DIR] [--fix] [--json] [--explain-defaults] [--strict]`.
+  - Generate MCP client config snippets / JSON descriptor: `bin/mcp-bash config [--project-root DIR] [--show|--json|--client NAME|--wrapper]`.
+  - Environment diagnostics: `bin/mcp-bash doctor [--json]` (local operator use; exposes paths and env).
+  - Registry cache: `bin/mcp-bash registry status [--project-root DIR]`.
 - Framework files:
   - `bin/mcp-bash`, `lib/*.sh`, `handlers/*.sh`, `sdk/tool-sdk.sh`, `providers/file.sh|git.sh|https.sh`, `scaffold/*`.
 - Project files:
@@ -218,12 +219,13 @@ Pure Bash MCP server framework. Bash≥3.2 + jq/gojq. Stdio transport only.
   - Scaffold full project into new directory: `bin/mcp-bash scaffold server <name>`.
   - Scaffold assets in a project: `bin/mcp-bash scaffold tool|prompt|resource <name>`.
   - Run server: `bin/mcp-bash` (auto-detects project root when run inside a project directory; for MCP clients set `MCPBASH_PROJECT_ROOT` explicitly).
-  - Run a single tool without starting the server: `bin/mcp-bash run-tool <name> [--args JSON] [--roots paths] [--dry-run] [--timeout SECS] [--verbose] [--no-refresh] [--minimal] [--project-root DIR]`.
+  - Run a single tool without starting the server: `bin/mcp-bash run-tool <name> [--args JSON] [--roots paths] [--dry-run] [--timeout SECS] [--verbose] [--no-refresh] [--minimal] [--project-root DIR] [--print-env]`.
   - Debug mode: `bin/mcp-bash debug` (enables payload logging and preserved state; see `docs/DEBUGGING.md`).
   - Registry refresh: `bin/mcp-bash registry refresh [--project-root DIR] [--no-notify] [--quiet] [--filter SUBPATH]`.
-  - Validate project: `bin/mcp-bash validate [--project-root DIR] [--fix]`.
-  - Generate MCP client config snippets / JSON descriptor: `bin/mcp-bash config [--project-root DIR] [--show|--json|--client NAME]`.
-  - Diagnose environment: `bin/mcp-bash doctor` (local diagnostic; reveals paths/env).
+  - Validate project: `bin/mcp-bash validate [--project-root DIR] [--fix] [--json] [--explain-defaults] [--strict]`.
+  - Generate MCP client config snippets / JSON descriptor: `bin/mcp-bash config [--project-root DIR] [--show|--json|--client NAME|--wrapper]`.
+  - Diagnose environment: `bin/mcp-bash doctor [--json]` (local diagnostic; reveals paths/env).
+  - Registry status: `bin/mcp-bash registry status [--project-root DIR]` (hash/mtime/counts).
   - Run examples via MCP Inspector:
     - `npx @modelcontextprotocol/inspector --transport stdio -- ./examples/run 00-hello-tool` (or other example).
 - Test suites (from repo root; see `TESTING.md`):

@@ -63,6 +63,7 @@ mcp_cli_run_tool() {
 	local verbose="false"
 	local no_refresh="false"
 	local minimal="false"
+	local print_env="false"
 	local tool_name=""
 
 	while [ $# -gt 0 ]; do
@@ -94,6 +95,9 @@ mcp_cli_run_tool() {
 		--minimal)
 			minimal="true"
 			;;
+		--print-env)
+			print_env="true"
+			;;
 		--project-root)
 			shift
 			project_root="${1:-}"
@@ -103,9 +107,13 @@ mcp_cli_run_tool() {
 Usage:
   mcp-bash run-tool <name> [--args JSON] [--roots paths] [--dry-run]
                      [--timeout SECS] [--verbose] [--no-refresh]
-                     [--minimal] [--project-root DIR]
+                     [--minimal] [--project-root DIR] [--print-env]
 
 Invoke a tool directly with the same env wiring used by the server.
+
+Examples:
+  mcp-bash run-tool hello --args @args.json --roots .
+  mcp-bash run-tool hello --print-env --dry-run
 EOF
 			exit 0
 			;;
@@ -159,6 +167,22 @@ EOF
 	fi
 
 	mcp_cli_run_tool_prepare_roots "${roots_arg}"
+
+	if [ "${print_env}" = "true" ]; then
+		printf 'MCPBASH_PROJECT_ROOT=%s\n' "${MCPBASH_PROJECT_ROOT}"
+		printf 'MCPBASH_HOME=%s\n' "${MCPBASH_HOME}"
+		printf 'MCP_SDK=%s\n' "${MCP_SDK:-}"
+		printf 'MCPBASH_MODE=%s\n' "${MCPBASH_MODE:-}"
+		if [ "${#MCPBASH_ROOTS_PATHS[@]}" -gt 0 ] 2>/dev/null; then
+			local idx
+			for idx in "${!MCPBASH_ROOTS_PATHS[@]}"; do
+				printf 'ROOT[%d]=%s\n' "${idx}" "${MCPBASH_ROOTS_PATHS[${idx}]}"
+			done
+		else
+			printf 'ROOTS=none\n'
+		fi
+		exit 0
+	fi
 
 	if [ "${MCPBASH_JSON_TOOL:-none}" != "none" ] && [ -n "${MCPBASH_JSON_TOOL_BIN:-}" ] && [ "${MCPBASH_MODE:-full}" != "minimal" ]; then
 		if ! printf '%s' "${args_json}" | "${MCPBASH_JSON_TOOL_BIN}" -e 'type=="object"' >/dev/null 2>&1; then

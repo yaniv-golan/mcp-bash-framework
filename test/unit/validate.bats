@@ -49,7 +49,7 @@ read -r terr twarn tfix <<EOF
 $(mcp_validate_tools "${MCPBASH_TOOLS_DIR}" "true" "true" 2>/dev/null | tail -n 1)
 EOF
 assert_eq "0" "${terr}" "expected zero errors after --fix"
-assert_eq "0" "${twarn}" "expected zero warnings for valid meta"
+assert_eq "1" "${twarn}" "expected one warning (namespace recommended)"
 assert_eq "1" "${tfix}" "expected one chmod fix applied"
 if [ ! -x "${MCPBASH_TOOLS_DIR}/hello/tool.sh" ]; then
 	test_fail "tool.sh was not made executable"

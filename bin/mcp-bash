@@ -21,17 +21,19 @@ Usage:
   mcp-bash debug           # launch server with debug logging (see docs/DEBUGGING.md)
   mcp-bash run-tool <name> [--args JSON] [--roots paths] [--dry-run]
                            [--timeout SECS] [--verbose] [--no-refresh]
-                           [--minimal] [--project-root DIR]
+                           [--minimal] [--project-root DIR] [--print-env]
   mcp-bash scaffold tool <name>
   mcp-bash scaffold prompt <name>
   mcp-bash scaffold resource <name>
   mcp-bash scaffold test   # create test harness for project
-  mcp-bash validate [--project-root DIR]
+  mcp-bash validate [--project-root DIR] [--fix] [--json]
+                     [--explain-defaults] [--strict]
                            # validate project structure and metadata
   mcp-bash config [--project-root DIR] [--show|--json|--client NAME]
                            # print MCP client configuration snippets
   mcp-bash doctor          # diagnose environment and installation issues
   mcp-bash registry refresh [--project-root DIR] [--no-notify] [--quiet] [--filter PATH]
+  mcp-bash registry status [--project-root DIR]
 
 Note: running without MCPBASH_PROJECT_ROOT starts a temporary getting-started helper tool.
 EOF
@@ -212,6 +214,10 @@ if [ "${cli_cmd}" = "registry" ]; then
 	refresh)
 		shift
 		mcp_registry_refresh_cli "$@"
+		;;
+	status)
+		shift
+		mcp_registry_status_cli "$@"
 		;;
 	*)
 		usage

@@ -83,6 +83,11 @@ mcp_emit_json "$(mcp_json_obj message "done")"
 EOF
 chmod +x "${PROJECT_ROOT}/tools/slow/tool.sh"
 
+printf ' -> print-env shows wiring without executing tool\n'
+env_output="$("${REPO_ROOT}/bin/mcp-bash" run-tool test.echo --print-env)"
+assert_contains "MCPBASH_PROJECT_ROOT=${PROJECT_ROOT}" "${env_output}"
+assert_contains "ROOTS=none" "${env_output}"
+
 printf ' -> dry-run does not execute tool\n'
 "${REPO_ROOT}/bin/mcp-bash" run-tool test.sideeffect --dry-run >/dev/null
 if [ -e "${side_effect_file}" ]; then

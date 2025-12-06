@@ -12,7 +12,7 @@ fi
 
 mcp_cli_config() {
 	local project_root=""
-	local mode="show" # show | json
+	local mode="show" # show | json | wrapper
 	local client_filter=""
 
 	while [ $# -gt 0 ]; do
@@ -27,6 +27,9 @@ mcp_cli_config() {
 		--json)
 			mode="json"
 			;;
+		--wrapper)
+			mode="wrapper"
+			;;
 		--client)
 			shift
 			client_filter="${1:-}"
@@ -34,7 +37,7 @@ mcp_cli_config() {
 		--help | -h)
 			cat <<'EOF'
 Usage:
-  mcp-bash config [--project-root DIR] [--show|--json|--client NAME]
+  mcp-bash config [--project-root DIR] [--show|--json|--client NAME|--wrapper]
 
 Print MCP client configuration snippets for the current project.
 EOF
@@ -65,7 +68,8 @@ EOF
 	if [ "${mode}" = "json" ]; then
 		printf '{\n'
 		printf '  "name": "%s",\n' "${server_name}"
-		printf '  "command": "%s"' "${command_path}"
+		printf '  "command": "%s",\n' "${command_path}"
+		printf '  "args": []'
 		if [ -n "${MCPBASH_PROJECT_ROOT}" ]; then
 			printf ',\n  "env": {\n'
 			printf '    "MCPBASH_PROJECT_ROOT": "%s"\n' "${MCPBASH_PROJECT_ROOT}"
@@ -77,72 +81,86 @@ EOF
 		exit 0
 	fi
 
+	if [ "${mode}" = "wrapper" ]; then
+		cat <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
+FRAMEWORK_DIR="\${MCPBASH_HOME:-\$HOME/mcp-bash-framework}"
+
+if [ ! -f "\${FRAMEWORK_DIR}/bin/mcp-bash" ]; then
+	echo "Installing mcp-bash framework..." >&2
+	git clone --depth 1 https://github.com/yaniv-golan/mcp-bash-framework.git "\${FRAMEWORK_DIR}"
+fi
+
+export MCPBASH_PROJECT_ROOT="\${SCRIPT_DIR}"
+exec "\${FRAMEWORK_DIR}/bin/mcp-bash" "\$@"
+EOF
+		exit 0
+	fi
+
 	print_client() {
 		local client="${1}"
+		local display_env=""
+		local display_command="${command_path}"
+		if [ -n "${MCPBASH_PROJECT_ROOT}" ]; then
+			display_env="\"env\": {\"MCPBASH_PROJECT_ROOT\": \"${MCPBASH_PROJECT_ROOT}\"}"
+		fi
 		case "${client}" in
 		claude-desktop)
-			printf 'Claude Desktop:\n'
-			printf '  Add this to your Claude config (replace "~" with your home dir):\n'
-			printf '  {\n'
-			printf '    "mcpServers": {\n'
-			printf '      "%s": {\n' "${server_name}"
-			printf '        "command": "%s",\n' "${command_path}"
-			if [ -n "${MCPBASH_PROJECT_ROOT}" ]; then
-				printf '        "env": {\n'
-				printf '          "MCPBASH_PROJECT_ROOT": "%s"\n' "${MCPBASH_PROJECT_ROOT}"
-				printf '        }\n'
-				printf '      }\n'
-				printf '    }\n'
-				printf '  }\n\n'
-			else
-				printf '      }\n'
-				printf '    }\n'
-				printf '  }\n\n'
+			printf '{\n'
+			printf '  "mcpServers": {\n'
+			printf '    "%s": {\n' "${server_name}"
+			printf '      "command": "%s"' "${display_command}"
+			if [ -n "${display_env}" ]; then
+				printf ',\n      %s' "${display_env}"
 			fi
+			printf '\n    }\n'
+			printf '  }\n'
+			printf '}\n\n'
 			;;
 		cursor)
-			local display_path="${command_path}"
-			if [ -n "${MCPBASH_PROJECT_ROOT}" ]; then
-				display_path="${display_path} (MCPBASH_PROJECT_ROOT=${MCPBASH_PROJECT_ROOT})"
+			printf '{\n'
+			printf '  "mcpServers": {\n'
+			printf '    "%s": {\n' "${server_name}"
+			printf '      "command": "%s"' "${display_command}"
+			if [ -n "${display_env}" ]; then
+				printf ',\n      %s' "${display_env}"
 			fi
-			printf 'Cursor:\n'
-			printf '  Command: %s\n\n' "${display_path}"
+			printf '\n    }\n'
+			printf '  }\n'
+			printf '}\n\n'
 			;;
 		claude-cli)
-			local display_cli="${command_path}"
-			if [ -n "${MCPBASH_PROJECT_ROOT}" ]; then
-				display_cli="${display_cli} (set MCPBASH_PROJECT_ROOT=${MCPBASH_PROJECT_ROOT})"
+			printf '{\n'
+			printf '  "name": "%s",\n' "${server_name}"
+			printf '  "command": "%s"' "${display_command}"
+			if [ -n "${display_env}" ]; then
+				printf ',\n  %s' "${display_env}"
 			fi
-			printf 'Claude CLI:\n'
-			printf '  Command: %s\n\n' "${display_cli}"
+			printf '\n}\n\n'
 			;;
 		windsurf)
-			local display_ws="${command_path}"
-			if [ -n "${MCPBASH_PROJECT_ROOT}" ]; then
-				display_ws="${display_ws} (set MCPBASH_PROJECT_ROOT=${MCPBASH_PROJECT_ROOT})"
+			printf '{\n'
+			printf '  "mcpServers": {\n'
+			printf '    "%s": {\n' "${server_name}"
+			printf '      "command": "%s"' "${display_command}"
+			if [ -n "${display_env}" ]; then
+				printf ',\n      %s' "${display_env}"
 			fi
-			printf 'Windsurf:\n'
-			printf '  Config file: %s\n\n' "${display_ws}"
-			printf '  Add this to \"mcpServers\":\n'
-			printf '  {\n'
-			printf '    \"%s\": {\n' "${server_name}"
-			printf '      \"command\": \"%s\",\n' "${command_path}"
-			printf '      \"env\": {\n'
-			printf '        \"MCPBASH_PROJECT_ROOT\": \"%s\"\n' "${project_root}"
-			printf '      }\n'
-			printf '    }\n'
-			printf '  }\n\n'
+			printf '\n    }\n'
+			printf '  }\n'
+			printf '}\n\n'
 			;;
 		librechat)
-			printf 'LibreChat:\n'
-			printf '  Use the following server descriptor (see LibreChat MCP docs for where to place it):\n\n'
-			printf '  {\n'
-			printf '    \"name\": \"%s\",\n' "${server_name}"
-			printf '    \"command\": \"%s\",\n' "${command_path}"
-			printf '    \"env\": {\n'
-			printf '      \"MCPBASH_PROJECT_ROOT\": \"%s\"\n' "${project_root}"
-			printf '    }\n'
-			printf '  }\n\n'
+			printf '{\n'
+			printf '  "name": "%s",\n' "${server_name}"
+			printf '  "command": "%s"' "${display_command}"
+			if [ -n "${display_env}" ]; then
+				printf ',\n  %s' "${display_env}"
+			fi
+			printf '\n}\n\n'
 			;;
 		esac
 	}
