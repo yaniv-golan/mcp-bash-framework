@@ -130,9 +130,9 @@ run_test() {
 	else
 		printf '[%02d/%02d] %s — %s ... %s (%ss)\n' "${index}" "${total}" "${test_script}" "${desc}" "${FAIL_ICON}" "${elapsed}" >&2
 		printf '  log: %s\n' "${log_file}" >&2
-		printf '  --- last 80 lines of log ---\n' >&2
-		tail -n 80 "${log_file}" >&2 || true
-		printf '  --- end of log snippet ---\n' >&2
+		printf '  --- full log output ---\n' >&2
+		cat "${log_file}" >&2 || true
+		printf '  --- end of log ---\n' >&2
 		failed=$((failed + 1))
 	fi
 }
