@@ -73,6 +73,17 @@ mcp-bash scaffold tool check-disk
 
 This scaffolds `tools/check-disk/tool.sh` and `tools/check-disk/tool.meta.json` in your project. You write the logic.
 
+### 3.5 (Optional) Add a Test Harness
+
+Create a lightweight runner for tool smoke tests:
+
+```bash
+mcp-bash scaffold test
+./test/run.sh --verbose  # add run_test calls inside test/run.sh
+```
+
+The harness wraps `mcp-bash run-tool`, validates your project before running, and refuses to overwrite existing `test/run.sh` or `test/README.md`.
+
 ### 4. Configure Your MCP Client
 
 ```bash
@@ -214,7 +225,7 @@ The [`examples/`](examples/) directory shows common patterns end-to-end:
 ## Features at a Glance
 
 - **Auto-Discovery**: Place scripts in your project's `tools/`, `resources/`, or `prompts/` directories—the framework finds them automatically.
-- **Scaffolding**: Generate compliant tool, resource, and prompt templates (`mcp-bash scaffold <type> <name>`).
+- **Scaffolding**: Generate compliant tool, resource, prompt templates, and a test harness (`mcp-bash scaffold <type> <name>`, `mcp-bash scaffold test`).
 - **Stdio Transport**: Standard input/output. No custom daemons or sidecars.
 - **Framework/Project Separation**: Install the framework once, create unlimited projects.
 - **Graceful Degradation**: Automatically detects available JSON tools (`gojq`, `jq`) or falls back to minimal mode if none are present.

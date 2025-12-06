@@ -158,12 +158,35 @@ if [ -n "${MCPBASH_INSTALL_LOCAL_SOURCE:-}" ]; then
 		error "Local source ${LOCAL_SRC} does not look like an mcp-bash checkout (missing bin/mcp-bash)"
 		exit 1
 	fi
+
 	mkdir -p "${INSTALL_DIR}"
-	if cp -a "${LOCAL_SRC}/." "${INSTALL_DIR}/"; then
-		success "Copied from local source"
-	else
-		error "Failed to copy from local source"
-		exit 1
+
+	# Prefer git clone for clean worktrees to avoid copying a live .git directory
+	# that may be repacked concurrently. Fallback to tar (excluding .git) to
+	# preserve uncommitted changes and untracked files.
+	use_clone=0
+	if command -v git >/dev/null 2>&1 && git -C "${LOCAL_SRC}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+		git -C "${LOCAL_SRC}" update-index -q --really-refresh >/dev/null 2>&1 || true
+		dirty_status="$(git -C "${LOCAL_SRC}" status --porcelain 2>/dev/null || true)"
+		if [ -z "${dirty_status}" ]; then
+			if git clone --local --no-hardlinks --branch "${BRANCH}" "${LOCAL_SRC}" "${INSTALL_DIR}" 2>/dev/null; then
+				use_clone=1
+				success "Cloned clean local source"
+			fi
+		fi
+	fi
+
+	if [ "${use_clone}" -ne 1 ]; then
+		if ! command -v tar >/dev/null 2>&1; then
+			error "tar is required to copy local source when repository is dirty"
+			exit 1
+		fi
+		if (cd "${LOCAL_SRC}" && tar -cf - --exclude .git .) | (cd "${INSTALL_DIR}" && tar -xf -); then
+			success "Copied local source (working tree, .git excluded)"
+		else
+			error "Failed to copy from local source"
+			exit 1
+		fi
 	fi
 else
 	if git clone --depth 1 --branch "${BRANCH}" "${REPO_URL}" "${INSTALL_DIR}" 2>/dev/null; then

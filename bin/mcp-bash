@@ -22,6 +22,7 @@ Usage:
   mcp-bash scaffold tool <name>
   mcp-bash scaffold prompt <name>
   mcp-bash scaffold resource <name>
+  mcp-bash scaffold test   # create test harness for project
   mcp-bash validate [--project-root DIR]
                            # validate project structure and metadata
   mcp-bash config [--project-root DIR] [--show|--json|--client NAME]
@@ -232,6 +233,39 @@ mcp_scaffold_resource() {
 	mcp_template_render "${scaffold_dir}/resource.meta.json" "${target_dir}/${name}.meta.json" "__NAME__=${name}" "__RESOURCE_URI__=${resource_uri}"
 	mcp_template_render "${scaffold_dir}/README.md" "${target_dir}/README.md" "__NAME__=${name}"
 	printf 'Scaffolded resource at %s\n' "${target_dir}"
+	exit 0
+}
+
+mcp_scaffold_test() {
+	mcp_scaffold_require_project_root
+	initialize_scaffold_paths
+
+	local test_dir="${MCPBASH_PROJECT_ROOT}/test"
+	local scaffold_dir="${MCPBASH_HOME}/scaffold/test"
+
+	if [ ! -d "${scaffold_dir}" ]; then
+		printf 'Scaffold templates missing at %s\n' "${scaffold_dir}" >&2
+		exit 1
+	fi
+	if [ -e "${test_dir}/run.sh" ]; then
+		printf 'test/run.sh already exists (remove it to re-scaffold)\n' >&2
+		exit 1
+	fi
+	if [ -e "${test_dir}/README.md" ]; then
+		printf 'test/README.md already exists (remove it to re-scaffold)\n' >&2
+		exit 1
+	fi
+
+	mkdir -p "${test_dir}"
+
+	cp "${scaffold_dir}/run.sh" "${test_dir}/run.sh"
+	chmod +x "${test_dir}/run.sh"
+	cp "${scaffold_dir}/README.md" "${test_dir}/README.md"
+
+	printf 'Scaffolded test harness at %s\n' "${test_dir}"
+	printf '\nNext steps:\n'
+	printf '  1. Edit test/run.sh and add run_test calls for your tools\n'
+	printf '  2. Run: ./test/run.sh\n'
 	exit 0
 }
 
@@ -1395,6 +1429,10 @@ if [ "${1-}" = "scaffold" ]; then
 	resource)
 		shift
 		mcp_scaffold_resource "${1:-}"
+		;;
+	test)
+		shift
+		mcp_scaffold_test
 		;;
 	*)
 		usage

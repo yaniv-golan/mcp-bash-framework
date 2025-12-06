@@ -26,12 +26,30 @@ This guide distils hands-on recommendations for designing, building, and operati
 | `bin/mcp-bash scaffold tool <name>` | Create SDK-ready tool skeleton (metadata + script) | [§4.1](#41-scaffold-workflow) |
 | `bin/mcp-bash scaffold prompt <name>` | Generate prompt template + `.meta.json` | [§4.1](#41-scaffold-workflow) |
 | `bin/mcp-bash scaffold resource <name>` | Produce resource boilerplate wired to the file provider | [§4.1](#41-scaffold-workflow) |
-| `bin/mcp-bash run-tool <name>` | Invoke a tool without starting the server (supports `--dry-run`, `--roots`, `--timeout`, `--verbose`) | [§5.2](#52-local-workflow) |
+| `bin/mcp-bash scaffold test` | Create a lightweight test harness (`test/run.sh`, `test/README.md`) | [§4.1](#41-scaffold-workflow) |
+| `bin/mcp-bash run-tool <name>` | Invoke a tool without starting the server (supports `--dry-run`, `--roots`, `--timeout`, `--verbose`, `--minimal`) | [§5.2](#52-local-workflow) |
+| `bin/mcp-bash validate` | Validate project structure and metadata | [§5.2](#52-local-workflow) |
+| `bin/mcp-bash doctor` | Diagnose environment and installation issues | [§2](#2-environment--tooling) |
 | `./test/lint.sh` | Run shellcheck + shfmt gates; wraps commands from [TESTING.md](../TESTING.md) | [§5.2](#52-local-workflow) |
 | `./test/unit/lock.bats` | Validate lock/serialization primitives (`lib/lock.sh`) | [§5.1](#51-test-pyramid) |
 | `./test/integration/test_capabilities.sh` | End-to-end lifecycle/capability checks | [§5.3](#53-ci-triage-matrix) |
 | `./test/examples/test_examples.sh` | Smoke runner ensuring scaffolds/examples stay healthy | [§5.1](#51-test-pyramid) |
 | `MCPBASH_LOG_LEVEL=debug bin/mcp-bash` | Start server with verbose diagnostics ([README.md](../README.md#diagnostics--logging)) | [§6.3](#63-monitoring-and-health) |
+
+### SDK helpers (quick reference)
+| Helper | Purpose | Example |
+| --- | --- | --- |
+| `mcp_args_require` | Extract required string, fail if missing | `name="$(mcp_args_require '.name')"` |
+| `mcp_args_bool` | Parse boolean with truthy coercion | `all="$(mcp_args_bool '.all' --default false)"` |
+| `mcp_args_int` | Parse integer with range validation | `count="$(mcp_args_int '.count' --default 10 --min 1 --max 200)"` |
+| `mcp_args_get` | Low-level jq extraction | `val="$(mcp_args_get '.nested.field // ""')"` |
+| `mcp_require_path` | Validate path against MCP roots | `path="$(mcp_require_path '.path' --default-to-single-root)"` |
+| `mcp_emit_json` | Emit JSON result | `mcp_emit_json '{"status":"ok"}'` |
+| `mcp_json_obj` | Build JSON object from pairs | `mcp_json_obj status ok msg "done"` |
+| `mcp_fail_invalid_args` | Return -32602 error | `mcp_fail_invalid_args "count must be positive"` |
+| `mcp_progress` | Report progress | `mcp_progress 50 "Halfway done" 100` |
+| `mcp_is_cancelled` | Check cancellation | `if mcp_is_cancelled; then exit 1; fi` |
+| `mcp_log_info` | Structured logging | `mcp_log_info "tool" "message"` |
 
 ### Environment variables
 | Variable | Description | Notes |
@@ -98,27 +116,287 @@ This guide distils hands-on recommendations for designing, building, and operati
 
 The scaffolder and examples use a per-tool directory (for example `tools/hello/tool.sh`), and automatic discovery now requires tools to live under subdirectories of `tools/` (root-level scripts like `tools/foo.sh` are ignored). Stay consistent within a project.
 
+Use `bin/mcp-bash scaffold test` inside an existing project to generate a minimal harness (`test/run.sh`, `test/README.md`) that wraps `run-tool` for quick smoke tests. The command refuses to overwrite existing files, so remove stale test assets before re-scaffolding.
+
 _Asciinema tip_: Record a short run of `bin/mcp-bash scaffold tool sample.hello` plus `./test/examples/test_examples.sh` so newcomers can view the workflow end-to-end.
 
 ### 4.2 SDK usage patterns
-- **Argument parsing** – Prefer coercion helpers where possible:
-  ```bash
-  name="$(mcp_args_require '.name')"
-  count="$(mcp_args_int '.count' --default 10 --min 1 --max 200)"
-  verbose="$(mcp_args_bool '.verbose' --default false)"
-  ```
-  Fall back to `mcp_args_get` for complex shapes; defensively validate required fields.
-- **Structured outputs** – Emit JSON via `mcp_emit_json` when returning typed data. For plain text, call `mcp_emit_text`.
-- **Progress & cancellation** – Emit throttled `mcp_progress` calls (10–20 updates/request) and exit early when `mcp_is_cancelled` flips true as shown in `examples/03-progress-and-cancellation/tools/slow/tool.sh:5`. Enable streaming progress mid-flight with `MCPBASH_ENABLE_LIVE_PROGRESS=true` and tune cadence via `MCPBASH_PROGRESS_FLUSH_INTERVAL`.
-- **Logging** – Prefer `mcp_log_info`/`mcp_log_warn` so entries pass through the logging handler filters; avoid `echo` unless writing to stderr for fatal errors.
-- **Timeouts** – Set per-tool `timeoutSecs` inside `<tool>.meta.json` when default (30 seconds) is too high/low. Align metadata with `lib/timeout.sh` expectations.
-- **Shared code** – Place reusable scripts under `lib/` in your project and source them via `MCPBASH_PROJECT_ROOT`, for example:
-  ```bash
-  # tools/my-tool/tool.sh
-  # shellcheck source=../../lib/helpers.sh disable=SC1091
-  source "${MCPBASH_PROJECT_ROOT}/lib/helpers.sh"
-  ```
-  Keep shared code under project roots to avoid leaking out-of-scope paths; consider a `lib/` README to describe available helpers.
+
+The SDK (`sdk/tool-sdk.sh`) provides helpers that eliminate boilerplate and ensure consistent behavior across tools. Source it at the top of every tool script:
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+source "${MCP_SDK:?MCP_SDK environment variable not set}/tool-sdk.sh"
+```
+
+#### Argument parsing helpers
+
+**`mcp_args_require`** – Extract a required string value; fails with `-32602` if missing/null:
+
+```bash
+# Fails with "target is required" if .target is missing or null
+target="$(mcp_args_require '.target' 'target is required')"
+
+# Default message uses the pointer name
+name="$(mcp_args_require '.name')"  # Fails with ".name is required"
+```
+
+**`mcp_args_bool`** – Parse boolean with truthy coercion (`true`/`1` → `"true"`, else `"false"`):
+
+```bash
+# Returns "true" or "false"; defaults to "false" if missing
+all="$(mcp_args_bool '.all' --default false)"
+
+# Without --default, missing value fails with invalid-args
+verbose="$(mcp_args_bool '.verbose')"  # Requires explicit value
+```
+
+**`mcp_args_int`** – Parse integer with optional range validation:
+
+```bash
+# With default and range validation
+count="$(mcp_args_int '.count' --default 10 --min 1 --max 200)"
+
+# Just default, no range
+limit="$(mcp_args_int '.limit' --default 50)"
+
+# Required integer with range
+page="$(mcp_args_int '.page' --min 1)"  # Fails if missing or < 1
+```
+
+**`mcp_args_get`** – Low-level extraction for complex shapes; returns raw jq output:
+
+```bash
+# Extract with jq filter and default
+name="$(mcp_args_get '.name // "World"')"
+
+# Extract nested value
+config="$(mcp_args_get '.options.config // empty')"
+
+# Check if key exists
+if [ "$(mcp_args_get '.debug // "false"')" = "true" ]; then
+  # debug mode
+fi
+```
+
+> **Note**: `mcp_args_get` requires JSON tooling (jq/gojq). In minimal mode it returns exit code 1, which will terminate scripts using `set -e`. For minimal-mode compatibility, use `mcp_args_get ... 2>/dev/null || true` or prefer the typed helpers (`mcp_args_bool`, `mcp_args_int`) which accept `--default` values that work in minimal mode.
+
+#### Path validation with roots enforcement
+
+**`mcp_require_path`** – Validate and normalize paths with MCP roots enforcement:
+
+```bash
+# Basic required path (validates against configured roots)
+target_path="$(mcp_require_path '.targetPath')"
+
+# Default to single root when client has exactly one root configured
+repo_path="$(mcp_require_path '.repoPath' --default-to-single-root)"
+
+# Allow empty (returns empty string if not provided)
+optional_path="$(mcp_require_path '.outputPath' --allow-empty)"
+```
+
+This single helper replaces 15-20 lines of boilerplate:
+
+```bash
+# BEFORE: Manual path validation (don't do this)
+roots_count="$(mcp_roots_count 2>/dev/null || printf '0')"
+if [ -n "${repo_path_arg}" ]; then
+  repo_path="${repo_path_arg}"
+else
+  if [ "${roots_count}" -eq 1 ]; then
+    repo_path="$(mcp_roots_list | head -n1)"
+  else
+    mcp_fail_invalid_args "repoPath is required when zero or multiple roots are configured"
+  fi
+fi
+if [ "${roots_count}" -gt 0 ] && ! mcp_roots_contains "${repo_path}"; then
+  mcp_fail_invalid_args "repoPath is outside configured MCP roots"
+fi
+if command -v realpath >/dev/null 2>&1; then
+  repo_path="$(realpath "${repo_path}")"
+fi
+
+# AFTER: One line with mcp_require_path
+repo_path="$(mcp_require_path '.repoPath' --default-to-single-root)"
+```
+
+#### Roots helpers
+
+Tools can query the client-provided roots:
+
+```bash
+# Get count of configured roots
+count="$(mcp_roots_count)"
+
+# List all root paths (newline-separated)
+mcp_roots_list | while read -r root; do
+  echo "Root: ${root}"
+done
+
+# Check if a path is within configured roots
+if mcp_roots_contains "/some/path"; then
+  echo "Path is allowed"
+fi
+```
+
+#### Structured outputs
+
+**`mcp_emit_json`** – Emit JSON result (compacted if JSON tooling available):
+
+```bash
+mcp_emit_json '{"status":"ok","count":42}'
+```
+
+**`mcp_json_obj`** – Build JSON objects from key/value pairs (all values stringified):
+
+```bash
+# Simple object
+mcp_emit_json "$(mcp_json_obj status ok message "Operation completed")"
+# Output: {"status":"ok","message":"Operation completed"}
+
+# Multiple fields
+mcp_emit_json "$(mcp_json_obj \
+  status ok \
+  message "Rebase completed" \
+  repoPath "${repo_path}" \
+  newHead "${new_head}" \
+)"
+```
+
+**`mcp_json_arr`** – Build JSON arrays:
+
+```bash
+mcp_emit_json "$(mcp_json_arr "item1" "item2" "item3")"
+# Output: ["item1","item2","item3"]
+```
+
+**`mcp_emit_text`** – Emit plain text result:
+
+```bash
+mcp_emit_text "Hello, ${name}!"
+```
+
+#### Error handling
+
+**`mcp_fail`** – Return structured JSON-RPC error and exit:
+
+```bash
+# Generic failure with code
+mcp_fail -32603 "Internal error" '{"detail":"something broke"}'
+
+# Invalid arguments (code -32602)
+mcp_fail_invalid_args "count must be positive"
+mcp_fail_invalid_args "invalid config" '{"field":"count","value":-1}'
+```
+
+#### Progress & cancellation
+
+**`mcp_progress`** – Report progress (throttled by framework):
+
+```bash
+mcp_progress 25 "Processing files..." 100  # 25%, message, total
+mcp_progress 50 "Halfway done"             # 50%, message, no total
+```
+
+**`mcp_is_cancelled`** – Check if client requested cancellation:
+
+```bash
+for i in $(seq 1 100); do
+  if mcp_is_cancelled; then
+    mcp_fail -32001 "Operation cancelled"
+  fi
+  # do work...
+  mcp_progress "${i}" "Processing item ${i}"
+done
+```
+
+#### Logging
+
+Use structured logging instead of `echo` to stderr:
+
+```bash
+mcp_log_debug "mytool" "Starting operation"
+mcp_log_info "mytool" "Processing ${count} items"
+mcp_log_warn "mytool" "Deprecated option used"
+mcp_log_error "mytool" "Failed to connect"
+```
+
+#### Elicitation (interactive prompts)
+
+Request user input when the client supports elicitation:
+
+```bash
+# Simple string input
+response="$(mcp_elicit_string "Enter your name:" "name")"
+
+# Yes/no confirmation
+response="$(mcp_elicit_confirm "Proceed with deletion?")"
+
+# Choice from options
+response="$(mcp_elicit_choice "Select environment:" "dev" "staging" "prod")"
+
+# Custom schema
+schema='{"type":"object","properties":{"port":{"type":"integer"}},"required":["port"]}'
+response="$(mcp_elicit "Configure server:" "${schema}")"
+```
+
+#### Complete tool example
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+source "${MCP_SDK:?}/tool-sdk.sh"
+
+# Parse arguments with validation
+repo_path="$(mcp_require_path '.repoPath' --default-to-single-root)"
+count="$(mcp_args_int '.count' --default 10 --min 1 --max 200)"
+all="$(mcp_args_bool '.all' --default false)"
+
+mcp_log_info "my-tool" "Processing ${count} items in ${repo_path}"
+
+# Check for cancellation in long operations
+for i in $(seq 1 "${count}"); do
+  if mcp_is_cancelled; then
+    mcp_fail -32001 "Cancelled by user"
+  fi
+  mcp_progress "${i}" "Processing item ${i}" "${count}"
+  # ... do work ...
+done
+
+# Return structured result
+mcp_emit_json "$(mcp_json_obj \
+  status ok \
+  message "Processed ${count} items" \
+  path "${repo_path}" \
+)"
+```
+
+#### Timeouts
+
+Set per-tool `timeoutSecs` inside `<tool>.meta.json` when default (30 seconds) is too high/low:
+
+```json
+{
+  "name": "long-running-tool",
+  "description": "A tool that needs more time",
+  "timeoutSecs": 120,
+  "inputSchema": { ... }
+}
+```
+
+#### Shared code
+
+Place reusable scripts under `lib/` in your project and source them via `MCPBASH_PROJECT_ROOT`:
+
+```bash
+# tools/my-tool/tool.sh
+# shellcheck source=../../lib/helpers.sh disable=SC1091
+source "${MCPBASH_PROJECT_ROOT}/lib/helpers.sh"
+```
+
+Keep shared code under project roots to avoid leaking out-of-scope paths; consider a `lib/` README to describe available helpers.
 
 ### 4.3 Error handling patterns
 - Use `mcp_fail` (or `mcp_fail_invalid_args`) to return structured JSON-RPC errors with proper `code/message/data` directly from tools; it survives `tool_env_mode=minimal/allowlist` via the injected `MCP_TOOL_ERROR_FILE`.
@@ -153,7 +431,66 @@ _Asciinema tip_: Record a short run of `bin/mcp-bash scaffold tool sample.hello`
 4. Focused suite(s) matching touched subsystem(s)
 5. `./test/examples/test_examples.sh`
 
-Use `bin/mcp-bash run-tool <name> --args '{}' [--roots /path/a,/path/b] [--timeout 15] [--verbose]` for fast local iterations; pair it with `--dry-run` to validate metadata and args without executing the tool. Roots are comma-separated to avoid conflicts with Windows drive letters.
+#### Testing tools with `run-tool`
+
+The `run-tool` CLI command lets you invoke tools directly without starting the full MCP server. This is invaluable for rapid iteration, debugging, and CI integration:
+
+```bash
+# Basic invocation
+mcp-bash run-tool my-tool --args '{"name":"test"}'
+
+# Simulate MCP roots (comma-separated)
+mcp-bash run-tool my-tool --args '{"path":"/repo/file.txt"}' --roots '/repo,/other'
+
+# Dry-run: validate args and metadata without executing
+mcp-bash run-tool my-tool --args '{"count":5}' --dry-run
+
+# Override timeout (seconds)
+mcp-bash run-tool slow-tool --args '{}' --timeout 120
+
+# Stream tool stderr for debugging
+mcp-bash run-tool my-tool --args '{}' --verbose
+
+# Use cached registry (skip refresh for faster iteration)
+mcp-bash run-tool my-tool --args '{}' --no-refresh
+
+# Test minimal mode behavior
+mcp-bash run-tool my-tool --args '{}' --minimal
+
+# Specify project root explicitly
+mcp-bash run-tool my-tool --args '{}' --project-root /path/to/project
+```
+
+> **Windows/Git Bash users**: Set `MSYS2_ARG_CONV_EXCL="*"` before running commands with path arguments (`--roots`, `--project-root`) to prevent automatic path mangling. Example: `MSYS2_ARG_CONV_EXCL="*" mcp-bash run-tool my-tool --roots '/repo'`. See [docs/WINDOWS.md](WINDOWS.md) for details.
+
+**Use cases:**
+
+| Scenario | Command |
+| --- | --- |
+| Quick iteration on tool logic | `mcp-bash run-tool my-tool --args '{"x":1}' --verbose` |
+| Test roots enforcement | `mcp-bash run-tool my-tool --args '{"path":"/outside"}' --roots '/allowed'` |
+| Validate input schema handling | `mcp-bash run-tool my-tool --args '{"invalid":true}' --dry-run` |
+| Reproduce bug with specific inputs | `mcp-bash run-tool my-tool --args '{"buggy":"input"}'` |
+| CI smoke test | `mcp-bash run-tool my-tool --args '{}' --timeout 10` |
+
+**Dry-run output:**
+```
+Tool: my-tool
+Args: 42 bytes
+Roots: 2
+Timeout: 30
+Status: Ready to execute (re-run without --dry-run to run)
+```
+
+**Notes:**
+- Roots are comma-separated (not colon) to avoid conflicts with Windows drive letters
+- Elicitation is not supported in CLI mode; tools requiring user input will receive decline responses
+- Exit codes propagate from the tool; non-zero indicates failure
+
+#### Scaffolded test harness
+- Generate `test/run.sh` and `test/README.md` with `bin/mcp-bash scaffold test` (inside an existing project).
+- Run `./test/run.sh [--verbose] [--force]` to exercise tools via `run-tool`; validation runs first unless `--force` is set.
+- The scaffold refuses to overwrite existing files so contributors do not lose local edits.
 
 Cache results by exporting `MCP_TESTS_SKIP_REMOTE=1` when remote fixtures are unavailable. Document skipped suites in your PR description.
 
@@ -338,4 +675,5 @@ flowchart TD
 ## Doc changelog
 | Date | Version | Notes |
 | --- | --- | --- |
+| 2025-12-05 | v1.1 | Expanded SDK documentation: comprehensive coverage of `mcp_args_require`, `mcp_args_bool`, `mcp_args_int`, `mcp_require_path`, structured output helpers, and `run-tool` CLI usage patterns. Added SDK quick reference table. |
 | 2024-10-18 | v1.0 | Initial publication covering development, testing, operations, and contribution guidance. |
