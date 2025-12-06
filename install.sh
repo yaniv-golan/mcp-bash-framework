@@ -88,6 +88,13 @@ if [ ! -t 0 ]; then
 	YES=true
 fi
 
+# Normalize tag/ref: accept both v0.4.0 and 0.4.0 by prefixing v when missing.
+case "${BRANCH}" in
+[0-9]*.[0-9]*.[0-9]*)
+	BRANCH="v${BRANCH}"
+	;;
+esac
+
 printf '\n%s\n' "${BLUE}mcp-bash Installer${NC}"
 printf '==================\n\n'
 
