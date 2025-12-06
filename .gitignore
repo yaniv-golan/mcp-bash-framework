@@ -5,3 +5,4 @@ docs/internal/mcp-bash-technical-spec.md
 .cursor/
 # MCP registry caches
 **/.registry/
+AGENTS.md

@@ -19,6 +19,12 @@
 : "${MCPBASH_BOOTSTRAP_TMP_DIR:=}"
 : "${MCPBASH_HOME:=}"
 
+# Path normalization helpers (Bash 3.2+). Load if not already present.
+if ! command -v mcp_path_normalize >/dev/null 2>&1; then
+	# shellcheck source=lib/path.sh disable=SC1090,SC1091
+	. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/path.sh"
+fi
+
 # Provide a no-op verbose check when logging.sh is not loaded (unit tests source runtime directly).
 if ! command -v mcp_logging_verbose_enabled >/dev/null 2>&1; then
 	mcp_logging_verbose_enabled() {
@@ -51,11 +57,7 @@ mcp_runtime_find_project_root() {
 	local dir="${start_dir}"
 
 	# Resolve symlinks where possible for predictable behavior across platforms.
-	if command -v realpath >/dev/null 2>&1 && realpath -m / >/dev/null 2>&1; then
-		dir="$(realpath -m "${dir}" 2>/dev/null || printf '%s' "${dir}")"
-	elif command -v readlink >/dev/null 2>&1 && readlink -f / >/dev/null 2>&1; then
-		dir="$(readlink -f "${dir}" 2>/dev/null || printf '%s' "${dir}")"
-	fi
+	dir="$(mcp_path_normalize --physical "${dir}")"
 
 	while [ -n "${dir}" ] && [ "${dir}" != "/" ]; do
 		# Skip framework-internal paths (bootstrap/, examples/, scaffold/, etc.)

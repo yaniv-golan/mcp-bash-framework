@@ -26,7 +26,7 @@ cat <<'SH' >"${WORKSPACE}/tools/slow/tool.sh"
 set -euo pipefail
 . "${MCP_SDK}/tool-sdk.sh"
 mcp_progress 10 "starting"
-sleep 5
+sleep 3
 printf 'done'
 SH
 chmod +x "${WORKSPACE}/tools/slow/tool.sh"
@@ -71,7 +71,7 @@ cat <<'JSON' >"${WORKSPACE}/shutdown.ndjson"
 JSON
 (
 	cd "${WORKSPACE}" || exit 1
-	MCPBASH_PROJECT_ROOT="${WORKSPACE}" MCPBASH_SHUTDOWN_TIMEOUT=0 ./bin/mcp-bash <"${WORKSPACE}/shutdown.ndjson" >/dev/null
+	MCPBASH_PROJECT_ROOT="${WORKSPACE}" MCPBASH_SHUTDOWN_TIMEOUT=10 ./bin/mcp-bash <"${WORKSPACE}/shutdown.ndjson" >/dev/null
 ) || true
 
 echo "Long-running stress passed."

@@ -7,6 +7,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
+if [ "${MCPBASH_RUN_SDK_TYPESCRIPT:-0}" != "1" ]; then
+	printf 'SKIP: sdk_typescript (set MCPBASH_RUN_SDK_TYPESCRIPT=1 to enable)\n'
+	exit 0
+fi
+
 if ! command -v node >/dev/null 2>&1; then
 	printf 'SKIP: sdk_typescript (node missing)\n'
 	exit 0

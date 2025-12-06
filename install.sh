@@ -42,6 +42,14 @@ while [ $# -gt 0 ]; do
 		BRANCH="$2"
 		shift 2
 		;;
+	--version | --ref)
+		if [ -z "${2:-}" ]; then
+			error "--version/--ref requires a tag or commit"
+			exit 1
+		fi
+		BRANCH="$2"
+		shift 2
+		;;
 	--yes | -y)
 		YES=true
 		shift
@@ -55,6 +63,8 @@ Usage: install.sh [OPTIONS]
 Options:
   --dir DIR      Install location (default: ~/mcp-bash-framework)
   --branch NAME  Git branch to install (default: main)
+  --version TAG  Alias for --branch TAG (install a tagged release)
+  --ref REF      Alias for --branch REF (install any ref/tag/commit)
   --yes, -y      Non-interactive mode (overwrite without prompting)
                  Auto-enabled when stdin is not a TTY (e.g., curl | bash)
   --help         Show this help
@@ -63,6 +73,7 @@ Examples:
   curl -fsSL .../install.sh | bash
   curl -fsSL .../install.sh | bash -s -- --dir ~/.local/mcp-bash
   curl -fsSL .../install.sh | bash -s -- --yes  # CI-friendly
+  curl -fsSL .../install.sh | bash -s -- --version 0.4.0  # install tagged release (auto-prefixes v)
 EOF
 		exit 0
 		;;
@@ -78,13 +89,27 @@ if [ ! -t 0 ]; then
 	YES=true
 fi
 
+# Normalize tag/ref: accept both v0.4.0 and 0.4.0 by prefixing v when missing.
+case "${BRANCH}" in
+[0-9]*.[0-9]*.[0-9]*)
+	BRANCH="v${BRANCH}"
+	;;
+esac
+
 printf '\n%s\n' "${BLUE}mcp-bash Installer${NC}"
 printf '==================\n\n'
 
 # Canonicalize INSTALL_DIR to prevent path traversal bypasses (e.g., "$HOME/..")
-# Note: On systems without realpath -m or readlink -f, path protection is weaker
-# (relies on literal string comparison only).
-if command -v realpath >/dev/null 2>&1 && realpath -m / >/dev/null 2>&1; then
+# Note: On systems without resolvers, path protection is weaker (string compare only).
+SCRIPT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "${SCRIPT_ROOT}/lib/path.sh" ]; then
+	# shellcheck source=lib/path.sh disable=SC1090,SC1091
+	. "${SCRIPT_ROOT}/lib/path.sh"
+fi
+
+if command -v mcp_path_normalize >/dev/null 2>&1; then
+	INSTALL_DIR="$(mcp_path_normalize --physical "${INSTALL_DIR}")"
+elif command -v realpath >/dev/null 2>&1 && realpath -m / >/dev/null 2>&1; then
 	# realpath -m works even if path doesn't exist yet
 	INSTALL_DIR="$(realpath -m "${INSTALL_DIR}" 2>/dev/null || printf '%s' "${INSTALL_DIR}")"
 elif command -v readlink >/dev/null 2>&1 && readlink -f / >/dev/null 2>&1; then
@@ -151,12 +176,35 @@ if [ -n "${MCPBASH_INSTALL_LOCAL_SOURCE:-}" ]; then
 		error "Local source ${LOCAL_SRC} does not look like an mcp-bash checkout (missing bin/mcp-bash)"
 		exit 1
 	fi
+
 	mkdir -p "${INSTALL_DIR}"
-	if cp -a "${LOCAL_SRC}/." "${INSTALL_DIR}/"; then
-		success "Copied from local source"
-	else
-		error "Failed to copy from local source"
-		exit 1
+
+	# Prefer git clone for clean worktrees to avoid copying a live .git directory
+	# that may be repacked concurrently. Fallback to tar (excluding .git) to
+	# preserve uncommitted changes and untracked files.
+	use_clone=0
+	if command -v git >/dev/null 2>&1 && git -C "${LOCAL_SRC}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+		git -C "${LOCAL_SRC}" update-index -q --really-refresh >/dev/null 2>&1 || true
+		dirty_status="$(git -C "${LOCAL_SRC}" status --porcelain 2>/dev/null || true)"
+		if [ -z "${dirty_status}" ]; then
+			if git clone --local --no-hardlinks --branch "${BRANCH}" "${LOCAL_SRC}" "${INSTALL_DIR}" 2>/dev/null; then
+				use_clone=1
+				success "Cloned clean local source"
+			fi
+		fi
+	fi
+
+	if [ "${use_clone}" -ne 1 ]; then
+		if ! command -v tar >/dev/null 2>&1; then
+			error "tar is required to copy local source when repository is dirty"
+			exit 1
+		fi
+		if (cd "${LOCAL_SRC}" && tar -cf - --exclude .git .) | (cd "${INSTALL_DIR}" && tar -xf -); then
+			success "Copied local source (working tree, .git excluded)"
+		else
+			error "Failed to copy from local source"
+			exit 1
+		fi
 	fi
 else
 	if git clone --depth 1 --branch "${BRANCH}" "${REPO_URL}" "${INSTALL_DIR}" 2>/dev/null; then

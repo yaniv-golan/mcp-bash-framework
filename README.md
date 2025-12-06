@@ -47,10 +47,19 @@ git clone https://github.com/yaniv-golan/mcp-bash-framework.git ~/mcp-bash-frame
 echo 'export PATH="$HOME/mcp-bash-framework/bin:$PATH"' >> ~/.bashrc  # or ~/.zshrc
 ```
 
+Pin a release with the installer (auto-prefixes `v` for bare versions):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/yaniv-golan/mcp-bash-framework/main/install.sh | bash -s -- --version 0.4.0
+# or with explicit tag
+curl -fsSL https://raw.githubusercontent.com/yaniv-golan/mcp-bash-framework/main/install.sh | bash -s -- --version v0.4.0
+```
+
 ### 1.5 (Optional) Verify Your Install
 
 ```bash
 mcp-bash doctor
+mcp-bash doctor --json    # machine-readable readiness (framework/runtime/project)
 ```
 
 You should see green checks for required dependencies (or clear errors if something is missing).
@@ -73,10 +82,24 @@ mcp-bash scaffold tool check-disk
 
 This scaffolds `tools/check-disk/tool.sh` and `tools/check-disk/tool.meta.json` in your project. You write the logic.
 
+### 3.5 (Optional) Add a Test Harness
+
+Create a lightweight runner for tool smoke tests:
+
+```bash
+mcp-bash scaffold test
+./test/run.sh --verbose  # add run_test calls inside test/run.sh
+```
+
+The harness wraps `mcp-bash run-tool`, validates your project before running, and refuses to overwrite existing `test/run.sh` or `test/README.md`.
+
 ### 4. Configure Your MCP Client
 
 ```bash
 mcp-bash config --show
+mcp-bash config --json           # machine-readable descriptor (name/command/env)
+mcp-bash config --client cursor  # client-specific snippet
+mcp-bash config --wrapper        # generate wrapper script that auto-installs framework
 ```
 
 Copy the snippet for your client (Claude Desktop/CLI/Code, Cursor, Windsurf, LibreChat, etc.) and paste it into the appropriate config file. This sets `MCPBASH_PROJECT_ROOT` and the `mcp-bash` command path for you.
@@ -139,9 +162,35 @@ Framework (Install Once)               Your Project (Version Control This)
                                        └── .registry/ (auto-generated)
 ```
 
+## Direct Tool Execution (run-tool)
+
+Use `run-tool` to invoke a single tool without starting the full MCP server. This wires the same environment as the server (SDK path, args, metadata, roots).
+
+```bash
+# Basic invocation (project inferred from CWD or MCPBASH_PROJECT_ROOT)
+mcp-bash run-tool my.tool --args '{"value":"hello"}'
+
+# Simulate roots (comma-separated), stream stderr, override timeout, or print env
+mcp-bash run-tool my.tool --args '{"value":"hi"}' --roots /tmp/project,/data/shared --verbose --timeout 15
+# Inspect wiring without executing
+mcp-bash run-tool my.tool --print-env --dry-run
+
+# Dry-run validates metadata/args without executing the tool
+mcp-bash run-tool my.tool --dry-run
+```
+
+Flags: `--args` (JSON object), `--roots` (comma-separated paths), `--dry-run`, `--timeout <secs>`, `--verbose` (stream tool stderr), `--no-refresh` (reuse cached registry), `--minimal` (force degraded mode), `--project-root <dir>`, `--print-env` (dump wiring without executing). Elicitation is not supported in CLI mode.
+
 The scaffolder and examples use per-tool directories (e.g., `tools/check-disk/tool.sh`); automatic discovery requires tools to live under subdirectories of `tools/` (root-level scripts are not discovered).
 
 See [**Project Structure Guide**](docs/PROJECT-STRUCTURE.md) for detailed layouts, Docker deployment, and multi-environment setups.
+
+## Diagnostics & Validation
+
+- Project checks: `mcp-bash validate [--project-root DIR] [--fix] [--json] [--explain-defaults] [--strict]`
+- Environment check: `mcp-bash doctor [--json]`
+- Registry cache introspection: `mcp-bash registry status [--project-root DIR]`
+- Client config: `mcp-bash config --json` (machine-readable), `--client <name>` (pasteable JSON), `--wrapper` (generate auto-install wrapper)
 
 ## SDK Discovery
 
@@ -177,6 +226,24 @@ mcp_completion_manual_finalize
 
 Paths are resolved relative to `MCPBASH_PROJECT_ROOT`, and registry refreshes pick them up automatically.
 
+## Tool Policy Hook (optional)
+
+Projects can gate tool execution centrally by adding `server.d/policy.sh` with `mcp_tools_policy_check()`. The framework calls this before every tool run (default: allow all).
+
+```bash
+# server.d/policy.sh
+mcp_tools_policy_check() {
+	local tool_name="$1"
+	if [ "${MYPROJECT_READ_ONLY:-0}" = "1" ] && [[ "${tool_name}" != myProj.get* ]]; then
+		mcp_tools_error -32602 "Read-only mode: ${tool_name} disabled"
+		return 1
+	fi
+	return 0
+}
+```
+
+Use `-32602` for policy/invalid-params blocks, `-32600` for capability/auth failures. Keep logic lightweight; the hook runs on every invocation.
+
 ## Learn by Example
 
 The [`examples/`](examples/) directory shows common patterns end-to-end:
@@ -197,7 +264,7 @@ The [`examples/`](examples/) directory shows common patterns end-to-end:
 ## Features at a Glance
 
 - **Auto-Discovery**: Place scripts in your project's `tools/`, `resources/`, or `prompts/` directories—the framework finds them automatically.
-- **Scaffolding**: Generate compliant tool, resource, and prompt templates (`mcp-bash scaffold <type> <name>`).
+- **Scaffolding**: Generate compliant tool, resource, prompt templates, and a test harness (`mcp-bash scaffold <type> <name>`, `mcp-bash scaffold test`).
 - **Stdio Transport**: Standard input/output. No custom daemons or sidecars.
 - **Framework/Project Separation**: Install the framework once, create unlimited projects.
 - **Graceful Degradation**: Automatically detects available JSON tools (`gojq`, `jq`) or falls back to minimal mode if none are present.

@@ -25,7 +25,7 @@ cat <<'META' >"${WORKSPACE}/tools/slow/tool.meta.json"
 META
 cat <<'SH' >"${WORKSPACE}/tools/slow/tool.sh"
 #!/usr/bin/env bash
-sleep 10
+sleep 3
 echo "done"
 SH
 chmod +x "${WORKSPACE}/tools/slow/tool.sh"

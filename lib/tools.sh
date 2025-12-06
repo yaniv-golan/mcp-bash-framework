@@ -2,6 +2,11 @@
 # Tool discovery, registry generation, invocation helpers.
 
 set -euo pipefail
+
+if [[ -z "${BASH_VERSION:-}" ]]; then
+	printf 'Bash is required for mcpbash; BASH_VERSION missing\n' >&2
+	exit 1
+fi
 # shellcheck disable=SC2030,SC2031  # Subshell env mutations are intentionally isolated
 
 MCP_TOOLS_REGISTRY_JSON=""
@@ -33,6 +38,14 @@ if ! command -v mcp_registry_resolve_scan_root >/dev/null 2>&1; then
 	. "${MCPBASH_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/lib/registry.sh"
 fi
 
+# Provide defaults if policy helpers were not sourced (older bootstraps).
+if ! declare -F mcp_tools_policy_check >/dev/null 2>&1; then
+	mcp_tools_policy_check() { return 0; }
+fi
+if ! declare -F mcp_tools_policy_init >/dev/null 2>&1; then
+	mcp_tools_policy_init() { return 0; }
+fi
+
 mcp_tools_scan_root() {
 	mcp_registry_resolve_scan_root "${MCPBASH_TOOLS_DIR}"
 }
@@ -45,6 +58,18 @@ mcp_tools_manual_begin() {
 mcp_tools_manual_abort() {
 	MCP_TOOLS_MANUAL_ACTIVE=false
 	MCP_TOOLS_MANUAL_BUFFER=""
+}
+
+mcp_tools_schema_normalizer() {
+	cat <<'EOF'
+def ensure_schema:
+	if (type == "object") then
+		(if ((.type // "") | length) > 0 then . else . + {type: "object"} end)
+		| (if (.properties | type) == "object" then . else . + {properties: {}} end)
+	else
+		{type: "object", properties: {}}
+	end;
+EOF
 }
 
 mcp_tools_register_manual() {
@@ -97,13 +122,7 @@ mcp_tools_manual_finalize() {
 	fi
 
 	registry_json="$(printf '%s' "${registry_json}" | "${MCPBASH_JSON_TOOL_BIN}" -c '
-		def ensure_schema:
-			if (type == "object") then
-				(if ((.type // "") | length) > 0 then . else . + {type: "object"} end)
-				| (if (.properties | type) == "object" then . else . + {properties: {}} end)
-			else
-				{type: "object", properties: {}}
-			end;
+		'"$(mcp_tools_schema_normalizer)"'
 		.items |= map(.inputSchema = (.inputSchema | ensure_schema))
 	')"
 
@@ -141,13 +160,7 @@ mcp_tools_normalize_schema() {
 	local raw="$1"
 	local normalized
 	if ! normalized="$({ printf '%s' "${raw}"; } | "${MCPBASH_JSON_TOOL_BIN}" -c '
-		def ensure_schema:
-			if (type == "object") then
-				(if ((.type // "") | length) > 0 then . else . + {type: "object"} end)
-				| (if (.properties | type) == "object" then . else . + {properties: {}} end)
-			else
-				{type: "object", properties: {}}
-			end;
+		'"$(mcp_tools_schema_normalizer)"'
 		ensure_schema
 	' 2>/dev/null)"; then
 		normalized='{"type":"object","properties":{}}'
@@ -170,6 +183,114 @@ mcp_tools_enforce_registry_limits() {
 	fi
 	if [ "${total}" -gt 500 ]; then
 		mcp_logging_warning "${MCP_TOOLS_LOGGER}" "Tools registry contains ${total} entries; consider manual registration"
+	fi
+	return 0
+}
+
+mcp_tools_apply_manual_registration() {
+	local manual_status=0
+	mcp_registry_register_apply "tools"
+	manual_status=$?
+	if [ "${manual_status}" -ne 0 ]; then
+		if [ "${manual_status}" -eq 2 ]; then
+			local err
+			err="$(mcp_registry_register_error_for_kind "tools")"
+			if [ -z "${err}" ]; then
+				err="Manual registration script returned empty output or non-zero"
+			fi
+			mcp_logging_warning "${MCP_TOOLS_LOGGER}" "${err}"
+		fi
+		return "${manual_status}"
+	fi
+	return 0
+}
+
+mcp_tools_load_cache_if_empty() {
+	if [ -n "${MCP_TOOLS_REGISTRY_JSON}" ] || [ ! -f "${MCP_TOOLS_REGISTRY_PATH}" ]; then
+		return 0
+	fi
+
+	local tmp_json=""
+	if tmp_json="$(cat "${MCP_TOOLS_REGISTRY_PATH}")"; then
+		if echo "${tmp_json}" | "${MCPBASH_JSON_TOOL_BIN}" . >/dev/null 2>&1; then
+			MCP_TOOLS_REGISTRY_JSON="${tmp_json}"
+			MCP_TOOLS_REGISTRY_HASH="$(echo "${MCP_TOOLS_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.hash // empty')"
+			MCP_TOOLS_TOTAL="$(echo "${MCP_TOOLS_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" '.total // 0')"
+			if ! mcp_tools_enforce_registry_limits "${MCP_TOOLS_TOTAL}" "${MCP_TOOLS_REGISTRY_JSON}"; then
+				return 1
+			fi
+		else
+			MCP_TOOLS_REGISTRY_JSON=""
+		fi
+	else
+		MCP_TOOLS_REGISTRY_JSON=""
+	fi
+	return 0
+}
+
+mcp_tools_cache_fresh() {
+	local now="$1"
+
+	if [ -n "${MCP_TOOLS_REGISTRY_JSON}" ] && [ $((now - MCP_TOOLS_LAST_SCAN)) -lt "${MCP_TOOLS_TTL}" ]; then
+		return 0
+	fi
+	return 1
+}
+
+mcp_tools_fastpath_hit() {
+	local scan_root="$1"
+	local now="$2"
+
+	local fastpath_snapshot
+	fastpath_snapshot="$(mcp_registry_fastpath_snapshot "${scan_root}")"
+	if mcp_registry_fastpath_unchanged "tools" "${fastpath_snapshot}"; then
+		MCP_TOOLS_LAST_SCAN="${now}"
+		if [ -f "${MCP_TOOLS_REGISTRY_PATH}" ]; then
+			local cached_hash
+			cached_hash="$("${MCPBASH_JSON_TOOL_BIN}" -r '.hash // empty' "${MCP_TOOLS_REGISTRY_PATH}" 2>/dev/null || true)"
+			if [ -n "${cached_hash}" ] && [ "${cached_hash}" != "${MCP_TOOLS_REGISTRY_HASH}" ]; then
+				local cached_json cached_total
+				cached_json="$(cat "${MCP_TOOLS_REGISTRY_PATH}" 2>/dev/null || true)"
+				cached_total="$("${MCPBASH_JSON_TOOL_BIN}" '.total // 0' "${MCP_TOOLS_REGISTRY_PATH}" 2>/dev/null || printf '0')"
+				MCP_TOOLS_REGISTRY_JSON="${cached_json}"
+				MCP_TOOLS_REGISTRY_HASH="${cached_hash}"
+				MCP_TOOLS_TOTAL="${cached_total}"
+				MCP_TOOLS_CHANGED=true
+			fi
+		fi
+		return 0
+	fi
+	return 1
+}
+
+mcp_tools_perform_full_scan() {
+	local scan_root="$1"
+	local now="$2"
+
+	local previous_hash="${MCP_TOOLS_REGISTRY_HASH}"
+	if [ -z "${previous_hash}" ] && [ -f "${MCP_TOOLS_REGISTRY_PATH}" ]; then
+		previous_hash="$("${MCPBASH_JSON_TOOL_BIN}" -r '.hash // empty' "${MCP_TOOLS_REGISTRY_PATH}" 2>/dev/null || true)"
+	fi
+
+	mcp_tools_scan "${scan_root}" || return 1
+	MCP_TOOLS_LAST_SCAN="${now}"
+
+	local fastpath_snapshot
+	fastpath_snapshot="$(mcp_registry_fastpath_snapshot "${scan_root}")"
+	mcp_registry_fastpath_store "tools" "${fastpath_snapshot}" || true
+	if [ -n "${MCP_TOOLS_REGISTRY_HASH}" ] && [ -n "${fastpath_snapshot}" ]; then
+		local combined_hash
+		combined_hash="$(mcp_hash_string "${MCP_TOOLS_REGISTRY_HASH}|${fastpath_snapshot}")"
+		MCP_TOOLS_REGISTRY_HASH="${combined_hash}"
+		MCP_TOOLS_REGISTRY_JSON="$(printf '%s' "${MCP_TOOLS_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" --arg hash "${combined_hash}" '.hash = $hash')"
+		local write_rc=0
+		mcp_registry_write_with_lock "${MCP_TOOLS_REGISTRY_PATH}" "${MCP_TOOLS_REGISTRY_JSON}" || write_rc=$?
+		if [ "${write_rc}" -ne 0 ]; then
+			return "${write_rc}"
+		fi
+	fi
+	if [ "${previous_hash}" != "${MCP_TOOLS_REGISTRY_HASH}" ]; then
+		MCP_TOOLS_CHANGED=true
 	fi
 	return 0
 }
@@ -335,90 +456,36 @@ mcp_tools_refresh_registry() {
 	# Registry refresh order: prefer user-provided server.d/register.sh output,
 	# then reuse cached JSON if TTL has not expired, finally fall back to a full
 	# filesystem scan (with fastpath snapshot to avoid rescanning unchanged trees).
-	if mcp_registry_register_apply "tools"; then
+	local manual_status
+	manual_status=2
+	mcp_tools_apply_manual_registration
+	manual_status=$?
+	if [ "${manual_status}" -eq 0 ]; then
 		return 0
-	else
-		local manual_status=$?
-		if [ "${manual_status}" -eq 2 ]; then
-			local err
-			err="$(mcp_registry_register_error_for_kind "tools")"
-			if [ -z "${err}" ]; then
-				err="Manual registration script returned empty output or non-zero"
-			fi
-			mcp_logging_error "${MCP_TOOLS_LOGGER}" "${err}"
-			return 1
-		fi
 	fi
+	if [ "${manual_status}" -eq 2 ]; then
+		return 1
+	fi
+
 	local now
 	now="$(date +%s)"
 
-	if [ -z "${MCP_TOOLS_REGISTRY_JSON}" ] && [ -f "${MCP_TOOLS_REGISTRY_PATH}" ]; then
-		local tmp_json=""
-		if tmp_json="$(cat "${MCP_TOOLS_REGISTRY_PATH}")"; then
-			if echo "${tmp_json}" | "${MCPBASH_JSON_TOOL_BIN}" . >/dev/null 2>&1; then
-				MCP_TOOLS_REGISTRY_JSON="${tmp_json}"
-				MCP_TOOLS_REGISTRY_HASH="$(echo "${MCP_TOOLS_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.hash // empty')"
-				MCP_TOOLS_TOTAL="$(echo "${MCP_TOOLS_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" '.total // 0')"
-				if ! mcp_tools_enforce_registry_limits "${MCP_TOOLS_TOTAL}" "${MCP_TOOLS_REGISTRY_JSON}"; then
-					return 1
-				fi
-			else
-				MCP_TOOLS_REGISTRY_JSON=""
-			fi
-		else
-			MCP_TOOLS_REGISTRY_JSON=""
-		fi
+	if ! mcp_tools_load_cache_if_empty; then
+		return 1
 	fi
-	if [ -n "${MCP_TOOLS_REGISTRY_JSON}" ] && [ $((now - MCP_TOOLS_LAST_SCAN)) -lt "${MCP_TOOLS_TTL}" ]; then
+
+	if mcp_tools_cache_fresh "${now}"; then
 		return 0
 	fi
 
-	local fastpath_snapshot
-	fastpath_snapshot="$(mcp_registry_fastpath_snapshot "${scan_root}")"
-	if mcp_registry_fastpath_unchanged "tools" "${fastpath_snapshot}"; then
-		MCP_TOOLS_LAST_SCAN="${now}"
-		# Sync in-memory state from cache if another process refreshed the registry
-		if [ -f "${MCP_TOOLS_REGISTRY_PATH}" ]; then
-			local cached_hash
-			cached_hash="$("${MCPBASH_JSON_TOOL_BIN}" -r '.hash // empty' "${MCP_TOOLS_REGISTRY_PATH}" 2>/dev/null || true)"
-			if [ -n "${cached_hash}" ] && [ "${cached_hash}" != "${MCP_TOOLS_REGISTRY_HASH}" ]; then
-				local cached_json cached_total
-				cached_json="$(cat "${MCP_TOOLS_REGISTRY_PATH}" 2>/dev/null || true)"
-				cached_total="$("${MCPBASH_JSON_TOOL_BIN}" '.total // 0' "${MCP_TOOLS_REGISTRY_PATH}" 2>/dev/null || printf '0')"
-				MCP_TOOLS_REGISTRY_JSON="${cached_json}"
-				MCP_TOOLS_REGISTRY_HASH="${cached_hash}"
-				MCP_TOOLS_TOTAL="${cached_total}"
-				MCP_TOOLS_CHANGED=true
-			fi
-		fi
+	if mcp_tools_fastpath_hit "${scan_root}" "${now}"; then
 		return 0
 	fi
 
-	# Capture previous hash from cache file if in-memory state is empty (parent may not have run scan yet)
-	local previous_hash="${MCP_TOOLS_REGISTRY_HASH}"
-	if [ -z "${previous_hash}" ] && [ -f "${MCP_TOOLS_REGISTRY_PATH}" ]; then
-		previous_hash="$("${MCPBASH_JSON_TOOL_BIN}" -r '.hash // empty' "${MCP_TOOLS_REGISTRY_PATH}" 2>/dev/null || true)"
+	if ! mcp_tools_perform_full_scan "${scan_root}" "${now}"; then
+		return 1
 	fi
-	mcp_tools_scan "${scan_root}" || return 1
-	MCP_TOOLS_LAST_SCAN="${now}"
-	# Recompute fastpath snapshot post-scan to track content changes (mtime/cksum)
-	fastpath_snapshot="$(mcp_registry_fastpath_snapshot "${scan_root}")"
-	mcp_registry_fastpath_store "tools" "${fastpath_snapshot}" || true
-	# Incorporate fastpath snapshot into registry hash so content-only changes trigger notifications
-	if [ -n "${MCP_TOOLS_REGISTRY_HASH}" ] && [ -n "${fastpath_snapshot}" ]; then
-		local combined_hash
-		combined_hash="$(mcp_hash_string "${MCP_TOOLS_REGISTRY_HASH}|${fastpath_snapshot}")"
-		MCP_TOOLS_REGISTRY_HASH="${combined_hash}"
-		MCP_TOOLS_REGISTRY_JSON="$(printf '%s' "${MCP_TOOLS_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" --arg hash "${combined_hash}" '.hash = $hash')"
-		local write_rc=0
-		mcp_registry_write_with_lock "${MCP_TOOLS_REGISTRY_PATH}" "${MCP_TOOLS_REGISTRY_JSON}" || write_rc=$?
-		if [ "${write_rc}" -ne 0 ]; then
-			return "${write_rc}"
-		fi
-	fi
-	if [ "${previous_hash}" != "${MCP_TOOLS_REGISTRY_HASH}" ]; then
-		MCP_TOOLS_CHANGED=true
-	fi
+	return 0
 }
 
 mcp_tools_scan() {
@@ -723,6 +790,18 @@ mcp_tools_call() {
 		mcp_logging_warning "${MCP_TOOLS_LOGGER}" "MCPBASH_TOOL_ENV_MODE=inherit; tools receive the full host environment"
 	fi
 
+	# Initialize and enforce project policy (server.d/policy.sh can override).
+	mcp_tools_policy_init
+	if ! mcp_tools_policy_check "${name}" "${metadata}"; then
+		if [ "${_MCP_TOOLS_ERROR_CODE:-0}" -eq 0 ]; then
+			mcp_tools_error -32602 "Tool '${name}' blocked by policy"
+		fi
+		local policy_data="${_MCP_TOOLS_ERROR_DATA:-null}"
+		[ -z "${policy_data}" ] && policy_data="null"
+		_mcp_tools_emit_error "${_MCP_TOOLS_ERROR_CODE}" "${_MCP_TOOLS_ERROR_MESSAGE}" "${policy_data}"
+		return 1
+	fi
+
 	local absolute_path="${MCPBASH_TOOLS_DIR}/${tool_path}"
 	local tool_runner=("${absolute_path}")
 	# On Windows (Git Bash/MSYS), -x test is unreliable. Check for shebang or .sh extension as fallback.
@@ -741,8 +820,8 @@ mcp_tools_call() {
 	0) env_limit=65536 ;;
 	esac
 
-	# Roots environment (blocks until roots ready when available)
-	local MCP_ROOTS_JSON MCP_ROOTS_PATHS MCP_ROOTS_COUNT
+	# Roots environment (server + CLI both source roots.sh; guard keeps minimal stubs happy)
+	local MCP_ROOTS_JSON="[]" MCP_ROOTS_PATHS="" MCP_ROOTS_COUNT=0
 	if declare -F mcp_roots_wait_ready >/dev/null 2>&1; then
 		mcp_roots_wait_ready
 		MCP_ROOTS_JSON="$(mcp_roots_get_json)"
@@ -796,6 +875,7 @@ mcp_tools_call() {
 	if [ "${MCPBASH_MODE}" != "minimal" ] && [ "${MCPBASH_JSON_TOOL:-none}" != "none" ]; then
 		has_json_tool="true"
 	fi
+	local stream_stderr="${MCPBASH_TOOL_STREAM_STDERR:-false}"
 
 	# Tool invocation lifecycle:
 	# 1) Build an isolated env (respecting allowlist/minimal/inherit) and ship
@@ -833,7 +913,7 @@ mcp_tools_call() {
 	}
 
 	local exit_code
-	# shellcheck disable=SC2030,SC2031
+	# shellcheck disable=SC2030,SC2031,SC2094
 	(
 		# Environment mutations here are intentionally scoped to this subshell.
 		# Ignore SIGTERM in this subshell - only the tool process should be killed
@@ -941,20 +1021,57 @@ mcp_tools_call() {
 			fi
 		fi
 
+		mcp_tools_can_stream_stderr() {
+			if ! command -v tee >/dev/null 2>&1; then
+				return 1
+			fi
+			if ! { : 2> >(cat >/dev/null); } 2>/dev/null; then
+				return 1
+			fi
+			return 0
+		}
+
+		local stderr_streaming_enabled="${stream_stderr}"
+		if [ "${stream_stderr}" = "true" ]; then
+			if mcp_tools_can_stream_stderr; then
+				stderr_streaming_enabled="true"
+			else
+				stderr_streaming_enabled="false"
+				printf 'stream-stderr unavailable; stderr will be buffered\n' >>"${stderr_file}"
+			fi
+		fi
+
 		if [ -n "${effective_timeout}" ]; then
 			if [ "${tool_env_mode}" != "inherit" ]; then
-				with_timeout "${effective_timeout}" -- "${env_exec[@]}" "${tool_runner[@]}"
+				if [ "${stderr_streaming_enabled}" = "true" ]; then
+					with_timeout "${effective_timeout}" -- "${env_exec[@]}" "${tool_runner[@]}" 2> >(tee "${stderr_file}" >&2)
+				else
+					with_timeout "${effective_timeout}" -- "${env_exec[@]}" "${tool_runner[@]}" 2>>"${stderr_file}"
+				fi
 			else
-				with_timeout "${effective_timeout}" -- "${tool_runner[@]}"
+				if [ "${stderr_streaming_enabled}" = "true" ]; then
+					with_timeout "${effective_timeout}" -- "${tool_runner[@]}" 2> >(tee "${stderr_file}" >&2)
+				else
+					with_timeout "${effective_timeout}" -- "${tool_runner[@]}" 2>>"${stderr_file}"
+				fi
 			fi
 		else
 			if [ "${tool_env_mode}" != "inherit" ]; then
-				"${env_exec[@]}" "${tool_runner[@]}"
+				if [ "${stderr_streaming_enabled}" = "true" ]; then
+					"${env_exec[@]}" "${tool_runner[@]}" 2> >(tee "${stderr_file}" >&2)
+				else
+					"${env_exec[@]}" "${tool_runner[@]}" 2>>"${stderr_file}"
+				fi
 			else
-				"${tool_runner[@]}"
+				if [ "${stderr_streaming_enabled}" = "true" ]; then
+					"${tool_runner[@]}" 2> >(tee "${stderr_file}" >&2)
+				else
+					"${tool_runner[@]}" 2>>"${stderr_file}"
+				fi
 			fi
 		fi
-	) >"${stdout_file}" 2>"${stderr_file}" || exit_code=$?
+		# Outer stderr append captures shell-level errors; tool stderr is redirected above.
+	) >"${stdout_file}" 2>>"${stderr_file}" || exit_code=$?
 	exit_code=${exit_code:-0}
 
 	if mcp_logging_is_enabled "debug"; then

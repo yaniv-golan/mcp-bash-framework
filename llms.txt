@@ -7,9 +7,11 @@ Key points:
 - **Framework/project separation**: Install the framework once (e.g., via `install.sh`), create unlimited MCP server projects. Your tools stay yours; upgrades are clean.
 - **Stdio transport only**: Standard input/output communication. No daemons, no HTTP servers, no hidden state.
 - **Auto-discovery & auto-detection**: Tools/resources/prompts are discovered from project directories; project root is auto-detected when you run `mcp-bash` inside a project (for MCP clients, set `MCPBASH_PROJECT_ROOT` explicitly).
-- **Built-in DX commands**: `mcp-bash init`, `mcp-bash scaffold server`, `mcp-bash scaffold tool|prompt|resource`, `mcp-bash validate`, `mcp-bash config`, `mcp-bash doctor`.
+- **Built-in DX commands**: `mcp-bash init`, `mcp-bash scaffold server`, `mcp-bash scaffold tool|prompt|resource`, `mcp-bash validate [--json|--strict|--explain-defaults]`, `mcp-bash config [--json|--client|--wrapper]`, `mcp-bash doctor [--json]`, `mcp-bash registry status`, `mcp-bash run-tool [--print-env]`.
+- **Tool policy hook**: Optional `server.d/policy.sh` defines `mcp_tools_policy_check()` to allow/deny tools centrally (read-only, allowlists, audit); default allows all.
 - **Protocol version**: Targets MCP `2025-06-18` with negotiated downgrades to `2025-03-26` and `2024-11-05`.
 - **Cross-platform**: macOS, Linux, and Windows (Git Bash/WSL) support.
+- **CLI `run-tool`**: Direct tool invocation with roots, dry-run, timeout override, verbose stderr, `--print-env`; covered by unit and example smoke tests.
 
 ## Docs
 

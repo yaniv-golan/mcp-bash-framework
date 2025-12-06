@@ -5,6 +5,11 @@
 
 set -euo pipefail
 
+if ! command -v mcp_path_normalize >/dev/null 2>&1; then
+	# shellcheck source=lib/path.sh disable=SC1090,SC1091
+	. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/path.sh"
+fi
+
 MCP_ROOTS_LOGGER="${MCP_ROOTS_LOGGER:-mcp.roots}"
 
 # Avoid Bash 4-only declare -g for macOS /bin/bash 3.2 compatibility.
@@ -189,23 +194,7 @@ mcp_roots_handle_list_response() {
 
 mcp_roots_normalize_path() {
 	local path="$1"
-	local canonical
-
-	if ! canonical="$(realpath -m "${path}" 2>/dev/null)"; then
-		if ! canonical="$(realpath "${path}" 2>/dev/null)"; then
-			if [[ "${path}" != /* ]]; then
-				canonical="$(pwd)/${path}"
-			else
-				canonical="${path}"
-			fi
-		fi
-	fi
-
-	if [[ "${canonical}" != "/" ]]; then
-		canonical="${canonical%/}"
-	fi
-
-	printf '%s' "${canonical}"
+	printf '%s' "$(mcp_path_normalize --physical "${path}")"
 }
 
 mcp_roots_uri_to_path() {

@@ -59,6 +59,29 @@ valid_response="$(
 )"
 assert_eq '{}' "${valid_response}" "valid logging/setLevel should succeed in minimal mode"
 
+# Forced minimal should still restrict capabilities even if jq/gojq are on PATH.
+FORCED_ROOT="${TEST_TMPDIR}/minimal-forced"
+test_stage_workspace "${FORCED_ROOT}"
+cat <<'JSON' >"${FORCED_ROOT}/requests.ndjson"
+{"jsonrpc":"2.0","id":"init","method":"initialize","params":{}}
+{"jsonrpc":"2.0","method":"notifications/initialized"}
+{"jsonrpc":"2.0","id":"log","method":"logging/setLevel","params":{"level":"INVALID"}}
+JSON
+
+(
+	cd "${FORCED_ROOT}" || exit 1
+	MCPBASH_FORCE_MINIMAL=true PATH="/usr/bin:/bin" MCPBASH_PROJECT_ROOT="${FORCED_ROOT}" ./bin/mcp-bash <"${FORCED_ROOT}/requests.ndjson" >"${FORCED_ROOT}/responses.ndjson"
+) || true
+
+forced_caps="$(jq -c 'select(.id=="init") | .result.capabilities // empty' "${FORCED_ROOT}/responses.ndjson")"
+if [ "${forced_caps}" != '{"logging":{}}' ]; then
+	test_fail "expected logging-only capabilities when forced minimal, got ${forced_caps}"
+fi
+forced_log_code="$(jq -r 'select(.id=="log") | .error.code // empty' "${FORCED_ROOT}/responses.ndjson")"
+if [ "${forced_log_code}" != "-32602" ]; then
+	test_fail "invalid log level should be rejected in forced minimal mode"
+fi
+
 test_old_protocol_suppresses_list_changed() {
 	# Set up workspace with tools to ensure notifications WOULD fire on newer protocol
 	local test_dir

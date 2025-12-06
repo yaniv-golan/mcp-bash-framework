@@ -18,12 +18,30 @@ if [ "${UNICODE}" = "1" ]; then
 	FAIL_ICON="❌"
 fi
 
-printf '[01/01] examples/test_examples.sh ... '
-if "${SCRIPT_DIR}/test_examples.sh"; then
-	printf '%s\n' "${PASS_ICON}"
-else
-	printf '%s\n' "${FAIL_ICON}" >&2
+TESTS=(
+	"test_examples.sh"
+	"test_run_tool_smoke.sh"
+)
+
+passed=0
+failed=0
+total="${#TESTS[@]}"
+index=1
+
+for test_script in "${TESTS[@]}"; do
+	printf '[%02d/%02d] %s ... ' "${index}" "${total}" "${test_script}"
+	if "${SCRIPT_DIR}/${test_script}"; then
+		printf '%s\n' "${PASS_ICON}"
+		passed=$((passed + 1))
+	else
+		printf '%s\n' "${FAIL_ICON}" >&2
+		failed=$((failed + 1))
+	fi
+	index=$((index + 1))
+done
+
+printf '\nExamples summary: %d passed, %d failed\n' "${passed}" "${failed}"
+
+if [ "${failed}" -ne 0 ]; then
 	exit 1
 fi
-
-printf '\nExamples summary: 1 passed, 0 failed\n'

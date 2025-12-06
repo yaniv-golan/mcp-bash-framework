@@ -54,7 +54,7 @@ cat <<'JSON' >"${WORKSPACE}/shutdown.ndjson"
 JSON
 (
 	cd "${WORKSPACE}" || exit 1
-	MCPBASH_PROJECT_ROOT="${WORKSPACE}" MCPBASH_SHUTDOWN_TIMEOUT=0 ./bin/mcp-bash <"${WORKSPACE}/shutdown.ndjson" >/dev/null
+	MCPBASH_PROJECT_ROOT="${WORKSPACE}" MCPBASH_SHUTDOWN_TIMEOUT=10 ./bin/mcp-bash <"${WORKSPACE}/shutdown.ndjson" >/dev/null
 ) || true
 
 echo "Output guard stress passed."

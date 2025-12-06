@@ -24,6 +24,8 @@
 ./test/unit/run.sh
 ```
 
+Includes coverage for the CLI `run-tool` entrypoint, SDK helpers, path normalization, locking, pagination, and JSON utilities.
+
 ## Integration Tests
 
 ```
@@ -41,11 +43,17 @@
 ./test/examples/run.sh
 ```
 
+The examples runner now includes:
+- `test_examples.sh` (protocol NDJSON harness across all examples)
+- `test_run_tool_smoke.sh` (run-tool CLI smoke on the hello example with dry-run + roots)
+
 ## Compatibility Suite
 
 ```
 ./test/compatibility/run.sh
 ```
+
+- TypeScript client check (`sdk_typescript.sh`) is opt-in; set `MCPBASH_RUN_SDK_TYPESCRIPT=1` to enable it. Without the flag, it is skipped to avoid pulling `npx ts-node` on environments where it is not already available.
 
 ## Stress Suite
 

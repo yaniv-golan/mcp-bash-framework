@@ -36,7 +36,7 @@ rm -f "${PIPE_IN}" "${PIPE_OUT}"
 mkfifo "${PIPE_IN}" "${PIPE_OUT}"
 (
 	cd "${WORKSPACE}" || exit 1
-	MCPBASH_PROJECT_ROOT="${WORKSPACE}" ./bin/mcp-bash <"${PIPE_IN}" >"${PIPE_OUT}" &
+	MCPBASH_PROJECT_ROOT="${WORKSPACE}" MCPBASH_SHUTDOWN_TIMEOUT=10 ./bin/mcp-bash <"${PIPE_IN}" >"${PIPE_OUT}" &
 	echo $! >"${WORKSPACE}/server.pid"
 ) || exit 1
 
@@ -83,5 +83,18 @@ fi
 
 send '{"jsonrpc":"2.0","id":"shutdown","method":"shutdown"}'
 send '{"jsonrpc":"2.0","id":"exit","method":"exit"}'
+
+exec 3>&-
+exec 4<&-
+
+if [ -f "${WORKSPACE}/server.pid" ]; then
+	server_pid="$(cat "${WORKSPACE}/server.pid")"
+	wait_deadline=$((SECONDS + 10))
+	while kill -0 "${server_pid}" 2>/dev/null && [ "${SECONDS}" -lt "${wait_deadline}" ]; do
+		sleep 1
+	done
+	kill "${server_pid}" 2>/dev/null || true
+	wait "${server_pid}" 2>/dev/null || true
+fi
 
 echo "Concurrency stress passed."

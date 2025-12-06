@@ -19,6 +19,7 @@ See [TESTING.md](TESTING.md) for detailed instructions on running the test suite
 
 ## Code style & workflow
 - Shell scripts must pass `./test/lint.sh` (shellcheck + shfmt). Keep functions small and prefer `set -euo pipefail`.
+- Guard against unset variables/arrays when using `set -u`; avoid `BASH_REMATCH` under `set -u` (use parameter expansion or only read captures when a match succeeds).
 - Branches should be short-lived and opened as PRs against `main` with a concise summary of scope and test evidence.
 - Releases should update `CHANGELOG.md` and note any breaking protocol or SDK changes.
 - Contributions are governed by the [Code of Conduct](CODE_OF_CONDUCT.md); escalate concerns via the security contact in `docs/SECURITY.md`.

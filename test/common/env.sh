@@ -4,7 +4,8 @@
 set -euo pipefail
 
 # Root of the repository. Every test relies on this to locate fixtures.
-MCPBASH_TEST_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# Use ${BASH_SOURCE[0]:-$0} to tolerate shells/contexts where BASH_SOURCE is unset under set -u.
+MCPBASH_TEST_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/../.." && pwd)"
 
 # Export canonical environment variables consumed by the server and helpers.
 # MCPBASH_HOME is the framework location (read-only).
@@ -125,6 +126,16 @@ test_tar_supports_flag() {
 }
 
 test_compute_base_tar_key() {
+	if [ -n "${MCPBASH_BASE_TAR_KEY:-}" ] && [ -f "${MCPBASH_BASE_TAR:-}" ] && [ -f "${MCPBASH_BASE_TAR_META:-}" ]; then
+		printf '%s' "${MCPBASH_BASE_TAR_KEY}"
+		return 0
+	fi
+	if [ -z "${MCPBASH_BASE_TAR_KEY:-}" ] && [ -f "${MCPBASH_BASE_TAR_META:-}" ] && [ -f "${MCPBASH_BASE_TAR:-}" ]; then
+		MCPBASH_BASE_TAR_KEY="$(cat "${MCPBASH_BASE_TAR_META}")"
+		export MCPBASH_BASE_TAR_KEY
+		printf '%s' "${MCPBASH_BASE_TAR_KEY}"
+		return 0
+	fi
 	test_init_sha256_cmd || return 1
 
 	local -a include_dirs
@@ -154,11 +165,15 @@ test_compute_base_tar_key() {
 			done
 	)" || return 1
 
+	local computed_key
 	if [ -z "${digests}" ]; then
-		printf '' | "${TEST_SHA256_CMD[@]}" | awk '{print $1}'
+		computed_key="$(printf '' | "${TEST_SHA256_CMD[@]}" | awk '{print $1}')"
 	else
-		printf '%s\n' "${digests}" | "${TEST_SHA256_CMD[@]}" | awk '{print $1}'
+		computed_key="$(printf '%s\n' "${digests}" | "${TEST_SHA256_CMD[@]}" | awk '{print $1}')"
 	fi
+	MCPBASH_BASE_TAR_KEY="${computed_key}"
+	export MCPBASH_BASE_TAR_KEY
+	printf '%s' "${computed_key}"
 }
 
 test_prepare_base_tar() {

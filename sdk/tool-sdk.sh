@@ -11,6 +11,21 @@ MCP_PROGRESS_STREAM="${MCP_PROGRESS_STREAM:-}"
 MCP_LOG_STREAM="${MCP_LOG_STREAM:-}"
 MCP_PROGRESS_TOKEN="${MCP_PROGRESS_TOKEN:-}"
 
+mcp_sdk_load_path_helpers() {
+	if declare -F mcp_path_normalize >/dev/null 2>&1; then
+		return 0
+	fi
+	local script_dir
+	script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+	local helper="${script_dir}/../lib/path.sh"
+	if [ -f "${helper}" ]; then
+		# shellcheck disable=SC1090
+		. "${helper}"
+	fi
+}
+
+mcp_sdk_load_path_helpers
+
 __mcp_sdk_json_escape() {
 	# Return a quoted JSON string literal for the given value.
 	# Prefer the framework-selected JSON tool, then fall back to jq, then a
@@ -128,6 +143,136 @@ mcp_args_get() {
 		printf ''
 		return 1
 	fi
+}
+
+mcp_args_require() {
+	local pointer="$1"
+	local message="${2:-}"
+	local raw
+	raw="$(mcp_args_get "${pointer}" 2>/dev/null || true)"
+	if [ -z "${raw}" ] || [ "${raw}" = "null" ]; then
+		if [ -z "${message}" ]; then
+			message="${pointer} is required"
+		fi
+		mcp_fail_invalid_args "${message}"
+	fi
+	printf '%s' "${raw}"
+}
+
+mcp_args_bool() {
+	local pointer="$1"
+	shift || true
+	local default_set="false"
+	local default_value="false"
+	while [ "$#" -gt 0 ]; do
+		case "$1" in
+		--default)
+			default_set="true"
+			default_value="$2"
+			shift
+			;;
+		*) break ;;
+		esac
+		shift
+	done
+
+	local raw
+	raw="$(mcp_args_get "${pointer}" 2>/dev/null || true)"
+	if [ -z "${raw}" ] || [ "${raw}" = "null" ]; then
+		if [ "${default_set}" = "true" ]; then
+			case "${default_value}" in
+			true | 1)
+				printf 'true'
+				return 0
+				;;
+			*)
+				printf 'false'
+				return 0
+				;;
+			esac
+		fi
+		if [ "${MCPBASH_MODE:-full}" = "minimal" ]; then
+			mcp_fail_invalid_args "${pointer} requires JSON tooling or a default"
+		else
+			mcp_fail_invalid_args "${pointer} is required"
+		fi
+	fi
+
+	case "${raw}" in
+	true | 1) printf 'true' ;;
+	*) printf 'false' ;;
+	esac
+}
+
+mcp_args_int() {
+	local pointer="$1"
+	shift || true
+	# Integer comparisons rely on bash arithmetic (64-bit signed); extremely large values are not supported.
+	local default_set="false"
+	local default_value=""
+	local min_set="false"
+	local max_set="false"
+	local min_value=""
+	local max_value=""
+
+	while [ "$#" -gt 0 ]; do
+		case "$1" in
+		--default)
+			default_set="true"
+			default_value="$2"
+			shift
+			;;
+		--min)
+			min_set="true"
+			min_value="$2"
+			shift
+			;;
+		--max)
+			max_set="true"
+			max_value="$2"
+			shift
+			;;
+		*) break ;;
+		esac
+		shift
+	done
+
+	if [ "${min_set}" = "true" ] && [ "${max_set}" = "true" ]; then
+		if ! [ "${min_value}" -le "${max_value}" ] 2>/dev/null; then
+			mcp_fail_invalid_args "mcp_args_int: --min cannot exceed --max"
+		fi
+	fi
+
+	local raw
+	raw="$(mcp_args_get "${pointer}" 2>/dev/null || true)"
+	if [ -z "${raw}" ] || [ "${raw}" = "null" ]; then
+		if [ "${default_set}" = "true" ]; then
+			raw="${default_value}"
+		else
+			if [ "${MCPBASH_MODE:-full}" = "minimal" ]; then
+				mcp_fail_invalid_args "${pointer} requires JSON tooling or a default"
+			else
+				mcp_fail_invalid_args "${pointer} is required"
+			fi
+		fi
+	fi
+
+	if ! printf '%s' "${raw}" | LC_ALL=C grep -Eq '^-?[0-9]+$'; then
+		mcp_fail_invalid_args "${pointer} must be an integer"
+	fi
+
+	if [ "${min_set}" = "true" ]; then
+		if ! [ "${raw}" -ge "${min_value}" ] 2>/dev/null; then
+			mcp_fail_invalid_args "${pointer} must be >= ${min_value}"
+		fi
+	fi
+	if [ "${max_set}" = "true" ]; then
+		if ! [ "${raw}" -le "${max_value}" ] 2>/dev/null; then
+			mcp_fail_invalid_args "${pointer} must be <= ${max_value}"
+		fi
+	fi
+
+	printf '%s' "${raw}"
 }
 
 mcp_is_cancelled() {
@@ -285,30 +430,80 @@ mcp_roots_count() {
 mcp_roots_contains() {
 	local path="$1"
 	local canonical
-
-	if command -v realpath >/dev/null 2>&1; then
-		canonical="$(realpath -m "${path}" 2>/dev/null)" || canonical="$(realpath "${path}" 2>/dev/null)" || canonical="${path}"
-	else
-		if [[ "${path}" != /* ]]; then
-			canonical="$(cd "$(dirname "${path}")" 2>/dev/null && pwd)/$(basename "${path}")"
-		else
-			canonical="${path}"
-		fi
-	fi
-
-	if [[ "${canonical}" != "/" ]]; then
-		canonical="${canonical%/}"
-	fi
+	canonical="$(mcp_path_normalize --physical "${path}")"
 
 	local root
 	while IFS= read -r root; do
 		[ -n "${root}" ] || continue
-		if [[ "${canonical}" == "${root}" ]] || [[ "${canonical}" == "${root}/"* ]]; then
+		local root_canonical
+		root_canonical="$(mcp_path_normalize --physical "${root}")"
+		if [[ "${canonical}" == "${root_canonical}" ]] || [[ "${canonical}" == "${root_canonical}/"* ]]; then
 			return 0
 		fi
 	done <<<"${MCP_ROOTS_PATHS:-}"
 
 	return 1
+}
+
+mcp_require_path() {
+	local pointer="${1-}"
+	shift || true
+
+	local default_single_root="false"
+	local allow_empty="false"
+	while [ "$#" -gt 0 ]; do
+		case "$1" in
+		--default-to-single-root) default_single_root="true" ;;
+		--allow-empty) allow_empty="true" ;;
+		--)
+			shift
+			break
+			;;
+		*) break ;;
+		esac
+		shift
+	done
+
+	if [ -z "${pointer}" ]; then
+		mcp_fail_invalid_args "mcp_require_path: argument pointer is required"
+	fi
+
+	local raw_value
+	raw_value="$(mcp_args_get "${pointer}" 2>/dev/null || true)"
+	if [ "${raw_value}" = "null" ]; then
+		raw_value=""
+	fi
+
+	if [ -z "${raw_value}" ] && [ "${default_single_root}" = "true" ]; then
+		local roots_count
+		roots_count="$(mcp_roots_count 2>/dev/null || printf '0')"
+		if [ "${roots_count}" -eq 1 ]; then
+			raw_value="$(mcp_roots_list | head -n1)"
+		else
+			mcp_fail_invalid_args "${pointer} is required when zero or multiple roots are configured"
+		fi
+	fi
+
+	if [ -z "${raw_value}" ]; then
+		if [ "${allow_empty}" = "true" ]; then
+			printf ''
+			return 0
+		fi
+		mcp_fail_invalid_args "${pointer} is required"
+	fi
+
+	local normalized
+	normalized="$(mcp_path_normalize --physical "${raw_value}")"
+
+	local roots_count
+	roots_count="$(mcp_roots_count 2>/dev/null || printf '0')"
+	if [ "${roots_count}" -gt 0 ]; then
+		if ! mcp_roots_contains "${normalized}"; then
+			mcp_fail_invalid_args "${pointer} is outside configured MCP roots"
+		fi
+	fi
+
+	printf '%s' "${normalized}"
 }
 
 # Elicitation helpers ---------------------------------------------------------
