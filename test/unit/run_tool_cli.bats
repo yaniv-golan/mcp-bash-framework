@@ -70,7 +70,7 @@ cat >"${PROJECT_ROOT}/tools/slow/tool.meta.json" <<'EOF'
 {
   "name": "test.slow",
   "description": "Sleep to test timeout overrides",
-  "timeoutSecs": 1,
+  "timeoutSecs": 2,
   "inputSchema": { "type": "object" }
 }
 EOF
@@ -78,7 +78,7 @@ cat >"${PROJECT_ROOT}/tools/slow/tool.sh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 source "${MCP_SDK}/tool-sdk.sh"
-sleep 2
+sleep 5
 mcp_emit_json "$(mcp_json_obj message "done")"
 EOF
 chmod +x "${PROJECT_ROOT}/tools/slow/tool.sh"
@@ -110,7 +110,7 @@ printf ' -> timeout override permits slow tool\n'
 if "${REPO_ROOT}/bin/mcp-bash" run-tool test.slow >/dev/null 2>/"${TEST_TMPDIR}/slow_err"; then
 	test_fail "expected slow tool to time out with metadata timeout"
 fi
-slow_override_output="$("${REPO_ROOT}/bin/mcp-bash" run-tool test.slow --timeout 3)"
+slow_override_output="$("${REPO_ROOT}/bin/mcp-bash" run-tool test.slow --timeout 8)"
 slow_message="$(printf '%s\n' "${slow_override_output}" | jq -r 'select(.name=="test.slow") | .structuredContent.message')"
 assert_eq "done" "${slow_message}" "timeout override did not allow tool to complete"
 
