@@ -22,8 +22,12 @@ SUITE_TMP="${MCPBASH_INTEGRATION_TMP:-$(mktemp -d "${TMPDIR:-/tmp}/mcpbash.integ
 LOG_DIR="${SUITE_TMP}/logs"
 mkdir -p "${LOG_DIR}"
 
+# Track if any test failed - used to preserve logs on failure
+SUITE_FAILED=0
+
 cleanup_suite_tmp() {
-	if [ "${KEEP_INTEGRATION_LOGS}" = "1" ]; then
+	# Always preserve logs on failure or if explicitly requested
+	if [ "${KEEP_INTEGRATION_LOGS}" = "1" ] || [ "${SUITE_FAILED}" -ne 0 ]; then
 		return
 	fi
 	if [ -n "${SUITE_TMP}" ] && [ -d "${SUITE_TMP}" ]; then
@@ -126,13 +130,22 @@ run_test() {
 	else
 		printf '[%02d/%02d] %s — %s ... %s (%ss)\n' "${index}" "${total}" "${test_script}" "${desc}" "${FAIL_ICON}" "${elapsed}" >&2
 		printf '  log: %s\n' "${log_file}" >&2
-		tail -n 40 "${log_file}" >&2 || true
+		printf '  --- last 80 lines of log ---\n' >&2
+		tail -n 80 "${log_file}" >&2 || true
+		printf '  --- end of log snippet ---\n' >&2
 		failed=$((failed + 1))
 	fi
 }
 
 index=1
 suite_start="$(date +%s)"
+
+# Log platform info for debugging
+if [ "${VERBOSE}" = "1" ]; then
+	printf 'Platform: %s\n' "$(uname -a)"
+	printf 'Bash: %s\n' "${BASH_VERSION}"
+	printf 'Log dir: %s\n\n' "${LOG_DIR}"
+fi
 
 for test_script in "${TESTS[@]}"; do
 	run_test "${test_script}" "${index}"
@@ -143,12 +156,13 @@ suite_end="$(date +%s)"
 suite_elapsed=$((suite_end - suite_start))
 
 log_note="${LOG_DIR}"
-if [ "${KEEP_INTEGRATION_LOGS}" != "1" ]; then
-	log_note="${LOG_DIR} (will be removed; set KEEP_INTEGRATION_LOGS=1 to preserve)"
+if [ "${KEEP_INTEGRATION_LOGS}" != "1" ] && [ "${failed}" -eq 0 ]; then
+	log_note="${LOG_DIR} (will be removed on success; preserved on failure)"
 fi
 
 printf '\nIntegration summary: %d passed, %d failed (logs: %s, elapsed: %ss)\n' "${passed}" "${failed}" "${log_note}" "${suite_elapsed}"
 
 if [ "${failed}" -ne 0 ]; then
+	SUITE_FAILED=1
 	exit 1
 fi

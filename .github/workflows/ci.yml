@@ -161,12 +161,21 @@ jobs:
         run: test/smoke.sh
       - name: Integration suite
         id: integration
+        env:
+          MCPBASH_INTEGRATION_TMP: ${{ runner.temp }}/mcpbash-integration
         run: |
           set -euo pipefail
           start="$(date +%s)"
           test/integration/run.sh
           end="$(date +%s)"
           echo "duration=$((end - start))" >> "$GITHUB_OUTPUT"
+      - name: Upload integration logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-logs-${{ matrix.os }}
+          path: ${{ runner.temp }}/mcpbash-integration/logs/
+          retention-days: 7
       - name: Enforce Windows integration budget
         if: matrix.os == 'windows-latest'
         run: |
