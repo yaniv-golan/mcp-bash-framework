@@ -142,6 +142,9 @@ printf "\nRunning tests...\n"
 #   # Dry-run validation (checks args/metadata without executing)
 #   run_dry_run "hello" '{"name":"Test"}'
 #
+#   # Pass roots (comma-separated) and timeout overrides
+#   # run_test "hello" '{"name":"Roots"}' "" "--roots" "/repo,/other" "--timeout" "15"
+#
 #   # Skip a test conditionally
 #   if [[ -z "${API_KEY:-}" ]]; then
 #       skip_test "api-tool" "API_KEY not set"
