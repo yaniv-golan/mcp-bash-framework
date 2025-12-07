@@ -52,11 +52,46 @@ printf ' -> validate --explain-defaults emits defaults in text mode\n'
 defaults_output="$("${REPO_ROOT}/bin/mcp-bash" validate --project-root "${PROJECT_ROOT}" --explain-defaults 2>/dev/null)"
 assert_contains "Defaults used: name=cli-flags-test" "${defaults_output}"
 
-printf ' -> config --wrapper emits wrapper script\n'
-wrapper_path="${TEST_TMPDIR}/run.sh"
-"${REPO_ROOT}/bin/mcp-bash" config --project-root "${PROJECT_ROOT}" --wrapper >"${wrapper_path}"
-assert_contains "MCPBASH_PROJECT_ROOT" "$(cat "${wrapper_path}")"
-assert_contains "git clone --depth 1 https://github.com/yaniv-golan/mcp-bash-framework.git" "$(cat "${wrapper_path}")"
+printf ' -> config --wrapper outputs to stdout when non-TTY\n'
+rm -f "${PROJECT_ROOT}/cli-flags-test.sh"
+wrapper_output="$("${REPO_ROOT}/bin/mcp-bash" config --project-root "${PROJECT_ROOT}" --wrapper)"
+assert_contains "#!/usr/bin/env bash" "${wrapper_output}"
+assert_contains "MCPBASH_PROJECT_ROOT" "${wrapper_output}"
+assert_contains "framework not found" "${wrapper_output}"
+assert_contains "git clone https://github.com/yaniv-golan/mcp-bash-framework.git" "${wrapper_output}"
+if [[ -f "${PROJECT_ROOT}/cli-flags-test.sh" ]]; then
+	test_fail "Wrapper file should not be created in non-TTY context"
+fi
+
+printf ' -> config --wrapper rejects invalid server names but still emits script to stdout\n'
+bad_project="${TEST_TMPDIR}/badproj"
+mkdir -p "${bad_project}/server.d"
+printf '{"name":"has spaces"}' >"${bad_project}/server.d/server.meta.json"
+bad_output="$("${REPO_ROOT}/bin/mcp-bash" config --project-root "${bad_project}" --wrapper 2>&1)"
+assert_contains "#!/usr/bin/env bash" "${bad_output}"
+assert_contains "invalid characters" "${bad_output}"
+if [[ -e "${bad_project}/has spaces.sh" ]]; then
+	test_fail "Wrapper file should not be created for invalid server name"
+fi
+
+printf ' -> config --wrapper creates file when stdout is a TTY (script)\n'
+if ! command -v script >/dev/null 2>&1; then
+	printf '    SKIP (script command not available)\n'
+else
+	rm -f "${PROJECT_ROOT}/cli-flags-test.sh"
+	script_exit=0
+	script -q /dev/null "${REPO_ROOT}/bin/mcp-bash" config --project-root "${PROJECT_ROOT}" --wrapper </dev/null || script_exit=$?
+	if [ "${script_exit}" -ne 0 ]; then
+		test_fail "config --wrapper exited with code ${script_exit}"
+	fi
+	if [[ ! -f "${PROJECT_ROOT}/cli-flags-test.sh" ]]; then
+		test_fail "Wrapper file not created in TTY mode"
+	fi
+	if [[ ! -x "${PROJECT_ROOT}/cli-flags-test.sh" ]]; then
+		test_fail "Wrapper file not executable"
+	fi
+	rm -f "${PROJECT_ROOT}/cli-flags-test.sh"
+fi
 
 printf ' -> config --client outputs pasteable JSON\n'
 "${REPO_ROOT}/bin/mcp-bash" config --project-root "${PROJECT_ROOT}" --client claude-desktop >"${TEST_TMPDIR}/client.json"

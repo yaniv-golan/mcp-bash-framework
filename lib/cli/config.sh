@@ -10,6 +10,10 @@ fi
 
 # Globals: usage() from bin, MCPBASH_HOME and runtime globals set by initialize_runtime_paths.
 
+cli_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/cli/common.sh
+. "${cli_dir}/common.sh"
+
 mcp_cli_config() {
 	local project_root=""
 	local mode="show" # show | json | wrapper
@@ -40,6 +44,9 @@ Usage:
   mcp-bash config [--project-root DIR] [--show|--json|--client NAME|--wrapper]
 
 Print MCP client configuration snippets for the current project.
+  --wrapper   Generate auto-install wrapper script.
+              Interactive: creates <project-root>/<name>.sh
+              Piped/redirected: writes to stdout
 EOF
 			exit 0
 			;;
@@ -93,21 +100,54 @@ EOF
 	fi
 
 	if [ "${mode}" = "wrapper" ]; then
-		cat <<EOF
+		local wrapper_content
+		wrapper_content="$(
+			cat <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
-FRAMEWORK_DIR="\${MCPBASH_HOME:-\$HOME/mcp-bash-framework}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+FRAMEWORK_DIR="${MCPBASH_HOME:-$HOME/mcp-bash-framework}"
 
-if [ ! -f "\${FRAMEWORK_DIR}/bin/mcp-bash" ]; then
-	echo "Installing mcp-bash framework..." >&2
-	git clone --depth 1 https://github.com/yaniv-golan/mcp-bash-framework.git "\${FRAMEWORK_DIR}"
+if [ ! -f "${FRAMEWORK_DIR}/bin/mcp-bash" ]; then
+	printf 'Error: mcp-bash framework not found at %s\n' "${FRAMEWORK_DIR}" >&2
+	printf 'Install: git clone https://github.com/yaniv-golan/mcp-bash-framework.git "%s"\n' "${FRAMEWORK_DIR}" >&2
+	exit 1
 fi
 
-export MCPBASH_PROJECT_ROOT="\${SCRIPT_DIR}"
-exec "\${FRAMEWORK_DIR}/bin/mcp-bash" "\$@"
+export MCPBASH_PROJECT_ROOT="${SCRIPT_DIR}"
+exec "${FRAMEWORK_DIR}/bin/mcp-bash" "$@"
 EOF
+		)"
+
+		# Validate server name is safe for use as filename
+		if ! mcp_scaffold_validate_name "${server_name}"; then
+			printf 'Server name "%s" contains invalid characters for filename.\n' "${server_name}" >&2
+			printf 'Use alphanumerics, dot, underscore, dash only. Pipe to cat for stdout.\n' >&2
+			printf '%s\n' "${wrapper_content}"
+			exit 0
+		fi
+
+		# Non-TTY (piped/redirected): write to stdout
+		if [[ ! -t 1 ]]; then
+			printf '%s\n' "${wrapper_content}"
+			exit 0
+		fi
+
+		# Interactive TTY mode: create file in project root
+
+		local wrapper_filename="${server_name}.sh"
+		local wrapper_path="${MCPBASH_PROJECT_ROOT}/${wrapper_filename}"
+
+		if [[ -e "${wrapper_path}" ]]; then
+			printf 'File already exists: %s\n' "${wrapper_path}" >&2
+			printf 'Delete the file and retry, or pipe to cat for stdout.\n' >&2
+			exit 1
+		fi
+
+		printf '%s\n' "${wrapper_content}" >"${wrapper_path}"
+		chmod +x "${wrapper_path}"
+		printf 'Wrapper script created: %s\n' "${wrapper_path}" >&2
 		exit 0
 	fi
 

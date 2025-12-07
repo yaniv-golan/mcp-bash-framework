@@ -99,10 +99,10 @@ The harness wraps `mcp-bash run-tool`, validates your project before running, an
 mcp-bash config --show
 mcp-bash config --json           # machine-readable descriptor (name/command/env)
 mcp-bash config --client cursor  # client-specific snippet
-mcp-bash config --wrapper        # generate wrapper script that auto-installs framework
+mcp-bash config --wrapper        # TTY: creates ./<server-name>.sh; piped/redirected: stdout
 ```
 
-Copy the snippet for your client (Claude Desktop/CLI/Code, Cursor, Windsurf, LibreChat, etc.) and paste it into the appropriate config file. This sets `MCPBASH_PROJECT_ROOT` and the `mcp-bash` command path for you.
+Copy the snippet for your client (Claude Desktop/CLI/Code, Cursor, Windsurf, LibreChat, etc.) and paste it into the appropriate config file. This sets `MCPBASH_PROJECT_ROOT` and the `mcp-bash` command path for you. When run in a terminal (stdout is a TTY), `config --wrapper` writes `<project-root>/<server-name>.sh`, marks it executable, and prints the path to stderr; piping or redirecting prints the wrapper script to stdout.
 
 ## Client Recipes
 

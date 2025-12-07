@@ -11,6 +11,11 @@ Pure Bash MCP server framework. Bash≥3.2 + jq/gojq. Stdio transport only.
   - Initialize in current directory: `bin/mcp-bash init [--name NAME] [--no-hello]`.
   - Scaffold full project in new directory: `bin/mcp-bash scaffold server <name>`.
   - Scaffold assets in an existing project: `bin/mcp-bash scaffold tool|prompt|resource <name>`.
+- Recommended flow to create a new server:
+  1) Install the framework once via the one-liner (no repo clone needed): `curl -fsSL https://raw.githubusercontent.com/yaniv-golan/mcp-bash-framework/main/install.sh | bash` (or pin a version with `--version`; manual `git clone` to `$HOME/mcp-bash-framework` is the fallback).
+  2) Create a project dir and initialize: `mkdir ~/my-mcp-server && cd ~/my-mcp-server && mcp-bash init --name my-mcp-server`.
+  3) Generate wiring for clients: `mcp-bash config --wrapper` (TTY creates `./my-mcp-server.sh`, piped/redirected prints to stdout) or `mcp-bash config --client <client>` for pasteable JSON.
+  4) Add tools/resources/prompts via `mcp-bash scaffold tool|prompt|resource <name>`, then `mcp-bash validate` before wiring to clients.
 - Validation & config:
   - Validate project: `bin/mcp-bash validate [--project-root DIR] [--fix] [--json] [--explain-defaults] [--strict]`.
   - Generate MCP client config snippets / JSON descriptor: `bin/mcp-bash config [--project-root DIR] [--show|--json|--client NAME|--wrapper]`.
