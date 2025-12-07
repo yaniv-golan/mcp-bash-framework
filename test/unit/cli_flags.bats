@@ -63,11 +63,11 @@ if [[ -f "${PROJECT_ROOT}/cli-flags-test.sh" ]]; then
 	test_fail "Wrapper file should not be created in non-TTY context"
 fi
 
-printf ' -> config --wrapper-login emits profile-aware wrapper\n'
-wrapper_login_output="$("${REPO_ROOT}/bin/mcp-bash" config --project-root "${PROJECT_ROOT}" --wrapper-login)"
-assert_contains "SHELL_PROFILE" "${wrapper_login_output}"
-assert_contains '. "${SHELL_PROFILE}"' "${wrapper_login_output}"
-assert_contains "bash-framework.git" "${wrapper_login_output}"
+printf ' -> config --wrapper-env emits profile-aware wrapper\n'
+wrapper_env_output="$("${REPO_ROOT}/bin/mcp-bash" config --project-root "${PROJECT_ROOT}" --wrapper-env)"
+assert_contains "SHELL_PROFILE" "${wrapper_env_output}"
+assert_contains '. "${SHELL_PROFILE}"' "${wrapper_env_output}"
+assert_contains "bash-framework.git" "${wrapper_env_output}"
 
 printf ' -> config --wrapper rejects invalid server names but still emits script to stdout\n'
 bad_project="${TEST_TMPDIR}/badproj"

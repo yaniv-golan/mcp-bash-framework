@@ -102,11 +102,15 @@ mcp-bash config --show
 mcp-bash config --json           # machine-readable descriptor (name/command/env)
 mcp-bash config --client cursor  # client-specific snippet
 mcp-bash config --inspector      # ready-to-run Inspector command (stdio)
-mcp-bash config --wrapper-login  # wrapper that sources your shell profile first (macOS-safe)
+mcp-bash config --wrapper-env    # wrapper that sources your shell profile first (macOS-safe)
 mcp-bash config --wrapper        # TTY: creates ./<server-name>.sh; piped/redirected: stdout
 ```
 
 Copy the snippet for your client (Claude Desktop/CLI/Code, Cursor, Windsurf, LibreChat, etc.) and paste it into the appropriate config file. This sets `MCPBASH_PROJECT_ROOT` and the `mcp-bash` command path for you. When run in a terminal (stdout is a TTY), `config --wrapper` writes `<project-root>/<server-name>.sh`, marks it executable, and prints the path to stderr; piping or redirecting prints the wrapper script to stdout.
+Picking a wrapper:
+- Use `--wrapper` when your PATH/env is already correct in non-login shells (e.g., Linux, or macOS with absolute paths).
+- Use `--wrapper-env` when you need your login shell to set PATH/version managers/vars before starting the server (common on macOS Claude Desktop).
+- Distributing a server? Ship the env wrapper by default for GUI launches (macOS/Windows clients), and include a non-login wrapper or absolute runtime path for CI/WSL/Linux users who want fast, side-effect-free startups.
 
 ## Client Recipes
 
@@ -114,6 +118,7 @@ Every client works the same way: point it at the framework and tell it where you
 
 1. Set `MCPBASH_PROJECT_ROOT=/path/to/your/project`.
 2. Point it at your framework install (`/path/to/mcp-bash-framework/bin/mcp-bash`).
+   - If you generated a wrapper via `mcp-bash config --wrapper` or `--wrapper-env`, you can point clients at `<project-root>/<server-name>.sh`; the wrapper already wires `MCPBASH_PROJECT_ROOT` for you.
 
 - **Claude Desktop**: Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows) and add:
   ```jsonc
@@ -126,7 +131,7 @@ Every client works the same way: point it at the framework and tell it where you
   ```
   - macOS runtime note: Claude Desktop launches servers from a minimal, non-login shell, so your PATH, version managers (nvm/pyenv/uv/rbenv), and env vars from `.zshrc`/`.bash_profile` are skipped. Use absolute paths to runtimes (e.g., `/opt/homebrew/bin/node`) and set missing vars in the `env` block, or generate a login-aware wrapper:
     ```bash
-    mcp-bash config --project-root /Users/you/my-mcp-server --wrapper-login > /Users/you/my-mcp-server/mcp-bash.sh
+    mcp-bash config --project-root /Users/you/my-mcp-server --wrapper-env > /Users/you/my-mcp-server/mcp-bash.sh
     chmod +x /Users/you/my-mcp-server/mcp-bash.sh
     ```
     Then point Claude Desktop at `/Users/you/my-mcp-server/mcp-bash.sh` as the `command`.
@@ -154,11 +159,18 @@ Every client works the same way: point it at the framework and tell it where you
       env:
         MCPBASH_PROJECT_ROOT: /Users/you/my-mcp-server
   ```
-- **OpenAI Agents SDK (Python)**: In your code:
+- **OpenAI Agents SDK (Python)**: Use `MCPServerStdio(params=...)`; the constructor does not take a `name` kwarg.
   ```python
+  import os
+  from agents.mcp import MCPServerStdio
+
   os.environ["MCPBASH_PROJECT_ROOT"] = "/Users/you/my-mcp-server"
-  async with MCPServerStdio(name="mcp-bash",
-                            params={"command": "/Users/you/mcp-bash-framework/bin/mcp-bash"}) as server:
+  async with MCPServerStdio(
+      params={
+          "command": "/Users/you/mcp-bash-framework/bin/mcp-bash",
+          # optionally add args/env/cwd if your server needs them
+      }
+  ) as server:
       ...
   ```
 - **Windows note**: Use Git Bash or WSL so `/usr/bin/env bash` and your paths resolve; adjust paths to `C:\Users\you\...` as needed.

@@ -26,7 +26,7 @@ Fixes:
 - Use absolute paths to runtimes (e.g., `/opt/homebrew/bin/node`) and set required vars in the MCP config `env` block.
 - Or generate a login-aware wrapper that sources your shell profile before exec:
   ```bash
-  mcp-bash config --project-root /path/to/project --wrapper-login > /path/to/project/mcp-bash.sh
+  mcp-bash config --project-root /path/to/project --wrapper-env > /path/to/project/mcp-bash.sh
   chmod +x /path/to/project/mcp-bash.sh
   ```
   Point Claude Desktop at that wrapper as the `command`.
