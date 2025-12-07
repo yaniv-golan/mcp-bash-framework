@@ -78,6 +78,10 @@ mcp_validate_tools() {
 							warnings=$((warnings + 1))
 						fi
 						if [ -n "${t_name}" ]; then
+							if [[ "${t_name}" != *"-"* && "${t_name}" != *"_"* && "${t_name}" != *"."* ]]; then
+								printf '⚠ %s - namespace recommended (prefix tool name, e.g., myproj-hello)\n' "${rel_meta}"
+								warnings=$((warnings + 1))
+							fi
 							local name_ok="true"
 							if [[ ! "${t_name}" =~ ^[A-Za-z0-9_-]{1,64}$ ]]; then
 								printf '⚠ %s - tool name must match ^[a-zA-Z0-9_-]{1,64}$ (Some clients including Claude Desktop reject dots)\n' "${rel_meta}"
