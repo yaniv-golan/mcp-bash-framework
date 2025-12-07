@@ -30,12 +30,13 @@ Fixes:
   chmod +x /path/to/project/mcp-bash.sh
   ```
   Point Claude Desktop at that wrapper as the `command`.
-- macOS quarantine can silently block downloaded binaries/scripts. Clear it, then restart Claude Desktop:
+- macOS quarantine can silently block downloaded binaries/scripts. Browser/DMG/AirDrop downloads are commonly quarantined; CLI fetches (curl/wget/git) often are not. Clear quarantine, then restart Claude Desktop:
   ```bash
   xattr -r -d com.apple.quarantine /path/to/mcp-bash-framework
   xattr -r -d com.apple.quarantine /path/to/project
   ```
-  Helper: `scripts/macos-dequarantine.sh [path]` clears quarantine for the repo or a custom path.
+  Helper: `scripts/macos-dequarantine.sh [path]` clears quarantine for the repo or a custom path. `xattr -cr` removes all extended attributes—only use it on trusted paths.
+- macOS folder permissions: Desktop/Documents/Downloads and similar are TCC-protected. If your server or data lives there, grant Claude Desktop “Full Disk Access” and “Files and Folders” in System Settings to avoid `Operation not permitted` or silent exits.
 
 ## Analyzing Debug Logs
 
