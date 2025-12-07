@@ -159,6 +159,9 @@ EOF
 		local env_arg=""
 		if [ "${has_project_root}" = "true" ]; then
 			local inspector_project_root="${MCPBASH_PROJECT_ROOT}"
+			if [ -d "${inspector_project_root}" ]; then
+				inspector_project_root="$(cd "${inspector_project_root}" && pwd -P 2>/dev/null || printf '%s' "${inspector_project_root}")"
+			fi
 			if command -v cygpath >/dev/null 2>&1; then
 				inspector_project_root="$(cygpath -u "${inspector_project_root}")"
 			fi
