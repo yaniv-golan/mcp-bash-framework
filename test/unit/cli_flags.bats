@@ -80,7 +80,7 @@ printf ' -> config --wrapper creates file when stdout is a TTY (script)\n'
 	else
 		rm -f "${PROJECT_ROOT}/cli-flags-test.sh"
 		script_exit=0
-		script -q /dev/null /bin/sh -c "\"${REPO_ROOT}/bin/mcp-bash\" config --project-root \"${PROJECT_ROOT}\" --wrapper" </dev/null || script_exit=$?
+		script -q /dev/null "${REPO_ROOT}/bin/mcp-bash" config --project-root "${PROJECT_ROOT}" --wrapper </dev/null || script_exit=$?
 		if [ "${script_exit}" -ne 0 ]; then
 			test_fail "config --wrapper exited with code ${script_exit}"
 		fi
