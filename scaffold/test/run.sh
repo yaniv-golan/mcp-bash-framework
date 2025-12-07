@@ -6,8 +6,12 @@ set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export MCPBASH_PROJECT_ROOT="${PROJECT_ROOT}"
 
-# Prevent Git Bash/MSYS path mangling on Windows (e.g., /repo -> C:/Git/repo)
-export MSYS2_ARG_CONV_EXCL="*"
+case "$(uname -s 2>/dev/null)" in
+MINGW* | MSYS*)
+	# Keep path conversion enabled so Windows-native jq/gojq can open temp files.
+	unset MSYS2_ARG_CONV_EXCL
+	;;
+esac
 
 # Locate mcp-bash binary
 MCPBASH_BIN="${MCPBASH_BIN:-}"

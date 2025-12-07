@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Skip MSYS path mangling for Windows shells.
-export MSYS2_ARG_CONV_EXCL="*"
+case "$(uname -s 2>/dev/null)" in
+MINGW* | MSYS*)
+	# Keep path conversion enabled so Windows-native jq/gojq can open temp files.
+	unset MSYS2_ARG_CONV_EXCL
+	;;
+esac
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 project_root="$(cd "${script_dir}/../.." && pwd)"
