@@ -18,6 +18,7 @@ mcp_cli_config() {
 	local project_root=""
 	local mode="show" # show | json | wrapper | inspector
 	local client_filter=""
+	local wrapper_login="false"
 
 	while [ $# -gt 0 ]; do
 		case "$1" in
@@ -34,6 +35,10 @@ mcp_cli_config() {
 		--wrapper)
 			mode="wrapper"
 			;;
+		--wrapper-login | --login-wrapper)
+			mode="wrapper"
+			wrapper_login="true"
+			;;
 		--inspector)
 			mode="inspector"
 			;;
@@ -44,12 +49,13 @@ mcp_cli_config() {
 		--help | -h)
 			cat <<'EOF'
 Usage:
-  mcp-bash config [--project-root DIR] [--show|--json|--client NAME|--wrapper|--inspector]
+  mcp-bash config [--project-root DIR] [--show|--json|--client NAME|--wrapper|--wrapper-login|--inspector]
 
 Print MCP client configuration snippets for the current project.
   --wrapper   Generate auto-install wrapper script.
               Interactive: creates <project-root>/<name>.sh
               Piped/redirected: writes to stdout
+  --wrapper-login Same as --wrapper but sources your shell profile (~/.zshrc, ~/.bash_profile, ~/.bashrc) before exec.
   --inspector Print a ready-to-run MCP Inspector command (stdio transport)
 EOF
 			exit 0
@@ -105,8 +111,42 @@ EOF
 
 	if [ "${mode}" = "wrapper" ]; then
 		local wrapper_content
-		wrapper_content="$(
-			cat <<'EOF'
+		if [ "${wrapper_login}" = "true" ]; then
+			wrapper_content="$(
+				cat <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+FRAMEWORK_DIR="${MCPBASH_HOME:-$HOME/mcp-bash-framework}"
+SHELL_PROFILE=""
+
+if [ -f "${HOME}/.zshrc" ]; then
+	SHELL_PROFILE="${HOME}/.zshrc"
+elif [ -f "${HOME}/.bash_profile" ]; then
+	SHELL_PROFILE="${HOME}/.bash_profile"
+elif [ -f "${HOME}/.bashrc" ]; then
+	SHELL_PROFILE="${HOME}/.bashrc"
+fi
+
+if [ -n "${SHELL_PROFILE}" ]; then
+	# shellcheck source=/dev/null
+	. "${SHELL_PROFILE}"
+fi
+
+if [ ! -f "${FRAMEWORK_DIR}/bin/mcp-bash" ]; then
+	printf 'Error: mcp-bash framework not found at %s\n' "${FRAMEWORK_DIR}" >&2
+	printf 'Install: git clone https://github.com/yaniv-golan/mcp-bash-framework.git "%s"\n' "${FRAMEWORK_DIR}" >&2
+	exit 1
+fi
+
+export MCPBASH_PROJECT_ROOT="${SCRIPT_DIR}"
+exec "${FRAMEWORK_DIR}/bin/mcp-bash" "$@"
+EOF
+			)"
+		else
+			wrapper_content="$(
+				cat <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
@@ -122,7 +162,8 @@ fi
 export MCPBASH_PROJECT_ROOT="${SCRIPT_DIR}"
 exec "${FRAMEWORK_DIR}/bin/mcp-bash" "$@"
 EOF
-		)"
+			)"
+		fi
 
 		# Validate server name is safe for use as filename
 		if ! mcp_scaffold_validate_name "${server_name}"; then

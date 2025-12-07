@@ -18,6 +18,25 @@ Output:
 mcp-bash debug: logging to /tmp/mcpbash.debug.12345/payload.debug.log
 ```
 
+## Claude Desktop on macOS (PATH + quarantine)
+
+Claude Desktop starts stdio servers from a minimal, non-login shell on macOS, so `~/.zshrc`/`~/.bash_profile` are skipped and PATH/env customizations (nvm/pyenv/uv/rbenv, etc.) are missing. Common symptoms: `ENOENT` / `command not found`, `transport closed unexpectedly`, missing env vars. Folder location (Desktop/Documents/etc.) does not matter; the environment does.
+
+Fixes:
+- Use absolute paths to runtimes (e.g., `/opt/homebrew/bin/node`) and set required vars in the MCP config `env` block.
+- Or generate a login-aware wrapper that sources your shell profile before exec:
+  ```bash
+  mcp-bash config --project-root /path/to/project --wrapper-login > /path/to/project/mcp-bash.sh
+  chmod +x /path/to/project/mcp-bash.sh
+  ```
+  Point Claude Desktop at that wrapper as the `command`.
+- macOS quarantine can silently block downloaded binaries/scripts. Clear it, then restart Claude Desktop:
+  ```bash
+  xattr -r -d com.apple.quarantine /path/to/mcp-bash-framework
+  xattr -r -d com.apple.quarantine /path/to/project
+  ```
+  Helper: `scripts/macos-dequarantine.sh [path]` clears quarantine for the repo or a custom path.
+
 ## Analyzing Debug Logs
 
 Use the provided analysis script:

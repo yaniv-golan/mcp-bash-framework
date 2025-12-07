@@ -48,6 +48,8 @@ EOF
 		local path_ok="false"
 		local jq_path gojq_path json_tool="none"
 		local project_root="" server_meta_valid="null" tools_count=0 registry_exists="false"
+		local is_darwin="false" quarantine_supported="false"
+		local framework_quarantine="null" project_quarantine="null"
 
 		if [ -d "${framework_home}" ]; then
 			framework_exists="true"
@@ -104,6 +106,27 @@ EOF
 			fi
 		fi
 
+		if [ "$(uname -s 2>/dev/null || printf '')" = "Darwin" ]; then
+			is_darwin="true"
+			if command -v xattr >/dev/null 2>&1; then
+				quarantine_supported="true"
+				if [ -e "${framework_home}/bin/mcp-bash" ] && xattr -p com.apple.quarantine "${framework_home}/bin/mcp-bash" >/dev/null 2>&1; then
+					framework_quarantine="true"
+					errors=$((errors + 1))
+				elif [ -e "${framework_home}/bin/mcp-bash" ]; then
+					framework_quarantine="false"
+				fi
+				if [ -n "${project_root}" ] && [ -e "${project_root}" ] && xattr -p com.apple.quarantine "${project_root}" >/dev/null 2>&1; then
+					project_quarantine="true"
+					errors=$((errors + 1))
+				elif [ -n "${project_root}" ] && [ -e "${project_root}" ]; then
+					project_quarantine="false"
+				fi
+			else
+				warnings=$((warnings + 1))
+			fi
+		fi
+
 		cat <<EOF
 {
   "framework": {
@@ -117,6 +140,12 @@ EOF
     "jqPath": $(mcp_json_escape_string "${jq_path}"),
     "gojqPath": $(mcp_json_escape_string "${gojq_path}"),
     "jsonTool": $(mcp_json_escape_string "${json_tool}")
+  },
+  "macOS": {
+    "detected": ${is_darwin},
+    "quarantineCheckSupported": ${quarantine_supported},
+    "frameworkQuarantined": ${framework_quarantine},
+    "projectQuarantined": ${project_quarantine}
   },
   "project": {
     "root": $(mcp_json_escape_string "${project_root}"),
@@ -234,6 +263,33 @@ EOF
 		fi
 	else
 		printf '  (no project detected in current directory)\n'
+	fi
+
+	if [ "$(uname -s 2>/dev/null || printf '')" = "Darwin" ]; then
+		printf '\nmacOS checks:\n'
+		if ! command -v xattr >/dev/null 2>&1; then
+			printf '  ⚠ xattr not found; cannot check com.apple.quarantine\n'
+			warnings=$((warnings + 1))
+		else
+			local framework_binary="${framework_home}/bin/mcp-bash"
+			if [ -e "${framework_binary}" ] && xattr -p com.apple.quarantine "${framework_binary}" >/dev/null 2>&1; then
+				printf '  ✗ Framework binary is quarantined: %s\n' "${framework_binary}"
+				printf '    Clear with: xattr -d com.apple.quarantine "%s"\n' "${framework_binary}"
+				errors=$((errors + 1))
+			else
+				printf '  ✓ Framework binary not quarantined\n'
+			fi
+
+			if [ -n "${detected_root}" ] && [ -e "${detected_root}" ]; then
+				if xattr -p com.apple.quarantine "${detected_root}" >/dev/null 2>&1; then
+					printf '  ✗ Project path is quarantined: %s\n' "${detected_root}"
+					printf '    Clear with: xattr -r -d com.apple.quarantine "%s"\n' "${detected_root}"
+					errors=$((errors + 1))
+				else
+					printf '  ✓ Project path not quarantined\n'
+				fi
+			fi
+		fi
 	fi
 
 	# Optional dependencies -----------------------------------------------

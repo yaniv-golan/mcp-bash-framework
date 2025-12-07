@@ -101,6 +101,7 @@ mcp-bash config --show
 mcp-bash config --json           # machine-readable descriptor (name/command/env)
 mcp-bash config --client cursor  # client-specific snippet
 mcp-bash config --inspector      # ready-to-run Inspector command (stdio)
+mcp-bash config --wrapper-login  # wrapper that sources your shell profile first (macOS-safe)
 mcp-bash config --wrapper        # TTY: creates ./<server-name>.sh; piped/redirected: stdout
 ```
 
@@ -122,6 +123,18 @@ Every client works the same way: point it at the framework and tell it where you
     }
   }
   ```
+  - macOS runtime note: Claude Desktop launches servers from a minimal, non-login shell, so your PATH, version managers (nvm/pyenv/uv/rbenv), and env vars from `.zshrc`/`.bash_profile` are skipped. Use absolute paths to runtimes (e.g., `/opt/homebrew/bin/node`) and set missing vars in the `env` block, or generate a login-aware wrapper:
+    ```bash
+    mcp-bash config --project-root /Users/you/my-mcp-server --wrapper-login > /Users/you/my-mcp-server/mcp-bash.sh
+    chmod +x /Users/you/my-mcp-server/mcp-bash.sh
+    ```
+    Then point Claude Desktop at `/Users/you/my-mcp-server/mcp-bash.sh` as the `command`.
+  - macOS quarantine: downloaded binaries/scripts may be blocked silently. If you see `ENOENT`, `transport closed unexpectedly`, or `permission denied` despite correct paths, clear quarantine and restart Claude Desktop:
+    ```bash
+    xattr -r -d com.apple.quarantine /Users/you/mcp-bash-framework
+    xattr -r -d com.apple.quarantine /Users/you/my-mcp-server
+    ```
+    Helper: `scripts/macos-dequarantine.sh [path]` will clear quarantine for the repo (or a specific path).
 - **Claude CLI/Claude Code**: Run once:
   ```bash
   claude mcp add --transport stdio mcp-bash \

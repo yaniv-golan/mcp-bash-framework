@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - `mcp-bash config --inspector` prints a ready-to-run MCP Inspector command (stdio transport) with `MCPBASH_PROJECT_ROOT` pre-populated for the current project.
 - Test session helper `test/common/session.sh` for sequential interactive tool calls in tests; documented in `TESTING.md` (note: skips notifications, overwrites EXIT traps).
+- `mcp-bash config --wrapper-login` generates a wrapper that sources `.zshrc`/`.bash_profile`/`.bashrc` before exec (for Claude Desktop macOS non-login shells).
+- `mcp-bash doctor` detects macOS `com.apple.quarantine` on the framework binary and project path and prints remediation commands; helper script `scripts/macos-dequarantine.sh` added.
+- README and debugging docs include macOS Claude Desktop troubleshooting (PATH/env gaps, quarantine clearing, wrapper guidance).
 
 ### Fixed
 - Startup diagnostics detect stdio transport and log to stderr (transport, cwd, project root, JSON tool) to keep stdout JSON-only for clients.
