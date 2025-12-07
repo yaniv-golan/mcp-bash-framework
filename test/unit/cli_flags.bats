@@ -75,17 +75,17 @@ if [[ -e "${bad_project}/has spaces.sh" ]]; then
 fi
 
 printf ' -> config --wrapper creates file when stdout is a TTY (script)\n'
-if ! command -v script >/dev/null 2>&1; then
-	printf '    SKIP (script command not available)\n'
-else
-	rm -f "${PROJECT_ROOT}/cli-flags-test.sh"
-	script_exit=0
-	script -q /dev/null "${REPO_ROOT}/bin/mcp-bash" config --project-root "${PROJECT_ROOT}" --wrapper </dev/null || script_exit=$?
-	if [ "${script_exit}" -ne 0 ]; then
-		test_fail "config --wrapper exited with code ${script_exit}"
-	fi
-	if [[ ! -f "${PROJECT_ROOT}/cli-flags-test.sh" ]]; then
-		test_fail "Wrapper file not created in TTY mode"
+	if ! command -v script >/dev/null 2>&1; then
+		printf '    SKIP (script command not available)\n'
+	else
+		rm -f "${PROJECT_ROOT}/cli-flags-test.sh"
+		script_exit=0
+		script -q /dev/null /bin/sh -c "\"${REPO_ROOT}/bin/mcp-bash\" config --project-root \"${PROJECT_ROOT}\" --wrapper" </dev/null || script_exit=$?
+		if [ "${script_exit}" -ne 0 ]; then
+			test_fail "config --wrapper exited with code ${script_exit}"
+		fi
+		if [[ ! -f "${PROJECT_ROOT}/cli-flags-test.sh" ]]; then
+			test_fail "Wrapper file not created in TTY mode"
 	fi
 	if [[ ! -x "${PROJECT_ROOT}/cli-flags-test.sh" ]]; then
 		test_fail "Wrapper file not executable"
