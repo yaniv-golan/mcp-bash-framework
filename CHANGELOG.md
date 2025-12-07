@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Replaced `mcp-bash scaffold server` with `mcp-bash new <name> [--no-hello]`; server scaffolding now lives under the new command and `scaffold server` is removed.
 - `mcp-bash config --wrapper` now creates `<project-root>/<server-name>.sh` and `chmod +x` when stdout is a TTY (with filename validation and collision checks) while preserving stdout output for piped/redirected use; help/docs/tests updated.
 - Documentation clarifies the MCP name regex (alphanumeric, underscores, hyphens only) and switches tool examples to hyphenated names to match the limitations of some clients; `validate` now warns on names outside the supported regex and scaffolding rejects dotted names up front.
+- JSON tooling detection success logs are quiet by default; set `MCPBASH_LOG_JSON_TOOL=log` or `MCPBASH_LOG_VERBOSE=true` to surface them. Minimal-mode warnings still emit when JSON tooling is missing.
 
 ## [0.4.0] - 2025-12-06
 

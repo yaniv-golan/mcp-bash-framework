@@ -14,7 +14,7 @@
 : "${MCPBASH_CLEANUP_REGISTERED:=false}"
 : "${MCPBASH_JOB_CONTROL_ENABLED:=false}"
 : "${MCPBASH_PROCESS_GROUP_WARNED:=false}"
-: "${MCPBASH_LOG_JSON_TOOL:=log}"
+: "${MCPBASH_LOG_JSON_TOOL:=quiet}"
 : "${MCPBASH_BOOTSTRAP_STAGED:=false}"
 : "${MCPBASH_BOOTSTRAP_TMP_DIR:=}"
 : "${MCPBASH_HOME:=}"
@@ -385,7 +385,7 @@ mcp_runtime_detect_json_tool() {
 		MCPBASH_JSON_TOOL="gojq"
 		MCPBASH_JSON_TOOL_BIN="${candidate}"
 		MCPBASH_MODE="full"
-		if mcp_runtime_log_allowed && [ "${MCPBASH_LOG_JSON_TOOL}" != "quiet" ]; then
+		if mcp_runtime_log_allowed && { [ "${MCPBASH_LOG_JSON_TOOL}" = "log" ] || mcp_logging_verbose_enabled; }; then
 			if mcp_logging_verbose_enabled; then
 				printf '%s\n' "JSON tooling: gojq at ${candidate}; full protocol surface enabled." >&2
 			else
@@ -400,7 +400,7 @@ mcp_runtime_detect_json_tool() {
 		MCPBASH_JSON_TOOL="jq"
 		MCPBASH_JSON_TOOL_BIN="${candidate}"
 		MCPBASH_MODE="full"
-		if mcp_runtime_log_allowed && [ "${MCPBASH_LOG_JSON_TOOL}" != "quiet" ]; then
+		if mcp_runtime_log_allowed && { [ "${MCPBASH_LOG_JSON_TOOL}" = "log" ] || mcp_logging_verbose_enabled; }; then
 			if mcp_logging_verbose_enabled; then
 				printf '%s\n' "JSON tooling: jq at ${candidate}; full protocol surface enabled." >&2
 			else
@@ -415,7 +415,7 @@ mcp_runtime_detect_json_tool() {
 	# shellcheck disable=SC2034
 	MCPBASH_JSON_TOOL_BIN=""
 	MCPBASH_MODE="minimal"
-	if mcp_runtime_log_allowed && [ "${MCPBASH_LOG_JSON_TOOL}" != "quiet" ]; then
+	if mcp_runtime_log_allowed; then
 		printf '%s\n' 'No gojq/jq found; entering minimal mode with reduced capabilities.' >&2
 	fi
 	return 0
