@@ -158,7 +158,7 @@ EOF
 	if [ "${mode}" = "inspector" ]; then
 		local env_arg=""
 		if [ "${has_project_root}" = "true" ]; then
-			env_arg="-e MCPBASH_PROJECT_ROOT=$(printf '%q' "${MCPBASH_PROJECT_ROOT}")"
+			env_arg="-e MCPBASH_PROJECT_ROOT=${MCPBASH_PROJECT_ROOT}"
 		fi
 		local command_escaped
 		command_escaped="$(printf '%q' "${command_path}")"
