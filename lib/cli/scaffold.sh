@@ -25,6 +25,8 @@ mcp_scaffold_tool() {
 	chmod +x "${target_dir}/tool.sh"
 	mcp_template_render "${scaffold_dir}/tool.meta.json" "${target_dir}/tool.meta.json" "__NAME__=${name}"
 	mcp_template_render "${scaffold_dir}/README.md" "${target_dir}/README.md" "__NAME__=${name}"
+	mcp_template_render "${scaffold_dir}/smoke.sh" "${target_dir}/smoke.sh" "__NAME__=${name}"
+	chmod +x "${target_dir}/smoke.sh"
 	printf 'Scaffolded tool at %s\n' "${target_dir}"
 	exit 0
 }

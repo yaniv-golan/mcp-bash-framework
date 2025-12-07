@@ -18,6 +18,8 @@
 ./test/smoke.sh
 ```
 
+- Scaffolded tools include a per-tool smoke script at `tools/<name>/smoke.sh`; run it after editing a tool to ensure stdout JSON is valid. Update its sample args if you change `tool.meta.json`.
+
 ## Unit Tests
 
 ```

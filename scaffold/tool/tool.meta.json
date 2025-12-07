@@ -3,6 +3,7 @@
   "description": "One-line summary for __NAME__ tool",
   "inputSchema": {
     "type": "object",
+    "required": ["name"],
     "properties": {
       "name": {
         "type": "string",

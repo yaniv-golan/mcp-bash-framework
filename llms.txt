@@ -12,6 +12,7 @@ Key points:
 - **Protocol version**: Targets MCP `2025-06-18` with negotiated downgrades to `2025-03-26` and `2024-11-05`.
 - **Cross-platform**: macOS, Linux, and Windows (Git Bash/WSL) support.
 - **CLI `run-tool`**: Direct tool invocation with roots, dry-run, timeout override, verbose stderr, `--print-env`; covered by unit and example smoke tests.
+- **Scaffolded smoke scripts**: Each scaffolded tool ships with `tools/<name>/smoke.sh` to validate stdout JSON quickly; update the sample args in the script if you change `tool.meta.json`.
 
 ## Docs
 

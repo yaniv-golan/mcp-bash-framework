@@ -73,6 +73,7 @@ TESTS=(
 	"test_project_root_detection.sh"
 	"test_elicitation.sh"
 	"test_cli_scaffold_test.sh"
+	"test_scaffold_smoke.sh"
 )
 
 passed=0

@@ -81,6 +81,7 @@ mcp-bash scaffold tool check-disk
 ```
 
 This scaffolds `tools/check-disk/tool.sh` and `tools/check-disk/tool.meta.json` in your project. You write the logic.
+Each scaffolded tool also includes `tools/check-disk/smoke.sh`—run it after edits to ensure your tool’s stdout is valid JSON (update the sample args in the script if you change `tool.meta.json`).
 
 ### 3.5 (Optional) Add a Test Harness
 

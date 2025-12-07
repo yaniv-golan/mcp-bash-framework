@@ -236,6 +236,7 @@ Pure Bash MCP server framework. Bash≥3.2 + jq/gojq. Stdio transport only.
 - Test suites (from repo root; see `TESTING.md`):
   - Lint: `./test/lint.sh`.
   - Smoke: `./test/smoke.sh`.
+  - Per-tool smoke: each scaffolded tool ships `tools/<name>/smoke.sh` to validate stdout JSON; update its sample args when you change `tool.meta.json`.
   - Unit: `./test/unit/run.sh`.
   - Integration: `./test/integration/run.sh`.
   - Examples: `./test/examples/run.sh` (NDJSON harness + `run-tool` smoke for hello).

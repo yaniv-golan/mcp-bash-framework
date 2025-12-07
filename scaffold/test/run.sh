@@ -154,6 +154,8 @@ printf "\nRunning tests...\n"
 #
 #   # Basic tool invocation
 #   run_test "hello" '{"name":"World"}'
+#   # Run all per-tool smoke scripts (if present)
+#   # for f in "${PROJECT_ROOT}"/tools/*/smoke.sh; do [ -x "$f" ] && "$f" || exit 1; done
 #
 #   # Test with description
 #   run_test "hello" '{}' "default greeting"
