@@ -19,6 +19,20 @@ REQUESTS="${TEST_TMPDIR}/requests.ndjson"
 RESPONSES="${TEST_TMPDIR}/responses.ndjson"
 STDERR_LOG="${TEST_TMPDIR}/stderr.log"
 
+# Dump diagnostic info on failure (stderr/responses are redirected separately)
+dump_diagnostics() {
+	local exit_code=$?
+	if [ "${exit_code}" -ne 0 ]; then
+		printf '\n--- mcp-bash stderr ---\n' >&2
+		cat "${STDERR_LOG}" 2>/dev/null || printf '(no stderr log)\n' >&2
+		printf '--- mcp-bash responses ---\n' >&2
+		cat "${RESPONSES}" 2>/dev/null || printf '(no responses)\n' >&2
+		printf '--- end diagnostics ---\n' >&2
+	fi
+	test_cleanup_tmpdir
+}
+trap dump_diagnostics EXIT
+
 cat <<'JSON' >"${REQUESTS}"
 {"jsonrpc":"2.0","id":"bootstrap-init","method":"initialize","params":{}}
 {"jsonrpc":"2.0","method":"notifications/initialized"}
