@@ -1043,8 +1043,9 @@ mcp_tools_call() {
 		trace_ps4="$(mcp_tools_trace_ps4)"
 		local safe_name
 		safe_name="$(printf '%s' "${name}" | tr -c 'A-Za-z0-9._-' '_')"
-		mkdir -p "${MCPBASH_STATE_DIR}" 2>/dev/null || true
-		trace_file="${MCPBASH_STATE_DIR}/trace.${safe_name}.${BASHPID:-$$}.${RANDOM}.log"
+		local trace_base="${MCPBASH_LOG_DIR:-${MCPBASH_STATE_DIR}}"
+		mkdir -p "${trace_base}" 2>/dev/null || true
+		trace_file="${trace_base}/trace.${safe_name}.${BASHPID:-$$}.${RANDOM}.log"
 		# Prefer bash -x when we can detect shell scripts.
 		if [ "${tool_runner[0]}" = "bash" ]; then
 			tool_runner=(bash -x "${tool_runner[@]:1}")

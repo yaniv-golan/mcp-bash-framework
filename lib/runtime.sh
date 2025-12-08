@@ -28,6 +28,7 @@
 : "${MCPBASH_CI_MODE:=false}"
 : "${MCPBASH_KEEP_LOGS:=false}"
 : "${MCPBASH_LOG_LEVEL_DEFAULT:=info}"
+: "${MCPBASH_LOG_DIR:=}"
 
 # Path normalization helpers (Bash 3.2+). Load if not already present.
 if ! command -v mcp_path_normalize >/dev/null 2>&1; then
@@ -205,7 +206,11 @@ mcp_runtime_init_paths() {
 			MCPBASH_KEEP_LOGS="true"
 		fi
 		if [ -z "${MCPBASH_LOG_LEVEL:-}" ] && [ -z "${MCPBASH_LOG_LEVEL_DEFAULT:-}" ]; then
-			MCPBASH_LOG_LEVEL_DEFAULT="info"
+			if [ "${MCPBASH_CI_VERBOSE:-false}" = "true" ]; then
+				MCPBASH_LOG_LEVEL_DEFAULT="debug"
+			else
+				MCPBASH_LOG_LEVEL_DEFAULT="info"
+			fi
 		fi
 	fi
 
@@ -273,6 +278,21 @@ mcp_runtime_init_paths() {
 		if [ -z "${MCPBASH_LOCK_ROOT}" ]; then
 			MCPBASH_LOCK_ROOT="${MCPBASH_STATE_DIR}/locks"
 		fi
+	fi
+
+	# Log directory (CI mode only): default to a dedicated path when unset.
+	if [ "${MCPBASH_CI_MODE:-false}" = "true" ] && [ -z "${MCPBASH_LOG_DIR}" ]; then
+		local log_pid_component
+		if [ -n "${BASHPID-}" ]; then
+			log_pid_component="${BASHPID}"
+		else
+			log_pid_component="$$"
+		fi
+		local log_seed="${MCPBASH_STATE_SEED:-${log_pid_component}}"
+		MCPBASH_LOG_DIR="${MCPBASH_TMP_ROOT}/mcpbash.logs.${PPID}.${log_pid_component}.${log_seed}"
+	fi
+	if [ -n "${MCPBASH_LOG_DIR}" ]; then
+		(umask 077 && mkdir -p "${MCPBASH_LOG_DIR}") >/dev/null 2>&1 || true
 	fi
 
 	# Create state directory (needed for fastpath caching in registry refresh)
