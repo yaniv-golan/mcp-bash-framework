@@ -19,3 +19,6 @@ MCP Inspector (stdio) quickstart:
 npx @modelcontextprotocol/inspector --transport stdio -- ./examples/run 07-elicitation
 ```
 The `--` separator prevents the inspector from treating `./examples/run` as its own flag. Replace `07-elicitation` with any example ID (e.g., `advanced/ffmpeg-studio`).
+
+New example:
+- `09-embedded-resources` shows how a tool embeds a file in the MCP response (`type:"resource"`).
