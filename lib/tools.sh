@@ -118,11 +118,13 @@ mcp_tools_manual_finalize() {
 			inputSchema: (.inputSchema // .arguments // {type: "object", properties: {}}),
 			timeoutSecs: (.timeoutSecs // null),
 			outputSchema: (.outputSchema // null),
-			icons: (.icons // null)
+			icons: (.icons // null),
+			annotations: (.annotations // null)
 		}) |
 		map(
 			if .outputSchema == null then del(.outputSchema) else . end |
-			if .icons == null then del(.icons) else . end
+			if .icons == null then del(.icons) else . end |
+			if .annotations == null then del(.annotations) else . end
 		) |
 		sort_by(.name) |
 		{
@@ -683,8 +685,8 @@ mcp_tools_scan() {
 			local arguments="{}"
 			local timeout=""
 			local output_schema="null"
-
 			local icons="null"
+			local annotations="null"
 
 			if [ -f "${meta_json}" ]; then
 				# Read fields individually to avoid collapsing empty columns
@@ -696,6 +698,7 @@ mcp_tools_scan() {
 				timeout="$("${MCPBASH_JSON_TOOL_BIN}" -r '.timeoutSecs // ""' "${meta_json}" 2>/dev/null || printf '')"
 				output_schema="$("${MCPBASH_JSON_TOOL_BIN}" -c '.outputSchema // null' "${meta_json}" 2>/dev/null || printf 'null')"
 				icons="$("${MCPBASH_JSON_TOOL_BIN}" -c '.icons // null' "${meta_json}" 2>/dev/null || printf 'null')"
+				annotations="$("${MCPBASH_JSON_TOOL_BIN}" -c '.annotations // null' "${meta_json}" 2>/dev/null || printf 'null')"
 				# Convert local file paths to data URIs
 				local meta_dir
 				meta_dir="$(dirname "${meta_json}")"
@@ -720,6 +723,7 @@ mcp_tools_scan() {
 					timeout="$(echo "${json_payload}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.timeoutSecs // empty' 2>/dev/null)"
 					output_schema="$(echo "${json_payload}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.outputSchema // null' 2>/dev/null)"
 					icons="$(echo "${json_payload}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.icons // null' 2>/dev/null)"
+					annotations="$(echo "${json_payload}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.annotations // null' 2>/dev/null)"
 					# Convert local file paths to data URIs (relative to tool script dir)
 					local script_dir
 					script_dir="$(dirname "${path}")"
@@ -738,6 +742,7 @@ mcp_tools_scan() {
 				--arg timeout "$timeout" \
 				--argjson out "$output_schema" \
 				--argjson icons "$icons" \
+				--argjson annotations "$annotations" \
 				'{
 					name: $name,
 					description: $desc,
@@ -746,7 +751,8 @@ mcp_tools_scan() {
 					timeoutSecs: (if ($timeout|test("^[0-9]+$")) then ($timeout|tonumber) else null end)
 				}
 				+ (if $out != null then {outputSchema: $out} else {} end)
-				+ (if $icons != null then {icons: $icons} else {} end)' >>"${items_file}"
+				+ (if $icons != null then {icons: $icons} else {} end)
+				+ (if $annotations != null then {annotations: $annotations} else {} end)' >>"${items_file}"
 		done
 	fi
 

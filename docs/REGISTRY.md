@@ -55,7 +55,11 @@ Tool names must match `^[a-zA-Z0-9_-]{1,64}$`; Some clients, including Claude De
       "timeoutSecs": 5,
       "icons": [
         {"src": "https://example.com/hello-icon.svg", "mimeType": "image/svg+xml"}
-      ]
+      ],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
+      }
     }
   ],
   "hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
@@ -82,6 +86,14 @@ Tool names must match `^[a-zA-Z0-9_-]{1,64}$`; Some clients, including Claude De
 }
 ```
 Local paths are resolved relative to the `.meta.json` file location. For stdio transport, data URIs are preferred since clients don't need network access to display the icon.
+
+**Annotations format (MCP 2025-03-26):** The optional `annotations` object provides behavior hints for clients:
+- `readOnlyHint` (boolean, default `false`): If `true`, the tool does not modify its environment.
+- `destructiveHint` (boolean, default `true`): If `true`, the tool may destructively modify its environment. Only relevant when `readOnlyHint` is `false`.
+- `idempotentHint` (boolean, default `false`): If `true`, calling the tool multiple times with the same arguments has the same effect as calling it once.
+- `openWorldHint` (boolean, default `true`): If `true`, the tool may interact with external systems or the environment.
+
+Annotations help clients present appropriate UI cues (e.g., confirmation dialogs for destructive tools).
 
 Metadata precedence order:
 1. `<tool>.meta.json`

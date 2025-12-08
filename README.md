@@ -48,14 +48,14 @@ mcp-bash targets the **2025-11-25** MCP specification with negotiated downgrades
 | Category | Coverage | Notes |
 |----------|----------|-------|
 | Core Protocol | ✅ Full | Lifecycle, ping, capabilities, downgrades |
-| Tools | ⚠️ Near-full | list, call, icons, errors, listChanged (annotations not yet) |
+| Tools | ✅ Full | list, call, icons, errors, listChanged, annotations |
 | Resources | ⚠️ Near-full | list, read, subscriptions, binary (templates stub only) |
 | Prompts | ✅ Full | list, get, arguments, icons |
 | Utilities | ✅ Full | Progress, cancellation, logging, completion |
 | Elicitation | ✅ Full | Form, URL, enum, multi-choice modes |
 | Roots | ✅ Full | Server→client request, listChanged |
 
-**Not yet implemented:** Audio content, async job/poll, sampling, server-identity discovery, tool annotations.
+**Not yet implemented:** Audio content, async job/poll, sampling, server-identity discovery.
 
 Transport is stdio-only by design. See [Remote Connectivity](docs/REMOTE.md) for HTTP/SSE proxy options.
 

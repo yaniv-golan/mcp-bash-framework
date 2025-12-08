@@ -23,7 +23,7 @@ This table shows when features were introduced in the MCP specification and when
 | Streamable HTTP Transport | 2025-03-26 | ❌ Not supported | ❌ Not supported | Stdio-only design |
 | **Tools** | | | | |
 | Tools (list/call) | 2024-11-05 | 0.1.0 | ✅ Full | Auto-discovery and execution |
-| Tool Annotations | 2025-03-26 | ❌ Not yet | ❌ Not yet | Read-only/destructive behavior metadata |
+| Tool Annotations | 2025-03-26 | 0.6.0 | ✅ Full | Read-only/destructive behavior metadata |
 | Tools listChanged Notification | 2025-06-18 | 0.1.0 | ✅ Full | Registry change detection |
 | Request Metadata (`_meta`) | 2025-06-18 | 0.6.0 | ✅ Full | Client-provided metadata surfaced to tools (MCP_TOOL_META_JSON / MCP_TOOL_META_FILE) |
 | Tool Execution Errors (SEP-1303) | 2025-11-25 | 0.5.0 | ✅ Full | isError flag for LLM self-correction |
@@ -145,7 +145,7 @@ The following MCP features are currently not implemented:
 | Async Operations (job/poll pattern) | Not yet | Fire-and-forget jobs with polling surface |
 | Server Identity Discovery | Not yet | Pre-initialize server identity endpoint |
 | Sampling (sampling/createMessage) | Not yet | Server-initiated LLM requests; could be useful for agentic tool behaviors |
-| Tool Annotations | Not yet | Metadata for read-only/destructive tool behavior |
+| Tool Annotations | ✅ Full | Metadata for read-only/destructive tool behavior (readOnlyHint, destructiveHint, idempotentHint, openWorldHint) |
 | Audio Content | Not yet | Content type support for audio data |
 | Resource Templates Discovery | Stub only | Returns empty array; full discovery not implemented |
 

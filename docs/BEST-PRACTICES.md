@@ -423,6 +423,33 @@ Set per-tool `timeoutSecs` inside `<tool>.meta.json` when default (30 seconds) i
 }
 ```
 
+#### Tool annotations
+
+Declare behavior hints in `<tool>.meta.json` to help clients present appropriate UI cues (MCP 2025-03-26):
+
+```json
+{
+  "name": "file-delete",
+  "description": "Delete a file from the filesystem",
+  "inputSchema": { ... },
+  "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": true,
+    "idempotentHint": true,
+    "openWorldHint": false
+  }
+}
+```
+
+| Annotation | Default | Description |
+|------------|---------|-------------|
+| `readOnlyHint` | `false` | Tool does not modify its environment |
+| `destructiveHint` | `true` | Tool may destructively modify environment (only when `readOnlyHint` is `false`) |
+| `idempotentHint` | `false` | Multiple calls with same args have same effect as one call |
+| `openWorldHint` | `true` | Tool may interact with external systems |
+
+Clients may use these hints to show confirmation dialogs, group tools by risk level, or enable/disable tools based on user preferences. Annotations are advisory—do not rely on them for security decisions.
+
 #### Shared code
 
 Place reusable scripts under `lib/` in your project and source them via `MCPBASH_PROJECT_ROOT`:

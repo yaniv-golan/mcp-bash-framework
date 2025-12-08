@@ -162,3 +162,71 @@ printf ' -> manual registration status 2 surfaces as fatal\n'
 		test_fail "refresh should fail when manual registration returns 2"
 	fi
 )
+
+printf ' -> full scan extracts tool annotations from meta.json\n'
+MCPBASH_TOOLS_DIR="${TEST_TMPDIR}/toolsdir-annotations"
+mkdir -p "${MCPBASH_TOOLS_DIR}/annotated"
+cat >"${MCPBASH_TOOLS_DIR}/annotated/tool.meta.json" <<'EOF'
+{
+  "name": "annotated",
+  "description": "Tool with annotations",
+  "inputSchema": {"type": "object", "properties": {}},
+  "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+  }
+}
+EOF
+cat >"${MCPBASH_TOOLS_DIR}/annotated/tool.sh" <<'EOF'
+#!/usr/bin/env bash
+echo '{"status":"ok"}'
+EOF
+chmod +x "${MCPBASH_TOOLS_DIR}/annotated/tool.sh"
+MCP_TOOLS_REGISTRY_PATH="${TEST_TMPDIR}/tools-registry-annotations.json"
+MCP_TOOLS_REGISTRY_HASH=""
+MCP_TOOLS_REGISTRY_JSON=""
+MCP_TOOLS_TOTAL=0
+mcp_lock_init
+scan_time="$(date +%s)"
+if ! mcp_tools_perform_full_scan "${MCPBASH_TOOLS_DIR}" "${scan_time}"; then
+	test_fail "full scan with annotations failed"
+fi
+assert_file_exists "${MCP_TOOLS_REGISTRY_PATH}"
+# Check annotations were captured
+annotations_json="$("${MCPBASH_JSON_TOOL_BIN}" -c '.items[0].annotations' "${MCP_TOOLS_REGISTRY_PATH}")"
+if [ -z "${annotations_json}" ] || [ "${annotations_json}" = "null" ]; then
+	test_fail "annotations should be present in registry"
+fi
+read_only="$("${MCPBASH_JSON_TOOL_BIN}" -r '.items[0].annotations.readOnlyHint' "${MCP_TOOLS_REGISTRY_PATH}")"
+assert_eq "true" "${read_only}" "readOnlyHint should be true"
+destructive="$("${MCPBASH_JSON_TOOL_BIN}" -r '.items[0].annotations.destructiveHint' "${MCP_TOOLS_REGISTRY_PATH}")"
+assert_eq "false" "${destructive}" "destructiveHint should be false"
+
+printf ' -> tool without annotations omits annotations field\n'
+MCPBASH_TOOLS_DIR="${TEST_TMPDIR}/toolsdir-no-annotations"
+mkdir -p "${MCPBASH_TOOLS_DIR}/plain"
+cat >"${MCPBASH_TOOLS_DIR}/plain/tool.meta.json" <<'EOF'
+{
+  "name": "plain",
+  "inputSchema": {"type": "object", "properties": {}}
+}
+EOF
+cat >"${MCPBASH_TOOLS_DIR}/plain/tool.sh" <<'EOF'
+#!/usr/bin/env bash
+echo '{"status":"ok"}'
+EOF
+chmod +x "${MCPBASH_TOOLS_DIR}/plain/tool.sh"
+MCP_TOOLS_REGISTRY_PATH="${TEST_TMPDIR}/tools-registry-no-annotations.json"
+MCP_TOOLS_REGISTRY_HASH=""
+MCP_TOOLS_REGISTRY_JSON=""
+MCP_TOOLS_TOTAL=0
+mcp_lock_init
+scan_time="$(date +%s)"
+if ! mcp_tools_perform_full_scan "${MCPBASH_TOOLS_DIR}" "${scan_time}"; then
+	test_fail "full scan without annotations failed"
+fi
+# Check annotations field is absent (not null)
+has_annotations="$("${MCPBASH_JSON_TOOL_BIN}" -r '.items[0] | has("annotations")' "${MCP_TOOLS_REGISTRY_PATH}")"
+assert_eq "false" "${has_annotations}" "annotations field should be omitted when not specified"

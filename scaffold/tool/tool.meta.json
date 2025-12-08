@@ -20,5 +20,11 @@
         "description": "Human-readable message produced by the tool"
       }
     }
+  },
+  "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
   }
 }
