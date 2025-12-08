@@ -7,6 +7,7 @@ For the full list of environment knobs and defaults, see [docs/ENV_REFERENCE.md]
 - `VERBOSE=1` streams per-test logs and re-enables JSON tooling discovery logs (default is quiet).
 - `UNICODE=1` uses ✅/❌; default output is ASCII `[PASS]/[FAIL]`.
 - `MCPBASH_LOG_JSON_TOOL=log` forces JSON tooling detection logs even when `VERBOSE` is off.
+- Tar staging: CI turns it on (`MCPBASH_CI_MODE=1`); default is off locally. Override with `MCPBASH_STAGING_TAR=1` to force use or `=0` to disable.
 
 ## Linting
 

@@ -55,8 +55,14 @@ if [ -z "${TMPDIR:-}" ] || [ ! -d "${TMPDIR}" ]; then
 	export TMPDIR
 fi
 
-# Tar staging is enabled by default; set MCPBASH_STAGING_TAR=0 to opt out.
-MCPBASH_STAGING_TAR="${MCPBASH_STAGING_TAR:-1}"
+# Tar staging: on in CI (MCPBASH_CI_MODE=1), off by default locally. Override with MCPBASH_STAGING_TAR=1/0.
+if [ -z "${MCPBASH_STAGING_TAR:-}" ]; then
+	if [ "${MCPBASH_CI_MODE:-0}" = "1" ]; then
+		MCPBASH_STAGING_TAR=1
+	else
+		MCPBASH_STAGING_TAR=0
+	fi
+fi
 # Shared cache location for the base tarball; reused across test scripts in a run.
 MCPBASH_TAR_DIR="${MCPBASH_TAR_DIR:-${TMPDIR%/}/mcpbash.staging}"
 MCPBASH_BASE_TAR="${MCPBASH_BASE_TAR:-${MCPBASH_TAR_DIR}/base.tar}"

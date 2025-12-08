@@ -60,7 +60,7 @@ cat <<'JSON' >"${WORKSPACE}/double-init.ndjson"
 JSON
 run_requests "${WORKSPACE}/double-init.ndjson" "${WORKSPACE}/double-init.resp"
 resp_file="${WORKSPACE}/double-init.resp"
-if ! jq -e 'select(.id=="init1") | .result.protocolVersion == "2025-06-18"' "${resp_file}" >/dev/null; then
+if ! jq -e 'select(.id=="init1") | .result.protocolVersion == "2025-11-25"' "${resp_file}" >/dev/null; then
 	test_fail "initial initialize failed"
 fi
 assert_error_code "${resp_file}" "init2" "-32600" "Server already initialized"

@@ -87,7 +87,7 @@ async function main() {
 
 	send(server, { jsonrpc: '2.0', id: 'init', method: 'initialize', params: {} });
 	const init = await readUntil(rl, (m) => m.id === 'init');
-	if (!init.result || init.result.protocolVersion !== '2025-06-18') {
+	if (!init.result || init.result.protocolVersion !== '2025-11-25') {
 		throw new Error(`unexpected init response: ${JSON.stringify(init)}`);
 	}
 

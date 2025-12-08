@@ -100,7 +100,7 @@ if [ -n "${slow_stderr_tail}" ] && [ "${#slow_stderr_tail}" -gt 4096 ]; then
 	test_fail "timeout stderrTail exceeds expected cap"
 fi
 
-trace_file="$(find "${STATE_DIR}" -name 'trace.*.log' -type f -print -quit 2>/dev/null || true)"
+trace_file="$(find "${LOG_DIR}" "${STATE_DIR}" -name 'trace.*.log' -type f -print -quit 2>/dev/null || true)"
 if [ -z "${trace_file}" ] || [ ! -f "${trace_file}" ]; then
 	test_fail "trace file missing"
 fi

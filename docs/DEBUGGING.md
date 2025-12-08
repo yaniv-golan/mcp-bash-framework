@@ -108,7 +108,7 @@ timestamp|category|key|status|payload
 Example entries:
 ```
 1732900000|request|-|recv|{"jsonrpc":"2.0","id":"1","method":"initialize","params":{}}
-1732900000|response|1|ok|{"jsonrpc":"2.0","id":"1","result":{"protocolVersion":"2025-06-18",...}}
+1732900000|response|1|ok|{"jsonrpc":"2.0","id":"1","result":{"protocolVersion":"2025-11-25",...}}
 1732900001|request|-|recv|{"jsonrpc":"2.0","method":"notifications/initialized"}
 ```
 

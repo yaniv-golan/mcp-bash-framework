@@ -145,7 +145,6 @@ The following MCP features are currently not implemented:
 | Async Operations (job/poll pattern) | Not yet | Fire-and-forget jobs with polling surface |
 | Server Identity Discovery | Not yet | Pre-initialize server identity endpoint |
 | Sampling (sampling/createMessage) | Not yet | Server-initiated LLM requests; could be useful for agentic tool behaviors |
-| Tool Annotations | ✅ Full | Metadata for read-only/destructive tool behavior (readOnlyHint, destructiveHint, idempotentHint, openWorldHint) |
 | Audio Content | Not yet | Content type support for audio data |
 | Resource Templates Discovery | Stub only | Returns empty array; full discovery not implemented |
 

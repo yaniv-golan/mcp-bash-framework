@@ -202,7 +202,7 @@ Pure Bash MCP server framework. Bash≥3.2 + jq/gojq. Stdio transport only.
 ## PROTOCOL & ERRORS
 
 - Protocol:
-  - MCP version `2025-06-18` with downgrade support to `2025-03-26` and `2024-11-05`.
+  - MCP version `2025-11-25` with downgrade support to `2025-06-18`, `2025-03-26`, and `2024-11-05`.
   - Transport: stdio only. JSON-RPC 2.0. One JSON object per line.
   - Capabilities: tools, resources, prompts, completion, logging, progress, pagination, subscriptions, `listChanged` notifications.
 - JSON-RPC error codes:

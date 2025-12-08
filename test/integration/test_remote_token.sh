@@ -21,9 +21,9 @@ test_stage_workspace "${WORKSPACE}"
 
 REQUESTS="${WORKSPACE}/requests.ndjson"
 cat <<'JSON' >"${REQUESTS}"
-{"jsonrpc":"2.0","id":"missing","method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{}}}
-{"jsonrpc":"2.0","id":"bad","method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"_meta":{"mcpbash/remoteToken":"wrong"}}}
-{"jsonrpc":"2.0","id":"ok","method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"_meta":{"mcpbash/remoteToken":"secret-token"}}}
+{"jsonrpc":"2.0","id":"missing","method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{}}}
+{"jsonrpc":"2.0","id":"bad","method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"_meta":{"mcpbash/remoteToken":"wrong"}}}
+{"jsonrpc":"2.0","id":"ok","method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"_meta":{"mcpbash/remoteToken":"secret-token"}}}
 JSON
 
 RESPONSES="${WORKSPACE}/responses.ndjson"

@@ -111,7 +111,7 @@ Size guardrails: `mcp_core_guard_response_size` rejects oversized responses with
 - Any other provider exit code maps to `-32603` with stderr text when available.
 
 ## Troubleshooting Quick Hits
-- **Unsupported protocol (`-32602`)**: Client requested an older MCP version. Update the client or request `2025-03-26`/`2025-06-18`.
+- **Unsupported protocol (`-32602`)**: Client requested an older MCP version. Update the client or request `2025-11-25`/`2025-06-18`/`2025-03-26`/`2024-11-05`.
 - **Invalid cursor (`-32602`)**: Drop the cursor to restart pagination; ensure clients do not cache cursors across registry refreshes.
 - **Tool timed out (`-32603`, message includes "timed out" or "killed")**: Reduce workload or raise `timeoutSecs` in `<tool>.meta.json`; defaults come from `MCPBASH_DEFAULT_TOOL_TIMEOUT`.
 - **Resource/provider failures (`-32603`, message includes provider detail such as "Unable to read resource")**: Confirm the provider is supported (`file`, `git`, `https`), URI is valid, and payload size is within `MCPBASH_MAX_RESOURCE_BYTES`.
