@@ -25,6 +25,9 @@
 : "${MCPBASH_REMOTE_TOKEN_KEY:=}"
 : "${MCPBASH_REMOTE_TOKEN_FALLBACK_KEY:=}"
 : "${MCPBASH_REMOTE_TOKEN_ENABLED:=false}"
+: "${MCPBASH_CI_MODE:=false}"
+: "${MCPBASH_KEEP_LOGS:=false}"
+: "${MCPBASH_LOG_LEVEL_DEFAULT:=info}"
 
 # Path normalization helpers (Bash 3.2+). Load if not already present.
 if ! command -v mcp_path_normalize >/dev/null 2>&1; then
@@ -186,6 +189,25 @@ mcp_runtime_stage_bootstrap_project() {
 mcp_runtime_init_paths() {
 	local mode="${1:-server}"
 	local allow_bootstrap="${2:-}"
+
+	# CI mode: set safe defaults only when unset.
+	if [ "${MCPBASH_CI_MODE:-false}" = "true" ]; then
+		if [ -z "${MCPBASH_TMP_ROOT:-}" ]; then
+			if [ -n "${RUNNER_TEMP:-}" ]; then
+				MCPBASH_TMP_ROOT="${RUNNER_TEMP%/}"
+			elif [ -n "${GITHUB_WORKSPACE:-}" ]; then
+				MCPBASH_TMP_ROOT="${GITHUB_WORKSPACE%/}/.mcpbash-tmp"
+			else
+				MCPBASH_TMP_ROOT="${TMPDIR%/:-/tmp}"
+			fi
+		fi
+		if [ -z "${MCPBASH_KEEP_LOGS:-}" ]; then
+			MCPBASH_KEEP_LOGS="true"
+		fi
+		if [ -z "${MCPBASH_LOG_LEVEL:-}" ] && [ -z "${MCPBASH_LOG_LEVEL_DEFAULT:-}" ]; then
+			MCPBASH_LOG_LEVEL_DEFAULT="info"
+		fi
+	fi
 
 	if [ -z "${allow_bootstrap}" ]; then
 		if [ "${mode}" = "server" ]; then

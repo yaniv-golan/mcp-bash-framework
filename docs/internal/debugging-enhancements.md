@@ -38,3 +38,6 @@ Ordered by impact on debuggability.
   - GitHub Actions annotations: gated on `GITHUB_ACTIONS=true` (and optionally an explicit toggle). Emit `::error` lines only when file/line is reliable (e.g., `traceLine` present from tracing/error data); exclude arg values.
   - Artifact layout: formalize a log tree under `MCPBASH_LOG_DIR` (summary + per-tool logs) with rotation/size caps; reuse existing redaction rules and avoid duplicating payload logs unless explicitly enabled (e.g., a dedicated `MCPBASH_CI_FULL_PAYLOADS` flag).
   - Delivery phases to reduce scope: (A) CI mode + log dir defaults + keep-logs; (B) failure summary + env snapshot; (C) GitHub annotations.
+
+### Phase A status — **Partially Implemented**
+- **Status:** `MCPBASH_CI_MODE` sets a CI-safe `MCPBASH_TMP_ROOT` (prefers `RUNNER_TEMP`, then `$GITHUB_WORKSPACE/.mcpbash-tmp`, else `TMPDIR`), sets `MCPBASH_KEEP_LOGS=true` when unset, and defaults log level to `info` if unspecified. Remaining Phase A items (log dir default, timestamps, CI verbose override) are pending.
