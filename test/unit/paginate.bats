@@ -37,4 +37,15 @@ if mcp_paginate_decode "not-base64" "tools" "hash-value" >/dev/null 2>&1; then
 	test_fail "expected invalid cursor to fail"
 fi
 
+printf ' -> nextCursor present when more pages remain\n'
+payload='{"items":[1,2,3],"total":3}'
+page="$(mcp_paginate_attach_next_cursor "${payload}" "tools" 0 2 3 "hash-value")"
+cursor="$(printf '%s' "${page}" | jq -r '.nextCursor // empty')"
+[ -z "${cursor}" ] && test_fail "expected nextCursor on non-terminal page"
+
+printf ' -> nextCursor null on terminal page\n'
+terminal="$(mcp_paginate_attach_next_cursor "${payload}" "tools" 2 2 3 "hash-value")"
+terminal_cursor="$(printf '%s' "${terminal}" | jq -r '.nextCursor')"
+assert_eq "null" "${terminal_cursor}" "nextCursor should be null on last page"
+
 printf 'Pagination tests passed.\n'

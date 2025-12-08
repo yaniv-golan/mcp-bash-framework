@@ -36,14 +36,14 @@ EOF
 mcp_spec_capabilities_backport_20250326() {
 	# Older protocol maintains core surface but omits listChanged flags added in 2025-06-18.
 	cat <<'EOF'
-{"logging":{},"tools":{},"resources":{"subscribe":true},"prompts":{},"completion":{}}
+{"logging":{},"tools":{},"resources":{"subscribe":true},"prompts":{}}
 EOF
 }
 
 mcp_spec_capabilities_backport_20241105() {
 	# Legacy protocol support for clients pinned to 2024-11-05; no listChanged flags.
 	cat <<'EOF'
-{"logging":{},"tools":{},"resources":{"subscribe":true},"prompts":{},"completion":{}}
+{"logging":{},"tools":{},"resources":{"subscribe":true},"prompts":{}}
 EOF
 }
 

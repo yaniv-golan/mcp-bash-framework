@@ -97,5 +97,5 @@ mcp_paginate_attach_next_cursor() {
 		return 0
 	fi
 
-	printf '%s' "${json_payload}"
+	printf '%s' "${json_payload}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.nextCursor = null'
 }
