@@ -11,6 +11,7 @@ This table shows when features were introduced in the MCP specification and when
 | **Core Protocol** | | | | |
 | JSON-RPC 2.0 | 2024-11-05 | 0.1.0 | ✅ Full | Standard message format |
 | Lifecycle (initialize/initialized) | 2024-11-05 | 0.1.0 | ✅ Full | Bootstrap handshake |
+| Strict Lifecycle (initialize → initialized required) | 2025-06-18 | 0.1.0 | ✅ Full | State machine enforced before serving requests |
 | Ping | 2024-11-05 | 0.1.0 | ✅ Full | Heartbeat mechanism |
 | Capability Negotiation | 2024-11-05 | 0.1.0 | ✅ Full | Client/server capabilities |
 | Protocol Downgrades | 2024-11-05 | 0.1.0 | ✅ Full | Supports 2025-11-25, 2025-06-18, 2025-03-26, 2024-11-05 |
@@ -23,9 +24,10 @@ This table shows when features were introduced in the MCP specification and when
 | **Tools** | | | | |
 | Tools (list/call) | 2024-11-05 | 0.1.0 | ✅ Full | Auto-discovery and execution |
 | Tool Annotations | 2025-03-26 | ❌ Not yet | ❌ Not yet | Read-only/destructive behavior metadata |
-| Tool Icons (SEP-973) | 2025-11-25 | 0.5.0 | ✅ Full | Local files converted to data URIs |
 | Tools listChanged Notification | 2025-06-18 | 0.1.0 | ✅ Full | Registry change detection |
+| Request Metadata (`_meta`) | 2025-06-18 | 0.6.0 | ✅ Full | Client-provided metadata surfaced to tools (MCP_TOOL_META_JSON / MCP_TOOL_META_FILE) |
 | Tool Execution Errors (SEP-1303) | 2025-11-25 | 0.5.0 | ✅ Full | isError flag for LLM self-correction |
+| Tool Icons (SEP-973) | 2025-11-25 | 0.5.0 | ✅ Full | Local files converted to data URIs |
 | **Resources** | | | | |
 | Resources (list/read) | 2024-11-05 | 0.1.0 | ✅ Full | File/HTTPS/Git providers |
 | Resource Subscriptions | 2024-11-05 | 0.1.0 | ✅ Full | Change notifications |
@@ -43,20 +45,21 @@ This table shows when features were introduced in the MCP specification and when
 | Cancellation | 2024-11-05 | 0.1.0 | ✅ Full | notifications/cancelled support |
 | Logging (notifications/message) | 2024-11-05 | 0.1.0 | ✅ Full | Server-to-client logging |
 | Logging (logging/setLevel) | 2024-11-05 | 0.1.0 | ✅ Full | Dynamic log level control |
-| Completion | 2024-11-05 | 0.1.0 | ✅ Full | Argument autocompletion |
-| Completions Capability | 2025-03-26 | 0.1.0 | ✅ Full | Explicit capability advertisement |
+| Completion (completion/complete) | 2025-06-18 | 0.1.0 | ✅ Full | Argument autocompletion |
+| Completions Capability | 2025-06-18 | 0.1.0 | ✅ Full | Explicit capability advertisement |
 | **Pagination** | | | | |
 | Cursor-based Pagination | 2024-11-05 | 0.1.0 | ✅ Full | Opaque cursor format |
 | nextCursor Field | 2024-11-05 | 0.1.0 | ✅ Full | Standard pagination field |
 | **Authorization** | | | | |
 | OAuth 2.1 Framework | 2025-03-26 | ❌ Not applicable | ❌ Not applicable | Only applies to HTTP transport |
+| Resource Indicators (RFC 8707) | 2025-06-18 | ❌ Not applicable | ❌ Not applicable | OAuth-only; out of scope for stdio transport |
 | **Content Types** | | | | |
 | Text Content | 2024-11-05 | 0.1.0 | ✅ Full | Standard text output |
 | Image Content | 2024-11-05 | 0.1.0 | ✅ Full | Base64 or URL references |
 | Audio Content | 2025-03-26 | ❌ Not yet | ❌ Not yet | Audio data in content responses |
 | **Roots** | | | | |
-| Roots (roots/list) | 2025-03-26 | 0.1.0 | ✅ Full | Server→client request |
-| Roots listChanged Notification | 2025-03-26 | 0.1.0 | ✅ Full | Client-side capability |
+| Roots (roots/list) | 2024-11-05 | 0.1.0 | ✅ Full | Server→client request |
+| Roots listChanged Notification | 2024-11-05 | 0.1.0 | ✅ Full | Client-side capability |
 | **Elicitation** | | | | |
 | Elicitation (Form Mode) | 2025-06-18 | 0.1.0 | ✅ Full | In-band user input |
 | Elicitation URL Mode (SEP-1036) | 2025-11-25 | 0.5.0 | ✅ Full | OAuth/payments via browser |
@@ -65,7 +68,9 @@ This table shows when features were introduced in the MCP specification and when
 | Elicitation Multi-choice (SEP-1330) | 2025-11-25 | 0.5.0 | ✅ Full | Array of enum values |
 | Elicitation Titled Multi-choice (SEP-1330) | 2025-11-25 | 0.5.0 | ✅ Full | anyOf with const/title |
 | **Advanced Features** | | | | |
-| JSON-RPC Batching | 2025-03-26 | ❌ Not yet | ❌ Not yet | Multiple requests in single message |
+| JSON-RPC Batching | 2025-03-26 | ❌ Not supported | ❌ Removed | Removed from spec in 2025-06-18; not implemented |
+| Async Operations (job/poll pattern) | 2025-11-25 | ❌ Not yet | ❌ Not yet | Fire-and-forget jobs with polling responses |
+| Server Identity Discovery | 2025-11-25 | ❌ Not yet | ❌ Not yet | Pre-initialize server identity surface |
 | Sampling (sampling/createMessage) | 2024-11-05 | ❌ Not yet | ❌ Not yet | Server-initiated LLM requests for agentic behaviors |
 
 ### Legend
@@ -133,8 +138,11 @@ The following MCP features are currently not implemented:
 |---------|--------|--------|
 | HTTP/SSE Transport | Not supported | stdio-only design; see `docs/REMOTE.md` for proxy guidance |
 | OAuth Authorization | Not applicable | Out of scope for stdio transport |
+| Resource Indicators (RFC 8707) | Not applicable | OAuth-only; stdio transport |
+| JSON-RPC Batching | Not supported | Removed from spec in 2025-06-18; not implemented |
+| Async Operations (job/poll pattern) | Not yet | Fire-and-forget jobs with polling surface |
+| Server Identity Discovery | Not yet | Pre-initialize server identity endpoint |
 | Sampling (sampling/createMessage) | Not yet | Server-initiated LLM requests; could be useful for agentic tool behaviors |
-| JSON-RPC Batching | Not yet | Single request/response design; could improve efficiency |
 | Tool Annotations | Not yet | Metadata for read-only/destructive tool behavior |
 | Audio Content | Not yet | Content type support for audio data |
 | Resource Templates Discovery | Stub only | Returns empty array; full discovery not implemented |
