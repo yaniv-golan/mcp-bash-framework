@@ -11,7 +11,8 @@ mcp_tools_quote() {
 }
 
 mcp_tools_extract_call_fields() {
-	# Extract name, arguments (compact JSON), and timeoutSecs in a single jq/gojq pass.
+	# Extract name, arguments (compact JSON), timeoutSecs, and _meta in a single jq/gojq pass.
+	# Uses "null" as placeholder for empty timeoutSecs to prevent bash read from collapsing tabs.
 	local json_payload="$1"
 	local extraction
 	if extraction="$(
@@ -19,14 +20,15 @@ mcp_tools_extract_call_fields() {
 			[
 				(.params.name // ""),
 				((.params.arguments // {}) | tojson),
-				((.params.timeoutSecs // "") | tostring)
+				((.params.timeoutSecs // null) | tostring),
+				((.params._meta // {}) | tojson)
 			] | @tsv
 		'; } 2>/dev/null
 	)"; then
 		printf '%s' "${extraction}"
 	else
 		# Fallback: empty fields so caller can apply defaults/validation.
-		printf '\t\t'
+		printf '\tnull\tnull\t{}'
 	fi
 }
 
@@ -72,11 +74,14 @@ mcp_handle_tools() {
 		fi
 		;;
 	tools/call)
-		local name args_json timeout_override
-		# Extract fields in one JSON-tool pass; keep args as compact JSON
+		local name args_json timeout_override meta_json
+		# Extract fields in one JSON-tool pass; keep args and _meta as compact JSON
 		extraction="$(mcp_tools_extract_call_fields "${json_payload}")"
-		IFS=$'\t' read -r name args_json timeout_override <<<"${extraction}"
+		IFS=$'\t' read -r name args_json timeout_override meta_json <<<"${extraction}"
 		[ -z "${args_json}" ] && args_json="{}"
+		[ -z "${meta_json}" ] && meta_json="{}"
+		# Normalize "null" placeholders to empty strings
+		[ "${timeout_override}" = "null" ] && timeout_override=""
 
 		if [ -z "${name}" ]; then
 			local message
@@ -85,7 +90,7 @@ mcp_handle_tools() {
 			return 0
 		fi
 		local result_json
-		if ! mcp_tools_call "${name}" "${args_json}" "${timeout_override}"; then
+		if ! mcp_tools_call "${name}" "${args_json}" "${timeout_override}" "${meta_json}"; then
 			result_json="${_MCP_TOOLS_RESULT:-}"
 			# Parse error info from stdout (mcp_tools_call emits error JSON on failure)
 			local code=-32603 message_raw="Tool execution failed" data="null"

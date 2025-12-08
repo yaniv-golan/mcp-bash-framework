@@ -37,6 +37,10 @@ if ! command -v mcp_registry_resolve_scan_root >/dev/null 2>&1; then
 	# shellcheck disable=SC1090
 	. "${MCPBASH_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/lib/registry.sh"
 fi
+if ! command -v mcp_json_icons_to_data_uris >/dev/null 2>&1; then
+	# shellcheck disable=SC1090
+	. "${MCPBASH_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/lib/json.sh"
+fi
 
 # Provide defaults if policy helpers were not sourced (older bootstraps).
 if ! declare -F mcp_tools_policy_check >/dev/null 2>&1; then
@@ -766,10 +770,12 @@ mcp_tools_call() {
 	local name="$1"
 	local args_json="$2"
 	local timeout_override="$3"
+	local request_meta="${4:-"{}"}"
 	# Args:
 	#   name             - tool name as registered.
 	#   args_json        - JSON string of parameters (object shape, possibly "{}").
 	#   timeout_override - optional numeric seconds to override metadata timeout.
+	#   request_meta     - optional JSON string of _meta from the tools/call request.
 	# shellcheck disable=SC2034
 	_MCP_TOOLS_ERROR_CODE=0
 	# shellcheck disable=SC2034
@@ -865,6 +871,15 @@ mcp_tools_call() {
 		metadata_env_value=""
 	fi
 
+	# Request _meta (client-provided metadata from tools/call request)
+	local request_meta_env_value="${request_meta}"
+	local request_meta_file=""
+	if [ "${#request_meta}" -gt "${env_limit}" ]; then
+		request_meta_file="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-tool-request-meta.XXXXXX")"
+		printf '%s' "${request_meta}" >"${request_meta_file}"
+		request_meta_env_value=""
+	fi
+
 	local tool_error_file
 	tool_error_file="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-tool-error.XXXXXX")"
 
@@ -930,6 +945,7 @@ mcp_tools_call() {
 		[ -n "${tool_error_file}" ] && rm -f "${tool_error_file}"
 		[ -n "${args_file}" ] && rm -f "${args_file}"
 		[ -n "${metadata_file}" ] && rm -f "${metadata_file}"
+		[ -n "${request_meta_file}" ] && rm -f "${request_meta_file}"
 	}
 
 	local exit_code
@@ -946,6 +962,7 @@ mcp_tools_call() {
 		MCP_TOOL_PATH="${absolute_path}"
 		MCP_TOOL_ARGS_JSON="${args_env_value}"
 		MCP_TOOL_METADATA_JSON="${metadata_env_value}"
+		MCP_TOOL_META_JSON="${request_meta_env_value}"
 		MCP_TOOL_ERROR_FILE="${tool_error_file}"
 		if [ -n "${args_file}" ]; then
 			MCP_TOOL_ARGS_FILE="${args_file}"
@@ -956,6 +973,11 @@ mcp_tools_call() {
 			MCP_TOOL_METADATA_FILE="${metadata_file}"
 		else
 			unset MCP_TOOL_METADATA_FILE 2>/dev/null || true
+		fi
+		if [ -n "${request_meta_file}" ]; then
+			MCP_TOOL_META_FILE="${request_meta_file}"
+		else
+			unset MCP_TOOL_META_FILE 2>/dev/null || true
 		fi
 
 		local tool_env_mode
@@ -992,6 +1014,7 @@ mcp_tools_call() {
 				"MCP_TOOL_PATH=${MCP_TOOL_PATH}"
 				"MCP_TOOL_ARGS_JSON=${MCP_TOOL_ARGS_JSON}"
 				"MCP_TOOL_METADATA_JSON=${MCP_TOOL_METADATA_JSON}"
+				"MCP_TOOL_META_JSON=${MCP_TOOL_META_JSON}"
 				"MCP_TOOL_ERROR_FILE=${MCP_TOOL_ERROR_FILE}"
 				"MCP_ELICIT_SUPPORTED=${elicit_supported}"
 				"MCPBASH_JSON_TOOL=${MCPBASH_JSON_TOOL:-}"
@@ -1005,6 +1028,7 @@ mcp_tools_call() {
 			fi
 			[ -n "${MCP_TOOL_ARGS_FILE:-}" ] && env_exec+=("MCP_TOOL_ARGS_FILE=${MCP_TOOL_ARGS_FILE}")
 			[ -n "${MCP_TOOL_METADATA_FILE:-}" ] && env_exec+=("MCP_TOOL_METADATA_FILE=${MCP_TOOL_METADATA_FILE}")
+			[ -n "${MCP_TOOL_META_FILE:-}" ] && env_exec+=("MCP_TOOL_META_FILE=${MCP_TOOL_META_FILE}")
 			if [ "${elicit_supported}" = "1" ]; then
 				env_exec+=("MCP_ELICIT_REQUEST_FILE=${elicit_request_file}")
 				env_exec+=("MCP_ELICIT_RESPONSE_FILE=${elicit_response_file}")
@@ -1022,9 +1046,10 @@ mcp_tools_call() {
 				done
 			fi
 		else
-			export MCP_SDK MCP_TOOL_NAME MCP_TOOL_PATH MCP_TOOL_ARGS_JSON MCP_TOOL_METADATA_JSON
+			export MCP_SDK MCP_TOOL_NAME MCP_TOOL_PATH MCP_TOOL_ARGS_JSON MCP_TOOL_METADATA_JSON MCP_TOOL_META_JSON
 			[ -n "${MCP_TOOL_ARGS_FILE:-}" ] && export MCP_TOOL_ARGS_FILE
 			[ -n "${MCP_TOOL_METADATA_FILE:-}" ] && export MCP_TOOL_METADATA_FILE
+			[ -n "${MCP_TOOL_META_FILE:-}" ] && export MCP_TOOL_META_FILE
 			export MCP_TOOL_ERROR_FILE
 			export MCP_ELICIT_SUPPORTED="${elicit_supported}"
 			export MCPBASH_JSON_TOOL="${MCPBASH_JSON_TOOL:-}"

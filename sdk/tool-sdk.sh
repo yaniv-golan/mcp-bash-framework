@@ -126,6 +126,36 @@ mcp_args_raw() {
 	__mcp_sdk_payload_from_env "${MCP_TOOL_ARGS_JSON:-"{}"}" "${MCP_TOOL_ARGS_FILE:-}"
 }
 
+# Request metadata helpers -----------------------------------------------------
+#
+# The _meta object from tools/call requests provides client-controlled metadata
+# that is not exposed to the LLM. Common use cases: passing auth context, rate
+# limiting identifiers, or behavior flags that should not be LLM-generated.
+
+mcp_meta_raw() {
+	# Return the raw _meta JSON from the tools/call request.
+	__mcp_sdk_payload_from_env "${MCP_TOOL_META_JSON:-"{}"}" "${MCP_TOOL_META_FILE:-}"
+}
+
+mcp_meta_get() {
+	# Extract a value from the request _meta JSON using a jq filter.
+	local filter="$1"
+	if [ "${MCPBASH_MODE:-full}" = "minimal" ]; then
+		__mcp_sdk_warn "mcp_meta_get: JSON tooling unavailable; use mcp_meta_raw instead"
+		printf ''
+		return 1
+	fi
+	local payload
+	payload="$(mcp_meta_raw)"
+	if command -v "${MCPBASH_JSON_TOOL_BIN:-}" >/dev/null 2>&1; then
+		printf '%s' "${payload}" | "${MCPBASH_JSON_TOOL_BIN}" -rc "${filter}" 2>/dev/null
+	else
+		__mcp_sdk_warn "mcp_meta_get: JSON tooling unavailable; use mcp_meta_raw instead"
+		printf ''
+		return 1
+	fi
+}
+
 # Extract a value from the arguments JSON using a jq filter (returns empty string if unavailable).
 mcp_args_get() {
 	local filter="$1"

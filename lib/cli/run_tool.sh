@@ -8,6 +8,12 @@ if [[ -z "${BASH_VERSION:-}" ]]; then
 	exit 1
 fi
 
+# Ensure roots helpers are available for validation.
+if ! command -v mcp_roots_normalize_path >/dev/null 2>&1; then
+	# shellcheck source=../roots.sh disable=SC1090,SC1091
+	. "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/roots.sh"
+fi
+
 # Globals: usage() from bin, MCPBASH_PROJECT_ROOT, MCPBASH_JSON_TOOL[_BIN], MCPBASH_MODE and runtime globals set by initialize_runtime_paths.
 
 mcp_cli_run_tool_load_cache() {
@@ -39,19 +45,21 @@ mcp_cli_run_tool_prepare_roots() {
 	MCPBASH_ROOTS_URIS=()
 	MCPBASH_ROOTS_NAMES=()
 	[ -z "${roots_arg}" ] && return 0
+	local had_error=0
 	local IFS=',' root
 	for root in ${roots_arg}; do
 		[ -n "${root}" ] || continue
 		local norm
-		norm="$(mcp_path_normalize --physical "${root}")"
-		[ -n "${norm}" ] || continue
-		MCPBASH_ROOTS_PATHS+=("${norm}")
-		MCPBASH_ROOTS_URIS+=("file://${norm}")
-		MCPBASH_ROOTS_NAMES+=("$(basename "${norm}")")
+		if ! norm="$(mcp_roots_canonicalize_checked "${root}" "--roots" 1)"; then
+			had_error=1
+			continue
+		fi
+		mcp_roots_append_unique "${norm}" "$(basename "${norm}")"
 	done
 	# roots.sh is always sourced for CLI runs, so mcp_roots_wait_ready will see READY=1.
 	# shellcheck disable=SC2034  # Used by mcp_roots_wait_ready downstream
 	MCPBASH_ROOTS_READY=1
+	return "${had_error}"
 }
 
 mcp_cli_run_tool() {
@@ -166,7 +174,10 @@ EOF
 		mcp_cli_run_tool_load_cache || exit 1
 	fi
 
-	mcp_cli_run_tool_prepare_roots "${roots_arg}"
+	if ! mcp_cli_run_tool_prepare_roots "${roots_arg}"; then
+		printf 'run-tool: invalid --roots value; see log for details\n' >&2
+		exit 1
+	fi
 
 	if [ "${MCPBASH_JSON_TOOL:-none}" = "none" ] || [ -z "${MCPBASH_JSON_TOOL_BIN:-}" ] || [ "${MCPBASH_MODE:-full}" = "minimal" ]; then
 		if [ "${args_json}" != "{}" ]; then
@@ -230,7 +241,8 @@ EOF
 	fi
 
 	local result_json=""
-	if mcp_tools_call "${tool_name}" "${args_json}" "${effective_timeout}"; then
+	# CLI invocations don't have request _meta; pass empty object
+	if mcp_tools_call "${tool_name}" "${args_json}" "${effective_timeout}" "{}"; then
 		result_json="${_MCP_TOOLS_RESULT:-}"
 		printf '%s\n' "${result_json}"
 		exit 0
