@@ -989,7 +989,7 @@ mcp_tools_emit_github_annotation() {
 	fi
 	[ -n "${file}" ] && [ -n "${line}" ] || return 0
 	local msg="Tool ${tool} failed: ${message}"
-	printf '::error file=%s,line=%s::%s\n' "$(mcp_tools_gh_escape "${file}")" "$(mcp_tools_gh_escape "${line}")" "$(mcp_tools_gh_escape "${msg}")"
+	printf '::error file=%s,line=%s::%s\n' "$(mcp_tools_gh_escape "${file}")" "$(mcp_tools_gh_escape "${line}")" "$(mcp_tools_gh_escape "${msg}")" >&2
 }
 
 mcp_tools_append_failure_summary() {
