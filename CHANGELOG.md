@@ -5,6 +5,17 @@ All notable changes to mcp-bash-framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+## [Unreleased]
+
+### Documentation
+- Clarified batching as a legacy, opt-in path (disabled by default) in SPEC-COMPLIANCE.md with MCPBASH_COMPAT_BATCHES flag noted.
+- Updated minimal mode docs to note that non-logging methods are omitted from capabilities and only return -32601 if called anyway.
+- Added docs index (`docs/README.md`) and expanded project structure doc to cover required layout and the bootstrap SDK fallback note.
+- Documented resources/subscribe notification shape (subscriptionId plus subscription object) for client clarity.
+- Added guidance for very large registries to favor manual registration over auto-discovery in PERFORMANCE.md.
+
 ## [0.6.0] - 2025-12-08
 
 ### Added

@@ -9,6 +9,7 @@
 - **Concurrency**: `MCPBASH_MAX_CONCURRENT_REQUESTS` (default 16) sets worker slots. Increase gradually and watch CPU steal/memory pressure; decrease on small hosts.
 - **Timeouts**: Set per-tool `timeoutSecs` in `<tool>.meta.json`; global default comes from `MCPBASH_DEFAULT_TOOL_TIMEOUT` (30s by default).
 - **Registry scans**: Adjust TTLs (`MCP_TOOLS_TTL`, `MCP_RESOURCES_TTL`, `MCP_PROMPTS_TTL`) and scope (`MCPBASH_REGISTRY_REFRESH_PATH`) to reduce filesystem churn on large trees.
+- **Very large registries**: If you have hundreds/thousands of tools/resources/prompts, prefer manual registration hooks over auto-discovery to avoid `find`/`stat` overhead across huge trees.
 - **Resource polling**: `MCPBASH_RESOURCES_POLL_INTERVAL_SECS` controls subscription polling; use `0` to disable when live updates are unnecessary.
 - **Progress streaming**: `MCPBASH_ENABLE_LIVE_PROGRESS=true` streams progress/log updates mid-flight; tune `MCPBASH_PROGRESS_FLUSH_INTERVAL` (seconds) to balance responsiveness vs overhead.
 
