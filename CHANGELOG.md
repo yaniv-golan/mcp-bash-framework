@@ -25,8 +25,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **BREAKING**: Installer now uses XDG Base Directory compliant paths. Framework installs to `~/.local/share/mcp-bash` (or `$XDG_DATA_HOME/mcp-bash`) with a symlink at `~/.local/bin/mcp-bash`. Previous default was `~/mcp-bash-framework`. Users upgrading should either re-run the installer (which will use the new location) or specify `--dir ~/mcp-bash-framework` to keep the old path.
 - Roots handling is quieter and stricter: fallback roots load immediately (env → config/roots.json → project root), client timeouts keep the existing cache without noisy warnings, roots must exist/read, drive letters are normalized for Windows/MSYS, and `run-tool --roots`/`MCPBASH_ROOTS` fail fast on invalid paths.
 - `config --show` now prefixes each client snippet with a heading to make the target client clear; docs call out the multi-client output and `--client`/`--json` filters.
-- Documentation updated to reflect MCP protocol version `2025-11-25` as the current target (was `2025-06-18`); README and SPEC-COMPLIANCE.md now reference the latest spec and include links to all supported protocol versions.
+- Documentation updated to reflect MCP protocol version `2025-11-25` as the current target (was `2025-06-18`); the runtime now targets `2025-11-25` by default, and README/SPEC-COMPLIANCE.md include links to all supported protocol versions.
 - Environment surface simplified: runtime timeout defaults use a single tier (30s tool, 120s subscribe, 5s shutdown), dead `MCPBASH_PROCESS_GROUP_WARNED` removed, README optional config trimmed to essentials, and a new authoritative `docs/ENV_REFERENCE.md` lists all user-facing knobs with defaults/caps.
+- Tool invocations now log arguments, timeout, meta keys, roots, and trace status to the `mcp.tools` logger for easier diagnostics.
+
+### Fixed
+- `mcp-bash` now resolves symlinked launchers correctly, restoring accurate version detection and wrapper path handling when the binary is invoked via symlinks.
+- `mcp-bash doctor` verifies the configured temporary root (`MCPBASH_TMP_ROOT` when set) is writable and reports misconfigurations instead of proceeding silently.
 
 ## [0.5.0] - 2025-12-08
 
