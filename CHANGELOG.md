@@ -16,6 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Documented resources/subscribe notification shape (subscriptionId plus subscription object) for client clarity.
 - Added guidance for very large registries to favor manual registration over auto-discovery in PERFORMANCE.md.
 
+### Changed
+- Outgoing request IDs are now allocated via a lock-backed counter in the state dir to prevent cross-process ID reuse; elicitation polling in the flusher uses the shared counter.
+- All example tool/resource names switched to hyphenated form to match the validated naming regex.
+
+### Fixed
+- Removed duplicate YAML meta from the progress-and-cancellation example (JSON is canonical).
+
 ## [0.6.0] - 2025-12-08
 
 ### Added
