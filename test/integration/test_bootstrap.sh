@@ -48,7 +48,9 @@ assert_contains "docs/PROJECT-STRUCTURE.md" "${call_text}" "helper output should
 assert_contains "MCPBASH_PROJECT_ROOT" "${call_text}" "helper output should mention MCPBASH_PROJECT_ROOT"
 
 bootstrap_dir="$(grep -oE '/[^ )]*mcpbash\.bootstrap\.[A-Za-z0-9]+' "${STDERR_LOG}" | tail -n1 || true)"
-if [ "${MCPBASH_KEEP_LOGS:-false}" != "true" ]; then
+if [ "${MCPBASH_KEEP_LOGS:-false}" = "true" ]; then
+	printf 'Note: KEEP_LOGS enabled; bootstrap workspace may be preserved: %s\n' "${bootstrap_dir:-<none>}"
+else
 	if [ -n "${bootstrap_dir}" ] && [ -d "${bootstrap_dir}" ]; then
 		test_fail "bootstrap workspace not cleaned up: ${bootstrap_dir}"
 	fi
