@@ -1175,7 +1175,12 @@ mcp_core_start_progress_flusher() {
 			if [ "${MCPBASH_ENABLE_LIVE_PROGRESS:-false}" = "true" ]; then
 				mcp_core_flush_worker_streams_once || true
 			fi
-			# Polling tick drives live progress/log emission without blocking request handlers.
+			# Polling tick drives live progress/log emission and pending elicitation
+			# prompts without blocking request handlers. Elicitation uses a
+			# lock-backed shared counter to avoid ID reuse across processes.
+			if declare -F mcp_elicitation_process_requests >/dev/null 2>&1; then
+				mcp_elicitation_process_requests || true
+			fi
 			# Windows Git Bash may reject fractional sleep intervals; fall back to
 			# a 1s tick instead of exiting the flusher.
 			sleep "${MCPBASH_PROGRESS_FLUSH_INTERVAL:-0.5}" 2>/dev/null || sleep 1
