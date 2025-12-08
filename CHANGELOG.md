@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Roots handling is quieter and stricter: fallback roots load immediately (env → config/roots.json → project root), client timeouts keep the existing cache without noisy warnings, roots must exist/read, drive letters are normalized for Windows/MSYS, and `run-tool --roots`/`MCPBASH_ROOTS` fail fast on invalid paths.
 - `config --show` now prefixes each client snippet with a heading to make the target client clear; docs call out the multi-client output and `--client`/`--json` filters.
 - Documentation updated to reflect MCP protocol version `2025-11-25` as the current target (was `2025-06-18`); README and SPEC-COMPLIANCE.md now reference the latest spec and include links to all supported protocol versions.
+- Environment surface simplified: runtime timeout defaults use a single tier (30s tool, 120s subscribe, 5s shutdown), dead `MCPBASH_PROCESS_GROUP_WARNED` removed, README optional config trimmed to essentials, and a new authoritative `docs/ENV_REFERENCE.md` lists all user-facing knobs with defaults/caps.
 
 ## [0.5.0] - 2025-12-08
 
