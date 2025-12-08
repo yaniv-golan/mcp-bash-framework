@@ -234,7 +234,8 @@ mcp_io_write_payload() {
 	case "${normalized}" in
 	*$'\n'*)
 		mcp_io_handle_corruption "multi-line payload" "${key}" "${category}" "${normalized}"
-		return 1
+		# Preserve the payload by collapsing newlines; corruption counter already incremented.
+		normalized="${normalized//$'\n'/\\n}"
 		;;
 	esac
 
