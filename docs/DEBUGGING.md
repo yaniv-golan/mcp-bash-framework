@@ -148,6 +148,9 @@ For manual control without the `debug` subcommand:
 | `MCPBASH_TOOL_STDERR_CAPTURE` | `true` | Include a bounded stderr tail in tool error responses (`error.data._meta.stderr` / `stderrTail`) |
 | `MCPBASH_TOOL_STDERR_TAIL_LIMIT` | `4096` | Max bytes of stderr tail to attach to responses |
 | `MCPBASH_TOOL_TIMEOUT_CAPTURE` | `true` | Include timeout exit code and stderr tail (when available) in timeout errors |
+| `MCPBASH_TRACE_TOOLS` | `false` | Enable `set -x` tracing for shell tools; traces go to per-invocation logs under `MCPBASH_STATE_DIR` |
+| `MCPBASH_TRACE_PS4` | `+ ${BASH_SOURCE[0]##*/}:${LINENO}: ` | Override PS4 used for traces (timestamps or custom format) |
+| `MCPBASH_TRACE_MAX_BYTES` | `1048576` | Max bytes to retain per trace log (truncated to tail when exceeded) |
 
 Example:
 ```bash

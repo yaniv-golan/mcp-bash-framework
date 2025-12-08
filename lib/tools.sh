@@ -941,6 +941,22 @@ mcp_tools_stderr_tail() {
 	tail -c "${limit}" "${file}" 2>/dev/null | tr -d '\0'
 }
 
+mcp_tools_trace_enabled() {
+	local flag="${MCPBASH_TRACE_TOOLS:-false}"
+	case "${flag}" in
+	"1" | "true" | "TRUE" | "yes" | "on") return 0 ;;
+	*) return 1 ;;
+	esac
+}
+
+mcp_tools_trace_ps4() {
+	if [ -n "${MCPBASH_TRACE_PS4:-}" ]; then
+		printf '%s' "${MCPBASH_TRACE_PS4}"
+		return 0
+	fi
+	printf '+ ${BASH_SOURCE[0]##*/}:${LINENO}: '
+}
+
 # shellcheck disable=SC2031  # Subshell env exports are deliberate; parent values remain unchanged.
 mcp_tools_call() {
 	local name="$1"
@@ -1014,6 +1030,29 @@ mcp_tools_call() {
 		fi
 		# Fallback: invoke via shell if not marked executable but looks runnable
 		tool_runner=(bash "${absolute_path}")
+	fi
+	local trace_enabled="false"
+	local trace_file=""
+	local trace_ps4=""
+	local trace_max_bytes="${MCPBASH_TRACE_MAX_BYTES:-1048576}"
+	case "${trace_max_bytes}" in
+	'' | *[!0-9]*) trace_max_bytes=1048576 ;;
+	esac
+	if mcp_tools_trace_enabled && [ -n "${MCPBASH_STATE_DIR:-}" ]; then
+		trace_enabled="true"
+		trace_ps4="$(mcp_tools_trace_ps4)"
+		local safe_name
+		safe_name="$(printf '%s' "${name}" | tr -c 'A-Za-z0-9._-' '_')"
+		mkdir -p "${MCPBASH_STATE_DIR}" 2>/dev/null || true
+		trace_file="${MCPBASH_STATE_DIR}/trace.${safe_name}.${BASHPID:-$$}.${RANDOM}.log"
+		# Prefer bash -x when we can detect shell scripts.
+		if [ "${tool_runner[0]}" = "bash" ]; then
+			tool_runner=(bash -x "${tool_runner[@]:1}")
+		else
+			if [[ "${absolute_path}" =~ \.(sh|bash)$ ]] || head -n1 "${absolute_path}" 2>/dev/null | grep -qi 'bash\|sh'; then
+				tool_runner=(bash -x "${absolute_path}")
+			fi
+		fi
 	fi
 
 	local env_limit="${MCPBASH_ENV_PAYLOAD_THRESHOLD:-65536}"
@@ -1168,6 +1207,7 @@ mcp_tools_call() {
 		esac
 
 		local env_exec=()
+		local trace_active="${trace_enabled}"
 		if [ "${tool_env_mode}" != "inherit" ]; then
 			env_exec=(
 				env -i
@@ -1216,6 +1256,18 @@ mcp_tools_call() {
 				env_exec+=("MCP_ELICIT_RESPONSE_FILE=${elicit_response_file}")
 			fi
 
+			if [ "${trace_enabled}" = "true" ]; then
+				if exec 9>"${trace_file}"; then
+					BASH_XTRACEFD=9
+					PS4="${trace_ps4}"
+					export BASH_XTRACEFD PS4
+					: >"${trace_file}"
+					env_exec+=("BASH_XTRACEFD=9" "PS4=${trace_ps4}" "MCPBASH_TRACE_FILE=${trace_file}")
+				else
+					trace_active="false"
+				fi
+			fi
+
 			if [ "${tool_env_mode}" = "allowlist" ]; then
 				local allowlist_raw allowlist_var allowlist_value
 				allowlist_raw="${MCPBASH_TOOL_ENV_ALLOWLIST:-}"
@@ -1242,11 +1294,25 @@ mcp_tools_call() {
 				export MCP_ELICIT_REQUEST_FILE="${elicit_request_file}"
 				export MCP_ELICIT_RESPONSE_FILE="${elicit_response_file}"
 			fi
+			if [ "${trace_enabled}" = "true" ]; then
+				if exec 9>"${trace_file}"; then
+					export BASH_XTRACEFD=9
+					export PS4="${trace_ps4}"
+					export MCPBASH_TRACE_FILE="${trace_file}"
+					: >"${trace_file}"
+				else
+					trace_active="false"
+				fi
+			fi
 			if declare -F mcp_roots_wait_ready >/dev/null 2>&1; then
 				export MCP_ROOTS_JSON="${MCP_ROOTS_JSON:-[]}"
 				export MCP_ROOTS_PATHS="${MCP_ROOTS_PATHS:-}"
 				export MCP_ROOTS_COUNT="${MCP_ROOTS_COUNT:-0}"
 			fi
+		fi
+
+		if [ "${trace_active}" = "true" ]; then
+			set -x
 		fi
 
 		mcp_tools_can_stream_stderr() {
@@ -1398,6 +1464,16 @@ mcp_tools_call() {
 		esac
 	fi
 
+	if [ "${trace_enabled}" = "true" ] && [ -n "${trace_file}" ] && [ -f "${trace_file}" ]; then
+		local trace_size
+		trace_size="$(wc -c <"${trace_file}" | tr -d ' ')" || trace_size=0
+		if [ "${trace_size}" -gt "${trace_max_bytes}" ]; then
+			local trace_tmp="${trace_file}.tmp"
+			tail -c "${trace_max_bytes}" "${trace_file}" >"${trace_tmp}" 2>/dev/null || true
+			mv "${trace_tmp}" "${trace_file}" 2>/dev/null || true
+		fi
+	fi
+
 	if [ "${cancelled_flag}" = "true" ]; then
 		_mcp_tools_emit_error -32001 "Tool cancelled" "null"
 		cleanup_tool_temp_files
@@ -1412,12 +1488,12 @@ mcp_tools_call() {
 					--argjson code "${exit_code}" \
 					--arg stderr "${stderr_tail}" \
 					'
-					{
-						exitCode: $code,
-						_meta: ({exitCode: $code} + (if ($stderr|length) > 0 then {stderr: $stderr} else {} end))
-					}
-					| if ($stderr|length) > 0 then .stderrTail = $stderr else . end
-					'
+						{
+							exitCode: $code,
+							_meta: ({exitCode: $code} + (if ($stderr|length) > 0 then {stderr: $stderr} else {} end))
+						}
+						| if ($stderr|length) > 0 then .stderrTail = $stderr else . end
+						'
 			)"
 		fi
 		_mcp_tools_emit_error -32603 "Tool timed out" "${timeout_data}"

@@ -7,6 +7,7 @@
 - Argument values are never logged; debug traces focus on flow (method, ids, counts, byte sizes).
 - Startup diagnostics (transport, cwd, project root, JSON tool) are written to stderr when running over the stdio transport so stdout stays JSON-only for clients and Inspector.
 - Tool stderr capture is opt-in configurable: `MCPBASH_TOOL_STDERR_CAPTURE` (`true`/`false`), `MCPBASH_TOOL_STDERR_TAIL_LIMIT` (bytes, default 4096), and `MCPBASH_TOOL_TIMEOUT_CAPTURE` for timeouts.
+- Tool tracing is opt-in: set `MCPBASH_TRACE_TOOLS=true` to enable `set -x` for shell tools, with `PS4` override via `MCPBASH_TRACE_PS4` and trace size cap via `MCPBASH_TRACE_MAX_BYTES` (default 1MB).
 
 ## Verbose Mode (paths + script output)
 

@@ -18,6 +18,9 @@ test_require_command jq
 test_create_tmpdir
 WORKSPACE="${TEST_TMPDIR}/tool-errors"
 test_stage_workspace "${WORKSPACE}"
+mkdir -p "${WORKSPACE}/tmp"
+STATE_DIR="${WORKSPACE}/tmp/mcpbash.state.test"
+mkdir -p "${STATE_DIR}"
 
 mkdir -p "${WORKSPACE}/tools/fail"
 
@@ -53,7 +56,7 @@ JSON
 
 (
 	cd "${WORKSPACE}" || exit 1
-	MCPBASH_PROJECT_ROOT="${WORKSPACE}" ./bin/mcp-bash <"${WORKSPACE}/requests.ndjson" >"${WORKSPACE}/responses.ndjson"
+	MCPBASH_PROJECT_ROOT="${WORKSPACE}" MCPBASH_TMP_ROOT="${WORKSPACE}/tmp" MCPBASH_STATE_DIR="${STATE_DIR}" MCPBASH_TRACE_TOOLS=true MCPBASH_PRESERVE_STATE=true ./bin/mcp-bash <"${WORKSPACE}/requests.ndjson" >"${WORKSPACE}/responses.ndjson"
 )
 
 assert_json_lines "${WORKSPACE}/responses.ndjson"
@@ -92,6 +95,11 @@ esac
 slow_stderr_tail="$(echo "${slow_resp}" | jq -r '.error.data.stderrTail // empty')"
 if [ -n "${slow_stderr_tail}" ] && [ "${#slow_stderr_tail}" -gt 4096 ]; then
 	test_fail "timeout stderrTail exceeds expected cap"
+fi
+
+trace_file="$(find "${STATE_DIR}" -name 'trace.*.log' -type f -print -quit 2>/dev/null || true)"
+if [ -z "${trace_file}" ] || [ ! -f "${trace_file}" ]; then
+	test_fail "trace file missing"
 fi
 
 printf 'Tool error and timeout tests passed.\n'
