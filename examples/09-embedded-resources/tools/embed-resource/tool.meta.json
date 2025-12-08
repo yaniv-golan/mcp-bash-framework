@@ -1,0 +1,8 @@
+{
+  "name": "embed-resource",
+  "description": "Emits a text result plus an embedded resource",
+  "inputSchema": {
+    "type": "object",
+    "properties": {}
+  }
+}

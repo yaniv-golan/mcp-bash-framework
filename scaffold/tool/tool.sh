@@ -16,6 +16,9 @@ name="$(mcp_args_require '.name')"
 # repo_path="$(mcp_require_path '.repoPath' --default-to-single-root)"
 # Commands that emit non-JSON output should send it to stderr to keep stdout clean:
 # git commit -m "msg" >&2   # example for git; avoid 2>&1 when stdout carries JSON
+# Embed a file in the tool result (type:"resource"): write TSV `path<TAB>mime<TAB>uri` to MCP_TOOL_RESOURCES_FILE
+# if [ -n "${MCP_TOOL_RESOURCES_FILE:-}" ]; then printf '%s\ttext/plain\n' "/path/to/file" >>"${MCP_TOOL_RESOURCES_FILE}"; fi
+# JSON works too: echo '[{"path":"/path/to/file","mimeType":"text/plain"}]' >>"${MCP_TOOL_RESOURCES_FILE}"
 
 # Your tool logic here
 # Example progress/logging (uncomment if needed)

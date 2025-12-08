@@ -298,6 +298,23 @@ mcp_emit_json "$(mcp_json_arr "item1" "item2" "item3")"
 mcp_emit_text "Hello, ${name}!"
 ```
 
+#### Embedded resources (`type:"resource"`)
+
+Add file content to the `result.content` array so clients receive both text and attached files:
+
+- Write to `MCP_TOOL_RESOURCES_FILE` while the tool runs. TSV format: `path<TAB>mimeType<TAB>uri` (mime/uri optional). Example:
+	```bash
+	payload_path="${MCPBASH_PROJECT_ROOT}/resources/report.txt"
+	printf 'Report content' >"${payload_path}"
+	if [ -n "${MCP_TOOL_RESOURCES_FILE:-}" ]; then
+		printf '%s\ttext/plain\n' "${payload_path}" >>"${MCP_TOOL_RESOURCES_FILE}"
+	fi
+	mcp_emit_text "See embedded report"
+	```
+- JSON format is also accepted: `[{"path":"/tmp/result.png","mimeType":"image/png","uri":"file:///tmp/result.png"}]` (a single object or string path works too).
+- Binary files are base64-encoded into the `blob` field; text stays in `text`.
+- Keep paths inside allowed roots; invalid/unreadable entries are skipped (debug logs will mention the skip).
+
 #### Error handling
 
 **`mcp_fail`** – Return structured JSON-RPC error and exit:

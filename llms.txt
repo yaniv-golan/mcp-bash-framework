@@ -14,6 +14,7 @@ Key points:
 - **CLI `run-tool`**: Direct tool invocation with roots, dry-run, timeout override, verbose stderr, `--print-env`; covered by unit and example smoke tests.
 - **Scaffolded smoke scripts**: Each scaffolded tool ships with `tools/<name>/smoke.sh` to validate stdout JSON quickly; update the sample args in the script if you change `tool.meta.json`.
 - **Test harnesses**: `test_run_mcp` (NDJSON batch, preferred) and `test/common/session.sh` (interactive sequential calls; skips notifications, overwrites EXIT traps, no timeout).
+- **Embedded resources**: Write to `MCP_TOOL_RESOURCES_FILE` (TSV `path<TAB>mime<TAB>uri` or JSON array of `{path,mimeType,uri}`) to add `type:"resource"` content; binary files auto-encode to `blob`, text uses `text`.
 
 ## Docs
 
@@ -35,6 +36,7 @@ Key points:
 - [06-manual-registration](https://github.com/yaniv-golan/mcp-bash-framework/tree/main/examples/06-manual-registration): Manual registry overrides, live progress streaming, and custom resource providers.
 - [07-elicitation](https://github.com/yaniv-golan/mcp-bash-framework/tree/main/examples/07-elicitation): Client-driven elicitation prompts that gate tool execution.
 - [08-roots-basics](https://github.com/yaniv-golan/mcp-bash-framework/tree/main/examples/08-roots-basics): MCP roots scoping for tools; allows/denies file reads based on configured roots.
+- [09-embedded-resources](https://github.com/yaniv-golan/mcp-bash-framework/tree/main/examples/09-embedded-resources): Tool output that embeds files (`type:"resource"`).
 
 ## SDK & Scaffolding
 

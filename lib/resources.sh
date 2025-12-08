@@ -34,6 +34,11 @@ if ! command -v mcp_registry_resolve_scan_root >/dev/null 2>&1; then
 	. "${MCPBASH_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/lib/registry.sh"
 fi
 
+if ! command -v mcp_resource_content_object_from_file >/dev/null 2>&1; then
+	# shellcheck disable=SC1090
+	. "${MCPBASH_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/lib/resource_content.sh"
+fi
+
 mcp_resources_file_uri_from_path() {
 	mcp_uri_file_uri_from_path "$1"
 }
@@ -914,31 +919,39 @@ mcp_resources_read() {
 			mcp_logging_debug "${MCP_RESOURCES_LOGGER}" "Reading provider=${provider}"
 		fi
 	fi
-	local content
-	if ! content="$(mcp_resources_read_via_provider "${provider}" "${uri}")"; then
+	local content_file
+	content_file="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-resource-read.XXXXXX")"
+	if ! mcp_resources_read_via_provider "${provider}" "${uri}" >"${content_file}"; then
+		rm -f "${content_file}"
 		return 1
 	fi
-	mcp_logging_debug "${MCP_RESOURCES_LOGGER}" "Provider returned ${#content} bytes"
+	local content_size
+	content_size="$(wc -c <"${content_file}" | tr -d ' ')"
+	mcp_logging_debug "${MCP_RESOURCES_LOGGER}" "Provider returned ${content_size} bytes"
 	local limit="${MCPBASH_MAX_RESOURCE_BYTES:-${MCPBASH_MAX_TOOL_OUTPUT_SIZE:-10485760}}"
 	case "${limit}" in
 	'' | *[!0-9]*) limit=10485760 ;;
 	esac
-	local content_size
-	content_size="$(LC_ALL=C printf '%s' "${content}" | wc -c | tr -d ' ')"
 	if [ "${content_size}" -gt "${limit}" ]; then
 		mcp_logging_error "${MCP_RESOURCES_LOGGER}" "Resource ${name:-<direct>} content ${content_size} bytes exceeds limit ${limit}" || true
 		mcp_resources_error -32603 "Resource content exceeds ${limit} bytes"
+		rm -f "${content_file}"
 		return 1
 	fi
 	local result
-	result="$("${MCPBASH_JSON_TOOL_BIN}" -n -c --arg uri "${uri}" --arg mime "${mime}" --arg content "${content}" '{
-		contents: [
-			{
-				uri: $uri,
-				mimeType: $mime,
-				text: $content
-			}
-		]
-	}')"
+	local content_obj
+	if ! content_obj="$(mcp_resource_content_object_from_file "${content_file}" "${mime}" "${uri}")"; then
+		rm -f "${content_file}"
+		mcp_resources_error -32603 "Unable to encode resource content"
+		return 1
+	fi
+	result="$("${MCPBASH_JSON_TOOL_BIN}" -n -c --argjson content "${content_obj}" '{
+		contents: [$content]
+	}')" || result=""
+	rm -f "${content_file}"
+	if [ -z "${result}" ]; then
+		mcp_resources_error -32603 "Unable to encode resource content"
+		return 1
+	fi
 	_MCP_RESOURCES_RESULT="${result}"
 }

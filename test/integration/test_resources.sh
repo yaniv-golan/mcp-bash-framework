@@ -171,6 +171,41 @@ jq -s '
 	if ($list | has("nextCursor") and ($list.nextCursor | type) != "string") then error("nextCursor must be a string when present") else null end
 ' <"${TEMPLATE_ROOT}/responses.ndjson" >/dev/null
 
+# --- Binary resources emit blob instead of text ---
+BLOB_ROOT="${TEST_TMPDIR}/binary"
+test_stage_workspace "${BLOB_ROOT}"
+rm -f "${BLOB_ROOT}/server.d/register.sh"
+mkdir -p "${BLOB_ROOT}/resources"
+
+printf '\xff\0\01bin' >"${BLOB_ROOT}/resources/binary.bin"
+
+cat <<EOF_META >"${BLOB_ROOT}/resources/binary.meta.json"
+{"name": "file.binary", "description": "Binary file", "uri": "file://${BLOB_ROOT}/resources/binary.bin", "mimeType": "application/octet-stream"}
+EOF_META
+
+cat <<'JSON' >"${BLOB_ROOT}/requests.ndjson"
+{"jsonrpc":"2.0","id":"binary-init","method":"initialize","params":{}}
+{"jsonrpc":"2.0","method":"notifications/initialized"}
+{"jsonrpc":"2.0","id":"binary-read","method":"resources/read","params":{"name":"file.binary"}}
+JSON
+
+(
+	cd "${BLOB_ROOT}" || exit 1
+	MCPBASH_PROJECT_ROOT="${BLOB_ROOT}" ./bin/mcp-bash <"requests.ndjson" >"responses.ndjson"
+)
+
+jq -s '
+	def error(msg): error(msg);
+
+	(map(select(.id == "binary-read"))[0].result) as $read |
+	$read.contents[0] as $c |
+
+	if ($c.mimeType != "application/octet-stream") then error("unexpected mimeType for binary content") else null end,
+	if ($c | has("blob") | not) then error("binary content missing blob field") else null end,
+	if ($c.blob | type) != "string" or ($c.blob | length) == 0 then error("binary blob must be non-empty string") else null end,
+	if ($c | has("text")) then error("binary content should not include text") else null end
+' <"${BLOB_ROOT}/responses.ndjson" >/dev/null
+
 # --- Subscription updates ---
 SUB_ROOT="${TEST_TMPDIR}/subscribe"
 test_stage_workspace "${SUB_ROOT}"

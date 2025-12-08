@@ -233,6 +233,52 @@ if [ "${bar_allow}" != "visible" ]; then
 	test_fail "allowlist mode should include BAR"
 fi
 
+# --- Embedded resources in tool output ---
+EMBED_ROOT="${TEST_TMPDIR}/embed"
+test_stage_workspace "${EMBED_ROOT}"
+rm -f "${EMBED_ROOT}/server.d/register.sh"
+mkdir -p "${EMBED_ROOT}/tools/embed" "${EMBED_ROOT}/resources"
+
+cat <<'META' >"${EMBED_ROOT}/tools/embed/tool.meta.json"
+{
+  "name": "embed-resource",
+  "description": "Emits embedded resource content",
+  "arguments": {"type": "object", "properties": {}}
+}
+META
+
+cat <<'SH' >"${EMBED_ROOT}/tools/embed/tool.sh"
+#!/usr/bin/env bash
+set -euo pipefail
+payload_path="${MCPBASH_PROJECT_ROOT}/resources/payload.txt"
+mkdir -p "$(dirname "${payload_path}")"
+printf 'embedded-content' >"${payload_path}"
+if [ -n "${MCP_TOOL_RESOURCES_FILE:-}" ]; then
+	printf '%s\ttext/plain\t\n' "${payload_path}" >>"${MCP_TOOL_RESOURCES_FILE}"
+fi
+printf 'ok'
+SH
+chmod +x "${EMBED_ROOT}/tools/embed/tool.sh"
+
+cat <<'JSON' >"${EMBED_ROOT}/requests.ndjson"
+{"jsonrpc":"2.0","id":"embed-init","method":"initialize","params":{}}
+{"jsonrpc":"2.0","method":"notifications/initialized"}
+{"jsonrpc":"2.0","id":"embed-call","method":"tools/call","params":{"name":"embed-resource","arguments":{}}}
+JSON
+
+run_server "${EMBED_ROOT}" "${EMBED_ROOT}/requests.ndjson" "${EMBED_ROOT}/responses.ndjson"
+
+embed_resp="$(grep '"id":"embed-call"' "${EMBED_ROOT}/responses.ndjson" | head -n1)"
+embed_resource_count="$(echo "$embed_resp" | jq '[.result.content[] | select(.type=="resource")] | length')"
+embed_resource_text="$(echo "$embed_resp" | jq -r '.result.content[] | select(.type=="resource") | .resource.text // empty' | head -n1)"
+embed_resource_mime="$(echo "$embed_resp" | jq -r '.result.content[] | select(.type=="resource") | .resource.mimeType // empty' | head -n1)"
+
+if [ "${embed_resource_count}" -ne 1 ]; then
+	test_fail "expected one embedded resource content part"
+fi
+test_assert_eq "${embed_resource_text}" "embedded-content"
+test_assert_eq "${embed_resource_mime}" "text/plain"
+
 # --- Structured tool error propagation ---
 FAIL_ROOT="${TEST_TMPDIR}/fail"
 test_stage_workspace "${FAIL_ROOT}"

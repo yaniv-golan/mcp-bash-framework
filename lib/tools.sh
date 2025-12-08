@@ -42,6 +42,16 @@ if ! command -v mcp_json_icons_to_data_uris >/dev/null 2>&1; then
 	. "${MCPBASH_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/lib/json.sh"
 fi
 
+if ! command -v mcp_uri_file_uri_from_path >/dev/null 2>&1; then
+	# shellcheck disable=SC1090
+	. "${MCPBASH_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/lib/uri.sh"
+fi
+
+if ! command -v mcp_resource_content_object_from_file >/dev/null 2>&1; then
+	# shellcheck disable=SC1090
+	. "${MCPBASH_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/lib/resource_content.sh"
+fi
+
 # Provide defaults if policy helpers were not sourced (older bootstraps).
 if ! declare -F mcp_tools_policy_check >/dev/null 2>&1; then
 	mcp_tools_policy_check() { return 0; }
@@ -174,6 +184,142 @@ mcp_tools_normalize_schema() {
 	printf '%s' "${normalized}"
 }
 
+mcp_tools_normalize_local_path() {
+	local raw="$1"
+	if [ -z "${raw}" ]; then
+		return 1
+	fi
+	local abs="${raw}"
+	if [[ "${abs}" != /* ]]; then
+		if [ -n "${MCPBASH_PROJECT_ROOT:-}" ]; then
+			abs="${MCPBASH_PROJECT_ROOT%/}/${abs}"
+		else
+			abs="$(pwd)/${abs}"
+		fi
+	fi
+	if declare -F mcp_roots_normalize_path >/dev/null 2>&1; then
+		if ! abs="$(mcp_roots_normalize_path "${abs}")"; then
+			return 1
+		fi
+	else
+		local dir base
+		dir="$(cd "$(dirname "${abs}")" 2>/dev/null && pwd -P)" || return 1
+		base="$(basename "${abs}")"
+		abs="${dir}/${base}"
+	fi
+	printf '%s' "${abs}"
+}
+
+mcp_tools_embed_resource_from_path() {
+	local path="$1"
+	local mime_hint="${2:-}"
+	local uri_hint="${3:-}"
+
+	local abs
+	if ! abs="$(mcp_tools_normalize_local_path "${path}")"; then
+		return 1
+	fi
+	if declare -F mcp_roots_contains_path >/dev/null 2>&1; then
+		if ! mcp_roots_contains_path "${abs}"; then
+			mcp_logging_warning "${MCP_TOOLS_LOGGER}" "Embedded resource skipped (outside allowed roots): ${abs}"
+			return 1
+		fi
+	fi
+	if [ ! -r "${abs}" ]; then
+		mcp_logging_warning "${MCP_TOOLS_LOGGER}" "Embedded resource unreadable: ${abs}"
+		return 1
+	fi
+
+	local uri="${uri_hint}"
+	if [ -z "${uri}" ] && command -v mcp_uri_file_uri_from_path >/dev/null 2>&1; then
+		uri="$(mcp_uri_file_uri_from_path "${abs}" 2>/dev/null || true)"
+	elif [ -z "${uri}" ]; then
+		uri="file://${abs}"
+	fi
+
+	local content_obj
+	if ! content_obj="$(mcp_resource_content_object_from_file "${abs}" "${mime_hint}" "${uri}")"; then
+		return 1
+	fi
+	printf '%s' "${content_obj}"
+}
+
+mcp_tools_collect_embedded_resources() {
+	local spec_file="$1"
+
+	if [ "${MCPBASH_JSON_TOOL:-none}" = "none" ]; then
+		return 0
+	fi
+
+	local specs_json=""
+	if [ -s "${spec_file}" ]; then
+		specs_json="$("${MCPBASH_JSON_TOOL_BIN}" -c '
+			def normalize:
+				if type == "string" then {path: ., mimeType: null, uri: null}
+				elif type == "object" then {path: (.path // ""), mimeType: (.mimeType // null), uri: (.uri // null)}
+				else empty end;
+			try (
+				if type == "array" then . else [.] end
+				| map(normalize | select(.path != ""))
+			) catch []
+		' "${spec_file}" 2>/dev/null || true)"
+	fi
+
+	if [ -z "${specs_json}" ]; then
+		specs_json="$("${MCPBASH_JSON_TOOL_BIN}" -Rs '
+			if length == 0 then [] else
+				split("\n")
+				| map(select(length > 0))
+				| map(split("\t"))
+				| map({path: (.[0] // ""), mimeType: (.[1]? // null), uri: (.[2]? // null)})
+				| map(select(.path != ""))
+			end
+		' "${spec_file}" 2>/dev/null || true)"
+	fi
+
+	if [ -z "${specs_json}" ] || [ "${specs_json}" = "[]" ]; then
+		return 0
+	fi
+
+	local contents=()
+	local embed_attempts=0
+	local embed_added=0
+
+	while IFS=$'\t' read -r path mime uri || [ -n "${path}" ]; do
+		[ -n "${path}" ] || continue
+		((embed_attempts++)) || true
+		local content_obj
+		content_obj="$(mcp_tools_embed_resource_from_path "${path}" "${mime}" "${uri}" 2>/dev/null || true)"
+		if [ -n "${content_obj}" ]; then
+			content_obj="$(
+				printf '%s' "${content_obj}" | "${MCPBASH_JSON_TOOL_BIN}" -c '{type:"resource",resource:.}' 2>/dev/null || true
+			)"
+			if [ -n "${content_obj}" ]; then
+				contents+=("${content_obj}")
+				((embed_added++)) || true
+			fi
+		else
+			if declare -F mcp_logging_debug >/dev/null 2>&1; then
+				mcp_logging_debug "${MCP_TOOLS_LOGGER}" "Embedded resource skipped for path=${path}"
+			fi
+		fi
+	done < <(printf '%s' "${specs_json}" | "${MCPBASH_JSON_TOOL_BIN}" -r '
+		.[]
+		| "\(.path // "")\t\(.mimeType // "")\t\(.uri // "")"
+	')
+
+	if [ "${#contents[@]}" -eq 0 ]; then
+		if [ "${embed_attempts}" -gt 0 ] && declare -F mcp_logging_debug >/dev/null 2>&1; then
+			mcp_logging_debug "${MCP_TOOLS_LOGGER}" "No embedded resources added from ${spec_file}; check roots, readability, or format"
+		fi
+		return 0
+	fi
+
+	printf '[%s]' "$(
+		IFS=,
+		printf '%s' "${contents[*]}"
+	)"
+}
 mcp_tools_registry_max_bytes() {
 	mcp_registry_global_max_bytes
 }
@@ -880,6 +1026,9 @@ mcp_tools_call() {
 		request_meta_env_value=""
 	fi
 
+	local tool_resources_file
+	tool_resources_file="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-tool-resources.XXXXXX")"
+
 	local tool_error_file
 	tool_error_file="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-tool-error.XXXXXX")"
 
@@ -942,6 +1091,7 @@ mcp_tools_call() {
 			return 0
 		fi
 		rm -f "${stdout_file}" "${stderr_file}"
+		[ -n "${tool_resources_file:-}" ] && rm -f "${tool_resources_file}"
 		[ -n "${tool_error_file}" ] && rm -f "${tool_error_file}"
 		[ -n "${args_file}" ] && rm -f "${args_file}"
 		[ -n "${metadata_file}" ] && rm -f "${metadata_file}"
@@ -1016,6 +1166,7 @@ mcp_tools_call() {
 				"MCP_TOOL_METADATA_JSON=${MCP_TOOL_METADATA_JSON}"
 				"MCP_TOOL_META_JSON=${MCP_TOOL_META_JSON}"
 				"MCP_TOOL_ERROR_FILE=${MCP_TOOL_ERROR_FILE}"
+				"MCP_TOOL_RESOURCES_FILE=${tool_resources_file}"
 				"MCP_ELICIT_SUPPORTED=${elicit_supported}"
 				"MCPBASH_JSON_TOOL=${MCPBASH_JSON_TOOL:-}"
 				"MCPBASH_JSON_TOOL_BIN=${MCPBASH_JSON_TOOL_BIN:-}"
@@ -1029,6 +1180,7 @@ mcp_tools_call() {
 			[ -n "${MCP_TOOL_ARGS_FILE:-}" ] && env_exec+=("MCP_TOOL_ARGS_FILE=${MCP_TOOL_ARGS_FILE}")
 			[ -n "${MCP_TOOL_METADATA_FILE:-}" ] && env_exec+=("MCP_TOOL_METADATA_FILE=${MCP_TOOL_METADATA_FILE}")
 			[ -n "${MCP_TOOL_META_FILE:-}" ] && env_exec+=("MCP_TOOL_META_FILE=${MCP_TOOL_META_FILE}")
+			[ -n "${tool_resources_file:-}" ] && env_exec+=("MCP_TOOL_RESOURCES_FILE=${tool_resources_file}")
 			if [ "${elicit_supported}" = "1" ]; then
 				env_exec+=("MCP_ELICIT_REQUEST_FILE=${elicit_request_file}")
 				env_exec+=("MCP_ELICIT_RESPONSE_FILE=${elicit_response_file}")
@@ -1051,6 +1203,7 @@ mcp_tools_call() {
 			[ -n "${MCP_TOOL_METADATA_FILE:-}" ] && export MCP_TOOL_METADATA_FILE
 			[ -n "${MCP_TOOL_META_FILE:-}" ] && export MCP_TOOL_META_FILE
 			export MCP_TOOL_ERROR_FILE
+			export MCP_TOOL_RESOURCES_FILE="${tool_resources_file}"
 			export MCP_ELICIT_SUPPORTED="${elicit_supported}"
 			export MCPBASH_JSON_TOOL="${MCPBASH_JSON_TOOL:-}"
 			export MCPBASH_JSON_TOOL_BIN="${MCPBASH_JSON_TOOL_BIN:-}"
@@ -1374,12 +1527,24 @@ mcp_tools_call() {
 			._meta.stderr = $stderr
 		else . end |
 		
-		# Set isError if exit code non-zero
-		if $exit_code != 0 then
-			.isError = true
-		else . end
-		'
+			# Set isError if exit code non-zero
+			if $exit_code != 0 then
+				.isError = true
+			else . end
+			'
 	)"
+
+	local embedded_resources=""
+	if [ -s "${tool_resources_file}" ]; then
+		embedded_resources="$(mcp_tools_collect_embedded_resources "${tool_resources_file}" 2>/dev/null || true)"
+	fi
+	if [ -n "${embedded_resources}" ]; then
+		result_json="$(
+			printf '%s' "${result_json}" | "${MCPBASH_JSON_TOOL_BIN}" -c --argjson embeds "${embedded_resources}" '
+				.content += ($embeds // [])
+			'
+		)" || result_json=""
+	fi
 
 	cleanup_tool_temp_files
 

@@ -56,7 +56,7 @@ run_example_suite() {
 			if [ -n "${tool_name}" ]; then
 				break
 			fi
-		done < <(find "${MCPBASH_HOME}/examples/${example_id}/tools" -maxdepth 1 -type f \( -name '*.meta.json' -o -name '*.meta.yaml' -o -name '*.meta.yml' \) | sort)
+		done < <(find "${MCPBASH_HOME}/examples/${example_id}/tools" -maxdepth 2 -type f \( -name '*.meta.json' -o -name '*.meta.yaml' -o -name '*.meta.yml' \) | sort)
 	fi
 
 	cat <<'JSON' >"${workdir}/requests.ndjson"
@@ -66,6 +66,9 @@ JSON
 
 	if [ -n "${tool_name}" ]; then
 		printf '{"jsonrpc":"2.0","id":"tools","method":"tools/list","params":{"limit":5}}\n' >>"${workdir}/requests.ndjson"
+		if [ "${example_id}" = "09-embedded-resources" ]; then
+			printf '{"jsonrpc":"2.0","id":"embed-call","method":"tools/call","params":{"name":"%s","arguments":{}}}\n' "${tool_name}" >>"${workdir}/requests.ndjson"
+		fi
 	fi
 
 	cat <<'JSON' >>"${workdir}/requests.ndjson"
@@ -96,6 +99,16 @@ JSON
 			end
 		)
 	' "${workdir}/responses.ndjson" >/dev/null
+
+	if [ "${example_id}" = "09-embedded-resources" ]; then
+		jq -e -s '
+			def by_id(id): first(.[] | select(.id == id));
+			(by_id("embed-call").result.content // []) as $content |
+			($content | map(select(.type=="resource")) | length) == 1 and
+			($content | map(select(.type=="resource") | .resource.mimeType) | first) == "text/plain" and
+			($content | map(select(.type=="resource") | .resource.text) | first) == "Embedded report"
+		' "${workdir}/responses.ndjson" >/dev/null
+	fi
 }
 
 examples=()

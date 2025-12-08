@@ -435,6 +435,19 @@ See [docs/WINDOWS.md](docs/WINDOWS.md) for full guidance and workarounds.
 - Targets MCP protocol version `2025-11-25` while supporting negotiated downgrades.
 - Transport support is limited to stdio; HTTP/SSE/OAuth transports remain out of scope (see [Remote Connectivity](docs/REMOTE.md) for gateway options).
 
+## Embedded resources in tool output
+- Tools can attach files directly to the MCP response as `type:"resource"` content parts; binary files are auto-base64-encoded into the `blob` field, text stays in `text`.
+- Write paths to `MCP_TOOL_RESOURCES_FILE` (TSV: `path<TAB>mime<TAB>uri` or JSON array of `{path,mimeType,uri}`) during tool execution:
+	- ```bash
+	  payload_path="${MCPBASH_PROJECT_ROOT}/resources/report.txt"
+	  printf 'Report content' >"${payload_path}"
+	  if [ -n "${MCP_TOOL_RESOURCES_FILE:-}" ]; then
+	  	printf '%s\ttext/plain\n' "${payload_path}" >>"${MCP_TOOL_RESOURCES_FILE}"
+	  fi
+	  printf 'See embedded report for details'
+	  ```
+- See the dedicated example at `examples/09-embedded-resources/`.
+
 ### Protocol Version Compatibility
 This server targets MCP protocol version `2025-11-25` (the current stable specification) and supports negotiated downgrades during `initialize`.
 

@@ -34,6 +34,7 @@ This table shows when features were introduced in the MCP specification and when
 | Resource Templates | 2024-11-05 | 0.1.0 | ⚠️ Stub | Returns empty array (discovery not implemented) |
 | Resource Icons (SEP-973) | 2025-11-25 | 0.5.0 | ✅ Full | Local files converted to data URIs |
 | Resources listChanged Notification | 2025-06-18 | 0.1.0 | ✅ Full | Registry change detection |
+| Binary-safe Resource Payloads | 2024-11-05 | 0.6.0 | ✅ Full | Detect binary MIME and emit `blob` base64 instead of raw text |
 | **Prompts** | | | | |
 | Prompts (list/get) | 2024-11-05 | 0.1.0 | ✅ Full | Template discovery and execution |
 | Prompt Arguments | 2024-11-05 | 0.1.0 | ✅ Full | Dynamic prompt parameters |
@@ -56,10 +57,11 @@ This table shows when features were introduced in the MCP specification and when
 | **Content Types** | | | | |
 | Text Content | 2024-11-05 | 0.1.0 | ✅ Full | Standard text output |
 | Image Content | 2024-11-05 | 0.1.0 | ✅ Full | Base64 or URL references |
+| Embedded Resources | 2024-11-05 | 0.6.0 | ✅ Full | Tool results can embed resource content (text/blob) |
 | Audio Content | 2025-03-26 | ❌ Not yet | ❌ Not yet | Audio data in content responses |
 | **Roots** | | | | |
 | Roots (roots/list) | 2024-11-05 | 0.1.0 | ✅ Full | Server→client request |
-| Roots listChanged Notification | 2024-11-05 | 0.1.0 | ✅ Full | Client-side capability |
+| Roots listChanged Notification | 2024-11-05 | 0.1.0 | ✅ Full | Client notification handled; server re-requests roots and updates env |
 | **Elicitation** | | | | |
 | Elicitation (Form Mode) | 2025-06-18 | 0.1.0 | ✅ Full | In-band user input |
 | Elicitation URL Mode (SEP-1036) | 2025-11-25 | 0.5.0 | ✅ Full | OAuth/payments via browser |
@@ -71,7 +73,7 @@ This table shows when features were introduced in the MCP specification and when
 | JSON-RPC Batching | 2025-03-26 | ❌ Not supported | ❌ Removed | Removed from spec in 2025-06-18; not implemented |
 | Async Operations (job/poll pattern) | 2025-11-25 | ❌ Not yet | ❌ Not yet | Fire-and-forget jobs with polling responses |
 | Server Identity Discovery | 2025-11-25 | ❌ Not yet | ❌ Not yet | Pre-initialize server identity surface |
-| Sampling (sampling/createMessage) | 2024-11-05 | ❌ Not yet | ❌ Not yet | Server-initiated LLM requests for agentic behaviors |
+| Sampling (sampling/createMessage) | 2025-11-25 | ❌ Not yet | ❌ Not yet | Server-initiated LLM requests with `includeContext` for agent loops |
 
 ### Legend
 - ✅ Full: Complete implementation

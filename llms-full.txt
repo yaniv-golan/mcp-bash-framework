@@ -30,6 +30,16 @@ Pure Bash MCP server framework. Bash≥3.2 + jq/gojq. Stdio transport only.
   - `server.d/register.sh`, `server.d/env.sh`, `server.d/server.meta.json`, optional `server.d/policy.sh` (defines `mcp_tools_policy_check` to allow/deny tools centrally).
   - `config/roots.json`, `.registry/` (registry cache, not committed).
 
+## EMBEDDED RESOURCES (type:"resource")
+
+- Add file content to tool results by writing to `MCP_TOOL_RESOURCES_FILE` during execution.
+- Accepted formats:
+  - TSV: `path<TAB>mimeType<TAB>uri` (mime/uri optional).
+  - JSON: array/object/string paths, e.g. `[{"path":"/tmp/result.png","mimeType":"image/png"}]`.
+- The framework appends `{type:"resource", resource:{uri,mimeType,text|blob}}` to `result.content`.
+- Binary files are auto-base64-encoded to `blob`; text stays in `text`.
+- Paths must be readable and inside allowed roots; invalid entries are skipped (debug logs will note skips).
+
 ## TOOL STRUCTURE
 
 - Tools are Bash scripts invoked by the framework via stdio.
@@ -226,6 +236,7 @@ Pure Bash MCP server framework. Bash≥3.2 + jq/gojq. Stdio transport only.
   - Manual registration + live progress: `examples/06-manual-registration`.
   - Elicitation: `examples/07-elicitation`.
   - Roots basics: `examples/08-roots-basics`.
+  - Embedded resources: `examples/09-embedded-resources`.
   - Advanced ffmpeg studio: `examples/advanced/ffmpeg-studio`.
 
 ## COMMANDS & TESTING
