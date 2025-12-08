@@ -32,6 +32,8 @@ show_output="$(
 )"
 
 assert_contains "cfg-demo" "${show_output}" "config --show missing project name"
+assert_contains "# Claude Desktop" "${show_output}" "config --show missing client heading"
+assert_contains "# Cursor" "${show_output}" "config --show missing cursor heading"
 canonical_root="$(cd "${PROJECT_DIR}" && (pwd -P 2>/dev/null || pwd))"
 
 printf ' -> config --json descriptor shape\n'

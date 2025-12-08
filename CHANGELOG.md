@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **BREAKING**: Installer now uses XDG Base Directory compliant paths. Framework installs to `~/.local/share/mcp-bash` (or `$XDG_DATA_HOME/mcp-bash`) with a symlink at `~/.local/bin/mcp-bash`. Previous default was `~/mcp-bash-framework`. Users upgrading should either re-run the installer (which will use the new location) or specify `--dir ~/mcp-bash-framework` to keep the old path.
+- Roots handling is quieter and stricter: fallback roots load immediately (env → config/roots.json → project root), client timeouts keep the existing cache without noisy warnings, roots must exist/read, drive letters are normalized for Windows/MSYS, and `run-tool --roots`/`MCPBASH_ROOTS` fail fast on invalid paths.
+- `config --show` now prefixes each client snippet with a heading to make the target client clear; docs call out the multi-client output and `--client`/`--json` filters.
 
 ## [0.5.0] - 2025-12-08
 

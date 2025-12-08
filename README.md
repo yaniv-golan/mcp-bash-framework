@@ -107,6 +107,8 @@ mcp-bash config --wrapper-env    # wrapper that sources your shell profile first
 mcp-bash config --wrapper        # TTY: creates ./<server-name>.sh; piped/redirected: stdout
 ```
 
+`config --show` prints one labeled snippet per supported client (headings like `# Claude Desktop`, `# Cursor`, etc.) so you can see which block to copy; use `--client <name>` or `--json` when you only want a single paste-ready block.
+
 Copy the snippet for your client (Claude Desktop/CLI/Code, Cursor, Windsurf, LibreChat, etc.) and paste it into the appropriate config file. This sets `MCPBASH_PROJECT_ROOT` and the `mcp-bash` command path for you. When run in a terminal (stdout is a TTY), `config --wrapper` writes `<project-root>/<server-name>.sh`, marks it executable, and prints the path to stderr; piping or redirecting prints the wrapper script to stdout.
 Picking a wrapper:
 - Use `--wrapper` when your PATH/env is already correct in non-login shells (e.g., Linux, or macOS with absolute paths).

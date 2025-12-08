@@ -18,7 +18,7 @@ Pure Bash MCP server framework. Bash≥3.2 + jq/gojq. Stdio transport only.
   4) Add tools/resources/prompts via `mcp-bash scaffold tool|prompt|resource <name>`, then `mcp-bash validate` before wiring to clients.
 - Validation & config:
   - Validate project: `bin/mcp-bash validate [--project-root DIR] [--fix] [--json] [--explain-defaults] [--strict]`.
-  - Generate MCP client config snippets / JSON descriptor: `bin/mcp-bash config [--project-root DIR] [--show|--json|--client NAME|--wrapper]`.
+  - Generate MCP client config snippets / JSON descriptor: `bin/mcp-bash config [--project-root DIR] [--show|--json|--client NAME|--wrapper]` (`--show` prints labeled snippets for all clients; use `--client` to filter).
   - Environment diagnostics: `bin/mcp-bash doctor [--json]` (local operator use; exposes paths and env).
   - Registry cache: `bin/mcp-bash registry status [--project-root DIR]`.
 - Framework files:

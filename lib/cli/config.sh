@@ -19,6 +19,7 @@ mcp_cli_config() {
 	local mode="show" # show | json | wrapper | inspector
 	local client_filter=""
 	local wrapper_env="false"
+	local label_snippets="false"
 
 	while [ $# -gt 0 ]; do
 		case "$1" in
@@ -237,11 +238,20 @@ EOF
 		exit 0
 	fi
 
+	if [ "${mode}" = "show" ] && [ -z "${client_filter}" ]; then
+		label_snippets="true"
+	fi
+
 	print_client() {
 		local client="${1}"
 		local display_command="${command_path_json}"
+		local heading=""
 		case "${client}" in
 		claude-desktop)
+			heading="Claude Desktop"
+			if [ "${label_snippets}" = "true" ]; then
+				printf '# %s\n' "${heading}"
+			fi
 			printf '{\n'
 			printf '  "mcpServers": {\n'
 			printf '    %s: {\n' "${server_name_json}"
@@ -256,6 +266,10 @@ EOF
 			printf '}\n\n'
 			;;
 		cursor)
+			heading="Cursor"
+			if [ "${label_snippets}" = "true" ]; then
+				printf '# %s\n' "${heading}"
+			fi
 			printf '{\n'
 			printf '  "mcpServers": {\n'
 			printf '    %s: {\n' "${server_name_json}"
@@ -270,6 +284,10 @@ EOF
 			printf '}\n\n'
 			;;
 		claude-cli)
+			heading="Claude CLI"
+			if [ "${label_snippets}" = "true" ]; then
+				printf '# %s\n' "${heading}"
+			fi
 			printf '{\n'
 			printf '  "name": %s,\n' "${server_name_json}"
 			printf '  "command": %s' "${display_command}"
@@ -281,6 +299,10 @@ EOF
 			printf '\n}\n\n'
 			;;
 		windsurf)
+			heading="Windsurf"
+			if [ "${label_snippets}" = "true" ]; then
+				printf '# %s\n' "${heading}"
+			fi
 			printf '{\n'
 			printf '  "mcpServers": {\n'
 			printf '    %s: {\n' "${server_name_json}"
@@ -295,6 +317,10 @@ EOF
 			printf '}\n\n'
 			;;
 		librechat)
+			heading="LibreChat"
+			if [ "${label_snippets}" = "true" ]; then
+				printf '# %s\n' "${heading}"
+			fi
 			printf '{\n'
 			printf '  "name": %s,\n' "${server_name_json}"
 			printf '  "command": %s' "${display_command}"
