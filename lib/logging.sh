@@ -64,6 +64,13 @@ mcp_logging_emit() {
 	if ! mcp_logging_is_enabled "${level}"; then
 		return 0
 	fi
+	if [ "${MCPBASH_LOG_TIMESTAMP:-false}" = "true" ]; then
+		local ts=""
+		ts="$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || printf '')"
+		if [ -n "${ts}" ]; then
+			message="[${ts}] ${message}"
+		fi
+	fi
 	logger_json="$(mcp_logging_quote "${logger}")"
 	message_json="$(mcp_logging_quote "${message}")"
 	rpc_send_line_direct "$(printf '{"jsonrpc":"2.0","method":"notifications/message","params":{"level":"%s","logger":%s,"data":%s}}' "${level}" "${logger_json}" "${message_json}")"

@@ -29,6 +29,7 @@
 : "${MCPBASH_KEEP_LOGS:=false}"
 : "${MCPBASH_LOG_LEVEL_DEFAULT:=info}"
 : "${MCPBASH_LOG_DIR:=}"
+: "${MCPBASH_LOG_TIMESTAMP:=false}"
 
 # Path normalization helpers (Bash 3.2+). Load if not already present.
 if ! command -v mcp_path_normalize >/dev/null 2>&1; then
@@ -211,6 +212,9 @@ mcp_runtime_init_paths() {
 			else
 				MCPBASH_LOG_LEVEL_DEFAULT="info"
 			fi
+		fi
+		if [ -z "${MCPBASH_LOG_TIMESTAMP:-}" ]; then
+			MCPBASH_LOG_TIMESTAMP="true"
 		fi
 	fi
 
