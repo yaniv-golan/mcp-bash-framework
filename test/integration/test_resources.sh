@@ -71,17 +71,17 @@ JSON
 
 # Use jq -s instead of --slurpfile for better gojq compatibility on Windows
 jq -s '
-	def error(msg): error(msg);
+	def err(msg): error(msg);
 	
 	(map(select(.id == "auto-list"))[0].result) as $list |
 	(map(select(.id == "auto-read"))[0].result) as $read |
 	
-	if ($list.resources | length) != 1 then error("expected one resource in paginated result") else null end,
-	if ($list | has("nextCursor") | not) then error("nextCursor missing for paginated resources") else null end,
-	if ($list.resources[0].name | IN("file.alpha", "file.beta") | not) then error("unexpected resource name") else null end,
+	if ($list.resources | length) != 1 then err("expected one resource in paginated result") else null end,
+	if ($list | has("nextCursor") | not) then err("nextCursor missing for paginated resources") else null end,
+	if ($list.resources[0].name | IN("file.alpha", "file.beta") | not) then err("unexpected resource name") else null end,
 	
-	if $read.contents[0].mimeType != "text/plain" then error("unexpected mimeType") else null end,
-	if $read.contents[0].text != "alpha" then error("resource content mismatch") else null end
+	if $read.contents[0].mimeType != "text/plain" then err("unexpected mimeType") else null end,
+	if $read.contents[0].text != "alpha" then err("resource content mismatch") else null end
 ' <"${AUTO_ROOT}/responses.ndjson" >/dev/null
 
 # --- Manual registration overrides ---
@@ -134,15 +134,15 @@ JSON
 
 # Use jq -s instead of --slurpfile for better gojq compatibility on Windows
 jq -s '
-	def error(msg): error(msg);
+	def err(msg): error(msg);
 	
 	(map(select(.id == "manual-list"))[0].result) as $list |
 	(map(select(.id == "manual-read"))[0].result) as $read |
 	
-	if ($list.resources | length) != 2 then error("manual registry should contain two resources") else null end,
-	if ($list.resources[] | .name | IN("manual.left", "manual.right") | not) then error("unexpected resource discovered in manual registry") else null end,
+	if ($list.resources | length) != 2 then err("manual registry should contain two resources") else null end,
+	if ($list.resources[] | .name | IN("manual.left", "manual.right") | not) then err("unexpected resource discovered in manual registry") else null end,
 	
-	if $read.contents[0].text != "right" then error("manual resource content mismatch: " + ($read.contents[0].text|tostring)) else null end
+	if $read.contents[0].text != "right" then err("manual resource content mismatch: " + ($read.contents[0].text|tostring)) else null end
 ' <"${MANUAL_ROOT}/responses.ndjson" >/dev/null
 
 # --- Resource templates contract ---
@@ -163,12 +163,13 @@ JSON
 )
 
 jq -s '
-	def error(msg): error(msg);
+	def err(msg): error(msg);
 
 	(map(select(.id == "templates-list"))[0].result) as $list |
 
-	if ($list.resourceTemplates | length) != 0 then error("expected empty resourceTemplates") else null end,
-	if ($list | has("nextCursor") and ($list.nextCursor | type) != "string") then error("nextCursor must be a string when present") else null end
+	if ($list.resourceTemplates | length) != 0 then err("expected empty resourceTemplates") else null end,
+	if ($list | has("nextCursor") | not) then err("nextCursor missing") else null end,
+	if ($list.nextCursor | type) as $t | ($t != "string" and $t != "null") then err("nextCursor must be string or null") else null end
 ' <"${TEMPLATE_ROOT}/responses.ndjson" >/dev/null
 
 # --- Binary resources emit blob instead of text ---
@@ -195,15 +196,15 @@ JSON
 )
 
 jq -s '
-	def error(msg): error(msg);
+	def err(msg): error(msg);
 
 	(map(select(.id == "binary-read"))[0].result) as $read |
 	$read.contents[0] as $c |
 
-	if ($c.mimeType != "application/octet-stream") then error("unexpected mimeType for binary content") else null end,
-	if ($c | has("blob") | not) then error("binary content missing blob field") else null end,
-	if ($c.blob | type) != "string" or ($c.blob | length) == 0 then error("binary blob must be non-empty string") else null end,
-	if ($c | has("text")) then error("binary content should not include text") else null end
+	if ($c.mimeType != "application/octet-stream") then err("unexpected mimeType for binary content") else null end,
+	if ($c | has("blob") | not) then err("binary content missing blob field") else null end,
+	if ($c.blob | type) != "string" or ($c.blob | length) == 0 then err("binary blob must be non-empty string") else null end,
+	if ($c | has("text")) then err("binary content should not include text") else null end
 ' <"${BLOB_ROOT}/responses.ndjson" >/dev/null
 
 # --- Subscription updates ---
