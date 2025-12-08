@@ -1111,10 +1111,16 @@ mcp_tools_call() {
 
 	if mcp_logging_is_enabled "debug"; then
 		local arg_count=0
+		local arg_bytes=0
+		local meta_count=0
 		if [ -n "${args_json}" ] && [ "${args_json}" != "{}" ]; then
 			arg_count="$(printf '%s' "${args_json}" | "${MCPBASH_JSON_TOOL_BIN}" -r 'keys | length' 2>/dev/null || echo 0)"
+			arg_bytes="$(printf '%s' "${args_json}" | wc -c | tr -d ' ')"
 		fi
-		mcp_logging_debug "${MCP_TOOLS_LOGGER}" "Invoke tool=${name} arg_count=${arg_count} timeout=${effective_timeout:-none}"
+		if [ -n "${metadata}" ] && [ "${metadata}" != "{}" ]; then
+			meta_count="$(printf '%s' "${metadata}" | "${MCPBASH_JSON_TOOL_BIN}" -r 'keys | length' 2>/dev/null || echo 0)"
+		fi
+		mcp_logging_debug "${MCP_TOOLS_LOGGER}" "Invoke tool=${name} arg_count=${arg_count} arg_bytes=${arg_bytes} meta_keys=${meta_count} roots=${MCP_ROOTS_COUNT:-0} timeout=${effective_timeout:-none} trace=${trace_enabled}"
 		if mcp_logging_verbose_enabled; then
 			mcp_logging_debug "${MCP_TOOLS_LOGGER}" "Tool path=${absolute_path}"
 		fi

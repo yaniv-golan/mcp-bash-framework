@@ -21,9 +21,9 @@ Ordered by impact on debuggability.
 - **Rationale:** `set -x` is invaluable for thorny tool bugs but too noisy to enable globally.
 - **Status:** Implemented via opt-in env `MCPBASH_TRACE_TOOLS` with default `PS4='+ ${BASH_SOURCE[0]##*/}:${LINENO}: '` (override `MCPBASH_TRACE_PS4`). Traces go to per-invocation files under `MCPBASH_STATE_DIR`, capped by `MCPBASH_TRACE_MAX_BYTES` (tail retained). Shell tools are run with `bash -x` when detectable; tracing is gated and does not alter defaults.
 
-## 5. Tool invocation logging
+## 5. Tool invocation logging — **Implemented**
 - **Rationale:** Knowing which tool ran with what (sanitized) args helps reconstruct failure sequences.
-- **Suggested implementation:** Emit a single log line per tool call at `debug` level (optionally `info` when verbose), with arg shapes or hashes instead of raw values. Guard size and redact paths unless verbose. Honor existing logging toggles so defaults stay quiet.
+- **Status:** Implemented logging at debug level with redacted details: arg count/bytes, metadata key count, roots count, timeout, trace flag; path only when verbose logging is enabled. No argument values are logged.
 
 ## 6. Environment doctor (`mcp-bash doctor`)
 - **Rationale:** Pre-flight checks prevent debugging dead-ends caused by bad shells, missing jq/gojq, or unwritable temp dirs.
