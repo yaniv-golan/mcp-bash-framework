@@ -91,6 +91,11 @@ mcp_auth_emit_error() {
 	local id_json="$1"
 	local message="$2"
 
+	# Notifications must not receive responses; skip when id is absent.
+	case "${id_json}" in
+	null | '') return 0 ;;
+	esac
+
 	rpc_send_line "$(mcp_core_build_error_response "${id_json}" -32602 "${message}" "")"
 }
 
