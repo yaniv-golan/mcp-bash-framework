@@ -6,8 +6,8 @@ MCP Roots let clients tell the server which filesystem areas are in scope. mcp-b
 - During `initialize`, the lifecycle handler records whether the client advertises `roots` and `roots.listChanged`.
 - After `initialized`, the server sends `roots/list` to the client. Responses are matched via the RPC callback registry.
 - If a client emits `notifications/roots/list_changed`, the server re-requests roots (debounced).
-- While a refresh is in flight, roots are cleared and tools block on `mcp_roots_wait_ready` so they don’t run with stale roots.
-- Timeouts or client errors fall back to local roots (env/config below) and mark roots ready.
+- While a refresh is in flight, the cached roots remain available; client responses replace the cache on success.
+- Timeouts or client errors keep the existing roots (no noisy warnings); malformed client payloads are ignored.
 
 ## Tool environment
 Every tool receives these env vars (populated once roots are ready):
@@ -21,9 +21,10 @@ SDK helpers in `sdk/tool-sdk.sh`:
 - `mcp_roots_contains <path>` – returns 0 if the path is within any root.
 
 ## Fallbacks (when the client doesn’t supply roots or times out)
-Priority:
-1. `MCPBASH_ROOTS=/path/one:/path/two` (colon-separated absolute or relative paths; relative paths resolve against `MCPBASH_PROJECT_ROOT`).
-2. `config/roots.json` in your project:
+Priority (highest to lowest):
+1. `--roots` flag to `mcp-bash run-tool` (run-tool only; comma-separated)
+2. `MCPBASH_ROOTS=/path/one:/path/two` (colon-separated; absolute or relative to `MCPBASH_PROJECT_ROOT`)
+3. `config/roots.json` in your project:
    ```json
    {
      "roots": [
@@ -32,12 +33,22 @@ Priority:
      ]
    }
    ```
+4. Default: `MCPBASH_PROJECT_ROOT` (implicit single root)
 
-If neither is present, tools see no roots unless the project/tool implements its own fallback (e.g., the ffmpeg-studio example defaults to its bundled `./media`).
+Behavior:
+- `--roots` / `MCPBASH_ROOTS` fail fast on invalid paths (non-existent or unreadable).
+- `config/roots.json` warns and skips invalid entries but keeps valid ones.
+- Client roots replace the current cache on success; malformed client payloads keep the previous roots.
 
 ## Try it
 - Run `./examples/run 08-roots-basics` and call `example.roots.read` with `./data/sample.txt` (allowed) and `/etc/passwd` (denied).
 - In the advanced ffmpeg-studio example, paths are scoped by client roots; if none are provided, it falls back to the bundled `./media`.
+
+## Path requirements
+- All roots must exist and be readable; mcp-bash will not create directories.
+- Paths are canonicalized (symlinks resolved where possible) before comparison, and drive letters are normalized on Windows/MSYS.
+- Only `file://` URIs are accepted from clients; non-local authorities are rejected.
+- Relative paths in `MCPBASH_ROOTS` or `config/roots.json` resolve against `MCPBASH_PROJECT_ROOT`.
 
 ## Logging and safety
 - Only `file://` URIs are accepted; non-local authorities are rejected.

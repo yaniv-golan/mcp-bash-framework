@@ -29,6 +29,74 @@ MCPBASH_CLIENT_SUPPORTS_ROOTS_LIST_CHANGED=0
 MCPBASH_ROOTS_DEBOUNCE_INTERVAL="${MCPBASH_ROOTS_DEBOUNCE_INTERVAL:-1}"
 MCPBASH_ROOTS_REQUEST_TIMEOUT="${MCPBASH_ROOTS_REQUEST_TIMEOUT:-5}"
 
+mcp_roots_log_path_issue() {
+	local level="$1"
+	local source="$2"
+	local message="$3"
+	if command -v mcp_logging_emit >/dev/null 2>&1; then
+		case "${level}" in
+		error) mcp_logging_error "${MCP_ROOTS_LOGGER}" "${source}: ${message}" ;;
+		warning) mcp_logging_warning "${MCP_ROOTS_LOGGER}" "${source}: ${message}" ;;
+		info) mcp_logging_info "${MCP_ROOTS_LOGGER}" "${source}: ${message}" ;;
+		debug) mcp_logging_debug "${MCP_ROOTS_LOGGER}" "${source}: ${message}" ;;
+		*) mcp_logging_warning "${MCP_ROOTS_LOGGER}" "${source}: ${message}" ;;
+		esac
+	else
+		printf '%s: %s\n' "${source}" "${message}" >&2
+	fi
+}
+
+mcp_roots_canonicalize_checked() {
+	local raw="$1"
+	local source="$2"
+	local strict="${3:-0}"
+	local level="warning"
+	if [ "${strict}" = "1" ]; then
+		level="error"
+	fi
+
+	# Basic ~ expansion; we avoid eval for safety.
+	if [[ "${raw}" == "~"* ]]; then
+		raw="${raw/#~/${HOME:-~}}"
+	fi
+
+	local normalized
+	normalized="$(mcp_roots_normalize_path "${raw}")"
+	if [ -z "${normalized}" ]; then
+		mcp_roots_log_path_issue "${level}" "${source}" "unable to normalize path '${raw}'"
+		return 1
+	fi
+
+	if [ ! -e "${normalized}" ]; then
+		mcp_roots_log_path_issue "${level}" "${source}" "path does not exist: ${normalized}"
+		return 1
+	fi
+
+	if [ ! -r "${normalized}" ]; then
+		mcp_roots_log_path_issue "${level}" "${source}" "path not readable: ${normalized}"
+		return 1
+	fi
+
+	printf '%s' "${normalized}"
+	return 0
+}
+
+mcp_roots_append_unique() {
+	local path="$1"
+	local name="$2"
+
+	local existing
+	for existing in "${MCPBASH_ROOTS_PATHS[@]}"; do
+		if [ "${existing}" = "${path}" ]; then
+			return 0
+		fi
+	done
+
+	MCPBASH_ROOTS_PATHS+=("${path}")
+	MCPBASH_ROOTS_URIS+=("file://${path}")
+	MCPBASH_ROOTS_NAMES+=("${name}")
+}
+
 mcp_roots_capture_capabilities() {
 	local client_caps_json="$1"
 	MCPBASH_CLIENT_SUPPORTS_ROOTS=0
@@ -53,11 +121,28 @@ mcp_roots_clear() {
 	MCPBASH_ROOTS_PATHS=()
 }
 
+mcp_roots_add_default_project_root() {
+	if [ -z "${MCPBASH_PROJECT_ROOT:-}" ]; then
+		return 0
+	fi
+	local abs
+	if ! abs="$(mcp_roots_canonicalize_checked "${MCPBASH_PROJECT_ROOT}" "project root" 1)"; then
+		return 1
+	fi
+	mcp_roots_append_unique "${abs}" ""
+}
+
 mcp_roots_load_all_fallbacks() {
 	mcp_roots_clear
-	mcp_roots_load_from_env
+	local had_error=0
+	if ! mcp_roots_load_from_env; then
+		had_error=1
+	fi
 	if [ "${#MCPBASH_ROOTS_PATHS[@]}" -eq 0 ]; then
 		mcp_roots_load_fallback
+	fi
+	if [ "${#MCPBASH_ROOTS_PATHS[@]}" -eq 0 ]; then
+		mcp_roots_add_default_project_root || had_error=1
 	fi
 	# Debug dump to state dir if available
 	if [ -n "${MCPBASH_STATE_DIR:-}" ]; then
@@ -68,22 +153,20 @@ mcp_roots_load_all_fallbacks() {
 			done
 		} >"${MCPBASH_STATE_DIR}/roots.debug" 2>/dev/null || true
 	fi
+	return "${had_error}"
 }
 
 mcp_roots_init_after_initialized() {
+	mcp_roots_load_all_fallbacks || true
+	MCPBASH_ROOTS_READY=1
 	if [ "${MCPBASH_CLIENT_SUPPORTS_ROOTS}" = "1" ]; then
 		mcp_roots_request_from_client
-	else
-		mcp_roots_load_all_fallbacks
-		MCPBASH_ROOTS_READY=1
 	fi
 }
 
 mcp_roots_request_from_client() {
 	# If client does not support roots, fall back immediately.
 	if [ "${MCPBASH_CLIENT_SUPPORTS_ROOTS}" != "1" ]; then
-		mcp_roots_load_all_fallbacks
-		MCPBASH_ROOTS_READY=1
 		return 0
 	fi
 
@@ -100,10 +183,6 @@ mcp_roots_request_from_client() {
 		mcp_logging_debug "${MCP_ROOTS_LOGGER}" "roots/list request already pending"
 		return 0
 	fi
-
-	# Clear current roots so tools block until refresh completes.
-	MCPBASH_ROOTS_READY=0
-	mcp_roots_clear
 
 	MCPBASH_ROOTS_PENDING_REQUEST=1
 	((MCPBASH_ROOTS_GENERATION++)) || true
@@ -138,18 +217,19 @@ mcp_roots_start_timeout_watchdog() {
 	fi
 
 	if [ "${MCPBASH_ROOTS_PENDING_REQUEST}" = "1" ]; then
-		mcp_logging_warning "${MCP_ROOTS_LOGGER}" "roots/list timed out after ${MCPBASH_ROOTS_REQUEST_TIMEOUT}s"
+		mcp_logging_debug "${MCP_ROOTS_LOGGER}" "roots/list timed out after ${MCPBASH_ROOTS_REQUEST_TIMEOUT}s; keeping existing roots"
 		MCPBASH_ROOTS_PENDING_REQUEST=0
 		MCPBASH_ROOTS_PENDING_REQUEST_ID=""
 		mcp_rpc_cancel_pending "${request_id}"
-		mcp_roots_load_all_fallbacks
-		MCPBASH_ROOTS_READY=1
 	fi
 }
 
 mcp_roots_handle_list_response() {
 	local json_payload="$1"
 	local expected_generation="${2:-}"
+	local prev_paths=("${MCPBASH_ROOTS_PATHS[@]}")
+	local prev_uris=("${MCPBASH_ROOTS_URIS[@]}")
+	local prev_names=("${MCPBASH_ROOTS_NAMES[@]}")
 
 	if [ -n "${expected_generation}" ] && [ "${expected_generation}" != "${MCPBASH_ROOTS_GENERATION}" ]; then
 		mcp_logging_debug "${MCP_ROOTS_LOGGER}" "Stale roots/list response discarded (gen ${expected_generation}, current ${MCPBASH_ROOTS_GENERATION})"
@@ -169,7 +249,6 @@ mcp_roots_handle_list_response() {
 			msg="Unknown error"
 		fi
 		mcp_logging_warning "${MCP_ROOTS_LOGGER}" "roots/list failed: code=${code} message=${msg}"
-		mcp_roots_load_all_fallbacks
 		MCPBASH_ROOTS_READY=1
 		return 0
 	fi
@@ -182,13 +261,15 @@ mcp_roots_handle_list_response() {
 	fi
 	if [ -z "${result}" ] || [ "${result}" = "null" ]; then
 		mcp_logging_warning "${MCP_ROOTS_LOGGER}" "roots/list response missing result"
-		mcp_roots_load_all_fallbacks
 		MCPBASH_ROOTS_READY=1
 		return 0
 	fi
 
-	mcp_roots_clear
-	mcp_roots_parse_response "${result}"
+	if ! mcp_roots_parse_response "${result}"; then
+		MCPBASH_ROOTS_PATHS=("${prev_paths[@]}")
+		MCPBASH_ROOTS_URIS=("${prev_uris[@]}")
+		MCPBASH_ROOTS_NAMES=("${prev_names[@]}")
+	fi
 	MCPBASH_ROOTS_READY=1
 }
 
@@ -290,42 +371,49 @@ mcp_roots_parse_response() {
 	fi
 
 	local seen_paths=$'\n'
+	local -a new_uris=()
+	local -a new_names=()
+	local -a new_paths=()
+
 	while IFS=$'\t' read -r uri name || [ -n "${uri}" ]; do
 		[ -n "${uri}" ] || continue
 		local path
 		if ! path="$(mcp_roots_uri_to_path "${uri}")"; then
 			continue
 		fi
-		path="$(mcp_roots_normalize_path "${path}")"
-		if [ -z "${path}" ]; then
+		if ! path="$(mcp_roots_canonicalize_checked "${path}" "client roots" 0)"; then
 			continue
 		fi
 		case "${seen_paths}" in
 		*$'\n'"${path}"$'\n'*) continue ;;
 		esac
 		seen_paths="${seen_paths}${path}"$'\n'
-		MCPBASH_ROOTS_URIS+=("${uri}")
-		MCPBASH_ROOTS_NAMES+=("${name}")
-		MCPBASH_ROOTS_PATHS+=("${path}")
+		new_uris+=("${uri}")
+		new_names+=("${name}")
+		new_paths+=("${path}")
 	done <<<"${entries}"$'\n'
+
+	MCPBASH_ROOTS_URIS=("${new_uris[@]}")
+	MCPBASH_ROOTS_NAMES=("${new_names[@]}")
+	MCPBASH_ROOTS_PATHS=("${new_paths[@]}")
 }
 
 mcp_roots_load_from_env() {
 	local raw="${MCPBASH_ROOTS:-}"
 	[ -n "${raw}" ] || return 0
+	local had_error=0
 	local IFS=':'
 	local entry
 	for entry in ${raw}; do
 		[ -n "${entry}" ] || continue
 		local path
-		path="$(mcp_roots_normalize_path "${entry}")"
-		if [ -z "${path}" ]; then
+		if ! path="$(mcp_roots_canonicalize_checked "${entry}" "MCPBASH_ROOTS" 1)"; then
+			had_error=1
 			continue
 		fi
-		MCPBASH_ROOTS_URIS+=("file://${path}")
-		MCPBASH_ROOTS_NAMES+=("")
-		MCPBASH_ROOTS_PATHS+=("${path}")
+		mcp_roots_append_unique "${path}" ""
 	done
+	return "${had_error}"
 }
 
 mcp_roots_load_fallback() {
@@ -356,17 +444,14 @@ mcp_roots_load_fallback() {
 		if [[ "${abs}" != /* ]]; then
 			abs="${MCPBASH_PROJECT_ROOT%/}/${abs}"
 		fi
-		abs="$(mcp_roots_normalize_path "${abs}")"
-		if [ -z "${abs}" ]; then
+		if ! abs="$(mcp_roots_canonicalize_checked "${abs}" "config/roots.json" 0)"; then
 			continue
 		fi
 		case "${seen}" in
 		*$'\n'"${abs}"$'\n'*) continue ;;
 		esac
 		seen="${seen}${abs}"$'\n'
-		MCPBASH_ROOTS_URIS+=("file://${abs}")
-		MCPBASH_ROOTS_NAMES+=("${name}")
-		MCPBASH_ROOTS_PATHS+=("${abs}")
+		mcp_roots_append_unique "${abs}" "${name}"
 	done <<<"${entries}"$'\n'
 }
 
@@ -433,7 +518,7 @@ mcp_roots_wait_ready() {
 		local now
 		now="$(date +%s)"
 		if ((now - start >= timeout)); then
-			mcp_logging_warning "${MCP_ROOTS_LOGGER}" "Timeout waiting for roots; loading fallback"
+			mcp_logging_debug "${MCP_ROOTS_LOGGER}" "Timeout waiting for roots; using existing roots"
 			if [ "${MCPBASH_ROOTS_PENDING_REQUEST}" = "1" ]; then
 				if [ -n "${MCPBASH_ROOTS_PENDING_REQUEST_ID}" ]; then
 					mcp_rpc_cancel_pending "${MCPBASH_ROOTS_PENDING_REQUEST_ID}"
@@ -442,7 +527,6 @@ mcp_roots_wait_ready() {
 				MCPBASH_ROOTS_PENDING_REQUEST_ID=""
 				((MCPBASH_ROOTS_GENERATION++)) || true
 			fi
-			mcp_roots_load_all_fallbacks
 			MCPBASH_ROOTS_READY=1
 			return 0
 		fi

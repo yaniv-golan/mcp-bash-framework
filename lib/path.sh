@@ -127,6 +127,21 @@ mcp_path_normalize() {
 		[ -z "${normalized}" ] && normalized="/"
 	fi
 
+	# Normalize drive letter case for Windows/MSYS-style paths.
+	# Examples: /c/Users -> /C/Users, c:\tmp -> C:\tmp
+	if [[ "${normalized}" =~ ^/([a-z])(/.*)?$ ]]; then
+		local drive="${BASH_REMATCH[1]}"
+		local rest="${BASH_REMATCH[2]:-}"
+		local drive_upper
+		drive_upper="$(printf '%s' "${drive}" | tr '[:lower:]' '[:upper:]')"
+		normalized="/${drive_upper}${rest}"
+	elif [[ "${normalized}" =~ ^([a-z]): ]]; then
+		local drive_letter="${BASH_REMATCH[1]}"
+		local drive_upper
+		drive_upper="$(printf '%s' "${drive_letter}" | tr '[:lower:]' '[:upper:]')"
+		normalized="${drive_upper}${normalized:1}"
+	fi
+
 	if [ "${MCP_PATH_DEBUG:-0}" = "1" ]; then
 		printf 'mcp_path_normalize: %s -> %s\n' "${raw}" "${resolver}" >&2
 	fi

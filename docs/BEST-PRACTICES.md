@@ -549,6 +549,11 @@ mcp-bash run-tool my-tool --args '{}' --project-root /path/to/project
 
 > **Windows/Git Bash users**: Set `MSYS2_ARG_CONV_EXCL="*"` before running commands with path arguments (`--roots`, `--project-root`) to prevent automatic path mangling. Example: `MSYS2_ARG_CONV_EXCL="*" mcp-bash run-tool my-tool --roots '/repo'`. See [docs/WINDOWS.md](WINDOWS.md) for details.
 
+Notes:
+- `--roots` and `MCPBASH_ROOTS` require existing, readable paths; invalid entries fail fast.
+- If no roots are provided by client/env/config, the project root is used as a single default.
+- Client roots timeouts keep the current cache; no warning is emitted for the fallback.
+
 **Use cases:**
 
 | Scenario | Command |

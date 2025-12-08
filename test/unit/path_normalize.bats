@@ -47,4 +47,9 @@ printf ' -> empty normalize resolves to PWD when resolver exists\n'
 empty_norm="$(mcp_path_normalize '')"
 assert_eq "$(pwd -P)" "${empty_norm}" "empty path should normalize to PWD"
 
+printf ' -> normalizes msys-style drive letters to uppercase\n'
+msys_path="/c/Users/Test"
+normalized_drive="$(mcp_path_normalize "${msys_path}")"
+assert_eq "/C/Users/Test" "${normalized_drive}" "expected drive letter to uppercase"
+
 printf 'path normalization tests passed.\n'
