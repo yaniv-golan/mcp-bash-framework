@@ -23,8 +23,8 @@ mcp_resolve_script_path() {
 
 script_path="$(mcp_resolve_script_path)"
 MCPBASH_SCRIPT_PATH="${script_path}"
-script_dir="$(cd "$(dirname "${script_path}")" && pwd)"
-MCPBASH_HOME="$(cd "${script_dir}/.." && pwd)"
+script_dir="$(cd -P "$(dirname "${script_path}")" && pwd)"
+MCPBASH_HOME="$(cd -P "${script_dir}/.." && pwd)"
 
 if [ ! -r "${MCPBASH_HOME}/lib/runtime.sh" ]; then
 	printf '%s\n' "mcp-bash install looks broken: expected ${MCPBASH_HOME}/lib/runtime.sh (resolved from ${script_path})." >&2
@@ -188,7 +188,7 @@ case "${1-}" in
 	;;
 --version | -v)
 	# Read framework version from VERSION file
-	_version_file="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/VERSION"
+	_version_file="${MCPBASH_HOME}/VERSION"
 	if [ -f "${_version_file}" ]; then
 		printf 'mcp-bash %s\n' "$(tr -d '[:space:]' <"${_version_file}")"
 	else
