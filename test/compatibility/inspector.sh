@@ -74,7 +74,7 @@ export WORKSPACE
 				kill "${PID}"
 				exit 1
 			fi
-			for cap in logging tools resources prompts completion; do
+			for cap in logging tools resources prompts completions; do
 				if ! echo "${line}" | jq -e ".result.capabilities.${cap}" >/dev/null; then
 					echo "missing capability ${cap}" >&2
 					kill "${PID}"
