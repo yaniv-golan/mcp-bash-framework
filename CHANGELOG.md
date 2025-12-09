@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - All example tool/resource names switched to hyphenated form to match the validated naming regex.
 - Server now advertises the spec-compliant `completions` capability in initialize responses; tests assert capability presence.
 - Tool metadata parsing consolidates to a single jq pass per meta file, reducing per-tool process overhead during registry scans.
+- Scaffolded tool template now treats `name` as optional with a default, matching the description.
 
 ### Fixed
 - Removed duplicate YAML meta from the progress-and-cancellation example (JSON is canonical).
