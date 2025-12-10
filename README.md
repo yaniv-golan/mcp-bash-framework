@@ -54,7 +54,7 @@ mcp-bash targets the **2025-11-25** MCP specification with negotiated downgrades
 | Elicitation | ✅ Full | Form, URL, enum, multi-choice modes |
 | Roots | ✅ Full | Server→client request, listChanged |
 
-**Not yet implemented:** Audio content, async job/poll, sampling, server-identity discovery.
+**Not yet implemented:** Audio content, async job/poll, sampling. Server-identity discovery is HTTP-only and not applicable to stdio.
 
 Transport is stdio-only by design. See [Remote Connectivity](docs/REMOTE.md) for HTTP/SSE proxy options, including the shared-secret guard (`MCPBASH_REMOTE_TOKEN`) and readiness probe (`mcp-bash --health`).
 

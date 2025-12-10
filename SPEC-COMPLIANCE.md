@@ -72,7 +72,7 @@ This table shows when features were introduced in the MCP specification and when
 | **Advanced Features** | | | | |
 | JSON-RPC Batching | 2025-03-26 | ⚠️ Protocol-gated | ⚠️ Legacy | Required for protocol 2025-03-26 (auto-accepted); removed in 2025-06-18; `MCPBASH_COMPAT_BATCHES=true` enables legacy batches for newer protocols |
 | Async Operations (job/poll pattern) | 2025-11-25 | ❌ Not yet | ❌ Not yet | Fire-and-forget jobs with polling responses |
-| Server Identity Discovery | 2025-11-25 | ❌ Not yet | ❌ Not yet | Pre-initialize server identity surface |
+| Server Identity Discovery | 2025-11-25 | ❌ Not applicable | ❌ Not applicable | HTTP-only; stdio servers use initialize response |
 | Sampling (sampling/createMessage) | 2025-11-25 | ❌ Not yet | ❌ Not yet | Server-initiated LLM requests with `includeContext` for agent loops |
 
 ### Legend
@@ -143,7 +143,7 @@ The following MCP features are currently not implemented:
 | Resource Indicators (RFC 8707) | Not applicable | OAuth-only; stdio transport |
 | JSON-RPC Batching | Protocol-gated legacy | Auto-accepted when protocol is 2025-03-26; removed from spec in 2025-06-18; set `MCPBASH_COMPAT_BATCHES=true` to accept legacy batch arrays on newer protocols |
 | Async Operations (job/poll pattern) | Not yet | Fire-and-forget jobs with polling surface |
-| Server Identity Discovery | Not yet | Pre-initialize server identity endpoint |
+| Server Identity Discovery | Not applicable | HTTP-only (.well-known endpoint); stdio servers return identity via initialize |
 | Sampling (sampling/createMessage) | Not yet | Server-initiated LLM requests; could be useful for agentic tool behaviors |
 | Audio Content | Not yet | Content type support for audio data |
 
