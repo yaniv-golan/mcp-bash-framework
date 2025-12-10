@@ -157,8 +157,6 @@ jobs:
           pushd tools >/dev/null
           go install github.com/itchyny/gojq/cmd/gojq@v0.12.16
           popd >/dev/null
-      - name: Smoke tests
-        run: test/smoke.sh
       - name: Integration suite
         id: integration
         env:

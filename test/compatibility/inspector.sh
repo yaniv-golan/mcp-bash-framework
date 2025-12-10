@@ -4,28 +4,16 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+# shellcheck source=../common/env.sh
+# shellcheck disable=SC1091
+. "${SCRIPT_DIR}/../common/env.sh"
+# shellcheck source=../common/assert.sh
+# shellcheck disable=SC1091
+. "${SCRIPT_DIR}/../common/assert.sh"
 
-TMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/mcp-inspector.XXXXXX")"
-cleanup() {
-	if [ -n "${TMP_ROOT:-}" ] && [ -d "${TMP_ROOT}" ]; then
-		rm -rf "${TMP_ROOT}"
-	fi
-}
-trap cleanup EXIT
-
-stage_workspace() {
-	local dest="$1"
-	mkdir -p "${dest}"
-	cp -a "${REPO_ROOT}/bin" "${dest}/"
-	cp -a "${REPO_ROOT}/lib" "${dest}/"
-	cp -a "${REPO_ROOT}/handlers" "${dest}/"
-	cp -a "${REPO_ROOT}/providers" "${dest}/"
-	cp -a "${REPO_ROOT}/sdk" "${dest}/"
-}
-
-WORKSPACE="${TMP_ROOT}/workspace"
-stage_workspace "${WORKSPACE}"
+test_create_tmpdir
+WORKSPACE="${TEST_TMPDIR}/workspace"
+test_stage_workspace "${WORKSPACE}"
 export WORKSPACE
 
 # Bash implementation of inspector test

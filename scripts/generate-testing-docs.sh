@@ -18,7 +18,7 @@ cat <<'EOF'
 EOF
 
 print_block "Linting" "./test/lint.sh"
-print_block "Smoke Tests" "./test/smoke.sh"
+print_block "Smoke Tests (local quick check; not run in CI)" "./test/smoke.sh"
 print_block "Unit Tests" "./test/unit/run.sh"
 print_block "Integration Tests" "./test/integration/run.sh"
 print_block "Examples Suite" "./test/examples/run.sh"

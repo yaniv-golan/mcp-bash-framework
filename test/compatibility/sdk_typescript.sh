@@ -5,7 +5,12 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+# shellcheck source=../common/env.sh
+# shellcheck disable=SC1091
+. "${SCRIPT_DIR}/../common/env.sh"
+# shellcheck source=../common/assert.sh
+# shellcheck disable=SC1091
+. "${SCRIPT_DIR}/../common/assert.sh"
 
 if [ "${MCPBASH_RUN_SDK_TYPESCRIPT:-0}" != "1" ]; then
 	printf 'SKIP: sdk_typescript (set MCPBASH_RUN_SDK_TYPESCRIPT=1 to enable)\n'
@@ -27,23 +32,9 @@ if ! npx -y ts-node --version >/dev/null 2>&1; then
 	exit 0
 fi
 
-TMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/mcp-ts.XXXXXX")"
-cleanup() {
-	if [ -n "${TMP_ROOT:-}" ] && [ -d "${TMP_ROOT}" ]; then
-		rm -rf "${TMP_ROOT}"
-	fi
-}
-trap cleanup EXIT
-
-WORKSPACE="${TMP_ROOT}/workspace"
-mkdir -p "${WORKSPACE}"
-
-# Stage the server files needed to run
-cp -a "${REPO_ROOT}/bin" "${WORKSPACE}/"
-cp -a "${REPO_ROOT}/lib" "${WORKSPACE}/"
-cp -a "${REPO_ROOT}/handlers" "${WORKSPACE}/"
-cp -a "${REPO_ROOT}/providers" "${WORKSPACE}/"
-cp -a "${REPO_ROOT}/sdk" "${WORKSPACE}/"
+test_create_tmpdir
+WORKSPACE="${TEST_TMPDIR}/workspace"
+test_stage_workspace "${WORKSPACE}"
 
 TS_SCRIPT="${WORKSPACE}/client.ts"
 cat >"${TS_SCRIPT}" <<'TS'

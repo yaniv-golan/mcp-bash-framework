@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Smoke test covering initialize → tools/list → tools/call.
+# Local quick check only; not run in CI (integration/compatibility suites cover this path).
 
 set -euo pipefail
 
