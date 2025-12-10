@@ -287,15 +287,23 @@ mcp_core_cancel_shutdown_watchdog() {
 	if [ -z "${MCPBASH_SHUTDOWN_WATCHDOG_PID}" ]; then
 		return 0
 	fi
+	local pid="${MCPBASH_SHUTDOWN_WATCHDOG_PID}"
 	# Signal cancellation via file (reliable on Windows where kill may not interrupt sleep)
 	if [ -n "${MCPBASH_SHUTDOWN_WATCHDOG_CANCEL:-}" ]; then
 		touch "${MCPBASH_SHUTDOWN_WATCHDOG_CANCEL}" 2>/dev/null || true
 	fi
 	# Also try to kill directly (works on Unix, may fail on Windows)
-	kill "${MCPBASH_SHUTDOWN_WATCHDOG_PID}" 2>/dev/null || true
-	# Always wait for the watchdog to exit. On Windows, kill may not interrupt sleep,
-	# but the watchdog will exit after checking the cancel file (within 1 second).
-	wait "${MCPBASH_SHUTDOWN_WATCHDOG_PID}" 2>/dev/null || true
+	kill "${pid}" 2>/dev/null || true
+	# Wait for the watchdog to exit. On Windows, `wait` may not work for subshells in
+	# non-interactive mode, so we poll with kill -0. The watchdog checks the cancel file
+	# every second, so we wait up to 3 seconds for it to notice and exit.
+	local attempts=0
+	while [ "${attempts}" -lt 30 ] && kill -0 "${pid}" 2>/dev/null; do
+		sleep 0.1 2>/dev/null || sleep 1
+		attempts=$((attempts + 1))
+	done
+	# Final wait to reap the zombie (if possible)
+	wait "${pid}" 2>/dev/null || true
 	MCPBASH_SHUTDOWN_WATCHDOG_PID=""
 	MCPBASH_SHUTDOWN_WATCHDOG_CANCEL=""
 }
