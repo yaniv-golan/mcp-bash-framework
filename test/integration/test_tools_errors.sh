@@ -125,5 +125,27 @@ fi
 if ! jq -e '.bashVersion and .os and .cwd' "${env_snapshot}" >/dev/null 2>&1; then
 	test_fail "env snapshot missing required fields"
 fi
+path_bytes="$(jq -r '.pathBytes // empty' "${env_snapshot}")"
+env_bytes="$(jq -r '.envBytes // empty' "${env_snapshot}")"
+json_tool="$(jq -r '.jsonTool // empty' "${env_snapshot}")"
+json_tool_bin="$(jq -r '.jsonToolBin // empty' "${env_snapshot}")"
+case "${path_bytes}" in
+"" | *[!0-9]*) test_fail "env snapshot pathBytes missing or non-numeric: ${path_bytes:-<empty>}" ;;
+esac
+case "${env_bytes}" in
+"" | *[!0-9]*) test_fail "env snapshot envBytes missing or non-numeric: ${env_bytes:-<empty>}" ;;
+esac
+if [ "${path_bytes}" -le 0 ]; then
+	test_fail "env snapshot pathBytes not greater than zero"
+fi
+if [ "${env_bytes}" -le 0 ]; then
+	test_fail "env snapshot envBytes not greater than zero"
+fi
+if [ -z "${json_tool}" ] || [ "${json_tool}" = "none" ]; then
+	test_fail "env snapshot missing detected jsonTool"
+fi
+if [ -z "${json_tool_bin}" ]; then
+	test_fail "env snapshot missing jsonToolBin for ${json_tool}"
+fi
 
 printf 'Tool error and timeout tests passed.\n'
