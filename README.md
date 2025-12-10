@@ -85,6 +85,12 @@ Recommended one-line installer:
 curl -fsSL https://raw.githubusercontent.com/yaniv-golan/mcp-bash-framework/main/install.sh | bash
 ```
 
+Want integrity checks? Download the release checksum from GitHub Releases and pass it to `--verify` (installer will download the matching archive and validate it):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/yaniv-golan/mcp-bash-framework/main/install.sh | bash -s -- --version v0.6.0 --verify <sha256-from-SHA256SUMS>
+```
+
 Manual install (for security-conscious environments):
 
 ```bash
@@ -437,7 +443,7 @@ If no `server.meta.json` exists, the server uses smart defaults based on your pr
 ### Tool SDK environment
 - `MCPBASH_JSON_TOOL` and `MCPBASH_JSON_TOOL_BIN` point to the detected JSON processor (`gojq`/`jq`) and are injected into tool processes when available.
 - `MCPBASH_MODE` is `full` when JSON tooling is present and `minimal` otherwise; SDK helpers warn and downgrade behaviour when running in minimal mode.
-- `MCPBASH_TOOL_ENV_MODE` controls isolation for tool processes (`minimal`, `inherit`, or `allowlist`), but MCPBASH/MCP-prefixed variables (including JSON tool hints) are always propagated.
+- `MCPBASH_TOOL_ENV_MODE` controls isolation for tool processes (`minimal`, `inherit`, or `allowlist`), but MCPBASH/MCP-prefixed variables (including JSON tool hints) are always propagated. Example allowlist for minimal exposure: `MCPBASH_TOOL_ENV_MODE=allowlist MCPBASH_TOOL_ENV_ALLOWLIST=HOME,PATH`.
 
 ### Capability Modes
 
@@ -449,6 +455,12 @@ If no `server.meta.json` exists, the server uses smart defaults based on your pr
 ### Registry Maintenance
 - Auto-refresh: registries re-scan on TTL expiry (default 5s) and use lightweight file-list hashing to skip rebuilds when nothing changed.
 - Manual refresh: `bin/mcp-bash registry refresh [--project-root DIR] [--no-notify] [--quiet] [--filter PATH]` rebuilds `.registry/*.json` and returns a status JSON. In minimal mode the command is skipped gracefully.
+
+## Troubleshooting (quick hits)
+- `PATH` issues (mcp-bash not found): ensure `~/.local/bin` is on PATH; rerun `source ~/.bashrc` or `~/.zshrc`.
+- Missing JSON tooling (`jq`/`gojq`): install one; otherwise the server enters minimal mode (tools/resources/prompts disabled).
+- macOS quarantine blocks execution: run `xattr -d com.apple.quarantine ~/.local/share/mcp-bash/bin/mcp-bash` (and your project path if needed).
+- Git Bash/MSYS exec-limit quirks: set `MCPBASH_JSON_TOOL=jq` and `MSYS2_ARG_CONV_EXCL="*"` before running `mcp-bash`.
 
 ## Requirements
 

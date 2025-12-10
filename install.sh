@@ -6,6 +6,7 @@ INSTALL_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/mcp-bash"
 BIN_DIR="${HOME}/.local/bin"
 REPO_URL="${MCPBASH_INSTALL_REPO_URL:-https://github.com/yaniv-golan/mcp-bash-framework.git}"
 BRANCH="main"
+VERIFY_SHA256=""
 
 # Colors (if terminal supports)
 if [ -t 1 ]; then
@@ -55,6 +56,14 @@ while [ $# -gt 0 ]; do
 		YES=true
 		shift
 		;;
+	--verify)
+		if [ -z "${2:-}" ]; then
+			error "--verify requires a SHA256 checksum value"
+			exit 1
+		fi
+		VERIFY_SHA256="$2"
+		shift 2
+		;;
 	--help)
 		cat <<EOF
 mcp-bash installer
@@ -66,6 +75,7 @@ Options:
   --branch NAME  Git branch to install (default: main)
   --version TAG  Alias for --branch TAG (install a tagged release)
   --ref REF      Alias for --branch REF (install any ref/tag/commit)
+  --verify SHA   Verify downloaded archive against expected SHA256 (forces archive install)
   --yes, -y      Non-interactive mode (overwrite without prompting)
                  Auto-enabled when stdin is not a TTY (e.g., curl | bash)
   --help         Show this help
@@ -167,6 +177,12 @@ if [ -d "${INSTALL_DIR}" ]; then
 	rm -rf "${INSTALL_DIR}"
 fi
 
+# Determine install strategy (git clone vs verified archive)
+install_via_archive=false
+if [ -n "${VERIFY_SHA256}" ]; then
+	install_via_archive=true
+fi
+
 # Clone or copy repository
 info "Downloading mcp-bash framework..."
 if [ -n "${MCPBASH_INSTALL_LOCAL_SOURCE:-}" ]; then
@@ -210,11 +226,71 @@ if [ -n "${MCPBASH_INSTALL_LOCAL_SOURCE:-}" ]; then
 		fi
 	fi
 else
-	if git clone --depth 1 --branch "${BRANCH}" "${REPO_URL}" "${INSTALL_DIR}" 2>/dev/null; then
-		success "Cloned from GitHub"
+	if [ "${install_via_archive}" = "true" ]; then
+		if ! command -v curl >/dev/null 2>&1; then
+			error "curl is required for archive download"
+			exit 1
+		fi
+		if ! command -v tar >/dev/null 2>&1; then
+			error "tar is required to extract archive installs"
+			exit 1
+		fi
+		archive_url="${MCPBASH_INSTALL_ARCHIVE_URL:-}"
+		if [ -z "${archive_url}" ]; then
+			# Prefer tag archive when BRANCH looks like a tag; otherwise use branch archive.
+			case "${BRANCH}" in
+			v*.*.*)
+				archive_url="https://github.com/yaniv-golan/mcp-bash-framework/archive/refs/tags/${BRANCH}.tar.gz"
+				;;
+			*)
+				archive_url="https://github.com/yaniv-golan/mcp-bash-framework/archive/refs/heads/${BRANCH}.tar.gz"
+				;;
+			esac
+		fi
+		tmp_archive="$(mktemp "${TMPDIR:-/tmp}/mcpbash.install.XXXXXX.tar.gz")"
+		if [ -z "${tmp_archive}" ]; then
+			error "Failed to allocate temp archive path"
+			exit 1
+		fi
+		info "Downloading archive for verification..."
+		if ! curl -fsSL "${archive_url}" -o "${tmp_archive}"; then
+			rm -f "${tmp_archive}" || true
+			error "Failed to download archive: ${archive_url}"
+			exit 1
+		fi
+		# Verify checksum
+		computed_sha=""
+		if command -v sha256sum >/dev/null 2>&1; then
+			computed_sha="$(sha256sum "${tmp_archive}" | awk '{print $1}')"
+		elif command -v shasum >/dev/null 2>&1; then
+			computed_sha="$(shasum -a 256 "${tmp_archive}" | awk '{print $1}')"
+		else
+			rm -f "${tmp_archive}" || true
+			error "Neither sha256sum nor shasum is available for checksum verification"
+			exit 1
+		fi
+		if [ "${computed_sha}" != "${VERIFY_SHA256}" ]; then
+			rm -f "${tmp_archive}" || true
+			error "Checksum mismatch! Expected ${VERIFY_SHA256}, got ${computed_sha}"
+			exit 1
+		fi
+		success "Archive checksum verified"
+		mkdir -p "${INSTALL_DIR}"
+		# Extract archive, stripping the leading directory
+		if ! tar -xzf "${tmp_archive}" -C "${INSTALL_DIR}" --strip-components 1; then
+			rm -f "${tmp_archive}" || true
+			error "Failed to extract archive"
+			exit 1
+		fi
+		rm -f "${tmp_archive}" || true
+		success "Installed from verified archive"
 	else
-		error "Failed to clone repository"
-		exit 1
+		if git clone --depth 1 --branch "${BRANCH}" "${REPO_URL}" "${INSTALL_DIR}" 2>/dev/null; then
+			success "Cloned from GitHub"
+		else
+			error "Failed to clone repository"
+			exit 1
+		fi
 	fi
 fi
 

@@ -52,6 +52,7 @@ EOF
 		local project_root="" server_meta_valid="null" tools_count=0 registry_exists="false"
 		local is_darwin="false" quarantine_supported="false"
 		local framework_quarantine="null" project_quarantine="null"
+		local is_msys="false" msys_hint=""
 
 		if [ -d "${framework_home}" ]; then
 			framework_exists="true"
@@ -145,6 +146,13 @@ EOF
 				warnings=$((warnings + 1))
 			fi
 		fi
+		case "$(uname -s 2>/dev/null || printf '')" in
+		MINGW* | MSYS* | CYGWIN*)
+			is_msys="true"
+			msys_hint="Set MCPBASH_JSON_TOOL=jq and MSYS2_ARG_CONV_EXCL=* to avoid Windows/MSYS path and exec-limit issues."
+			warnings=$((warnings + 1))
+			;;
+		esac
 
 		cat <<EOF
 {
@@ -167,6 +175,10 @@ EOF
     "quarantineCheckSupported": ${quarantine_supported},
     "frameworkQuarantined": ${framework_quarantine},
     "projectQuarantined": ${project_quarantine}
+  },
+  "windows": {
+    "msysDetected": ${is_msys},
+    "hint": $(mcp_json_escape_string "${msys_hint}")
   },
   "project": {
     "root": $(mcp_json_escape_string "${project_root}"),
@@ -297,6 +309,13 @@ EOF
 	else
 		printf '  (no project detected in current directory)\n'
 	fi
+
+	case "$(uname -s 2>/dev/null || printf '')" in
+	MINGW* | MSYS* | CYGWIN*)
+		printf '\nWindows/MSYS guidance:\n'
+		printf '  ⚠ Set MCPBASH_JSON_TOOL=jq and MSYS2_ARG_CONV_EXCL="*" to avoid path mangling and jq exec-limit issues.\n'
+		;;
+	esac
 
 	if [ "$(uname -s 2>/dev/null || printf '')" = "Darwin" ]; then
 		printf '\nmacOS checks:\n'
