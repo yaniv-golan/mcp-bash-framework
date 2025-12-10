@@ -41,7 +41,7 @@ mcp_core_run() {
 	mcp_core_require_handlers
 	mcp_core_bootstrap_state
 	mcp_core_read_loop
-	mcp_core_wait_for_workers
+	mcp_core_finish_after_read_loop
 }
 
 mcp_core_require_handlers() {
@@ -102,6 +102,24 @@ mcp_core_read_loop() {
 	while IFS= read -r line; do
 		mcp_core_handle_line "${line}"
 	done
+}
+
+mcp_core_finish_after_read_loop() {
+	local shutdown_pending="${MCPBASH_SHUTDOWN_PENDING:-false}"
+	local exit_requested="${MCPBASH_EXIT_REQUESTED:-false}"
+
+	if [ "${shutdown_pending}" = true ]; then
+		mcp_core_cancel_shutdown_watchdog
+		MCPBASH_SHUTDOWN_TIMER_STARTED=false
+	fi
+
+	if [ "${exit_requested}" = true ] || [ "${shutdown_pending}" = true ]; then
+		mcp_core_wait_for_workers
+		mcp_runtime_cleanup
+		exit 0
+	fi
+
+	mcp_core_wait_for_workers
 }
 
 mcp_core_wait_for_workers() {
@@ -187,7 +205,7 @@ mcp_core_wait_for_one_worker() {
 	while :; do
 		pids="$(mcp_core_list_worker_pids)"
 		if [ -z "${pids}" ]; then
-			sleep 0.01
+			sleep 0.05
 			return 0
 		fi
 		for pid in ${pids}; do
@@ -199,7 +217,7 @@ mcp_core_wait_for_one_worker() {
 				return 0
 			fi
 		done
-		sleep 0.01
+		sleep 0.05
 	done
 }
 
@@ -432,7 +450,15 @@ mcp_core_handle_line() {
 
 	if mcp_json_is_array "${normalized_line}"; then
 		if ! mcp_runtime_batches_enabled; then
-			mcp_core_emit_parse_error "Invalid Request" -32600 "Batch arrays are disabled"
+			local protocol="${MCPBASH_NEGOTIATED_PROTOCOL_VERSION:-${MCPBASH_PROTOCOL_VERSION}}"
+			case "${protocol}" in
+			2025-06-18 | 2025-11-25)
+				mcp_core_emit_parse_error "Invalid Request" -32600 "Batch arrays are not allowed for protocol ${protocol}"
+				;;
+			*)
+				mcp_core_emit_parse_error "Invalid Request" -32600 "Batch arrays are disabled"
+				;;
+			esac
 			return
 		fi
 		if ! mcp_core_process_legacy_batch "${normalized_line}"; then

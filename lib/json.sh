@@ -137,28 +137,10 @@ mcp_json_strip_bom() {
 
 mcp_json_trim() {
 	local value="$1"
-	while [ -n "${value}" ]; do
-		case "${value}" in
-		$'\r'* | $'\n'* | $'\t'* | ' '*)
-			value="${value#?}"
-			;;
-		*)
-			break
-			;;
-		esac
-	done
-
-	while [ -n "${value}" ]; do
-		case "${value}" in
-		*$'\r' | *$'\n' | *$'\t' | *' ')
-			value="${value%?}"
-			;;
-		*)
-			break
-			;;
-		esac
-	done
-
+	# Trim leading whitespace
+	value="${value#"${value%%[!$' \t\r\n']*}"}"
+	# Trim trailing whitespace
+	value="${value%"${value##*[!$' \t\r\n']}"}"
 	printf '%s' "${value}"
 }
 

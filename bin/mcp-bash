@@ -50,6 +50,7 @@ Usage:
   mcp-bash scaffold tool <name>
   mcp-bash scaffold prompt <name>
   mcp-bash scaffold resource <name>
+  mcp-bash scaffold completion <name>
   mcp-bash scaffold test   # create test harness for project
   mcp-bash validate [--project-root DIR] [--fix] [--json]
                      [--explain-defaults] [--strict]
@@ -287,14 +288,18 @@ if [ "${cli_cmd}" = "scaffold" ]; then
 		shift
 		mcp_scaffold_prompt "${1:-}"
 		;;
-	resource)
-		shift
-		mcp_scaffold_resource "${1:-}"
-		;;
-	test)
-		shift
-		mcp_scaffold_test
-		;;
+		resource)
+			shift
+			mcp_scaffold_resource "${1:-}"
+			;;
+		completion)
+			shift
+			mcp_scaffold_completion "${1:-}"
+			;;
+		test)
+			shift
+			mcp_scaffold_test
+			;;
 	*)
 		usage
 		exit 1

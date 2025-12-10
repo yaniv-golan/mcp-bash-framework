@@ -44,7 +44,7 @@ codes="$(
 			missing: first_code(.error.data == "Missing method"),
 			preinit: first_code(.id == "preinit"),
 			unknown: first_code(.id == "unknown"),
-			batch:   first_code(.error.data == "Batch arrays are disabled")
+			batch:   first_code((.error.data // "") | (type == "string" and contains("Batch arrays")))
 		} | to_entries[] | "\(.key)=\(.value)"
 	' "${RESPONSES}"
 )"

@@ -72,7 +72,7 @@ This guide distils hands-on recommendations for designing, building, and operati
 
 ### Troubleshooting keywords
 - **Minimal mode** – server only exposes lifecycle/ping/logging; often triggered by missing `jq`/`gojq` or forced via `MCPBASH_FORCE_MINIMAL`.
-- **Compatibility toggles** – `MCPBASH_COMPAT_BATCHES` re-enables legacy JSON-RPC batch arrays for older clients.
+- **Compatibility toggles** – `MCPBASH_COMPAT_BATCHES` re-enables legacy JSON-RPC batch arrays for clients using newer protocols; protocol `2025-03-26` accepts arrays automatically.
 - **Discovery churn** – `notifications/*/list_changed` loops may indicate fast TTLs or manual registry overrides; inspect `.registry/*.json`.
 - **Cancellation** – `mcp_is_cancelled` returning true mid-tool (see `examples/03-progress-and-cancellation/tools/slow/tool.sh:5`) highlights clients timing out; revisit tool timeouts and progress cadence.
 - **Progress throttling** – hitting the 100/minute default triggers warning logs and truncated progress; adjust `MCPBASH_MAX_PROGRESS_PER_MIN` when high-frequency updates matter.
@@ -717,13 +717,13 @@ sequenceDiagram
 ```
 
 - **Full vs minimal mode** – Document which commands require full JSON tooling. For example, completing resource list pagination depends on `jq` or `gojq` for canonicalisation; clients should handle `minimal` capability flags gracefully.
-- **Backward compatibility** – Gate legacy JSON-RPC array batches via `MCPBASH_COMPAT_BATCHES`. Default remains strict single-object per line to keep stdout predictable.
+- **Backward compatibility** – Protocol `2025-03-26` accepts JSON-RPC array batches automatically; newer protocols remain strict single-object per line unless `MCPBASH_COMPAT_BATCHES=true` is set for legacy clients.
 - **Transport considerations** – When tunnelling through gateways, preserve stdio framing (one JSON object per line) and forward `Mcp-Session-Id`. Reference [docs/REMOTE.md](REMOTE.md) for gateway-specific nuances.
 - **Example transcripts** – Capture happy-path sequences (initialize → tools/list → tool invocation) using your recording method of choice and store sanitized transcripts under `examples/run/`. (No built-in `--transcript` flag today.)
 
 ## 10. Contribution workflow
 
-- Follow repository coding style (2-space indent, `set -euo pipefail` headers, `shellcheck` visible directives). Use `# shellcheck disable=…` only with in-line justification (see `examples/01-args-and-validation/tools/echo-arg/tool.sh:3`).
+- Follow repository coding style (tab-indent per `.editorconfig`, `set -euo pipefail` headers, `shellcheck` visible directives). Use `# shellcheck disable=…` only with in-line justification (see `examples/01-args-and-validation/tools/echo-arg/tool.sh:3`).
 - Update documentation anytime you change behaviour surfaced in [README.md](../README.md), [SPEC-COMPLIANCE.md](../SPEC-COMPLIANCE.md), or this guide.
 - Keep commits focused; each should include docs/tests when touching behaviour.
 - Release cadence suggestion: tag monthly and document release notes referencing limits, operational changes, and compatibility toggles.

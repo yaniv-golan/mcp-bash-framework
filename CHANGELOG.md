@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Resource templates: auto-discovery of `uriTemplate` metadata, manual registration helpers, `.registry/resource-templates.json` cache with hash-based pagination, and shared `resources/list_changed` notifications. New example and docs cover client-side expansion and collision rules.
 - Documentation updates: clarified batching (legacy/opt-in) in `SPEC-COMPLIANCE.md`, noted minimal mode capability omissions, added `docs/README.md` index and project structure clarifications, documented `resources/subscribe` notification shape, and added registry-size guidance in `PERFORMANCE.md`.
 - Windows CI guidance in `docs/WINDOWS.md` recommends jq overrides (`MCPBASH_JSON_TOOL=jq`, `MCPBASH_JSON_TOOL_BIN=$(command -v jq)`) to avoid gojq exec-limit failures on GitHub Actions runners.
+- `mcp-bash scaffold completion <name>` generates a starter completion script, registers it in `server.d/register.sh`, and wires a default timeout.
 
 ### Changed
 - Outgoing request IDs are now allocated via a lock-backed counter in the state dir to prevent cross-process ID reuse; elicitation polling in the flusher uses the shared counter.
@@ -25,10 +26,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Scaffolded tool template now treats `name` as optional with a default, matching the description.
 - JSON tool detection now prefers jq over gojq, supports explicit MCPBASH_JSON_TOOL(_BIN) overrides, and validates candidates via `--version` before enabling full protocol mode.
 - CI env snapshot now runs after JSON tool detection and records PATH/env byte sizes plus `jsonTool`/`jsonToolBin` metadata (counts only; no env contents captured).
+- JSON-RPC batch handling is now protocol-aware: protocol `2025-03-26` auto-accepts batch arrays; newer protocols reject arrays unless `MCPBASH_COMPAT_BATCHES=true` is set for legacy clients, with clearer error messaging.
+- Worker wait loop sleep increased to reduce busy-wait CPU churn when slots are full.
 
 ### Fixed
 - Removed duplicate YAML meta from the progress-and-cancellation example (JSON is canonical).
 - Windows CI failures caused by `gojq` `E2BIG` exec errors are avoided by the jq-first detection order and exec sanity check.
+- `mcp_json_trim` rewritten to avoid O(n^2) trimming on large payloads.
+- Shutdown finish branch corrected to prevent a syntax error in staged environments.
 
 ## [0.6.0] - 2025-12-08
 

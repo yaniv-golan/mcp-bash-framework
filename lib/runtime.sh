@@ -650,12 +650,22 @@ mcp_runtime_force_minimal_mode_requested() {
 }
 
 mcp_runtime_batches_enabled() {
-	# Legacy batch compatibility toggle.
+	# Incoming batch arrays are allowed when required by protocol (2025-03-26)
+	# or when explicitly toggled for legacy clients.
+	local protocol="${MCPBASH_NEGOTIATED_PROTOCOL_VERSION:-${MCPBASH_PROTOCOL_VERSION}}"
+	case "${protocol}" in
+	2025-03-26)
+		return 0
+		;;
+	esac
 	[ "${MCPBASH_COMPAT_BATCHES:-false}" = "true" ]
 }
 
 mcp_runtime_log_batch_mode() {
-	if mcp_runtime_batches_enabled; then
+	local protocol="${MCPBASH_NEGOTIATED_PROTOCOL_VERSION:-${MCPBASH_PROTOCOL_VERSION}}"
+	if [ "${protocol}" = "2025-03-26" ]; then
+		printf '%s\n' 'Batch arrays accepted per protocol 2025-03-26; set MCPBASH_COMPAT_BATCHES=true to enable legacy clients on newer protocols.' >&2
+	elif [ "${MCPBASH_COMPAT_BATCHES:-false}" = "true" ]; then
 		printf '%s\n' 'Legacy batch compatibility enabled (MCPBASH_COMPAT_BATCHES=true); requests framed as arrays will be processed as independent items.' >&2
 	fi
 }

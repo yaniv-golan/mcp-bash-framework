@@ -70,7 +70,7 @@ This table shows when features were introduced in the MCP specification and when
 | Elicitation Multi-choice (SEP-1330) | 2025-11-25 | 0.5.0 | ✅ Full | Array of enum values |
 | Elicitation Titled Multi-choice (SEP-1330) | 2025-11-25 | 0.5.0 | ✅ Full | anyOf with const/title |
 | **Advanced Features** | | | | |
-| JSON-RPC Batching | 2025-03-26 | ⚠️ Legacy opt-in | ⚠️ Legacy | Removed from spec in 2025-06-18; supported only when `MCPBASH_COMPAT_BATCHES=true` (disabled by default) |
+| JSON-RPC Batching | 2025-03-26 | ⚠️ Protocol-gated | ⚠️ Legacy | Required for protocol 2025-03-26 (auto-accepted); removed in 2025-06-18; `MCPBASH_COMPAT_BATCHES=true` enables legacy batches for newer protocols |
 | Async Operations (job/poll pattern) | 2025-11-25 | ❌ Not yet | ❌ Not yet | Fire-and-forget jobs with polling responses |
 | Server Identity Discovery | 2025-11-25 | ❌ Not yet | ❌ Not yet | Pre-initialize server identity surface |
 | Sampling (sampling/createMessage) | 2025-11-25 | ❌ Not yet | ❌ Not yet | Server-initiated LLM requests with `includeContext` for agent loops |
@@ -141,7 +141,7 @@ The following MCP features are currently not implemented:
 | HTTP/SSE Transport | Not supported | stdio-only design; see `docs/REMOTE.md` for proxy guidance |
 | OAuth Authorization | Not applicable | Out of scope for stdio transport |
 | Resource Indicators (RFC 8707) | Not applicable | OAuth-only; stdio transport |
-| JSON-RPC Batching | Legacy opt-in | Disabled by default; removed from spec in 2025-06-18; set `MCPBASH_COMPAT_BATCHES=true` to accept legacy batch arrays |
+| JSON-RPC Batching | Protocol-gated legacy | Auto-accepted when protocol is 2025-03-26; removed from spec in 2025-06-18; set `MCPBASH_COMPAT_BATCHES=true` to accept legacy batch arrays on newer protocols |
 | Async Operations (job/poll pattern) | Not yet | Fire-and-forget jobs with polling surface |
 | Server Identity Discovery | Not yet | Pre-initialize server identity endpoint |
 | Sampling (sampling/createMessage) | Not yet | Server-initiated LLM requests; could be useful for agentic tool behaviors |

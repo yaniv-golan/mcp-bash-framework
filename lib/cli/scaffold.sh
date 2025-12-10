@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Scaffold subcommands (server, tool, prompt, resource, test).
+# Scaffold subcommands (server, tool, prompt, resource, completion, test).
 
 set -euo pipefail
 
@@ -13,6 +13,74 @@ fi
 cli_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/cli/common.sh
 . "${cli_dir}/common.sh"
+
+mcp_scaffold_register_completion() {
+	local name="$1"
+	local script_path="$2"
+	local server_dir="${MCPBASH_PROJECT_ROOT}/server.d"
+	local register_file="${server_dir}/register.sh"
+	mkdir -p "${server_dir}"
+
+	if [ ! -f "${register_file}" ]; then
+		cat >"${register_file}" <<'EOF'
+#!/usr/bin/env bash
+# Manual registration script; invoked when executable (manual overrides).
+# Preferred pattern is to emit a single JSON registry object (see examples/09-manual-registration/server.d/register.sh).
+# Helper functions remain available for compatibility.
+
+set -euo pipefail
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+	exit 0
+fi
+return 0
+EOF
+		chmod +x "${register_file}"
+	fi
+
+	if grep -Fq "\"name\":\"${name}\"" "${register_file}" 2>/dev/null; then
+		printf 'Completion %s already registered in %s\n' "${name}" "${register_file}"
+		return 0
+	fi
+
+	local snippet_file="${register_file}.snippet.$$"
+	cat >"${snippet_file}" <<EOF
+# mcp-bash scaffold completion: ${name}
+mcp_completion_manual_begin
+mcp_completion_register_manual '{"name":"${name}","path":"${script_path}","timeoutSecs":5}'
+mcp_completion_manual_finalize
+
+EOF
+
+	local tmp="${register_file}.tmp"
+	if grep -q '^return 0$' "${register_file}" 2>/dev/null; then
+		awk -v snippet_file="${snippet_file}" '
+			BEGIN {
+				while ((getline line < snippet_file) > 0) {
+					snippet = snippet line ORS
+				}
+				close(snippet_file)
+				inserted = 0
+			}
+			/^return 0$/ && inserted == 0 {
+				printf "%s", snippet
+				inserted = 1
+			}
+			{ print }
+			END {
+				if (inserted == 0) {
+					printf "%s", snippet
+				}
+			}
+		' "${register_file}" >"${tmp}"
+		mv "${tmp}" "${register_file}"
+	else
+		cat "${snippet_file}" >>"${register_file}"
+	fi
+	rm -f "${snippet_file}"
+
+	printf 'Registered completion %s in %s\n' "${name}" "${register_file}"
+}
 
 mcp_scaffold_tool() {
 	local name="$1"
@@ -95,5 +163,24 @@ mcp_scaffold_test() {
 	printf '\nNext steps:\n'
 	printf '  1. Edit test/run.sh and add run_test calls for your tools\n'
 	printf '  2. Run: ./test/run.sh\n'
+	exit 0
+}
+
+mcp_scaffold_completion() {
+	local name="$1"
+	mcp_scaffold_require_project_root
+	initialize_scaffold_paths
+	local scaffold_dir="${MCPBASH_HOME}/scaffold/completion"
+	local target_dir="${MCPBASH_COMPLETIONS_DIR}/${name}"
+	mcp_scaffold_prepare "completion" "${name}" "${scaffold_dir}" "${target_dir}" "Completion"
+
+	mcp_template_render "${scaffold_dir}/completion.sh" "${target_dir}/completion.sh" "__NAME__=${name}"
+	chmod +x "${target_dir}/completion.sh"
+	mcp_template_render "${scaffold_dir}/README.md" "${target_dir}/README.md" "__NAME__=${name}"
+
+	local script_path="completions/${name}/completion.sh"
+	mcp_scaffold_register_completion "${name}" "${script_path}"
+
+	printf 'Scaffolded completion at %s\n' "${target_dir}"
 	exit 0
 }

@@ -1,6 +1,6 @@
 # Completion Support
 
-`completion/complete` is available in full mode (disabled in minimal mode). Completions are manually registered via `server.d/register.sh`; there is no auto-discovery. Providers can be `builtin`, `manual` (scripts), `prompt`, or `resource`.
+`completion/complete` is available in full mode (disabled in minimal mode). Completions are manually registered via `server.d/register.sh`; there is no auto-discovery. Providers can be `builtin`, `manual` (scripts), `prompt`, or `resource`. Use `mcp-bash scaffold completion <name>` to create a starter script and register it automatically.
 
 ## Registering Completions
 

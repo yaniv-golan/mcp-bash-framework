@@ -66,7 +66,7 @@ Stable modules live under `bin/` and `lib/`, protocol handlers under `handlers/`
 ## Lifecycle loop
 - `bin/mcp-bash` sources runtime, JSON, RPC, and core libraries, confirms stdout is a pipe or terminal, and enters `mcp_core_run`.
 - Each line from stdio is BOM-stripped, trimmed, and compacted with jq/gojq or validated through the minimal tokenizer before dispatch.
-- Arrays are rejected unless `MCPBASH_COMPAT_BATCHES=true`, in which case batches are decomposed into individual requests.
+- Arrays are accepted when the negotiated protocol is `2025-03-26`; newer protocols reject batch arrays unless `MCPBASH_COMPAT_BATCHES=true`, in which case batches are decomposed into individual requests.
 - Dispatch routes lifecycle, ping, logging, tools, resources, prompts, and completion methods; unknown methods return `-32601` and notifications remain server-owned.
 - Responses flow through `rpc_send_line` to guarantee single-line JSON with newline termination and carriage-return scrubbing.
 

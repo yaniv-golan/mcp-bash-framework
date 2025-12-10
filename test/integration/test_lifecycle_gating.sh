@@ -89,4 +89,16 @@ run_requests "${WORKSPACE}/shutdown-gating.ndjson" "${WORKSPACE}/shutdown-gating
 resp_file="${WORKSPACE}/shutdown-gating.resp"
 assert_error_code "${resp_file}" "during" "-32003" "Server shutting down"
 
+# 5) Shutdown without explicit exit should still terminate cleanly.
+cat <<'JSON' >"${WORKSPACE}/shutdown-no-exit.ndjson"
+{"jsonrpc":"2.0","id":"init","method":"initialize","params":{}}
+{"jsonrpc":"2.0","method":"notifications/initialized"}
+{"jsonrpc":"2.0","id":"shutdown","method":"shutdown"}
+JSON
+run_requests "${WORKSPACE}/shutdown-no-exit.ndjson" "${WORKSPACE}/shutdown-no-exit.resp"
+resp_file="${WORKSPACE}/shutdown-no-exit.resp"
+if ! jq -e 'select(.id=="shutdown") | .result == {}' "${resp_file}" >/dev/null; then
+	test_fail "shutdown without exit did not respond successfully"
+fi
+
 printf 'Lifecycle gating tests passed.\n'
