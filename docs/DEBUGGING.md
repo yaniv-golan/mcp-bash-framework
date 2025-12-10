@@ -159,7 +159,7 @@ For manual control without the `debug` subcommand:
 
 ## CI Mode Notes
 - Enable with `MCPBASH_CI_MODE=true` to get CI-friendly defaults: tmp root under `RUNNER_TEMP`/`$GITHUB_WORKSPACE/.mcpbash-tmp`/`TMPDIR`, default log dir, keep-logs, and timestamped log messages.
-- CI mode writes `failure-summary.jsonl` (per-tool summaries: exit code, timeout flag, stderr tail, trace line, hashed args, counts) and a one-time `env-snapshot.json` (bash version, OS, cwd, PATH first/last/count) under the log dir.
+- CI mode writes `failure-summary.jsonl` (per-tool summaries: exit code, timeout flag, stderr tail, trace line, hashed args, counts) and a one-time `env-snapshot.json` (bash version, OS, cwd, PATH first/last/count, `pathBytes`/`envBytes` in bytes, `jsonTool`/`jsonToolBin`) under the log dir. The snapshot records counts/sizes only—no env contents are dumped.
 - On GitHub Actions, if tracing provides a file:line, CI mode emits `::error` annotations for tool failures/timeouts.
 
 Example:

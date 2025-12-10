@@ -14,3 +14,7 @@ Windows fakes execute bits. The scanner falls back to `.sh`/`.bash` extensions a
 
 ## gojq notes
 `gojq` v0.12.16 struggles with `--slurpfile` on Windows. Prefer `cat file.ndjson | jq -s '...'` and use standard `jq` when available.
+
+## CI (GitHub Actions)
+- On Windows/Git Bash runners, export `MCPBASH_JSON_TOOL=jq` and `MCPBASH_JSON_TOOL_BIN="$(command -v jq)"` before invoking `mcp-bash` to avoid `gojq` exec-limit (`E2BIG`) failures on large PATH/env setups.
+- Stick to `jq` for CI to bypass the Git Bash argument-length ceiling; fall back to `gojq` only on platforms without the Windows exec limit.

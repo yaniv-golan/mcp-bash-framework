@@ -311,36 +311,6 @@ mcp_runtime_init_paths() {
 	if [ -n "${MCPBASH_LOG_DIR}" ]; then
 		(umask 077 && mkdir -p "${MCPBASH_LOG_DIR}") >/dev/null 2>&1 || true
 	fi
-	if [ "${MCPBASH_CI_MODE:-false}" = "true" ] && [ -n "${MCPBASH_LOG_DIR:-}" ]; then
-		local env_snapshot="${MCPBASH_LOG_DIR}/env-snapshot.json"
-		if [ ! -f "${env_snapshot}" ]; then
-			local path_entries path_count path_first path_last os_name cwd
-			path_entries="${PATH:-}"
-			path_count=0
-			path_first=""
-			path_last=""
-			os_name="$(uname -s 2>/dev/null || printf '')"
-			cwd="$(pwd 2>/dev/null || printf '')"
-			if [ -n "${path_entries}" ]; then
-				IFS=':' read -r -a path_array <<<"${path_entries}"
-				path_count="${#path_array[@]}"
-				if [ "${path_count}" -gt 0 ]; then
-					path_first="${path_array[0]}"
-					path_last="${path_array[$((path_count - 1))]}"
-				fi
-			fi
-			{
-				printf '{'
-				printf '"bashVersion":"%s",' "$(mcp_runtime_json_escape "${BASH_VERSION:-}")"
-				printf '"os":"%s",' "$(mcp_runtime_json_escape "${os_name}")"
-				printf '"cwd":"%s",' "$(mcp_runtime_json_escape "${cwd}")"
-				printf '"pathCount":%s,' "${path_count}"
-				printf '"pathFirst":"%s",' "$(mcp_runtime_json_escape "${path_first}")"
-				printf '"pathLast":"%s"' "$(mcp_runtime_json_escape "${path_last}")"
-				printf '}\n'
-			} >"${env_snapshot}" 2>/dev/null || true
-		fi
-	fi
 
 	# Create state directory (needed for fastpath caching in registry refresh)
 	(umask 077 && mkdir -p "${MCPBASH_STATE_DIR}") >/dev/null 2>&1 || true
@@ -468,6 +438,65 @@ mcp_runtime_cleanup_bootstrap() {
 	mcp_runtime_safe_rmrf "${MCPBASH_BOOTSTRAP_TMP_DIR}"
 }
 
+mcp_runtime_write_env_snapshot() {
+	if [ "${MCPBASH_CI_MODE:-false}" != "true" ]; then
+		return 0
+	fi
+	if [ -z "${MCPBASH_LOG_DIR:-}" ]; then
+		return 0
+	fi
+
+	local env_snapshot="${MCPBASH_LOG_DIR}/env-snapshot.json"
+	if [ -f "${env_snapshot}" ]; then
+		return 0
+	fi
+
+	local path_entries path_array path_count path_first path_last os_name cwd path_bytes env_bytes json_tool json_tool_bin
+	path_entries="${PATH:-}"
+	path_count=0
+	path_first=""
+	path_last=""
+	path_bytes="$(printf '%s' "${path_entries}" | wc -c | tr -d ' ')"
+	env_bytes="$(env | wc -c | tr -d ' ')"
+	os_name="$(uname -s 2>/dev/null || printf '')"
+	cwd="$(pwd 2>/dev/null || printf '')"
+	json_tool="${MCPBASH_JSON_TOOL:-none}"
+	json_tool_bin="${MCPBASH_JSON_TOOL_BIN:-}"
+
+	if [ -z "${path_bytes}" ]; then
+		path_bytes=0
+	fi
+	if [ -z "${env_bytes}" ]; then
+		env_bytes=0
+	fi
+
+	if [ -n "${path_entries}" ]; then
+		IFS=':' read -r -a path_array <<<"${path_entries}"
+		path_count="${#path_array[@]}"
+		if [ "${path_count}" -gt 0 ]; then
+			path_first="${path_array[0]}"
+			path_last="${path_array[$((path_count - 1))]}"
+		fi
+	fi
+
+	{
+		printf '{'
+		printf '"bashVersion":"%s",' "$(mcp_runtime_json_escape "${BASH_VERSION:-}")"
+		printf '"os":"%s",' "$(mcp_runtime_json_escape "${os_name}")"
+		printf '"cwd":"%s",' "$(mcp_runtime_json_escape "${cwd}")"
+		printf '"pathCount":%s,' "${path_count}"
+		printf '"pathFirst":"%s",' "$(mcp_runtime_json_escape "${path_first}")"
+		printf '"pathLast":"%s",' "$(mcp_runtime_json_escape "${path_last}")"
+		printf '"pathBytes":%s,' "${path_bytes}"
+		printf '"envBytes":%s,' "${env_bytes}"
+		printf '"jsonTool":"%s",' "$(mcp_runtime_json_escape "${json_tool}")"
+		printf '"jsonToolBin":"%s"' "$(mcp_runtime_json_escape "${json_tool_bin}")"
+		printf '}\n'
+	} >"${env_snapshot}" 2>/dev/null || true
+
+	return 0
+}
+
 mcp_runtime_detect_json_tool() {
 	# JSON tool detection: prefer jq to avoid Windows E2BIG issues; aligns with json-handling.mdc.
 	if mcp_runtime_force_minimal_mode_requested; then
@@ -475,6 +504,7 @@ mcp_runtime_detect_json_tool() {
 		MCPBASH_JSON_TOOL="none"
 		MCPBASH_JSON_TOOL_BIN=""
 		printf '%s\n' 'Minimal mode forced via MCPBASH_FORCE_MINIMAL=true; JSON tooling disabled.' >&2
+		mcp_runtime_write_env_snapshot
 		return 0
 	fi
 
@@ -485,6 +515,7 @@ mcp_runtime_detect_json_tool() {
 		if mcp_runtime_log_allowed && mcp_logging_verbose_enabled; then
 			printf '%s\n' 'JSON tooling override: MCPBASH_JSON_TOOL=none; entering minimal mode.' >&2
 		fi
+		mcp_runtime_write_env_snapshot
 		return 0
 	fi
 
@@ -523,6 +554,7 @@ mcp_runtime_detect_json_tool() {
 					printf '%s\n' "JSON tooling override: ${override_tool}; full protocol surface enabled." >&2
 				fi
 			fi
+			mcp_runtime_write_env_snapshot
 			return 0
 		fi
 		if mcp_runtime_log_allowed && mcp_logging_verbose_enabled; then
@@ -546,6 +578,7 @@ mcp_runtime_detect_json_tool() {
 				printf '%s\n' "JSON tooling: jq; full protocol surface enabled." >&2
 			fi
 		fi
+		mcp_runtime_write_env_snapshot
 		return 0
 	fi
 
@@ -561,6 +594,7 @@ mcp_runtime_detect_json_tool() {
 				printf '%s\n' "JSON tooling: gojq; full protocol surface enabled." >&2
 			fi
 		fi
+		mcp_runtime_write_env_snapshot
 		return 0
 	fi
 
@@ -572,6 +606,7 @@ mcp_runtime_detect_json_tool() {
 	if mcp_runtime_log_allowed; then
 		printf '%s\n' 'No jq/gojq found; entering minimal mode with reduced capabilities.' >&2
 	fi
+	mcp_runtime_write_env_snapshot
 	return 0
 }
 
