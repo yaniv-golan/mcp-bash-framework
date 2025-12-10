@@ -1,8 +1,10 @@
 # Spec §3 repository contract: registry/ contains runtime-generated indexes excluded from VCS.
 registry/
 docs/internal/
-docs/internal/mcp-bash-technical-spec.md
 .cursor/
 # MCP registry caches
 **/.registry/
 AGENTS.md
+docs/.DS_Store
+.DS_Store
+**/.DS_Store
