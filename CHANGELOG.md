@@ -5,19 +5,11 @@ All notable changes to mcp-bash-framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
-
 ## [Unreleased]
 
 ### Added
 - Resource templates: auto-discovery of `uriTemplate` metadata, manual registration helpers, `.registry/resource-templates.json` cache with hash-based pagination, and shared `resources/list_changed` notifications. New example and docs cover client-side expansion and collision rules.
-
-### Documentation
-- Clarified batching as a legacy, opt-in path (disabled by default) in SPEC-COMPLIANCE.md with MCPBASH_COMPAT_BATCHES flag noted.
-- Updated minimal mode docs to note that non-logging methods are omitted from capabilities and only return -32601 if called anyway.
-- Added docs index (`docs/README.md`) and expanded project structure doc to cover required layout and the bootstrap SDK fallback note.
-- Documented resources/subscribe notification shape (subscriptionId plus subscription object) for client clarity.
-- Added guidance for very large registries to favor manual registration over auto-discovery in PERFORMANCE.md.
+- Documentation updates: clarified batching (legacy/opt-in) in `SPEC-COMPLIANCE.md`, noted minimal mode capability omissions, added `docs/README.md` index and project structure clarifications, documented `resources/subscribe` notification shape, and added registry-size guidance in `PERFORMANCE.md`.
 
 ### Changed
 - Outgoing request IDs are now allocated via a lock-backed counter in the state dir to prevent cross-process ID reuse; elicitation polling in the flusher uses the shared counter.
