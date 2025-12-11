@@ -472,7 +472,10 @@ mcp_runtime_write_env_snapshot() {
 		return 0
 	fi
 
-	local env_snapshot="${MCPBASH_LOG_DIR}/env-snapshot.json"
+	local log_dir
+	log_dir="$(mcp_runtime_posix_path "${MCPBASH_LOG_DIR}")"
+	local env_snapshot="${log_dir}/env-snapshot.json"
+	(umask 077 && mkdir -p "${log_dir}") >/dev/null 2>&1 || true
 	if [ -f "${env_snapshot}" ]; then
 		return 0
 	fi
