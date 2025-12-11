@@ -338,7 +338,8 @@ mcp_prompts_scan() {
 
 			if [ -f "${meta_json}" ]; then
 				local meta
-				meta="$(cat "${meta_json}")"
+				# Strip \r to handle CRLF line endings from Windows checkouts
+				meta="$(tr -d '\r' <"${meta_json}")"
 				local j_name
 				j_name="$(printf '%s' "${meta}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.name // empty' 2>/dev/null)"
 				[ -n "${j_name}" ] && name="${j_name}"

@@ -691,6 +691,8 @@ mcp_tools_scan() {
 			if [ -f "${meta_json}" ]; then
 				local meta_parts=()
 				while IFS= read -r field; do
+					# Strip \r to handle CRLF line endings from Windows checkouts
+					field="${field%$'\r'}"
 					meta_parts+=("${field}")
 				done < <("${MCPBASH_JSON_TOOL_BIN}" -r '
 					[
@@ -703,7 +705,7 @@ mcp_tools_scan() {
 						(.annotations // null | @json)
 					]
 					| .[]
-				' "${meta_json}" 2>/dev/null || true)
+				' "${meta_json}" 2>/dev/null | tr -d '\r' || true)
 
 				if [ "${#meta_parts[@]}" -eq 7 ]; then
 					[ -n "${meta_parts[2]}" ] || meta_parts[2]='{}'

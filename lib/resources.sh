@@ -500,7 +500,8 @@ mcp_resources_scan() {
 
 			if [ -f "${meta_json}" ]; then
 				local meta
-				meta="$(cat "${meta_json}")"
+				# Strip \r to handle CRLF line endings from Windows checkouts
+				meta="$(tr -d '\r' <"${meta_json}")"
 				local j_name
 				j_name="$(printf '%s' "${meta}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.name // empty' 2>/dev/null)"
 				[ -n "${j_name}" ] && name="${j_name}"
@@ -1053,7 +1054,8 @@ mcp_resources_templates_scan() {
 	if [ -d "${resources_dir}" ]; then
 		while IFS= read -r meta_path; do
 			local meta has_template has_uri
-			if ! meta="$(cat "${meta_path}")"; then
+			# Strip \r to handle CRLF line endings from Windows checkouts
+			if ! meta="$(tr -d '\r' <"${meta_path}")"; then
 				mcp_logging_warning "${MCP_RESOURCES_TEMPLATES_LOGGER}" "Unable to read ${meta_path}"
 				continue
 			fi
