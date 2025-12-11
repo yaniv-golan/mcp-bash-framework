@@ -964,6 +964,14 @@ mcp_json_icons_to_data_uris() {
 		return 0
 	fi
 
+	# Validate input is an array before iterating to avoid jq errors on null/objects
+	local icons_type
+	icons_type="$(printf '%s' "${icons_json}" | "${MCPBASH_JSON_TOOL_BIN}" -r 'type' 2>/dev/null || true)"
+	if [ "${icons_type}" != "array" ]; then
+		printf 'null'
+		return 0
+	fi
+
 	# Process each icon in the array
 	printf '%s' "${icons_json}" | "${MCPBASH_JSON_TOOL_BIN}" -c --arg base "${base_dir}" '
 		[.[] | . as $icon |
