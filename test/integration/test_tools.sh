@@ -78,8 +78,14 @@ if [ -z "$next_cursor" ]; then
 fi
 
 call_resp="$(grep '"id":"auto-call"' "${AUTO_ROOT}/responses.ndjson" | head -n1)"
+# Check if response is an error before trying to parse result
+if echo "$call_resp" | jq -e '.error' >/dev/null 2>&1; then
+	echo "Tool call returned error:" >&2
+	echo "$call_resp" | jq '.error' >&2
+	test_fail "auto-call returned error instead of result"
+fi
 message="$(echo "$call_resp" | jq -r '.result.structuredContent.message // empty')"
-text="$(echo "$call_resp" | jq -r '.result.content[] | select(.type=="text") | .text' | head -n1)"
+text="$(echo "$call_resp" | jq -r '(.result.content // [])[] | select(.type=="text") | .text' | head -n1)"
 exit_code="$(echo "$call_resp" | jq -r '.result._meta.exitCode // empty')"
 
 test_assert_eq "$message" "world"
@@ -269,9 +275,14 @@ JSON
 run_server "${EMBED_ROOT}" "${EMBED_ROOT}/requests.ndjson" "${EMBED_ROOT}/responses.ndjson"
 
 embed_resp="$(grep '"id":"embed-call"' "${EMBED_ROOT}/responses.ndjson" | head -n1)"
-embed_resource_count="$(echo "$embed_resp" | jq '[.result.content[] | select(.type=="resource")] | length')"
-embed_resource_text="$(echo "$embed_resp" | jq -r '.result.content[] | select(.type=="resource") | .resource.text // empty' | head -n1)"
-embed_resource_mime="$(echo "$embed_resp" | jq -r '.result.content[] | select(.type=="resource") | .resource.mimeType // empty' | head -n1)"
+if echo "$embed_resp" | jq -e '.error' >/dev/null 2>&1; then
+	echo "Embed tool call returned error:" >&2
+	echo "$embed_resp" | jq '.error' >&2
+	test_fail "embed-call returned error instead of result"
+fi
+embed_resource_count="$(echo "$embed_resp" | jq '[(.result.content // [])[] | select(.type=="resource")] | length')"
+embed_resource_text="$(echo "$embed_resp" | jq -r '(.result.content // [])[] | select(.type=="resource") | .resource.text // empty' | head -n1)"
+embed_resource_mime="$(echo "$embed_resp" | jq -r '(.result.content // [])[] | select(.type=="resource") | .resource.mimeType // empty' | head -n1)"
 
 if [ "${embed_resource_count}" -ne 1 ]; then
 	test_fail "expected one embedded resource content part"
