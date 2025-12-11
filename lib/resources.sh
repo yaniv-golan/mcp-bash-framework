@@ -580,7 +580,7 @@ mcp_resources_scan() {
 				--arg provider "$provider" \
 				--argjson icons "$icons" \
 				'{name: $name, description: $desc, path: $path, uri: $uri, mimeType: $mime, provider: $provider}
-				+ (if $icons != null then {icons: $icons} else {} end)' >>"${items_file}" 2>/dev/null
+				+ (if $icons != null then {icons: $icons} else {} end)' >>"${items_file}"
 		done < <(find "${resources_dir}" -type f ! -name ".*" ! -name "*.meta.json" 2>/dev/null | LC_ALL=C sort)
 	fi
 

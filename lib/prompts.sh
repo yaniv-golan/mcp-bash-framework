@@ -378,7 +378,7 @@ mcp_prompts_scan() {
 					role: $role,
 					metadata: $meta
 				}
-				+ (if $icons != null then {icons: $icons} else {} end)' >>"${items_file}" 2>/dev/null
+				+ (if $icons != null then {icons: $icons} else {} end)' >>"${items_file}"
 		done
 	fi
 
