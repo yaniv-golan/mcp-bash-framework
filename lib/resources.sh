@@ -1374,7 +1374,35 @@ mcp_resources_read_via_provider() {
 	local provider="$1"
 	local uri="$2"
 	local script="${MCPBASH_HOME}/providers/${provider}.sh"
-	if [ -x "${script}" ]; then
+	# On Windows (Git Bash/MSYS), -x test is unreliable. If the provider script
+	# exists but isn't executable, fall back to invoking it via bash when it looks
+	# like a script (shebang or .sh/.bash extension).
+	local provider_runner=("${script}")
+	if [ ! -x "${script}" ]; then
+		if [ -f "${script}" ]; then
+			local first_line=""
+			IFS= read -r first_line <"${script}" 2>/dev/null || first_line=""
+			case "${script}" in
+			*.sh | *.bash)
+				provider_runner=(bash "${script}")
+				;;
+			*)
+				case "${first_line}" in
+				'#!'*)
+					provider_runner=(bash "${script}")
+					;;
+				*)
+					provider_runner=()
+					;;
+				esac
+				;;
+			esac
+		else
+			provider_runner=()
+		fi
+	fi
+
+	if [ "${#provider_runner[@]}" -gt 0 ]; then
 		local tmp_err
 		tmp_err="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-resource-provider.XXXXXX")"
 		local output status
@@ -1382,7 +1410,7 @@ mcp_resources_read_via_provider() {
 			env \
 				MCPBASH_HOME="${MCPBASH_HOME}" \
 				MCP_RESOURCES_ROOTS="${MCP_RESOURCES_ROOTS:-${MCPBASH_RESOURCES_DIR}}" \
-				"${script}" "${uri}" 2>"${tmp_err}"
+				"${provider_runner[@]}" "${uri}" 2>"${tmp_err}"
 		)"; then
 			rm -f "${tmp_err}"
 			printf '%s' "${output}"
