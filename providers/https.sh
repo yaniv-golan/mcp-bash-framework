@@ -4,13 +4,22 @@
 set -euo pipefail
 
 mcp_https_load_policy() {
-	if command -v mcp_policy_extract_host_from_url >/dev/null 2>&1; then
-		return
-	fi
+	# Prefer shared policy helpers. If they cannot be loaded, fall back to local
+	# implementations that STILL enforce allow/deny lists (never fail-open).
+	local sourced="false"
 	if [ -n "${MCPBASH_HOME:-}" ] && [ -f "${MCPBASH_HOME}/lib/policy.sh" ]; then
 		# shellcheck disable=SC1090
-		. "${MCPBASH_HOME}/lib/policy.sh"
+		. "${MCPBASH_HOME}/lib/policy.sh" && sourced="true" || true
 	fi
+	if [ "${sourced}" != "true" ]; then
+		local self_dir=""
+		self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P 2>/dev/null || true)"
+		if [ -n "${self_dir}" ] && [ -f "${self_dir%/}/../lib/policy.sh" ]; then
+			# shellcheck disable=SC1090,SC1091
+			. "${self_dir%/}/../lib/policy.sh" && sourced="true" || true
+		fi
+	fi
+
 	if ! command -v mcp_policy_extract_host_from_url >/dev/null 2>&1; then
 		mcp_policy_extract_host_from_url() {
 			local url="$1"
@@ -76,7 +85,50 @@ EOF
 			fi
 			return 1
 		}
+	fi
+
+	if ! command -v mcp_policy_normalize_host >/dev/null 2>&1; then
+		mcp_policy_normalize_host() {
+			local host="$1"
+			if [ -z "${host}" ]; then
+				return 1
+			fi
+			if [ "${host#\[}" != "${host}" ]; then
+				host="${host#[}"
+				host="${host%]}"
+			fi
+			printf '%s' "${host}" | tr '[:upper:]' '[:lower:]'
+		}
+	fi
+
+	if ! command -v mcp_policy_host_allowed >/dev/null 2>&1; then
+		mcp_policy_host_match_list() {
+			local host="$1"
+			local list="$2"
+			local token
+			list="${list//,/ }"
+			for token in ${list}; do
+				[ -z "${token}" ] && continue
+				if [ "${host}" = "$(mcp_policy_normalize_host "${token}")" ]; then
+					return 0
+				fi
+			done
+			return 1
+		}
+
 		mcp_policy_host_allowed() {
+			local host="$1"
+			local allow_list="$2"
+			local deny_list="$3"
+			if [ -n "${deny_list}" ] && mcp_policy_host_match_list "${host}" "${deny_list}"; then
+				return 1
+			fi
+			if [ -n "${allow_list}" ]; then
+				if mcp_policy_host_match_list "${host}" "${allow_list}"; then
+					return 0
+				fi
+				return 1
+			fi
 			return 0
 		}
 	fi

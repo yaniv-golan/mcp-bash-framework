@@ -28,7 +28,8 @@ run_provider() {
 	# Capture stderr so we can assert on error messages.
 	tmp_err="${TEST_TMPDIR}/stderr.txt"
 	: >"${tmp_err}"
-	MCPBASH_HOME="${REPO_ROOT}" \
+	local home="${MCPBASH_HOME_OVERRIDE:-${REPO_ROOT}}"
+	MCPBASH_HOME="${home}" \
 		MCPBASH_HTTPS_ALLOW_HOSTS="${MCPBASH_HTTPS_ALLOW_HOSTS:-}" \
 		MCPBASH_HTTPS_DENY_HOSTS="${MCPBASH_HTTPS_DENY_HOSTS:-}" \
 		MCPBASH_HTTPS_ALLOW_ALL="${MCPBASH_HTTPS_ALLOW_ALL:-}" \
@@ -78,3 +79,15 @@ assert_eq "4" "${rc}" "expected exit 4 for public host when no allowlist"
 if ! grep -q "requires MCPBASH_HTTPS_ALLOW_HOSTS" "${tmp_err}"; then
 	test_fail "expected deny-by-default allowlist message"
 fi
+
+printf ' -> enforces allowlist even if policy helpers cannot be sourced
+'
+MCPBASH_HOME_OVERRIDE="${TEST_TMPDIR}/missing-home"
+MCPBASH_HTTPS_ALLOW_HOSTS="allowed.example.com"
+unset MCPBASH_HTTPS_ALLOW_ALL
+set +e
+run_provider "https://example.com/"
+rc=$?
+set -e
+unset MCPBASH_HOME_OVERRIDE
+assert_eq "4" "${rc}" "expected exit 4 for non-allowlisted host even in fallback mode"

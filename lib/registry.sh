@@ -246,27 +246,92 @@ mcp_registry_register_warn_untrusted() {
 	return 0
 }
 
+mcp_registry_register_stat_perm_mask() {
+	local path="$1"
+	local perm_mask=""
+	if command -v perl >/dev/null 2>&1; then
+		perm_mask="$(perl -e 'printf "%o\n", (stat($ARGV[0]))[2] & 0777' "${path}" 2>/dev/null || true)"
+	fi
+	if [ -z "${perm_mask}" ] && command -v stat >/dev/null 2>&1; then
+		perm_mask="$(stat -c '%a' "${path}" 2>/dev/null || true)"
+		if [ -z "${perm_mask}" ]; then
+			perm_mask="$(stat -f '%Lp' "${path}" 2>/dev/null || true)"
+		fi
+	fi
+	[ -n "${perm_mask}" ] || return 1
+	printf '%s' "${perm_mask}"
+}
+
+mcp_registry_register_stat_uid_gid() {
+	local path="$1"
+	local uid_gid=""
+	if command -v perl >/dev/null 2>&1; then
+		uid_gid="$(perl -e 'printf "%d:%d\n", (stat($ARGV[0]))[4,5]' "${path}" 2>/dev/null || true)"
+	fi
+	if [ -z "${uid_gid}" ] && command -v stat >/dev/null 2>&1; then
+		uid_gid="$(stat -c '%u:%g' "${path}" 2>/dev/null || true)"
+		if [ -z "${uid_gid}" ]; then
+			uid_gid="$(stat -f '%u:%g' "${path}" 2>/dev/null || true)"
+		fi
+	fi
+	[ -n "${uid_gid}" ] || return 1
+	printf '%s' "${uid_gid}"
+}
+
+mcp_registry_register_check_secure_path() {
+	local target="$1"
+	if [ -z "${target}" ]; then
+		return 1
+	fi
+	if [ -L "${target}" ]; then
+		return 1
+	fi
+	local perm_mask perm_bits
+	if ! perm_mask="$(mcp_registry_register_stat_perm_mask "${target}")"; then
+		return 1
+	fi
+	perm_bits=$((8#${perm_mask}))
+	if [ $((perm_bits & 0020)) -ne 0 ] || [ $((perm_bits & 0002)) -ne 0 ]; then
+		return 1
+	fi
+	local uid_gid cur_uid cur_gid
+	if ! uid_gid="$(mcp_registry_register_stat_uid_gid "${target}")"; then
+		return 1
+	fi
+	cur_uid="$(id -u 2>/dev/null || printf '0')"
+	cur_gid="$(id -g 2>/dev/null || printf '0')"
+	case "${uid_gid}" in
+	"${cur_uid}:${cur_gid}" | "${cur_uid}:"*) return 0 ;;
+	esac
+	return 1
+}
+
 mcp_registry_register_check_permissions() {
 	local script_path="$1"
 	if [ ! -f "${script_path}" ]; then
 		return 1
 	fi
-	local perm_mask perm_bits
-	if perm_mask="$(perl -e 'printf "%o\n", (stat($ARGV[0]))[2] & 0777' "${script_path}" 2>/dev/null)"; then
-		perm_bits=$((8#${perm_mask}))
-		if [ $((perm_bits & 0020)) -ne 0 ] || [ $((perm_bits & 0002)) -ne 0 ]; then
+	# Defense-in-depth: never source symlink hooks, and require that the script
+	# and its parent dirs are not group/world writable and are owned by the user.
+	if [ -L "${script_path}" ]; then
+		return 1
+	fi
+	if ! mcp_registry_register_check_secure_path "${script_path}"; then
+		return 1
+	fi
+	local script_dir
+	script_dir="$(dirname "${script_path}")"
+	if [ -n "${script_dir}" ] && [ -d "${script_dir}" ]; then
+		if ! mcp_registry_register_check_secure_path "${script_dir}"; then
 			return 1
 		fi
 	fi
-	local uid_gid cur_uid cur_gid
-	if uid_gid="$(perl -e 'printf "%d:%d\n", (stat($ARGV[0]))[4,5]' "${script_path}" 2>/dev/null)"; then
-		cur_uid="$(id -u 2>/dev/null || printf '0')"
-		cur_gid="$(id -g 2>/dev/null || printf '0')"
-		case "${uid_gid}" in
-		"${cur_uid}:${cur_gid}" | "${cur_uid}:"*) return 0 ;;
-		esac
+	if [ -n "${MCPBASH_PROJECT_ROOT:-}" ] && [ -d "${MCPBASH_PROJECT_ROOT}" ]; then
+		if ! mcp_registry_register_check_secure_path "${MCPBASH_PROJECT_ROOT}"; then
+			return 1
+		fi
 	fi
-	return 1
+	return 0
 }
 
 mcp_registry_register_set_status() {
@@ -532,15 +597,39 @@ mcp_registry_register_execute() {
 
 	local script_output_file
 	script_output_file="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-register-output.XXXXXX")"
+	local tmp_script
+	tmp_script="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-register-script.XXXXXX")"
 	local script_status=0
 
 	# Execute in the current shell so manual registration buffers are retained.
 	set +e
 	# shellcheck disable=SC1090
 	# shellcheck disable=SC1091
-	. "${script_path}" >"${script_output_file}" 2>&1
-	script_status=$?
+	if exec 3<"${script_path}"; then
+		cat <&3 >"${tmp_script}" 2>/dev/null
+		script_status=$?
+		exec 3<&-
+	else
+		script_status=1
+	fi
+	if [ "${script_status}" -ne 0 ]; then
+		printf '%s\n' "Failed to open/copy manual registration script; refusing to run." >"${script_output_file}"
+	fi
+	if [ "${script_status}" -eq 0 ]; then
+		chmod 600 "${tmp_script}" 2>/dev/null || true
+		local tmp_sig=""
+		tmp_sig="$(mcp_registry_register_signature "${tmp_script}" 2>/dev/null || true)"
+		if [ -z "${tmp_sig}" ] || [ "${tmp_sig}" != "${signature}" ]; then
+			script_status=1
+			printf '%s\n' "Manual registration script changed during execution; refusing to run." >"${script_output_file}"
+		else
+			# shellcheck disable=SC1090
+			. "${tmp_script}" >"${script_output_file}" 2>&1
+			script_status=$?
+		fi
+	fi
 	set -e
+	rm -f "${tmp_script}" 2>/dev/null || true
 
 	local script_output
 	script_output="$(cat "${script_output_file}" 2>/dev/null || true)"
