@@ -236,10 +236,16 @@ windows_subscription_test() {
 {"jsonrpc":"2.0","id":"ping","method":"ping"}
 EOF
 
-	local sub_ok
-	sub_ok="$(jq -r 'select(.id=="sub") | .result // empty' "${resp_file}" || true)"
-	if [ -z "${sub_ok}" ]; then
+	local sub_id
+	sub_id="$(jq -r 'select(.id=="sub") | .result.subscriptionId // empty' "${resp_file}" || true)"
+	if [ -z "${sub_id}" ]; then
 		printf 'Subscription response missing on Windows file-based path\n' >&2
+		exit 1
+	fi
+	local sub_keys
+	sub_keys="$(jq -c 'select(.id=="sub") | .result | keys' "${resp_file}" 2>/dev/null || true)"
+	if [ "${sub_keys}" != '["subscriptionId"]' ]; then
+		printf 'Subscription response shape invalid on Windows file-based path\n' >&2
 		exit 1
 	fi
 
@@ -313,6 +319,7 @@ run_subscription_test() {
 	echo '{"jsonrpc":"2.0","id":"sub","method":"resources/subscribe","params":{"name":"file.live"}}' >&3
 
 	local sub_ok=false
+	local sub_line=""
 	local sub_timeout=10
 
 	# Wait for subscribe response
@@ -321,12 +328,27 @@ run_subscription_test() {
 		id="$(echo "$line" | jq -r '.id // empty')"
 		if [ "$id" = "sub" ]; then
 			sub_ok=true
+			sub_line="${line}"
 			break
 		fi
 	done
 
 	if [ "$sub_ok" != true ]; then
 		echo "Failed to subscribe" >&2
+		kill "$server_pid" 2>/dev/null || true
+		exit 1
+	fi
+	local sub_id
+	sub_id="$(printf '%s' "${sub_line}" | jq -r '.result.subscriptionId // empty' 2>/dev/null || true)"
+	if [ -z "${sub_id}" ]; then
+		echo "Subscribe result missing subscriptionId" >&2
+		kill "$server_pid" 2>/dev/null || true
+		exit 1
+	fi
+	local sub_keys
+	sub_keys="$(printf '%s' "${sub_line}" | jq -c '.result | keys' 2>/dev/null || true)"
+	if [ "${sub_keys}" != '["subscriptionId"]' ]; then
+		echo "Subscribe result shape invalid (expected only subscriptionId)" >&2
 		kill "$server_pid" 2>/dev/null || true
 		exit 1
 	fi

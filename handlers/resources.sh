@@ -119,18 +119,8 @@ mcp_handle_resources() {
 			return 0
 		fi
 		local response_payload response
-		response_payload="$(
-			"${MCPBASH_JSON_TOOL_BIN}" -n -c \
-				--arg sub "${subscription_id}" \
-				--arg uri "${effective_uri}" \
-				--argjson resource "${result_json}" '
-					{
-						subscription: {id: $sub, uri: $uri},
-						subscriptionId: $sub,
-						resource: $resource
-					}
-				'
-		)"
+		# MCP 2025-11-25: resources/subscribe returns only {subscriptionId}.
+		response_payload="$("${MCPBASH_JSON_TOOL_BIN}" -n -c --arg sub "${subscription_id}" '{subscriptionId: $sub}')"
 		response="$(printf '{"jsonrpc":"2.0","id":%s,"result":%s}' "${id}" "${response_payload}")"
 		mcp_logging_debug "${logger}" "Subscribe emitting response subscription=${subscription_id}"
 		rpc_send_line_direct "${response}"
