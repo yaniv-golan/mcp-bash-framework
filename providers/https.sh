@@ -14,11 +14,23 @@ mcp_https_load_policy() {
 	if ! command -v mcp_policy_extract_host_from_url >/dev/null 2>&1; then
 		mcp_policy_extract_host_from_url() {
 			local url="$1"
-			local host="${url#*://}"
-			host="${host%%/*}"
-			host="${host%%:*}"
-			host="${host#\[}"
-			host="${host%\]}"
+			# Best-effort URL host extraction for fallback mode. This must strip
+			# userinfo (user:pass@) to avoid SSRF bypasses.
+			local authority="${url#*://}"
+			authority="${authority%%/*}"
+			authority="${authority%%\?*}"
+			authority="${authority%%\#*}"
+			authority="${authority##*@}"
+			local host=""
+			case "${authority}" in
+			\[*\]*)
+				host="${authority#\[}"
+				host="${host%%\]*}"
+				;;
+			*)
+				host="${authority%%:*}"
+				;;
+			esac
 			printf '%s' "${host}" | tr '[:upper:]' '[:lower:]'
 		}
 		mcp_policy_resolve_ips() {
@@ -70,6 +82,43 @@ EOF
 	fi
 }
 
+mcp_https_host_is_obfuscated_ip_literal() {
+	# Reject non-canonical IP literals that some HTTP stacks accept:
+	# - integer IPv4 (e.g., 2130706433)
+	# - hex integer IPv4 (e.g., 0x7f000001)
+	# - dotted quads with leading-zero octets (potential octal interpretation)
+	local host="$1"
+	case "${host}" in
+	'') return 0 ;;
+	esac
+	# Explicitly allow bracket-free normal forms we expect here (brackets are stripped).
+	if [[ "${host}" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; then
+		# Reject octets like 010.001.002.003 (ambiguous in some parsers).
+		case "${host}" in
+		*".0"[0-9]* | "0"[0-9]*.*)
+			# Allow "0." and ".0" when the octet is exactly "0"
+			case "${host}" in
+			0.* | *.0) return 1 ;;
+			esac
+			# If any octet has a leading zero and more digits, reject.
+			if printf '%s' "${host}" | grep -Eq '(^|\\.)0[0-9]+(\\.|$)'; then
+				return 0
+			fi
+			;;
+		esac
+		return 1
+	fi
+	# Pure numeric hostnames are suspicious (may be interpreted as integer IPv4).
+	if printf '%s' "${host}" | grep -Eq '^[0-9]+$'; then
+		return 0
+	fi
+	# Hex integer IPv4
+	if printf '%s' "${host}" | grep -Eq '^0x[0-9a-f]+$'; then
+		return 0
+	fi
+	return 1
+}
+
 mcp_https_log_block() {
 	local host="$1"
 	if command -v mcp_logging_warning >/dev/null 2>&1; then
@@ -93,8 +142,24 @@ mcp_https_main() {
 		mcp_https_log_block "<empty>"
 		return 4
 	fi
+	if mcp_https_host_is_obfuscated_ip_literal "${host}"; then
+		mcp_https_log_block "${host}"
+		return 4
+	fi
 	if mcp_policy_host_is_private "${host}"; then
 		mcp_https_log_block "${host}"
+		return 4
+	fi
+	# Deny-by-default egress: require an explicit allowlist unless operators
+	# intentionally opt into allow-all.
+	local allow_all_raw="${MCPBASH_HTTPS_ALLOW_ALL:-false}"
+	local allow_all="false"
+	case "${allow_all_raw}" in
+	true | 1 | yes | on) allow_all="true" ;;
+	esac
+	if [ "${allow_all}" != "true" ] && [ -z "${MCPBASH_HTTPS_ALLOW_HOSTS:-}" ]; then
+		mcp_https_log_block "${host}"
+		printf '%s\n' "HTTPS provider requires MCPBASH_HTTPS_ALLOW_HOSTS (or MCPBASH_HTTPS_ALLOW_ALL=true)" >&2
 		return 4
 	fi
 	if ! mcp_policy_host_allowed "${host}" "${MCPBASH_HTTPS_ALLOW_HOSTS:-}" "${MCPBASH_HTTPS_DENY_HOSTS:-}"; then

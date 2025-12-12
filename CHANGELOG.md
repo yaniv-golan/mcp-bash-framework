@@ -47,6 +47,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `resources/subscribe` now returns only `{subscriptionId}` (spec-shaped) instead of including extra fields.
 - `notifications/resources/updated` is now spec-shaped and emits only `params.uri`; clients should call `resources/read` to fetch updated content.
 - Completion results no longer include the non-spec `result._meta.cursor` field (use `result.completion.nextCursor`).
+- HTTPS provider is now deny-by-default for public hosts: set `MCPBASH_HTTPS_ALLOW_HOSTS` (preferred) or `MCPBASH_HTTPS_ALLOW_ALL=true` to permit outbound HTTPS fetches; URL host parsing strips userinfo to prevent SSRF bypasses.
+- Git provider path canonicalization now fails closed without `realpath` or `readlink -f` to prevent symlink-based escapes.
 
 ### Fixed
 - Removed duplicate YAML meta from the progress-and-cancellation example (JSON is canonical).

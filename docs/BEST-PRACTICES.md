@@ -64,7 +64,7 @@ This guide distils hands-on recommendations for designing, building, and operati
 | `MCP_TOOLS_TTL`, `MCP_RESOURCES_TTL`, `MCP_PROMPTS_TTL` | Control registry cache lifetime ([docs/REGISTRY.md](REGISTRY.md#ttl-and-regeneration)) | Lower values increase IO load |
 | `MCP_RESOURCES_ROOTS` | Restricts file/resource providers to approved roots ([docs/SECURITY.md](SECURITY.md)) | Mandatory for multi-tenant deployments |
 | `MCPBASH_REGISTRY_MAX_BYTES` | Hard stop for registry cache size | Keep aligned with operator storage policies |
-| `MCPBASH_HTTPS_ALLOW_HOSTS` / `MCPBASH_HTTPS_DENY_HOSTS` | Optional allow/deny lists (space/comma separated) for HTTPS resource hosts | Private/loopback always blocked; redirects disabled; timeouts/size capped (see docs/SECURITY.md) |
+| `MCPBASH_HTTPS_ALLOW_HOSTS` / `MCPBASH_HTTPS_DENY_HOSTS` | Allow/deny lists (space/comma separated) for HTTPS resource hosts | Private/loopback always blocked; **allow list required** unless `MCPBASH_HTTPS_ALLOW_ALL=true`; redirects disabled; timeouts/size capped (see docs/SECURITY.md) |
 | `MCPBASH_HTTPS_TIMEOUT` / `MCPBASH_HTTPS_MAX_BYTES` | HTTPS provider timeout/size controls | Capped internally (timeout ≤60s, max bytes ≤20MB) |
 | `MCPBASH_ENABLE_GIT_PROVIDER` | Enable git:// resource provider | Default disabled; set to `true` to allow git:// |
 | `MCPBASH_GIT_ALLOW_HOSTS` / `MCPBASH_GIT_DENY_HOSTS` | Optional allow/deny lists for git resource hosts | Private/loopback always blocked |

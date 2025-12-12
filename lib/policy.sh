@@ -36,9 +36,29 @@ mcp_policy_normalize_host() {
 
 mcp_policy_extract_host_from_url() {
 	local url="$1"
-	local host="${url#*://}"
-	host="${host%%/*}"
-	host="${host%%:*}"
+	# Parse the authority portion of a URL safely enough for SSRF defense:
+	# - Strip path/query/fragment
+	# - Strip userinfo (user:pass@) which is otherwise a bypass vector
+	# - Support bracketed IPv6 literals with optional port
+	local authority="${url#*://}"
+	authority="${authority%%/*}"
+	authority="${authority%%\?*}"
+	authority="${authority%%\#*}"
+	# If userinfo is present, keep only the host[:port] portion.
+	authority="${authority##*@}"
+
+	local host=""
+	case "${authority}" in
+	\[*\]*)
+		# [ipv6]:port or [ipv6]
+		host="${authority#\[}"
+		host="${host%%\]*}"
+		;;
+	*)
+		host="${authority%%:*}"
+		;;
+	esac
+
 	mcp_policy_normalize_host "${host}"
 }
 

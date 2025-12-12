@@ -14,18 +14,21 @@ mcp_git_log_block() {
 
 mcp_git_normalize_path() {
 	local target="$1"
-	if command -v mcp_path_normalize >/dev/null 2>&1; then
-		mcp_path_normalize --physical "${target}"
-		return
-	fi
+	# Security requirement: to prevent symlink-based escapes, canonicalization must
+	# resolve symlinks (physical path). If we cannot do that reliably, fail closed.
+	#
+	# Note: mcp_path_normalize may fall back to a logical collapse-only mode when
+	# the host lacks realpath/readlink -f. We intentionally do NOT accept that
+	# mode here.
 	if command -v realpath >/dev/null 2>&1; then
-		realpath "${target}" 2>/dev/null
-		return
+		realpath "${target}" 2>/dev/null && return 0
 	fi
-	(
-		cd "$(dirname "${target}")" 2>/dev/null || exit 1
-		pwd -P 2>/dev/null | awk -v base="$(basename "${target}")" '{print $0"/"base}'
-	)
+	if command -v readlink >/dev/null 2>&1; then
+		if readlink -f / >/dev/null 2>&1; then
+			readlink -f "${target}" 2>/dev/null && return 0
+		fi
+	fi
+	return 1
 }
 
 mcp_git_available_kb() {
@@ -47,11 +50,23 @@ fi
 if ! command -v mcp_policy_extract_host_from_url >/dev/null 2>&1; then
 	mcp_policy_extract_host_from_url() {
 		local url="$1"
-		local host="${url#*://}"
-		host="${host%%/*}"
-		host="${host%%:*}"
-		host="${host#\[}"
-		host="${host%\]}"
+		# Best-effort URL host extraction for fallback mode. This must strip
+		# userinfo (user:pass@) to avoid SSRF bypasses.
+		local authority="${url#*://}"
+		authority="${authority%%/*}"
+		authority="${authority%%\?*}"
+		authority="${authority%%\#*}"
+		authority="${authority##*@}"
+		local host=""
+		case "${authority}" in
+		\[*\]*)
+			host="${authority#\[}"
+			host="${host%%\]*}"
+			;;
+		*)
+			host="${authority%%:*}"
+			;;
+		esac
 		printf '%s' "${host}" | tr '[:upper:]' '[:lower:]'
 	}
 	mcp_policy_resolve_ips() {
@@ -249,7 +264,7 @@ fi
 repo_dir_canonical="$(mcp_git_normalize_path "${repo_dir}" 2>/dev/null || true)"
 target="$(mcp_git_normalize_path "${repo_dir}/${path}" 2>/dev/null || true)"
 if [ -z "${repo_dir_canonical}" ] || [ -z "${target}" ]; then
-	printf '%s\n' "Failed to canonicalize repository paths" >&2
+	printf '%s\n' "Failed to canonicalize repository paths (requires realpath or readlink -f for safe symlink resolution)" >&2
 	exit 5
 fi
 case "${target}" in
