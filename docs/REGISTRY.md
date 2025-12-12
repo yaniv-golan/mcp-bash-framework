@@ -130,7 +130,7 @@ Entries describe resources and providers. Paths are relative to `MCPBASH_RESOURC
 - When no `provider` is specified, the scanner infers one from the URI scheme (`file://`, `git://`, `https://`); unrecognised schemes default to `file` and are rejected if the provider script is unavailable.
 - Discovery records `name`, `description`, `path`, `uri`, `mimeType`, and `provider`; argument/template schemas are not persisted today.
 - The `file` provider fails closed if no resource roots are configured; missing/non-existent roots are ignored, so ensure allowed roots exist before use.
-- Subscription notifications include both `subscriptionId` and a nested `subscription` object (`{id, uri}`) for client convenience; MCP allows additional fields, and clients that only look at `subscriptionId` remain compatible.
+- Subscription notifications (`notifications/resources/updated`) are spec-shaped and only include `params.uri`; clients should call `resources/read` to fetch the updated content.
 
 ## `.registry/resource-templates.json`
 
