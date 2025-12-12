@@ -18,7 +18,24 @@ test_require_command jq
 run_requests() {
 	local req_file="$1"
 	local resp_file="$2"
-	test_run_mcp "${WORKSPACE}" "${req_file}" "${resp_file}"
+	local status=0
+	test_run_mcp "${WORKSPACE}" "${req_file}" "${resp_file}" || status=$?
+	if [ "${status}" -ne 0 ]; then
+		# On Windows/Git Bash, shutdown watchdog termination can race with process
+		# teardown even when responses were already emitted. Accept SIGTERM/SIGKILL
+		# exit codes (128+15=143, 128+9=137) as long as the response file validates.
+		case "$(uname -s 2>/dev/null)" in
+		MINGW* | MSYS* | CYGWIN*)
+			case "${status}" in
+			137 | 143) : ;;
+			*) return "${status}" ;;
+			esac
+			;;
+		*)
+			return "${status}"
+			;;
+		esac
+	fi
 	assert_json_lines "${resp_file}"
 }
 

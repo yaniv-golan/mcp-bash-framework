@@ -18,7 +18,11 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 export MCPBASH_HOME="${REPO_ROOT}"
 export PATH="${MCPBASH_HOME}/bin:${PATH}"
 
-tmp_root="$(mktemp -d "${TMPDIR:-/tmp}/mcpbash.run-tool-allow-self.XXXXXX")"
+tmp_base="${TMPDIR:-/tmp}"
+if [ -z "${tmp_base}" ] || [ ! -d "${tmp_base}" ]; then
+	tmp_base="/tmp"
+fi
+tmp_root="$(mktemp -d "${tmp_base%/}/mcpbash.run-tool-allow-self.XXXXXX")"
 cleanup() {
 	rm -rf "${tmp_root}" 2>/dev/null || true
 }
