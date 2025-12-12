@@ -92,7 +92,7 @@ Stable modules live under `bin/` and `lib/`, protocol handlers under `handlers/`
 ### Tools
 - `handlers/tools.sh` implements `tools/list` and `tools/call` and rejects both in minimal mode.
 - `lib/tools.sh` scans the `tools/` tree (skipping dotfiles), prefers `NAME.meta.json` over inline `# mcp:` annotations, writes `.registry/tools.json`, and computes hash/timestamp data for pagination and list_changed notifications.
-- Cursors are opaque base64url payloads with `ver`, `collection`, `offset`, `hash`, and `timestamp`; `tools/list` returns deterministic slices with `nextCursor` and `total`.
+- Cursors are opaque base64url payloads with `ver`, `collection`, `offset`, `hash`, and `timestamp`; `tools/list` returns deterministic slices with `nextCursor` and exposes the full count as an extension via `result._meta.total` (not a top-level field) for strict-client compatibility.
 - `tools/call` wires the SDK env, captures stdout/stderr, surfaces `_meta.stderr`, emits structured content when metadata declares `outputSchema`, and returns `isError` on tool exit codes.
 - Embedded resource content: tools can append to `MCP_TOOL_RESOURCES_FILE` (JSON array or tab-separated `path<TAB>mime<TAB>uri`) to have the framework emit `{type:"resource"}` entries in the result `content` array; binary files are base64 encoded automatically.
 - Tool policy hook: if present, `server.d/policy.sh` defines `mcp_tools_policy_check()` and is invoked before every tool run (default implementation allows all tools).
@@ -101,14 +101,14 @@ Stable modules live under `bin/` and `lib/`, protocol handlers under `handlers/`
 ### Resources
 - `handlers/resources.sh` supports `resources/list`, `resources/read`, `resources/subscribe`, and `resources/unsubscribe`, declining them in minimal mode.
 - `lib/resources.sh` discovers entries under `resources/`, prefers metadata files, writes `.registry/resources.json`, and uses allow-listed providers with path normalization.
-- Pagination mirrors tools via `lib/paginate.sh`, tracking registry hashes for list_changed notifications and returning `resources` plus `total` and optional `nextCursor`.
+- Pagination mirrors tools via `lib/paginate.sh`, tracking registry hashes for list_changed notifications and returning `resources`, optional `nextCursor`, and an extension count via `result._meta.total`.
 - `resources/read` resolves URIs through providers (default `providers/file.sh`), enforces roots allow lists, returns MIME hints and `_meta` diagnostics, and can subscribe; optional polling (`MCPBASH_RESOURCES_POLL_INTERVAL_SECS`, default `2`, set `0` to disable) pushes updates.
 - File providers translate `C:\` prefixes into `/c/...` on Git-Bash/MSYS and honor `MSYS2_ARG_CONV_EXCL`. Git and HTTPS providers live in `providers/git.sh` and `providers/https.sh`.
 - `server.d/register.sh` may emit `{ "tools": [...], "resources": [...], "prompts": [...] }` to bypass auto-discovery.
 
 ### Prompts
 - `handlers/prompts.sh` implements `prompts/list` and `prompts/get`, rejecting both in minimal mode.
-- `lib/prompts.sh` scans `prompts/`, writes `.registry/prompts.json`, paginates deterministically (returning `prompts`, `total`, and optional `nextCursor`), and renders templates with argument schemas into structured and text content.
+- `lib/prompts.sh` scans `prompts/`, writes `.registry/prompts.json`, paginates deterministically (returning `prompts`, optional `nextCursor`, and an extension count via `result._meta.total`), and renders templates with argument schemas into structured and text content.
 - Manual overrides: `server.d/register.sh` can return a `prompts` array.
 
 ### Roots
