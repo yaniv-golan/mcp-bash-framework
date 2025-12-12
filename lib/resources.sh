@@ -659,13 +659,12 @@ mcp_resources_list() {
 
 	local total="${MCP_RESOURCES_TOTAL}"
 	local result_json
-	# Like tools/list, this result includes a `total` field as an allowed
-	# extension. The MCP ListResourcesResult schema permits additional
-	# properties, so clients that do not care about the count can ignore it.
+	# Like tools/list, expose total via result._meta.total for strict-client
+	# compatibility (instead of a top-level field).
 	result_json="$(echo "${MCP_RESOURCES_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -c --argjson offset "$offset" --argjson limit "$numeric_limit" --argjson total "${total}" '
 		{
 			resources: .items[$offset:$offset+$limit],
-			total: $total
+			_meta: {total: $total}
 		}
 	')"
 
@@ -1316,7 +1315,7 @@ mcp_resources_templates_list() {
 	result_json="$(echo "${MCP_RESOURCES_TEMPLATES_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -c --argjson offset "$offset" --argjson limit "$numeric_limit" --argjson total "${total}" '
 		{
 			resourceTemplates: .items[$offset:$offset+$limit],
-			total: $total
+			_meta: {total: $total}
 		}
 	')"
 

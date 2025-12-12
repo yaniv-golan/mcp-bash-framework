@@ -927,10 +927,9 @@ mcp_tools_list() {
 	# Args:
 	#   limit  - optional max items per page (stringified number).
 	#   cursor - opaque pagination cursor from previous response.
-	# Note: The MCP schema for ListToolsResult requires a `tools` array and
-	# allows additional properties. We include a `total` field as a
-	# spec-compliant extension so clients can see the full count without
-	# extra round trips; strict clients may ignore it safely.
+	# Note: ListToolsResult is paginated; we expose total as an extension via
+	# result._meta.total (instead of a top-level field) for strict-client
+	# compatibility.
 	# shellcheck disable=SC2034
 	_MCP_TOOLS_ERROR_CODE=0
 	# shellcheck disable=SC2034
@@ -970,7 +969,7 @@ mcp_tools_list() {
 	result_json="$(echo "${MCP_TOOLS_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -c --argjson offset "${offset}" --argjson limit "${numeric_limit}" --argjson total "${total}" '
 		{
 			tools: .items[$offset:$offset+$limit],
-			total: $total
+			_meta: {total: $total}
 		}
 	')"
 

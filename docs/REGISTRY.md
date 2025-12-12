@@ -20,7 +20,7 @@ All registries adhere to the same top-level structure:
 - `generatedAt`: UTC timestamp when the scan completed.
 - `items`: Array containing the discovered entities.
 - `hash`: Hash of the canonicalised `items` array; SHA-256 when available, falling back to `cksum` if sha256 utilities are missing. Changed hashes trigger `notifications/*/list_changed`.
-- `total`: Count of `items`. This is also surfaced in `tools/list`, `resources/list`, and `prompts/list` responses as a **spec-compliant extension**: the MCP list result schemas require the array fields and allow additional properties, so clients that do not care about `total` can ignore it.
+- `total`: Count of `items`. For list methods (`tools/list`, `resources/list`, `prompts/list`, `resources/templates/list`), this count is exposed as an extension via `result._meta.total` (not as a top-level result field) for strict-client compatibility.
 
 Guardrails are enforced for all registries:
 

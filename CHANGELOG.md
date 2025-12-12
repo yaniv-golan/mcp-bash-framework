@@ -41,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Tool execution now defaults to deny unless explicitly allowlisted via `MCPBASH_TOOL_ALLOWLIST` (set to `*` to allow all in trusted projects). Paths are validated for ownership and safe permissions before execution.
 - Debug payload redaction now scrubs common secret keys beyond `remoteToken`.
 - Installer/docs now prefer verified downloads over `curl | bash` (one-liner retained as a labeled fallback).
+- List endpoints now report total counts via `result._meta.total` (and no longer emit a top-level `total`) for stricter MCP client compatibility.
 
 ### Fixed
 - Removed duplicate YAML meta from the progress-and-cancellation example (JSON is canonical).
