@@ -327,19 +327,56 @@ mcp_runtime_init_paths() {
 		if [ -z "${MCPBASH_STATE_SEED}" ]; then
 			MCPBASH_STATE_SEED="${RANDOM}" # STATE_SEED initialized once per boot.
 		fi
+		local pid_component=""
+		if [ -n "${BASHPID-}" ]; then
+			pid_component="${BASHPID}"
+		else
+			pid_component="$$"
+		fi
 		if [ -z "${MCPBASH_STATE_DIR}" ]; then
-			local pid_component
-			if [ -n "${BASHPID-}" ]; then
-				pid_component="${BASHPID}"
-			else
-				pid_component="$$"
-			fi
 			MCPBASH_STATE_DIR="${MCPBASH_TMP_ROOT}/mcpbash.state.${PPID}.${pid_component}.${MCPBASH_STATE_SEED}"
 		fi
 		# Default lock root is instance-scoped to avoid cross-process interference (e.g., lingering servers on Windows).
 		if [ -z "${MCPBASH_LOCK_ROOT}" ]; then
 			MCPBASH_LOCK_ROOT="${MCPBASH_STATE_DIR}/locks"
 		fi
+	fi
+
+	# Ensure state/lock roots exist. These are required for handler output capture,
+	# watchdog cancellation, and lock operations. If creation fails (often due to
+	# Windows path length issues), retry once with a shorter temp base.
+	local created="false"
+	local attempted=""
+	local base
+	for base in "${MCPBASH_TMP_ROOT}" "${RUNNER_TEMP:-}" "${TMPDIR:-}" "/tmp"; do
+		[ -z "${base}" ] && continue
+		base="$(mcp_runtime_posix_path "${base%/}")"
+		if [ -n "${attempted}" ] && [ "${attempted}" = "${base}" ]; then
+			continue
+		fi
+		attempted="${base}"
+
+		if [ "${base}" != "${MCPBASH_TMP_ROOT}" ]; then
+			MCPBASH_TMP_ROOT="${base}"
+			if [ "${mode}" = "cli" ]; then
+				MCPBASH_STATE_DIR="${MCPBASH_TMP_ROOT}/mcpbash.state.$$"
+				MCPBASH_LOCK_ROOT="${MCPBASH_TMP_ROOT}/mcpbash.locks"
+			else
+				MCPBASH_STATE_DIR="${MCPBASH_TMP_ROOT}/mcpbash.state.${PPID}.${pid_component}.${MCPBASH_STATE_SEED}"
+				MCPBASH_LOCK_ROOT="${MCPBASH_STATE_DIR}/locks"
+			fi
+		fi
+
+		if (umask 077 && mkdir -p "${MCPBASH_STATE_DIR}" && mkdir -p "${MCPBASH_LOCK_ROOT}") >/dev/null 2>&1; then
+			created="true"
+			break
+		fi
+	done
+
+	if [ "${created}" != "true" ]; then
+		printf '%s\n' "mcp-bash: unable to create state directory: ${MCPBASH_STATE_DIR}" >&2
+		printf '%s\n' "mcp-bash: set MCPBASH_TMP_ROOT to a short, writable directory (Windows path length limits may apply)." >&2
+		exit 1
 	fi
 
 	# Log directory (CI mode only): default to a dedicated path when unset.
@@ -359,10 +396,6 @@ mcp_runtime_init_paths() {
 	if [ -n "${MCPBASH_LOG_DIR}" ]; then
 		(umask 077 && mkdir -p "${MCPBASH_LOG_DIR}") >/dev/null 2>&1 || true
 	fi
-
-	# Create state directory (needed for fastpath caching in registry refresh)
-	(umask 077 && mkdir -p "${MCPBASH_STATE_DIR}") >/dev/null 2>&1 || true
-	(umask 077 && mkdir -p "${MCPBASH_LOCK_ROOT}") >/dev/null 2>&1 || true
 
 	# Content directories: explicit override → project default
 	# Registry: hidden .registry in project for cache files

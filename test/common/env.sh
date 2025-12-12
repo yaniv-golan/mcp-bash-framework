@@ -319,6 +319,7 @@ test_run_mcp() {
 	local workspace="$1"
 	local requests_file="$2"
 	local responses_file="$3"
+	local stderr_file="${responses_file}.stderr"
 
 	if [ ! -f "${workspace}/bin/mcp-bash" ]; then
 		printf 'Workspace %s missing bin/mcp-bash\n' "${workspace}" >&2
@@ -334,6 +335,6 @@ test_run_mcp() {
 			MCPBASH_REMOTE_TOKEN="${MCPBASH_REMOTE_TOKEN:-}" \
 			MCPBASH_REMOTE_TOKEN_KEY="${MCPBASH_REMOTE_TOKEN_KEY:-}" \
 			MCPBASH_REMOTE_TOKEN_FALLBACK_KEY="${MCPBASH_REMOTE_TOKEN_FALLBACK_KEY:-}" \
-			./bin/mcp-bash <"${requests_file}" >"${responses_file}"
+			./bin/mcp-bash <"${requests_file}" >"${responses_file}" 2>"${stderr_file}"
 	)
 }
