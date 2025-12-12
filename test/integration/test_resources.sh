@@ -361,6 +361,7 @@ run_subscription_test() {
 
 	local ping_seen=false
 	local update_seen=false
+	local update_uri=""
 
 	while read -t 5 -r line <&4; do
 		local id method
@@ -370,7 +371,8 @@ run_subscription_test() {
 		if [ "$id" = "ping" ]; then
 			ping_seen=true
 		elif [ "$method" = "notifications/resources/updated" ]; then
-			if [ "$(echo "$line" | jq -r '.params.resource.contents[0].text // empty')" = "updated" ]; then
+			update_uri="$(echo "$line" | jq -r '.params.uri // empty' 2>/dev/null || true)"
+			if [ -n "${update_uri}" ]; then
 				update_seen=true
 			fi
 		fi
@@ -382,6 +384,27 @@ run_subscription_test() {
 
 	if [ "$update_seen" != true ]; then
 		echo "Update not seen" >&2
+		kill "$server_pid" 2>/dev/null || true
+		exit 1
+	fi
+	# Verify updated content via resources/read (notification is spec-shaped: uri only).
+	echo "{\"jsonrpc\":\"2.0\",\"id\":\"read\",\"method\":\"resources/read\",\"params\":{\"uri\":\"${update_uri}\"}}" >&3
+	local read_ok=false
+	while read -t 10 -r line <&4; do
+		local id
+		id="$(echo "$line" | jq -r '.id // empty')"
+		if [ "$id" = "read" ]; then
+			read_ok=true
+			break
+		fi
+	done
+	if [ "${read_ok}" != true ]; then
+		echo "Read response not seen" >&2
+		kill "$server_pid" 2>/dev/null || true
+		exit 1
+	fi
+	if [ "$(echo "$line" | jq -r '.result.contents[0].text // empty')" != "updated" ]; then
+		echo "Updated content not observed after notification" >&2
 		kill "$server_pid" 2>/dev/null || true
 		exit 1
 	fi

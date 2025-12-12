@@ -200,22 +200,8 @@ mcp_resources_emit_update() {
 	# Extract uri from payload contents for the notification
 	local uri
 	uri="$(echo "${payload}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.contents[0].uri // ""')"
-	local params
-	if ! params="$("${MCPBASH_JSON_TOOL_BIN}" -n -c \
-		--arg sub "${subscription_id}" \
-		--arg uri "${uri}" \
-		--argjson resource "${payload}" '{
-			subscriptionId: $sub,
-			subscription: {id: $sub, uri: $uri},
-			resource: $resource
-		}' 2>/dev/null)"; then
-		params="$("${MCPBASH_JSON_TOOL_BIN}" -n -c --arg sub "${subscription_id}" --arg uri "${uri}" '{
-			subscriptionId: $sub,
-			subscription: {id: $sub, uri: $uri},
-			resource: {contents: []}
-		}')" || params='{"subscriptionId":""}'
-	fi
-	rpc_send_line_direct "$("${MCPBASH_JSON_TOOL_BIN}" -n -c --argjson params "${params}" '{"jsonrpc":"2.0","method":"notifications/resources/updated","params":$params}')"
+	# MCP 2025-11-25: notifications/resources/updated params are {uri}.
+	rpc_send_line_direct "$("${MCPBASH_JSON_TOOL_BIN}" -n -c --arg uri "${uri}" '{"jsonrpc":"2.0","method":"notifications/resources/updated","params":{"uri":$uri}}')"
 }
 
 mcp_resources_emit_error() {
@@ -223,20 +209,12 @@ mcp_resources_emit_error() {
 	local code="$2"
 	local message="$3"
 	local uri="${4:-}"
-	local payload
 	if [ -z "${uri}" ]; then
 		uri=""
 	fi
-	payload="$("${MCPBASH_JSON_TOOL_BIN}" -n -c \
-		--arg sub "${subscription_id}" \
-		--arg uri "${uri}" \
-		--argjson code "${code}" \
-		--arg msg "${message}" '{
-			subscriptionId: $sub,
-			subscription: {id: $sub, uri: $uri},
-			error: {code: $code, message: $msg}
-		}')"
-	rpc_send_line_direct "$("${MCPBASH_JSON_TOOL_BIN}" -n -c --argjson params "${payload}" '{"jsonrpc":"2.0","method":"notifications/resources/updated","params":$params}')"
+	# MCP 2025-11-25: keep notifications/resources/updated spec-shaped; clients can
+	# call resources/read and observe the error there.
+	rpc_send_line_direct "$("${MCPBASH_JSON_TOOL_BIN}" -n -c --arg uri "${uri}" '{"jsonrpc":"2.0","method":"notifications/resources/updated","params":{"uri":$uri}}')"
 }
 
 mcp_resources_poll_subscriptions() {
