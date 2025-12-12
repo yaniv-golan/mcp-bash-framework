@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Documentation
 - Clarified Windows support: Git Bash is CI-tested; WSL works like Linux but is not separately validated in CI.
 - README MCP spec coverage table now marks Resources as fully supported (templates/binary included).
+- Fixed `docs/ERRORS.md` examples to reflect that `result.isError=true` is derived from a non-zero tool exit.
 
 ### Added
 - Installer verification flag `--verify` to validate downloaded archives against published SHA256 checksums; pairs with release-published tarball and SHA256SUMS.
@@ -42,6 +43,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Debug payload redaction now scrubs common secret keys beyond `remoteToken`.
 - Installer/docs now prefer verified downloads over `curl | bash` (one-liner retained as a labeled fallback).
 - List endpoints now report total counts via `result._meta.total` (and no longer emit a top-level `total`) for stricter MCP client compatibility.
+- `resources/subscribe` now returns only `{subscriptionId}` (spec-shaped) instead of including extra fields.
+- `notifications/resources/updated` is now spec-shaped and emits only `params.uri`; clients should call `resources/read` to fetch updated content.
+- Completion results no longer include the non-spec `result._meta.cursor` field (use `result.completion.nextCursor`).
 
 ### Fixed
 - Removed duplicate YAML meta from the progress-and-cancellation example (JSON is canonical).
