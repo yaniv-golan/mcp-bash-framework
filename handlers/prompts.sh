@@ -64,7 +64,8 @@ mcp_handle_prompts() {
 		if ! metadata="$(mcp_prompts_metadata_for_name "${name}")"; then
 			local message
 			message=$(mcp_prompts_quote "Prompt not found")
-			printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32601,"message":%s}}' "${id}" "${message}"
+			# Unknown prompt name is an invalid-params condition, not a missing method.
+			printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32602,"message":%s}}' "${id}" "${message}"
 			return 0
 		fi
 		if ! mcp_prompts_render "${metadata}" "${args_json}"; then

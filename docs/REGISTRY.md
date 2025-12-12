@@ -20,7 +20,7 @@ All registries adhere to the same top-level structure:
 - `generatedAt`: UTC timestamp when the scan completed.
 - `items`: Array containing the discovered entities.
 - `hash`: Hash of the canonicalised `items` array; SHA-256 when available, falling back to `cksum` if sha256 utilities are missing. Changed hashes trigger `notifications/*/list_changed`.
-- `total`: Count of `items`. For list methods (`tools/list`, `resources/list`, `prompts/list`, `resources/templates/list`), this count is exposed as an extension via `result._meta.total` (not as a top-level result field) for strict-client compatibility.
+- `total`: Count of `items`. For list methods (`tools/list`, `resources/list`, `prompts/list`, `resources/templates/list`), this count is exposed as an extension via `result._meta["mcpbash/total"]` (not as a top-level result field) for strict-client compatibility.
 
 Guardrails are enforced for all registries:
 
@@ -30,7 +30,7 @@ Guardrails are enforced for all registries:
 ## `.registry/tools.json`
 
 Each entry describes an executable tool. Paths are relative to `MCPBASH_TOOLS_DIR`.
-Tool names must match `^[a-zA-Z0-9_-]{1,64}$`; Some clients, including Claude Desktop, enforces this and rejects dotted names, so prefer hyphenated or underscored namespaces.
+Tool names must match `^[a-zA-Z0-9_-]{1,64}$`; some clients, including Claude Desktop, enforce this and reject dotted names, so prefer hyphenated or underscored namespaces.
 
 ```json
 {

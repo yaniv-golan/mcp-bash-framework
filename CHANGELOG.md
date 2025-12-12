@@ -43,7 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Tool execution now defaults to deny unless explicitly allowlisted via `MCPBASH_TOOL_ALLOWLIST` (set to `*` to allow all in trusted projects). Paths are validated for ownership and safe permissions before execution.
 - Debug payload redaction now scrubs common secret keys beyond `remoteToken`.
 - Installer/docs now prefer verified downloads over `curl | bash` (one-liner retained as a labeled fallback).
-- List endpoints now report total counts via `result._meta.total` (and no longer emit a top-level `total`) for stricter MCP client compatibility.
+- List endpoints now report total counts via `result._meta["mcpbash/total"]` (and no longer emit a top-level `total`) for stricter MCP client compatibility.
 - `resources/subscribe` now returns only `{subscriptionId}` (spec-shaped) instead of including extra fields.
 - `notifications/resources/updated` is now spec-shaped and emits only `params.uri`; clients should call `resources/read` to fetch updated content.
 - Completion results no longer include the non-spec `result._meta.cursor` field (use `result.completion.nextCursor`).

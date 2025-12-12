@@ -45,7 +45,7 @@ Alternatively, emit a bulk JSON payload with `resourceTemplates` to stdout; the 
 
 ## Listing and notifications
 
-- `resources/templates/list` supports `limit` (default 50, max 200) and exposes the full count as an extension via `result._meta.total` alongside `resourceTemplates` and `nextCursor` (cursor uses the templates registry hash; stale cursors return `-32602`).
+- `resources/templates/list` supports `limit` (default 50, max 200) and exposes the full count as an extension via `result._meta["mcpbash/total"]` alongside `resourceTemplates` and `nextCursor` (cursor uses the templates registry hash; stale cursors return `-32602`).
 - Template changes set the shared `MCP_RESOURCES_CHANGED` flag and trigger `notifications/resources/list_changed`, so clients can re-fetch resources **and** templates.
 
 ## Security notes

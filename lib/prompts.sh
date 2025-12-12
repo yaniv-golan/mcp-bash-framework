@@ -236,10 +236,10 @@ mcp_prompts_refresh_registry() {
 	if [ -z "${MCP_PROMPTS_REGISTRY_JSON}" ] && [ -f "${MCP_PROMPTS_REGISTRY_PATH}" ]; then
 		local tmp_json=""
 		if tmp_json="$(cat "${MCP_PROMPTS_REGISTRY_PATH}")"; then
-			if echo "${tmp_json}" | "${MCPBASH_JSON_TOOL_BIN}" . >/dev/null 2>&1; then
+			if printf '%s' "${tmp_json}" | "${MCPBASH_JSON_TOOL_BIN}" . >/dev/null 2>&1; then
 				MCP_PROMPTS_REGISTRY_JSON="${tmp_json}"
-				MCP_PROMPTS_REGISTRY_HASH="$(echo "${MCP_PROMPTS_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.hash // empty')"
-				MCP_PROMPTS_TOTAL="$(echo "${MCP_PROMPTS_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" '.total // 0')"
+				MCP_PROMPTS_REGISTRY_HASH="$(printf '%s' "${MCP_PROMPTS_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.hash // empty')"
+				MCP_PROMPTS_TOTAL="$(printf '%s' "${MCP_PROMPTS_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" '.total // 0')"
 				if ! mcp_prompts_enforce_registry_limits "${MCP_PROMPTS_TOTAL}" "${MCP_PROMPTS_REGISTRY_JSON}"; then
 					return 1
 				fi
@@ -473,12 +473,12 @@ mcp_prompts_list() {
 
 	local total="${MCP_PROMPTS_TOTAL}"
 	local result_json
-	# ListPromptsResult is paginated; expose total via result._meta.total for
+	# ListPromptsResult is paginated; expose total via result._meta["mcpbash/total"] for
 	# strict-client compatibility (instead of a top-level field).
-	result_json="$(echo "${MCP_PROMPTS_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -c --argjson offset "$offset" --argjson limit "$numeric_limit" --argjson total "${total}" '
+	result_json="$(printf '%s' "${MCP_PROMPTS_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -c --argjson offset "$offset" --argjson limit "$numeric_limit" --argjson total "${total}" '
 		{
 			prompts: .items[$offset:$offset+$limit],
-			_meta: {total: $total}
+			_meta: {"mcpbash/total": $total}
 		}
 	')"
 

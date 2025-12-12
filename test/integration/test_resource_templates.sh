@@ -54,7 +54,7 @@ run_with_env "${AUTO_ROOT}" "${AUTO_ROOT}/requests-1.ndjson" "${AUTO_ROOT}/respo
 
 auto_cursor="$(jq -r 'select(.id=="auto-page-1") | .result.nextCursor' "${AUTO_ROOT}/responses-1.ndjson")"
 auto_first_name="$(jq -r 'select(.id=="auto-page-1") | .result.resourceTemplates[0].name' "${AUTO_ROOT}/responses-1.ndjson")"
-auto_first_total="$(jq -r 'select(.id=="auto-page-1") | .result._meta.total' "${AUTO_ROOT}/responses-1.ndjson")"
+auto_first_total="$(jq -r 'select(.id=="auto-page-1") | .result._meta["mcpbash/total"]' "${AUTO_ROOT}/responses-1.ndjson")"
 
 assert_eq "alpha" "${auto_first_name}" "templates should be sorted by name"
 if [ -z "${auto_cursor}" ] || [ "${auto_cursor}" = "null" ]; then
@@ -129,7 +129,7 @@ jq -s '
 	(map(select(.id == "manual-list"))[0].result) as $list |
 	$list.resourceTemplates as $templates |
 
-	if ($list._meta.total != 2) then err("expected two templates after collision/override filtering") else null end,
+	if ($list._meta["mcpbash/total"] != 2) then err("expected two templates after collision/override filtering") else null end,
 	if ($templates | map(.name) | sort != ["manual-only","override-me"]) then err("unexpected template names") else null end,
 	if ($templates | map(select(.name == "shared-name")) | length) != 0 then err("resource collision should skip shared-name") else null end,
 	($templates[] | select(.name == "override-me")) as $override |

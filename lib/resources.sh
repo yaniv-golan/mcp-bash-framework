@@ -112,14 +112,14 @@ mcp_resources_manual_finalize() {
 	fi
 
 	local items_json
-	items_json="$(echo "${registry_json}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.items')"
+	items_json="$(printf '%s' "${registry_json}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.items')"
 	local hash
 	hash="$(mcp_resources_hash_payload "${items_json}")"
 	local total
-	total="$(echo "${registry_json}" | "${MCPBASH_JSON_TOOL_BIN}" '.total')"
+	total="$(printf '%s' "${registry_json}" | "${MCPBASH_JSON_TOOL_BIN}" '.total')"
 
 	# Update hash
-	registry_json="$(echo "${registry_json}" | "${MCPBASH_JSON_TOOL_BIN}" --arg hash "${hash}" '.hash = $hash')"
+	registry_json="$(printf '%s' "${registry_json}" | "${MCPBASH_JSON_TOOL_BIN}" --arg hash "${hash}" '.hash = $hash')"
 
 	local previous_hash="${MCP_RESOURCES_REGISTRY_HASH}"
 	MCP_RESOURCES_REGISTRY_JSON="${registry_json}"
@@ -199,7 +199,7 @@ mcp_resources_emit_update() {
 	mcp_logging_debug "${MCP_RESOURCES_LOGGER}" "Emit update subscription=${subscription_id}"
 	# Extract uri from payload contents for the notification
 	local uri
-	uri="$(echo "${payload}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.contents[0].uri // ""')"
+	uri="$(printf '%s' "${payload}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.contents[0].uri // ""')"
 	# MCP 2025-11-25: notifications/resources/updated params are {uri}.
 	rpc_send_line_direct "$("${MCPBASH_JSON_TOOL_BIN}" -n -c --arg uri "${uri}" '{"jsonrpc":"2.0","method":"notifications/resources/updated","params":{"uri":$uri}}')"
 }
@@ -295,7 +295,7 @@ mcp_resources_apply_manual_json() {
 	local registry_json
 
 	# Basic validation of input structure
-	if ! echo "${manual_json}" | "${MCPBASH_JSON_TOOL_BIN}" -e '.resources | type == "array"' >/dev/null 2>&1; then
+	if ! printf '%s' "${manual_json}" | "${MCPBASH_JSON_TOOL_BIN}" -e '.resources | type == "array"' >/dev/null 2>&1; then
 		# If not present or not array, treat as empty
 		manual_json='{"resources":[]}'
 	fi
@@ -304,7 +304,7 @@ mcp_resources_apply_manual_json() {
 	timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 	# Construct registry structure
-	registry_json="$(echo "${manual_json}" | "${MCPBASH_JSON_TOOL_BIN}" --arg ts "${timestamp}" '{
+	registry_json="$(printf '%s' "${manual_json}" | "${MCPBASH_JSON_TOOL_BIN}" --arg ts "${timestamp}" '{
 		version: 1,
 		generatedAt: $ts,
 		items: .resources,
@@ -313,17 +313,17 @@ mcp_resources_apply_manual_json() {
 
 	# Calculate hash of items
 	local items_json
-	items_json="$(echo "${registry_json}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.items')"
+	items_json="$(printf '%s' "${registry_json}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.items')"
 	local hash
 	hash="$(mcp_resources_hash_payload "${items_json}")"
 
 	# Add hash to registry
-	registry_json="$(echo "${registry_json}" | "${MCPBASH_JSON_TOOL_BIN}" --arg hash "${hash}" '.hash = $hash')"
+	registry_json="$(printf '%s' "${registry_json}" | "${MCPBASH_JSON_TOOL_BIN}" --arg hash "${hash}" '.hash = $hash')"
 
 	local new_hash="${hash}"
 	MCP_RESOURCES_REGISTRY_JSON="${registry_json}"
 	MCP_RESOURCES_REGISTRY_HASH="${new_hash}"
-	MCP_RESOURCES_TOTAL="$(echo "${registry_json}" | "${MCPBASH_JSON_TOOL_BIN}" '.total')"
+	MCP_RESOURCES_TOTAL="$(printf '%s' "${registry_json}" | "${MCPBASH_JSON_TOOL_BIN}" '.total')"
 
 	if ! mcp_resources_enforce_registry_limits "${MCP_RESOURCES_TOTAL}" "${registry_json}"; then
 		return 1
@@ -371,10 +371,10 @@ mcp_resources_refresh_registry() {
 	if [ -z "${MCP_RESOURCES_REGISTRY_JSON}" ] && [ -f "${MCP_RESOURCES_REGISTRY_PATH}" ]; then
 		local tmp_json=""
 		if tmp_json="$(cat "${MCP_RESOURCES_REGISTRY_PATH}")"; then
-			if echo "${tmp_json}" | "${MCPBASH_JSON_TOOL_BIN}" . >/dev/null 2>&1; then
+			if printf '%s' "${tmp_json}" | "${MCPBASH_JSON_TOOL_BIN}" . >/dev/null 2>&1; then
 				MCP_RESOURCES_REGISTRY_JSON="${tmp_json}"
-				MCP_RESOURCES_REGISTRY_HASH="$(echo "${MCP_RESOURCES_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.hash // empty')"
-				MCP_RESOURCES_TOTAL="$(echo "${MCP_RESOURCES_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" '.total // 0')"
+				MCP_RESOURCES_REGISTRY_HASH="$(printf '%s' "${MCP_RESOURCES_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.hash // empty')"
+				MCP_RESOURCES_TOTAL="$(printf '%s' "${MCP_RESOURCES_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" '.total // 0')"
 				if ! mcp_resources_enforce_registry_limits "${MCP_RESOURCES_TOTAL}" "${MCP_RESOURCES_REGISTRY_JSON}"; then
 					return 1
 				fi
@@ -478,20 +478,36 @@ mcp_resources_scan() {
 			local icons="null"
 
 			if [ -f "${meta_json}" ]; then
-				local meta
-				# Strip \r to handle CRLF line endings from Windows checkouts
-				meta="$(tr -d '\r' <"${meta_json}")"
-				local j_name
-				j_name="$(printf '%s' "${meta}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.name // empty' 2>/dev/null)"
-				[ -n "${j_name}" ] && name="${j_name}"
-				description="$(printf '%s' "${meta}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.description // empty' 2>/dev/null)"
-				uri="$(printf '%s' "${meta}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.uri // empty' 2>/dev/null)"
-				mime="$(printf '%s' "${meta}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.mimeType // "text/plain"' 2>/dev/null)"
-				provider="$(printf '%s' "${meta}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.provider // empty' 2>/dev/null)"
-				icons="$(printf '%s' "${meta}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.icons // null' 2>/dev/null || printf 'null')"
+				local meta_parts=()
+				while IFS= read -r field; do
+					# Strip \r to handle CRLF line endings from Windows checkouts
+					field="${field%$'\r'}"
+					meta_parts+=("${field}")
+				done < <("${MCPBASH_JSON_TOOL_BIN}" -r '
+					[
+						(.name // ""),
+						(.description // ""),
+						(.uri // ""),
+						(.mimeType // "text/plain"),
+						(.provider // ""),
+						(.icons // null | @json)
+					]
+					| .[]
+				' "${meta_json}" 2>/dev/null | tr -d '\r' || true)
+
+				if [ "${#meta_parts[@]}" -eq 6 ]; then
+					[ -n "${meta_parts[0]}" ] && name="${meta_parts[0]}"
+					description="${meta_parts[1]:-${description}}"
+					uri="${meta_parts[2]:-${uri}}"
+					mime="${meta_parts[3]:-${mime}}"
+					provider="${meta_parts[4]:-${provider}}"
+					icons="${meta_parts[5]:-${icons}}"
+				fi
+
 				# Convert local file paths to data URIs
 				local meta_dir
 				meta_dir="$(dirname "${meta_json}")"
+				[ -z "${icons}" ] && icons="null"
 				icons="$(mcp_json_icons_to_data_uris "${icons}" "${meta_dir}")"
 			fi
 
@@ -499,26 +515,30 @@ mcp_resources_scan() {
 				local header
 				header="$(head -n 10 "${path}")"
 				local mcp_line
-				mcp_line="$(echo "${header}" | grep "mcp:" | head -n 1)"
+				mcp_line="$(printf '%s\n' "${header}" | grep "mcp:" | head -n 1)"
 				if [ -n "${mcp_line}" ]; then
 					local json_payload
 					json_payload="${mcp_line#*mcp:}"
-					local h_name
-					h_name="$(echo "${json_payload}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.name // empty' 2>/dev/null)"
-					[ -n "${h_name}" ] && name="${h_name}"
-					local h_uri
-					h_uri="$(echo "${json_payload}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.uri // empty' 2>/dev/null)"
-					[ -n "${h_uri}" ] && uri="${h_uri}"
-					local h_desc
-					h_desc="$(echo "${json_payload}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.description // empty' 2>/dev/null)"
-					[ -n "${h_desc}" ] && description="${h_desc}"
-					local h_icons
-					h_icons="$(echo "${json_payload}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.icons // null' 2>/dev/null)"
-					if [ -n "${h_icons}" ] && [ "${h_icons}" != "null" ]; then
-						# Convert local file paths to data URIs
-						local script_dir
-						script_dir="$(dirname "${path}")"
-						icons="$(mcp_json_icons_to_data_uris "${h_icons}" "${script_dir}")"
+					local extraction
+					if extraction="$(printf '%s' "${json_payload}" | "${MCPBASH_JSON_TOOL_BIN}" -r '
+						[
+							(.name // ""),
+							(.uri // ""),
+							(.description // ""),
+							(.icons // null | @json)
+						] | @tsv
+					' 2>/dev/null)"; then
+						local h_name h_uri h_desc h_icons
+						IFS=$'\t' read -r h_name h_uri h_desc h_icons <<<"${extraction}"
+						[ -n "${h_name}" ] && name="${h_name}"
+						[ -n "${h_uri}" ] && uri="${h_uri}"
+						[ -n "${h_desc}" ] && description="${h_desc}"
+						if [ -n "${h_icons}" ] && [ "${h_icons}" != "null" ]; then
+							# Convert local file paths to data URIs
+							local script_dir
+							script_dir="$(dirname "${path}")"
+							icons="$(mcp_json_icons_to_data_uris "${h_icons}" "${script_dir}")"
+						fi
 					fi
 				fi
 			fi
@@ -546,7 +566,7 @@ mcp_resources_scan() {
 				duplicate_name="${name}"
 				break
 			fi
-			echo "${name}" >>"${names_seen_file}"
+			printf '%s\n' "${name}" >>"${names_seen_file}"
 
 			# Ensure icons is valid JSON (fallback to null if empty)
 			[ -z "${icons}" ] && icons='null'
@@ -660,12 +680,12 @@ mcp_resources_list() {
 
 	local total="${MCP_RESOURCES_TOTAL}"
 	local result_json
-	# Like tools/list, expose total via result._meta.total for strict-client
+	# Like tools/list, expose total via result._meta["mcpbash/total"] for strict-client
 	# compatibility (instead of a top-level field).
-	result_json="$(echo "${MCP_RESOURCES_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -c --argjson offset "$offset" --argjson limit "$numeric_limit" --argjson total "${total}" '
+	result_json="$(printf '%s' "${MCP_RESOURCES_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -c --argjson offset "$offset" --argjson limit "$numeric_limit" --argjson total "${total}" '
 		{
 			resources: .items[$offset:$offset+$limit],
-			_meta: {total: $total}
+			_meta: {"mcpbash/total": $total}
 		}
 	')"
 
@@ -719,7 +739,7 @@ mcp_resources_metadata_for_name() {
 	local name="$1"
 	mcp_resources_refresh_registry || return 1
 	local metadata
-	if ! metadata="$(echo "${MCP_RESOURCES_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -c --arg name "${name}" '.items[] | select(.name == $name)' | head -n 1)"; then
+	if ! metadata="$(printf '%s' "${MCP_RESOURCES_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -c --arg name "${name}" '.items[] | select(.name == $name)' | head -n 1)"; then
 		return 1
 	fi
 	if [ -z "${metadata}" ]; then
@@ -1122,10 +1142,10 @@ mcp_resources_templates_refresh_registry() {
 	if [ -z "${MCP_RESOURCES_TEMPLATES_REGISTRY_JSON}" ] && [ -f "${MCP_RESOURCES_TEMPLATES_REGISTRY_PATH}" ]; then
 		local tmp_json=""
 		if tmp_json="$(cat "${MCP_RESOURCES_TEMPLATES_REGISTRY_PATH}")"; then
-			if echo "${tmp_json}" | "${MCPBASH_JSON_TOOL_BIN}" . >/dev/null 2>&1; then
+			if printf '%s' "${tmp_json}" | "${MCPBASH_JSON_TOOL_BIN}" . >/dev/null 2>&1; then
 				MCP_RESOURCES_TEMPLATES_REGISTRY_JSON="${tmp_json}"
-				MCP_RESOURCES_TEMPLATES_REGISTRY_HASH="$(echo "${tmp_json}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.hash // empty')"
-				MCP_RESOURCES_TEMPLATES_TOTAL="$(echo "${tmp_json}" | "${MCPBASH_JSON_TOOL_BIN}" '.total // 0')"
+				MCP_RESOURCES_TEMPLATES_REGISTRY_HASH="$(printf '%s' "${tmp_json}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.hash // empty')"
+				MCP_RESOURCES_TEMPLATES_TOTAL="$(printf '%s' "${tmp_json}" | "${MCPBASH_JSON_TOOL_BIN}" '.total // 0')"
 				if ! mcp_resources_templates_enforce_registry_limits "${MCP_RESOURCES_TEMPLATES_TOTAL}" "${MCP_RESOURCES_TEMPLATES_REGISTRY_JSON}"; then
 					return 1
 				fi
@@ -1311,10 +1331,10 @@ mcp_resources_templates_list() {
 
 	local total="${MCP_RESOURCES_TEMPLATES_TOTAL}"
 	local result_json
-	result_json="$(echo "${MCP_RESOURCES_TEMPLATES_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -c --argjson offset "$offset" --argjson limit "$numeric_limit" --argjson total "${total}" '
+	result_json="$(printf '%s' "${MCP_RESOURCES_TEMPLATES_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -c --argjson offset "$offset" --argjson limit "$numeric_limit" --argjson total "${total}" '
 		{
 			resourceTemplates: .items[$offset:$offset+$limit],
-			_meta: {total: $total}
+			_meta: {"mcpbash/total": $total}
 		}
 	')"
 
@@ -1487,9 +1507,9 @@ mcp_resources_read() {
 	fi
 
 	local uri provider mime
-	uri="$(echo "${metadata}" | "${MCPBASH_JSON_TOOL_BIN}" -r --arg explicit "${explicit_uri}" 'if $explicit != "" then $explicit else .uri // "" end')"
-	provider="$(echo "${metadata}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.provider // "file"')"
-	mime="$(echo "${metadata}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.mimeType // "text/plain"')"
+	uri="$(printf '%s' "${metadata}" | "${MCPBASH_JSON_TOOL_BIN}" -r --arg explicit "${explicit_uri}" 'if $explicit != "" then $explicit else .uri // "" end')"
+	provider="$(printf '%s' "${metadata}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.provider // "file"')"
+	mime="$(printf '%s' "${metadata}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.mimeType // "text/plain"')"
 
 	if [ -z "${uri}" ]; then
 		mcp_resources_error -32602 "Resource URI missing"

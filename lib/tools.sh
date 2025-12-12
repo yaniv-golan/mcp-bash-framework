@@ -191,16 +191,16 @@ mcp_tools_manual_finalize() {
 	')"
 
 	local items_json
-	items_json="$(echo "${registry_json}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.items')"
+	items_json="$(printf '%s' "${registry_json}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.items')"
 	local hash
 	hash="$(mcp_hash_string "${items_json}")"
 
-	registry_json="$(echo "${registry_json}" | "${MCPBASH_JSON_TOOL_BIN}" --arg hash "${hash}" '.hash = $hash')"
+	registry_json="$(printf '%s' "${registry_json}" | "${MCPBASH_JSON_TOOL_BIN}" --arg hash "${hash}" '.hash = $hash')"
 
 	local previous_hash="${MCP_TOOLS_REGISTRY_HASH}"
 	MCP_TOOLS_REGISTRY_JSON="${registry_json}"
 	MCP_TOOLS_REGISTRY_HASH="${hash}"
-	MCP_TOOLS_TOTAL="$(echo "${registry_json}" | "${MCPBASH_JSON_TOOL_BIN}" '.total')"
+	MCP_TOOLS_TOTAL="$(printf '%s' "${registry_json}" | "${MCPBASH_JSON_TOOL_BIN}" '.total')"
 
 	if ! mcp_tools_enforce_registry_limits "${MCP_TOOLS_TOTAL}" "${registry_json}"; then
 		mcp_tools_manual_abort
@@ -417,10 +417,10 @@ mcp_tools_load_cache_if_empty() {
 
 	local tmp_json=""
 	if tmp_json="$(cat "${MCP_TOOLS_REGISTRY_PATH}")"; then
-		if echo "${tmp_json}" | "${MCPBASH_JSON_TOOL_BIN}" . >/dev/null 2>&1; then
+		if printf '%s' "${tmp_json}" | "${MCPBASH_JSON_TOOL_BIN}" . >/dev/null 2>&1; then
 			MCP_TOOLS_REGISTRY_JSON="${tmp_json}"
-			MCP_TOOLS_REGISTRY_HASH="$(echo "${MCP_TOOLS_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.hash // empty')"
-			MCP_TOOLS_TOTAL="$(echo "${MCP_TOOLS_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" '.total // 0')"
+			MCP_TOOLS_REGISTRY_HASH="$(printf '%s' "${MCP_TOOLS_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.hash // empty')"
+			MCP_TOOLS_TOTAL="$(printf '%s' "${MCP_TOOLS_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" '.total // 0')"
 			if ! mcp_tools_enforce_registry_limits "${MCP_TOOLS_TOTAL}" "${MCP_TOOLS_REGISTRY_JSON}"; then
 				return 1
 			fi
@@ -617,14 +617,14 @@ mcp_tools_apply_manual_json() {
 	local manual_json="$1"
 	local registry_json
 
-	if ! echo "${manual_json}" | "${MCPBASH_JSON_TOOL_BIN}" -e '.tools | type == "array"' >/dev/null 2>&1; then
+	if ! printf '%s' "${manual_json}" | "${MCPBASH_JSON_TOOL_BIN}" -e '.tools | type == "array"' >/dev/null 2>&1; then
 		manual_json='{"tools":[]}'
 	fi
 
 	local timestamp
 	timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-	registry_json="$(echo "${manual_json}" | "${MCPBASH_JSON_TOOL_BIN}" --arg ts "${timestamp}" '{
+	registry_json="$(printf '%s' "${manual_json}" | "${MCPBASH_JSON_TOOL_BIN}" --arg ts "${timestamp}" '{
 		version: 1,
 		generatedAt: $ts,
 		items: .tools,
@@ -632,16 +632,16 @@ mcp_tools_apply_manual_json() {
 	}')"
 
 	local items_json
-	items_json="$(echo "${registry_json}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.items')"
+	items_json="$(printf '%s' "${registry_json}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.items')"
 	local hash
 	hash="$(mcp_hash_string "${items_json}")"
 
-	registry_json="$(echo "${registry_json}" | "${MCPBASH_JSON_TOOL_BIN}" --arg hash "${hash}" '.hash = $hash')"
+	registry_json="$(printf '%s' "${registry_json}" | "${MCPBASH_JSON_TOOL_BIN}" --arg hash "${hash}" '.hash = $hash')"
 
 	local new_hash="${hash}"
 	MCP_TOOLS_REGISTRY_JSON="${registry_json}"
 	MCP_TOOLS_REGISTRY_HASH="${new_hash}"
-	MCP_TOOLS_TOTAL="$(echo "${registry_json}" | "${MCPBASH_JSON_TOOL_BIN}" '.total')"
+	MCP_TOOLS_TOTAL="$(printf '%s' "${registry_json}" | "${MCPBASH_JSON_TOOL_BIN}" '.total')"
 
 	if ! mcp_tools_enforce_registry_limits "${MCP_TOOLS_TOTAL}" "${registry_json}"; then
 		return 1
@@ -779,21 +779,21 @@ mcp_tools_scan() {
 				local header
 				header="$(head -n 10 "${path}")"
 				local mcp_line
-				mcp_line="$(echo "${header}" | grep "mcp:" | head -n 1)"
+				mcp_line="$(printf '%s\n' "${header}" | grep "mcp:" | head -n 1)"
 				if [ -n "${mcp_line}" ]; then
 					local json_payload
 					json_payload="${mcp_line#*mcp:}"
 					local h_name
-					h_name="$(echo "${json_payload}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.name // empty' 2>/dev/null)"
+					h_name="$(printf '%s' "${json_payload}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.name // empty' 2>/dev/null)"
 					[ -n "${h_name}" ] && name="${h_name}"
 					local h_desc
-					h_desc="$(echo "${json_payload}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.description // empty' 2>/dev/null)"
+					h_desc="$(printf '%s' "${json_payload}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.description // empty' 2>/dev/null)"
 					[ -n "${h_desc}" ] && description="${h_desc}"
-					arguments="$(echo "${json_payload}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.arguments // {type: "object", properties: {}}' 2>/dev/null)"
-					timeout="$(echo "${json_payload}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.timeoutSecs // empty' 2>/dev/null)"
-					output_schema="$(echo "${json_payload}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.outputSchema // null' 2>/dev/null)"
-					icons="$(echo "${json_payload}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.icons // null' 2>/dev/null)"
-					annotations="$(echo "${json_payload}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.annotations // null' 2>/dev/null)"
+					arguments="$(printf '%s' "${json_payload}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.arguments // {type: "object", properties: {}}' 2>/dev/null)"
+					timeout="$(printf '%s' "${json_payload}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.timeoutSecs // empty' 2>/dev/null)"
+					output_schema="$(printf '%s' "${json_payload}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.outputSchema // null' 2>/dev/null)"
+					icons="$(printf '%s' "${json_payload}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.icons // null' 2>/dev/null)"
+					annotations="$(printf '%s' "${json_payload}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.annotations // null' 2>/dev/null)"
 					# Convert local file paths to data URIs (relative to tool script dir)
 					local script_dir
 					script_dir="$(dirname "${path}")"
@@ -933,7 +933,7 @@ mcp_tools_list() {
 	#   limit  - optional max items per page (stringified number).
 	#   cursor - opaque pagination cursor from previous response.
 	# Note: ListToolsResult is paginated; we expose total as an extension via
-	# result._meta.total (instead of a top-level field) for strict-client
+	# result._meta["mcpbash/total"] (instead of a top-level field) for strict-client
 	# compatibility.
 	# shellcheck disable=SC2034
 	_MCP_TOOLS_ERROR_CODE=0
@@ -971,10 +971,10 @@ mcp_tools_list() {
 
 	local total="${MCP_TOOLS_TOTAL}"
 	local result_json
-	result_json="$(echo "${MCP_TOOLS_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -c --argjson offset "${offset}" --argjson limit "${numeric_limit}" --argjson total "${total}" '
+	result_json="$(printf '%s' "${MCP_TOOLS_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -c --argjson offset "${offset}" --argjson limit "${numeric_limit}" --argjson total "${total}" '
 		{
 			tools: .items[$offset:$offset+$limit],
-			_meta: {total: $total}
+			_meta: {"mcpbash/total": $total}
 		}
 	')"
 
@@ -990,7 +990,7 @@ mcp_tools_metadata_for_name() {
 	local name="$1"
 	mcp_tools_refresh_registry || return 1
 	local metadata
-	if ! metadata="$(echo "${MCP_TOOLS_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -c --arg name "${name}" '.items[] | select(.name == $name)' | head -n 1)"; then
+	if ! metadata="$(printf '%s' "${MCP_TOOLS_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -c --arg name "${name}" '.items[] | select(.name == $name)' | head -n 1)"; then
 		return 1
 	fi
 	if [ -z "${metadata}" ]; then

@@ -18,6 +18,8 @@ mcp-bash implements only the stdio transport. HTTP, SSE, OAuth, and remote acces
 | Kubernetes deployments | [Microsoft MCP Gateway](https://github.com/microsoft/mcp-gateway) |
 | APISIX API gateway users | [mcp-bridge plugin](https://dev.to/apisix/from-stdio-to-http-sse-host-your-mcp-server-with-apisix-api-gateway-26i2) |
 
+These gateways are **optional** and external to mcp-bash. You do not need Python/Node to run mcp-bash itself; choose a gateway that fits your environment (Docker/Kubernetes/Go/Python, etc.) only when you need HTTP/SSE exposure.
+
 ---
 
 ## Proxy Mode Requirements

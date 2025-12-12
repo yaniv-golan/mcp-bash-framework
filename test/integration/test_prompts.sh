@@ -48,6 +48,7 @@ cat <<'JSON' >"${AUTO_ROOT}/requests.ndjson"
 {"jsonrpc":"2.0","method":"notifications/initialized"}
 {"jsonrpc":"2.0","id":"auto-list","method":"prompts/list","params":{"limit":1}}
 {"jsonrpc":"2.0","id":"auto-get","method":"prompts/get","params":{"name":"prompt.alpha","arguments":{"name":"World"}}}
+{"jsonrpc":"2.0","id":"auto-missing","method":"prompts/get","params":{"name":"prompt.missing","arguments":{}}}
 JSON
 
 (
@@ -75,6 +76,14 @@ if ! jq -e '
 	(.result.arguments == {name: "World"})
 ' "${AUTO_ROOT}/responses.ndjson" >/dev/null; then
 	printf '❌ auto-get response invalid\n' >&2
+	exit 1
+fi
+
+if ! jq -e '
+	select(.id == "auto-missing") |
+	(.error.code == -32602)
+' "${AUTO_ROOT}/responses.ndjson" >/dev/null; then
+	printf '❌ auto-missing response invalid (expected -32602)\n' >&2
 	exit 1
 fi
 

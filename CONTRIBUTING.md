@@ -6,7 +6,7 @@ Local linting and CI expect a few command-line tools to be present:
 
 - `shellcheck` – static analysis for all shell scripts.
 - `shfmt` – enforces consistent formatting (used by `test/lint.sh`). Install via `go install mvdan.cc/sh/v3/cmd/shfmt@latest` (official upstream method) or your OS package manager.
-- `gojq` (preferred) or `jq` – deterministic JSON tooling. The Go implementation behaves consistently across Linux/macOS/Windows and avoids known memory limits in the Windows `jq` build. Install with `go install github.com/itchyny/gojq/cmd/gojq@latest` and ensure `$HOME/go/bin` (or your `GOBIN`) is on `PATH`.
+- `jq` or `gojq` – deterministic JSON tooling. mcp-bash auto-detects both; for Windows Git Bash/MSYS, `jq` is often more reliable due to observed exec/argument-size limits with `gojq` on some CI runners. CI installs `gojq` for reproducibility, but you can override detection with `MCPBASH_JSON_TOOL` / `MCPBASH_JSON_TOOL_BIN` if needed.
 
 Without `shfmt`, the lint step fails immediately with "Required command \"shfmt\" not found in PATH".
 
