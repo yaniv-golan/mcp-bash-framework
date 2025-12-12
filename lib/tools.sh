@@ -1140,7 +1140,7 @@ mcp_tools_call() {
 
 	local metadata
 	if ! metadata="$(mcp_tools_metadata_for_name "${name}")"; then
-		mcp_tools_error -32601 "Tool not found"
+		mcp_tools_error -32602 "Tool not found"
 		return 1
 	fi
 

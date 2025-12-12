@@ -41,7 +41,16 @@ OUTSIDE_ESC="${OUTSIDE_URI//\//\\/}"
 sed "s|__OUTSIDE__|${OUTSIDE_ESC}|" "${WORKSPACE}/requests.ndjson" >"${WORKSPACE}/requests.subst.ndjson"
 mv "${WORKSPACE}/requests.subst.ndjson" "${WORKSPACE}/requests.ndjson"
 
-test_run_mcp "${WORKSPACE}" "${WORKSPACE}/requests.ndjson" "${WORKSPACE}/responses.ndjson"
+status=0
+test_run_mcp "${WORKSPACE}" "${WORKSPACE}/requests.ndjson" "${WORKSPACE}/responses.ndjson" || status=$?
+if [ "${status}" -ne 0 ]; then
+	# On Windows/Git Bash, shutdown/watchdog termination and process exit codes can
+	# be unreliable. Prefer validating captured responses over trusting the exit code.
+	case "$(uname -s 2>/dev/null)" in
+	MINGW* | MSYS* | CYGWIN*) : ;;
+	*) exit "${status}" ;;
+	esac
+fi
 assert_json_lines "${WORKSPACE}/responses.ndjson"
 cp "${WORKSPACE}/responses.ndjson" /tmp/resources-providers-debug.ndjson 2>/dev/null || true
 

@@ -55,6 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Windows CI failures caused by `gojq` `E2BIG` exec errors are avoided by the jq-first detection order and exec sanity check.
 - `mcp_json_trim` rewritten to avoid O(n^2) trimming on large payloads.
 - Shutdown finish branch corrected to prevent a syntax error in staged environments.
+- `tools/call` and `resources/read` now return `-32602` (Invalid params) for tool/resource not found, instead of `-32601` (Method not found), for JSON-RPC spec compliance.
 
 ## [0.6.0] - 2025-12-08
 

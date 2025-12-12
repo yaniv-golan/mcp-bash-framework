@@ -48,7 +48,7 @@ Tool execution errors occur during tool execution and are returned as **successf
 | Scenario | Error Type | Why |
 |----------|------------|-----|
 | Tool name missing | Protocol (`-32602`) | Request structure issue |
-| Tool not found | Protocol (`-32601`) | Server-side resolution failure |
+| Tool not found | Protocol (`-32602`) | Invalid tool name (entity not found) |
 | Date format invalid | Tool Execution (`isError: true`) | LLM can retry with correct format |
 | Value out of range | Tool Execution (`isError: true`) | LLM can adjust the value |
 | File path outside roots | Tool Execution (`isError: true`) | LLM can choose allowed path |
@@ -97,7 +97,7 @@ Example `resources/read` error payload:
 |------|--------------|--------|
 | `-32700` | Parse errors and invalid JSON normalization | `lib/core.sh` |
 | `-32600` | Invalid request (missing method, batch arrays when disabled) | `lib/core.sh` |
-| `-32601` | Unknown or disallowed method (`notifications/message` from client, missing handler, not found) | `lib/core.sh`, `handlers/*` |
+| `-32601` | Unknown or disallowed method (`notifications/message` from client, missing handler) | `lib/core.sh`, `handlers/*` |
 | `-32602` | Invalid params (unsupported protocol version, invalid cursor/log level, missing/invalid remote token) | `handlers/lifecycle.sh`, `handlers/completion.sh`, `handlers/logging.sh`, `lib/auth.sh`, registry cursors |
 | `-32603` | Internal errors (empty handler response, registry size/parse failures, tool output/stderr over limits, provider failures); also used for tool timeouts | `lib/core.sh`, `lib/tools.sh`, `lib/resources.sh`, `lib/prompts.sh` |
 | `-32001` | Tool cancelled (SIGTERM/INT from client) | `lib/tools.sh` |
@@ -108,7 +108,7 @@ Example `resources/read` error payload:
 Size guardrails: `mcp_core_guard_response_size` rejects oversized responses with `-32603` (tool/resource reads use `MCPBASH_MAX_TOOL_OUTPUT_SIZE`, default 10MB; registry/list payloads use `MCPBASH_REGISTRY_MAX_BYTES`, default 100MB) and does not return partial content.
 
 ## Resource provider exit codes
-- `file.sh`: `2` outside allowed roots → `-32603`; `3` missing file → `-32601`.
+- `file.sh`: `2` outside allowed roots → `-32603`; `3` missing file → `-32602`.
 - `git.sh`: `4` invalid URI or missing git → `-32602`; `5` clone/fetch failure → `-32603`.
 - `https.sh`: `4` invalid URI or missing curl/wget → `-32602`; `5` network/timeout → `-32603`; `6` payload exceeds `MCPBASH_HTTPS_MAX_BYTES` → `-32603`.
 - Any other provider exit code maps to `-32603` with stderr text when available.
