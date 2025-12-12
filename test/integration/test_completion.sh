@@ -38,7 +38,7 @@ suggestions_len="$(echo "$resp_json" | jq '.result.completion.values | length')"
 suggestion_type="$(echo "$resp_json" | jq -r '.result.completion.values[0].type')"
 suggestion_text="$(echo "$resp_json" | jq -r '.result.completion.values[0].text')"
 has_more="$(echo "$resp_json" | jq '.result.completion.hasMore')"
-cursor="$(echo "$resp_json" | jq -r '.result._meta.cursor // empty')"
+cursor="$(echo "$resp_json" | jq -r '.result.completion.nextCursor // empty')"
 
 test_assert_eq "$suggestions_len" "1"
 test_assert_eq "$suggestion_type" "text"
@@ -46,7 +46,7 @@ if [[ "$suggestion_text" != *"plan roadmap"* ]]; then
 	test_fail "suggestion text mismatch: $suggestion_text"
 fi
 test_assert_eq "$has_more" "true"
-if [ -z "${cursor}" ]; then
+if [ -z "${cursor}" ] || [ "${cursor}" = "null" ]; then
 	test_fail "expected cursor for pagination when hasMore=true"
 fi
 

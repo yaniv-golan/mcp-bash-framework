@@ -815,7 +815,6 @@ mcp_completion_finalize() {
 						nextCursor: (if $cursor == "" then null else $cursor end)
 					}
 				}
-				| (if $cursor != "" then (._meta = {cursor: $cursor}) else . end)
 			'
 	)"
 }
