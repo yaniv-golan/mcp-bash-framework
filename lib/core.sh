@@ -1112,6 +1112,13 @@ mcp_core_emit_registry_notifications() {
 	if [ "${MCPBASH_INITIALIZED}" != true ]; then
 		return 0
 	fi
+	# During shutdown, avoid polling registries or emitting list_changed notifications.
+	# Registry refresh can run project hooks and touch the filesystem; doing so after
+	# a shutdown request can delay processing of the subsequent `exit` and trigger
+	# the shutdown watchdog in slow/loaded CI environments.
+	if [ "${MCPBASH_SHUTDOWN_PENDING:-false}" = true ]; then
+		return 0
+	fi
 
 	local allow_list_changed="true"
 	case "${MCPBASH_NEGOTIATED_PROTOCOL_VERSION:-${MCPBASH_PROTOCOL_VERSION}}" in
