@@ -95,6 +95,93 @@ test_cleanup_tmpdir() {
 	fi
 }
 
+# Capture a minimal, high-signal failure bundle into MCPBASH_LOG_DIR (CI uploads it).
+# Intended for integration/conformance tests where preserved state/log dirs may not
+# be uploaded reliably on Windows runners.
+#
+# Args:
+# - $1: label (string; e.g. test script name)
+# - $2: workspace dir (optional; copy requests/responses from here)
+# - $3: state dir (optional; copy progress/log streams from here)
+# - $@: extra files to copy verbatim (optional)
+test_capture_failure_bundle() {
+	local label="${1:-test}"
+	local workspace="${2:-}"
+	local state_dir="${3:-}"
+	shift 3 || true
+
+	local log_root="${MCPBASH_LOG_DIR:-}"
+	if [ -z "${log_root}" ]; then
+		return 0
+	fi
+
+	local ts
+	ts="$(date +%Y%m%d-%H%M%S 2>/dev/null || date +%s)"
+	local dest="${log_root%/}/failure-bundles/${label}.${ts}.$$"
+	mkdir -p "${dest}" 2>/dev/null || return 0
+
+	# Copy explicitly provided files first.
+	local f
+	for f in "$@"; do
+		[ -n "${f}" ] || continue
+		if [ -f "${f}" ]; then
+			cp -f "${f}" "${dest}/" 2>/dev/null || true
+		fi
+	done
+
+	# Copy common request/response artifacts from the workspace.
+	if [ -n "${workspace}" ] && [ -d "${workspace}" ]; then
+		for f in \
+			"${workspace}"/requests*.ndjson \
+			"${workspace}"/responses*.ndjson \
+			"${workspace}"/responses*.ndjson.stderr \
+			"${workspace}"/requests*.ndjson.stderr; do
+			[ -f "${f}" ] || continue
+			cp -f "${f}" "${dest}/" 2>/dev/null || true
+		done
+	fi
+
+	# Copy high-signal state/stream artifacts from the server state dir.
+	if [ -n "${state_dir}" ] && [ -d "${state_dir}" ]; then
+		for f in \
+			"${state_dir}"/progress.*.ndjson \
+			"${state_dir}"/logs.*.ndjson \
+			"${state_dir}"/progress.ndjson \
+			"${state_dir}"/logs.ndjson \
+			"${state_dir}"/payload.debug.log \
+			"${state_dir}"/stdout_corruption.log \
+			"${state_dir}"/watchdog.*.log \
+			"${state_dir}"/stderr.*.log \
+			"${state_dir}"/pid.* \
+			"${state_dir}"/cancelled.*; do
+			[ -f "${f}" ] || continue
+			cp -f "${f}" "${dest}/" 2>/dev/null || true
+		done
+	fi
+
+	# Record bundle provenance for quick inspection.
+	{
+		printf 'label=%s\n' "${label}"
+		printf 'workspace=%s\n' "${workspace}"
+		printf 'state_dir=%s\n' "${state_dir}"
+		printf 'cwd=%s\n' "$(pwd 2>/dev/null || printf '%s' "${PWD}")"
+	} >"${dest}/bundle.meta" 2>/dev/null || true
+}
+
+test_extract_state_dir_from_stderr() {
+	local stderr_file="$1"
+	[ -n "${stderr_file}" ] || return 1
+	[ -f "${stderr_file}" ] || return 1
+	local line=""
+	line="$(grep -m1 -- 'mcp-bash: state preserved at ' "${stderr_file}" 2>/dev/null || true)"
+	[ -n "${line}" ] || return 1
+	line="${line#*mcp-bash: state preserved at }"
+	line="${line%$'\r'}"
+	[ -n "${line}" ] || return 1
+	printf '%s' "${line}"
+	return 0
+}
+
 test_require_command() {
 	local cmd="$1"
 	if ! command -v "${cmd}" >/dev/null 2>&1; then

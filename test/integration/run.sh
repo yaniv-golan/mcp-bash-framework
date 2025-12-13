@@ -139,6 +139,10 @@ run_test() {
 	else
 		printf '[%02d/%02d] %s — %s ... %s (%ss)\n' "${index}" "${total}" "${test_script}" "${desc}" "${FAIL_ICON}" "${elapsed}" >&2
 		printf '  log: %s\n' "${log_file}" >&2
+		# Copy the failing test log into MCPBASH_LOG_DIR (CI uploads it reliably).
+		if command -v test_capture_failure_bundle >/dev/null 2>&1; then
+			test_capture_failure_bundle "integration.${test_script}" "" "" "${log_file}"
+		fi
 		printf '  --- full log output ---\n' >&2
 		cat "${log_file}" >&2 || true
 		printf '  --- end of log ---\n' >&2
