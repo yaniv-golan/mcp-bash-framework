@@ -1486,6 +1486,19 @@ mcp_tools_call() {
 				fi
 			fi
 
+			# CI/debug aid: write a concise progress wiring summary to stderr so it is
+			# captured by integration failure bundles even when MCPBASH_LOG_LEVEL is
+			# not set to debug (notifications/message go to stdout).
+			if [ "${MCPBASH_CI_VERBOSE:-false}" = "true" ]; then
+				local stream_present="false"
+				local token_present="false"
+				[ -n "${MCP_PROGRESS_STREAM:-}" ] && stream_present="true"
+				[ -n "${MCP_PROGRESS_TOKEN:-}" ] && token_present="true"
+				local stream_q
+				printf -v stream_q '%q' "${MCP_PROGRESS_STREAM:-}"
+				printf '%s\n' "mcp-bash: tools/call progress wiring: inherited_stream=${stream_present} inherited_token=${token_present} passthrough_stream=${saw_progress_stream} passthrough_token=${saw_progress_token} env_crlf_stripped=${saw_crlf} stream_line_had_cr=${saw_progress_stream_cr} token_line_had_cr=${saw_progress_token_cr} stream=${stream_q}" >&2
+			fi
+
 			env_exec+=(
 				"MCP_SDK=${MCP_SDK}"
 				"MCP_TOOL_NAME=${MCP_TOOL_NAME}"
