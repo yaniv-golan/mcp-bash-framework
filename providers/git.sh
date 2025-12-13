@@ -18,14 +18,14 @@ mcp_git_load_policy() {
 	local sourced="false"
 	if [ -n "${MCPBASH_HOME:-}" ] && [ -f "${MCPBASH_HOME}/lib/policy.sh" ]; then
 		# shellcheck disable=SC1090
-		. "${MCPBASH_HOME}/lib/policy.sh" && sourced="true" || true
+		if . "${MCPBASH_HOME}/lib/policy.sh"; then sourced="true"; fi
 	fi
 	if [ "${sourced}" != "true" ]; then
 		local self_dir=""
-		self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P 2>/dev/null || true)"
+		self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P 2>/dev/null)" || true
 		if [ -n "${self_dir}" ] && [ -f "${self_dir%/}/../lib/policy.sh" ]; then
 			# shellcheck disable=SC1090,SC1091
-			. "${self_dir%/}/../lib/policy.sh" && sourced="true" || true
+			if . "${self_dir%/}/../lib/policy.sh"; then sourced="true"; fi
 		fi
 	fi
 
