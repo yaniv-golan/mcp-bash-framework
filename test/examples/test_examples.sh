@@ -94,9 +94,11 @@ JSON
 			printf '%s\n' '--- end server stderr ---' >&2
 			return 1
 		fi
-		if grep -q -- 'mcp-bash: shutdown timeout' "${stderr_file}"; then
+		# Match the actual watchdog log line, not Bash job-control "Terminated ( ... printf ... )"
+		# lines that may include the string as part of the terminated subshell command.
+		if grep -Eq -- '^mcp-bash: shutdown timeout \\([0-9]+s\\) elapsed; terminating\\.$' "${stderr_file}"; then
 			local timeout_line=""
-			timeout_line="$(grep -m1 -- 'mcp-bash: shutdown timeout' "${stderr_file}" 2>/dev/null || true)"
+			timeout_line="$(grep -m1 -E -- '^mcp-bash: shutdown timeout \\([0-9]+s\\) elapsed; terminating\\.$' "${stderr_file}" 2>/dev/null || true)"
 			printf '%s\n' "Example ${example_id}: detected shutdown watchdog timeout in server stderr (${stderr_file})." >&2
 			if [ -n "${timeout_line}" ]; then
 				printf '%s\n' "  ${timeout_line}" >&2
