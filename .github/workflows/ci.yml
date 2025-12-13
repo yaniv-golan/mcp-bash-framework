@@ -204,6 +204,10 @@ jobs:
       - name: Examples suite
         run: test/examples/run.sh
 
+      - name: Strict conformance (jq + gojq)
+        if: matrix.os == 'ubuntu-latest'
+        run: test/conformance/run.sh
+
   stress:
     if: github.event_name == 'schedule'
     runs-on: ubuntu-latest

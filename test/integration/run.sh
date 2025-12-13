@@ -48,6 +48,7 @@ TESTS=(
 	"test_capabilities.sh"
 	"test_core_errors.sh"
 	"test_completion.sh"
+	"test_conformance_strict_shapes.sh"
 	"test_installer.sh"
 	"test_tools.sh"
 	"test_tools_policy.sh"

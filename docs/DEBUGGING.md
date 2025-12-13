@@ -185,4 +185,5 @@ rm -rf ${TMPDIR:-/tmp}/mcpbash.debug.*
 ## See Also
 
 - [LOGGING.md](LOGGING.md) - General logging configuration
+- [INSPECTOR.md](INSPECTOR.md) - MCP Inspector recipes + strict-client pitfalls
 - [BEST-PRACTICES.md](BEST-PRACTICES.md) - Debugging flowchart
