@@ -55,12 +55,25 @@ check_allowed() {
 		[ -z "${root}" ] && continue
 		check_root="$(normalize_path "${root}" 2>/dev/null || true)"
 		[ -z "${check_root}" ] && continue
-		case "${candidate}" in
-		"${check_root}" | "${check_root}"/*)
+		# SECURITY: containment checks must be literal (not shell patterns).
+		# Paths can contain glob metacharacters like []?* which would turn a
+		# prefix check into a wildcard match and allow root bypasses.
+		if [ "${check_root}" != "/" ]; then
+			check_root="${check_root%/}"
+		fi
+		if [ "${candidate}" = "${check_root}" ]; then
 			allowed=true
 			break
-			;;
-		esac
+		fi
+		if [ "${check_root}" = "/" ]; then
+			allowed=true
+			break
+		fi
+		local prefix="${check_root}/"
+		if [ "${candidate:0:${#prefix}}" = "${prefix}" ]; then
+			allowed=true
+			break
+		fi
 	done <<<"$(printf '%s\n' "${roots_input}" | tr ':' '\n')"
 	if [ "${allowed}" != true ]; then
 		return 1

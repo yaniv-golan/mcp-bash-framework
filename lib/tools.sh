@@ -88,10 +88,22 @@ mcp_tools_validate_path() {
 	if [ -z "${canonical}" ] || [ -z "${root}" ]; then
 		return 1
 	fi
-	case "${canonical}" in
-	"${root}"/*) ;;
-	*) return 1 ;;
-	esac
+	# SECURITY: do NOT use case/glob matching for containment checks. Tool/root
+	# paths may contain glob metacharacters like []?* which would turn the check
+	# into a wildcard match and allow bypasses.
+	if [ "${root}" != "/" ]; then
+		root="${root%/}"
+	fi
+	if [ "${canonical}" != "${root}" ]; then
+		if [ "${root}" = "/" ]; then
+			:
+		else
+			local prefix="${root}/"
+			if [ "${canonical:0:${#prefix}}" != "${prefix}" ]; then
+				return 1
+			fi
+		fi
+	fi
 	local perm_mask
 	if perm_mask="$(perl -e 'printf "%o\n", (stat($ARGV[0]))[2] & 0777' "${canonical}" 2>/dev/null)"; then
 		local perm_bits=$((8#${perm_mask}))

@@ -467,7 +467,20 @@ mcp_roots_contains() {
 		[ -n "${root}" ] || continue
 		local root_canonical
 		root_canonical="$(mcp_path_normalize --physical "${root}")"
-		if [[ "${canonical}" == "${root_canonical}" ]] || [[ "${canonical}" == "${root_canonical}/"* ]]; then
+		# SECURITY: do NOT use glob/pattern matching for containment checks.
+		# Root paths may contain glob metacharacters like []?* which would turn a
+		# prefix check into a wildcard match. Use literal string comparisons.
+		if [ "${root_canonical}" != "/" ]; then
+			root_canonical="${root_canonical%/}"
+		fi
+		if [ "${canonical}" = "${root_canonical}" ]; then
+			return 0
+		fi
+		if [ "${root_canonical}" = "/" ]; then
+			return 0
+		fi
+		local prefix="${root_canonical}/"
+		if [ "${canonical:0:${#prefix}}" = "${prefix}" ]; then
 			return 0
 		fi
 	done <<<"${MCP_ROOTS_PATHS:-}"

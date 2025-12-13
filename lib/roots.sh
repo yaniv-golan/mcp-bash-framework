@@ -512,9 +512,25 @@ mcp_roots_contains_path() {
 	local canonical
 	canonical="$(mcp_roots_normalize_path "${path}")"
 
+	# SECURITY: do NOT use glob/pattern matching for containment checks.
+	# Paths may legally contain glob metacharacters like []?* which would turn a
+	# prefix check into a wildcard match and allow root bypasses (e.g., root[1]
+	# matching root1). Use literal string comparisons instead.
 	local root
 	for root in "${MCPBASH_ROOTS_PATHS[@]}"; do
-		if [[ "${canonical}" == "${root}" ]] || [[ "${canonical}" == "${root}/"* ]]; then
+		[ -n "${root}" ] || continue
+		# Normalize trailing slash (except for "/") to keep comparisons stable.
+		if [ "${root}" != "/" ]; then
+			root="${root%/}"
+		fi
+		if [ "${canonical}" = "${root}" ]; then
+			return 0
+		fi
+		if [ "${root}" = "/" ]; then
+			return 0
+		fi
+		local prefix="${root}/"
+		if [ "${canonical:0:${#prefix}}" = "${prefix}" ]; then
 			return 0
 		fi
 	done
