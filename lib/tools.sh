@@ -1342,9 +1342,10 @@ mcp_tools_call() {
 		fi
 	fi
 
-	local stdout_file stderr_file
+	local stdout_file stderr_file diag_file
 	stdout_file="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-tools-stdout.XXXXXX")"
 	stderr_file="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-tools-stderr.XXXXXX")"
+	diag_file="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-tools-diag.XXXXXX")"
 
 	local has_json_tool="false"
 	if [ "${MCPBASH_MODE}" != "minimal" ] && [ "${MCPBASH_JSON_TOOL:-none}" != "none" ]; then
@@ -1381,7 +1382,7 @@ mcp_tools_call() {
 		if [ "${MCPBASH_PRESERVE_STATE:-}" = "true" ]; then
 			return 0
 		fi
-		rm -f "${stdout_file}" "${stderr_file}"
+		rm -f "${stdout_file}" "${stderr_file}" "${diag_file}"
 		[ -n "${tool_resources_file:-}" ] && rm -f "${tool_resources_file}"
 		[ -n "${tool_error_file}" ] && rm -f "${tool_error_file}"
 		[ -n "${args_file}" ] && rm -f "${args_file}"
@@ -1486,9 +1487,10 @@ mcp_tools_call() {
 				fi
 			fi
 
-			# CI/debug aid: write a concise progress wiring summary to stderr so it is
-			# captured by integration failure bundles even when MCPBASH_LOG_LEVEL is
-			# not set to debug (notifications/message go to stdout).
+			# CI/debug aid: write a concise progress wiring summary to a diag file so
+			# the parent can emit it to server stderr (captured by failure bundles).
+			# Writing directly to >&2 here goes to the tool's stderr capture, not
+			# the server stderr that test harnesses inspect.
 			if [ "${MCPBASH_CI_VERBOSE:-false}" = "true" ]; then
 				local stream_present="false"
 				local token_present="false"
@@ -1496,7 +1498,7 @@ mcp_tools_call() {
 				[ -n "${MCP_PROGRESS_TOKEN:-}" ] && token_present="true"
 				local stream_q
 				printf -v stream_q '%q' "${MCP_PROGRESS_STREAM:-}"
-				printf '%s\n' "mcp-bash: tools/call progress wiring: inherited_stream=${stream_present} inherited_token=${token_present} passthrough_stream=${saw_progress_stream} passthrough_token=${saw_progress_token} env_crlf_stripped=${saw_crlf} stream_line_had_cr=${saw_progress_stream_cr} token_line_had_cr=${saw_progress_token_cr} stream=${stream_q}" >&2
+				printf '%s\n' "mcp-bash: tools/call progress wiring: inherited_stream=${stream_present} inherited_token=${token_present} passthrough_stream=${saw_progress_stream} passthrough_token=${saw_progress_token} env_crlf_stripped=${saw_crlf} stream_line_had_cr=${saw_progress_stream_cr} token_line_had_cr=${saw_progress_token_cr} stream=${stream_q}" >>"${diag_file}"
 			fi
 
 			env_exec+=(
@@ -1638,6 +1640,23 @@ mcp_tools_call() {
 		# Outer stderr append captures shell-level errors; tool stderr is redirected above.
 	) >"${stdout_file}" 2>>"${stderr_file}" || exit_code=$?
 	exit_code=${exit_code:-0}
+
+	# Emit CI diagnostics written by the subshell to real server stderr, so they
+	# appear in integration failure bundles (stdout-based notifications/message
+	# don't make it into CI stderr artifacts).
+	if [ -s "${diag_file}" ]; then
+		cat "${diag_file}" >&2
+	fi
+	# Additional post-tool diagnostic: check if progress stream file exists.
+	if [ "${MCPBASH_CI_VERBOSE:-false}" = "true" ] && [ -n "${MCP_PROGRESS_STREAM:-}" ]; then
+		local stream_exists="false"
+		local stream_size="0"
+		if [ -f "${MCP_PROGRESS_STREAM}" ]; then
+			stream_exists="true"
+			stream_size="$(wc -c <"${MCP_PROGRESS_STREAM}" 2>/dev/null | tr -d ' ')" || stream_size="err"
+		fi
+		printf '%s\n' "mcp-bash: tools/call post-run: stream_file_exists=${stream_exists} stream_file_size=${stream_size}" >&2
+	fi
 
 	if mcp_logging_is_enabled "debug"; then
 		local stdout_size=0
