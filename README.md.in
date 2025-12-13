@@ -135,6 +135,8 @@ bash install.sh --archive "${file}" --version "${version}"
 
 Why this is “verified”: you download the release tarball + `SHA256SUMS`, verify the checksum locally, then run the installer against the verified archive.
 
+For tagged releases (`vX.Y.Z`), the installer also attempts to verify the archive against `SHA256SUMS` automatically when it’s available.
+
 Manual/offline install (for policy-driven or air-gapped environments):
 
 ```bash

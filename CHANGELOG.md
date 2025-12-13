@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Installer `--verify` for tagged releases now targets the release-published tarball (`releases/download/vX.Y.Z/mcp-bash-vX.Y.Z.tar.gz`) so it stays in sync with the `SHA256SUMS` asset.
+- Tagged archive installs now attempt to verify against `SHA256SUMS` automatically when available (without requiring `--verify`).
 - Outgoing request IDs are now allocated via a lock-backed counter in the state dir to prevent cross-process ID reuse; elicitation polling in the flusher uses the shared counter.
 - All example tool/resource names switched to hyphenated form to match the validated naming regex.
 - Server now advertises the spec-compliant `completions` capability in initialize responses; tests assert capability presence.

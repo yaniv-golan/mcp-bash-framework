@@ -55,6 +55,13 @@ fi
 assert_file_exists "${ARCHIVE_INSTALL_ROOT}/bin/mcp-bash"
 assert_file_exists "${ARCHIVE_INSTALL_ROOT}/VERSION"
 
+printf ' -> tagged archive auto-verifies using SHA256SUMS when present\n'
+ARCHIVE_AUTO_ROOT="${TEST_TMPDIR}/install-archive-auto"
+printf '%s  %s\n' "${archive_sha}" "mcp-bash-v0.0.0.tar.gz" >"${TEST_TMPDIR}/SHA256SUMS"
+"${MCPBASH_TEST_ROOT}/install.sh" --dir "${ARCHIVE_AUTO_ROOT}" --archive "${ARCHIVE_PATH}" --version "v0.0.0" --yes
+assert_file_exists "${ARCHIVE_AUTO_ROOT}/bin/mcp-bash"
+assert_file_exists "${ARCHIVE_AUTO_ROOT}/VERSION"
+
 printf ' -> installer handles nonexistent local source\n'
 BAD_ROOT="${TEST_TMPDIR}/does-not-exist"
 if MCPBASH_INSTALL_LOCAL_SOURCE="${BAD_ROOT}" "${MCPBASH_TEST_ROOT}/install.sh" --dir "${TEST_TMPDIR}/bad-install" --yes >/dev/null 2>&1; then

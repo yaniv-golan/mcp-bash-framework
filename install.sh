@@ -300,20 +300,39 @@ else
 			exit 1
 		fi
 
-		# Verify checksum
-		computed_sha=""
+		# Verify checksum (optional).
+		# - If --verify is provided, verification is mandatory (fail closed).
+		# - For tagged installs (vX.Y.Z), attempt to verify against SHA256SUMS when
+		#   available, but do not block first-time DX if verification tooling/files
+		#   are missing (warn and continue).
+		sha_tool=""
 		if command -v sha256sum >/dev/null 2>&1; then
-			computed_sha="$(sha256sum "${archive_path}" | awk '{print $1}')"
+			sha_tool="sha256sum"
 		elif command -v shasum >/dev/null 2>&1; then
-			computed_sha="$(shasum -a 256 "${archive_path}" | awk '{print $1}')"
-		else
-			if [ "${cleanup_archive}" -eq 1 ]; then
-				rm -f "${archive_path}" || true
-			fi
-			error "Neither sha256sum nor shasum is available for checksum verification"
-			exit 1
+			sha_tool="shasum"
 		fi
+
+		compute_sha256() {
+			local path="$1"
+			if [ -z "${sha_tool}" ]; then
+				return 1
+			fi
+			if [ "${sha_tool}" = "sha256sum" ]; then
+				sha256sum "${path}" | awk '{print $1}'
+			else
+				shasum -a 256 "${path}" | awk '{print $1}'
+			fi
+		}
+
 		if [ -n "${VERIFY_SHA256}" ]; then
+			if [ -z "${sha_tool}" ]; then
+				if [ "${cleanup_archive}" -eq 1 ]; then
+					rm -f "${archive_path}" || true
+				fi
+				error "Neither sha256sum nor shasum is available for checksum verification"
+				exit 1
+			fi
+			computed_sha="$(compute_sha256 "${archive_path}")"
 			if [ "${computed_sha}" != "${VERIFY_SHA256}" ]; then
 				if [ "${cleanup_archive}" -eq 1 ]; then
 					rm -f "${archive_path}" || true
@@ -321,7 +340,77 @@ else
 				error "Checksum mismatch! Expected ${VERIFY_SHA256}, got ${computed_sha}"
 				exit 1
 			fi
-			success "Archive checksum verified"
+			success "Archive checksum verified (--verify)"
+		else
+			case "${BRANCH}" in
+			v*.*.*)
+				# Best-effort verification using SHA256SUMS for tagged installs.
+				if [ -z "${sha_tool}" ]; then
+					warn "Checksum tool not available (sha256sum/shasum); skipping archive verification"
+				else
+					canonical_file="mcp-bash-${BRANCH}.tar.gz"
+					sha_sums_path=""
+					cleanup_sums=0
+
+					# Prefer a colocated SHA256SUMS for local archives; for downloaded
+					# archives, fetch SHA256SUMS from the same directory as the tarball.
+					if [ -n "${archive_url}" ]; then
+						sha_url="${archive_url%/*}/SHA256SUMS"
+						tmp_sums="$(mktemp "${TMPDIR:-/tmp}/mcpbash.sums.XXXXXX")"
+						cleanup_sums=1
+						if command -v curl >/dev/null 2>&1 && curl -fsSL "${sha_url}" -o "${tmp_sums}"; then
+							sha_sums_path="${tmp_sums}"
+						else
+							rm -f "${tmp_sums}" 2>/dev/null || true
+							warn "Unable to download SHA256SUMS for ${BRANCH}; skipping archive verification"
+						fi
+					else
+						local_dir="$(dirname "${archive_path}")"
+						if [ -f "${local_dir}/SHA256SUMS" ]; then
+							sha_sums_path="${local_dir}/SHA256SUMS"
+						else
+							warn "SHA256SUMS not found next to archive; skipping archive verification"
+						fi
+					fi
+
+					if [ -n "${sha_sums_path}" ]; then
+						expected_sha="$(awk -v f="${canonical_file}" '
+							NF >= 2 {
+								file=$2
+								sub(/^\*/, "", file)
+								if (file == f) { print $1; exit 0 }
+							}
+						' "${sha_sums_path}" 2>/dev/null || true)"
+						if [ -z "${expected_sha}" ]; then
+							# Do not proceed on an unexpected SHA256SUMS shape.
+							if [ "${cleanup_sums}" -eq 1 ]; then
+								rm -f "${sha_sums_path}" 2>/dev/null || true
+							fi
+							if [ "${cleanup_archive}" -eq 1 ]; then
+								rm -f "${archive_path}" || true
+							fi
+							error "SHA256SUMS missing entry for ${canonical_file}"
+							exit 1
+						fi
+						computed_sha="$(compute_sha256 "${archive_path}")"
+						if [ "${computed_sha}" != "${expected_sha}" ]; then
+							if [ "${cleanup_sums}" -eq 1 ]; then
+								rm -f "${sha_sums_path}" 2>/dev/null || true
+							fi
+							if [ "${cleanup_archive}" -eq 1 ]; then
+								rm -f "${archive_path}" || true
+							fi
+							error "Checksum mismatch! Expected ${expected_sha}, got ${computed_sha}"
+							exit 1
+						fi
+						success "Archive checksum verified (SHA256SUMS)"
+						if [ "${cleanup_sums}" -eq 1 ]; then
+							rm -f "${sha_sums_path}" 2>/dev/null || true
+						fi
+					fi
+				fi
+				;;
+			esac
 		fi
 		mkdir -p "${INSTALL_DIR}"
 		# Extract archive, stripping the leading directory
