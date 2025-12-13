@@ -89,7 +89,7 @@ mcp_resources_manual_finalize() {
 			arguments: (.arguments // {type: "object", properties: {}}),
 			uri: .uri,
 			provider: (.provider // (
-				if .uri | startswith("git://") then "git"
+				if .uri | startswith("git+https://") then "git"
 				elif .uri | startswith("https://") then "https"
 				else "file" end
 			)),
@@ -558,7 +558,7 @@ mcp_resources_scan() {
 				provider="file"
 				case "${uri}" in
 				https://*) provider="https" ;;
-				git://*) provider="git" ;;
+				git+https://*) provider="git" ;;
 				esac
 			fi
 
@@ -1350,7 +1350,7 @@ mcp_resources_provider_from_uri() {
 	local uri="$1"
 	case "${uri}" in
 	file://*) echo "file" ;;
-	git://*) echo "git" ;;
+	git+https://*) echo "git" ;;
 	https://*) echo "https" ;;
 	*) echo "" ;;
 	esac

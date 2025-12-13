@@ -224,10 +224,23 @@ mcp_registry_register_ttl() {
 
 mcp_registry_register_signature() {
 	local path="$1"
-	local mtime size
-	mtime="$(mcp_registry_stat_mtime "${path}")"
-	size="$(mcp_registry_register_filesize "${path}")"
-	printf '%s:%s:%s' "${path}" "${mtime}" "${size}"
+	# Signature used to ensure the script we execute is exactly the one we checked.
+	#
+	# IMPORTANT: this must be stable across copies (we copy register.sh into a temp
+	# file before sourcing it). Using path/mtime would spuriously fail even when
+	# contents are identical, because the temp file has a different path and mtime.
+	#
+	# A content hash is simple, fast for small scripts, and portable (falls back to
+	# cksum when sha256 tooling is unavailable).
+	if command -v sha256sum >/dev/null 2>&1; then
+		sha256sum "${path}" 2>/dev/null | awk '{print $1}'
+		return 0
+	fi
+	if command -v shasum >/dev/null 2>&1; then
+		shasum -a 256 "${path}" 2>/dev/null | awk '{print $1}'
+		return 0
+	fi
+	cksum "${path}" 2>/dev/null | awk '{print $1}'
 }
 
 mcp_registry_register_reset_state() {

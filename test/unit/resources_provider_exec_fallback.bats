@@ -36,8 +36,8 @@ EOF
 chmod -x "${MCPBASH_HOME}/providers/git.sh" 2>/dev/null || true
 
 printf ' -> runs non-executable provider via bash fallback\n'
-out="$(mcp_resources_read_via_provider "git" "git://example/repo#main:README.md")"
-assert_eq "ok:provider-ran:git://example/repo#main:README.md" "${out}" "expected provider to run via bash fallback"
+out="$(mcp_resources_read_via_provider "git" "git+https://example/repo#main:README.md")"
+assert_eq "ok:provider-ran:git+https://example/repo#main:README.md" "${out}" "expected provider to run via bash fallback"
 
 printf 'resources provider exec fallback test passed.\n'
 

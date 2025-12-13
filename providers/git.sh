@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Resource provider: fetch files from git:// repositories.
+# Resource provider: fetch files from git+https:// repositories.
 
 set -euo pipefail
 
@@ -192,8 +192,20 @@ EOF
 fi
 
 uri="${1:-}"
-if [ -z "${uri}" ] || [[ "${uri}" != git://* ]]; then
-	printf '%s\n' "Invalid git URI" >&2
+if [ -z "${uri}" ] || [[ "${uri}" != git+https://* ]]; then
+	printf '%s\n' "Invalid git+https URI" >&2
+	exit 4
+fi
+
+# Reject embedded credentials in the authority portion. Even if host policy
+# strips userinfo for allow/deny checks, passing userinfo through to git would
+# risk leaking secrets via process listings/logs.
+authority="${uri#*://}"
+authority="${authority%%/*}"
+authority="${authority%%\?*}"
+authority="${authority%%\#*}"
+if [[ "${authority}" == *"@"* ]]; then
+	printf '%s\n' "git provider refuses userinfo in URI" >&2
 	exit 4
 fi
 
@@ -234,11 +246,10 @@ if ! command -v git >/dev/null 2>&1; then
 fi
 
 export GIT_TERMINAL_PROMPT=0
-export GIT_ALLOW_PROTOCOL=git
+export GIT_ALLOW_PROTOCOL=https
 export GIT_OPTIONAL_LOCKS=0
 
-spec="${uri#git://}"
-repo="git://${spec}"
+repo="${uri#git+}"
 ref="HEAD"
 path=""
 if [[ "${repo}" == *#* ]]; then

@@ -1,6 +1,6 @@
 # Resource Templates
 
-Resource templates advertise families of resources using RFC 6570 URI templates (e.g., `file:///{path}`, `git://{repo}/{ref}/{path}`). The server **does not expand templates**; clients call `resources/templates/list`, expand the template client-side, then pass the concrete URI to `resources/read`.
+Resource templates advertise families of resources using RFC 6570 URI templates (e.g., `file:///{path}`, `git+https://{repo}/{ref}/{path}`). The server **does not expand templates**; clients call `resources/templates/list`, expand the template client-side, then pass the concrete URI to `resources/read`.
 
 ## Auto-discovery (`resources/*.meta.json`)
 

@@ -39,7 +39,7 @@ printf ' -> enforces allowlist in fallback mode (no policy.sh)
 MCPBASH_GIT_ALLOW_HOSTS="allowed.example.com"
 unset MCPBASH_GIT_ALLOW_ALL
 set +e
-run_provider "git://example.com/repo#main:README.md"
+run_provider "git+https://example.com/repo#main:README.md"
 rc=$?
 set -e
 assert_eq "4" "${rc}" "expected exit 4 for non-allowlisted host even in fallback mode"

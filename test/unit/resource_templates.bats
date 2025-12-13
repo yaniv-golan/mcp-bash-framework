@@ -131,7 +131,7 @@ cat >"${MCPBASH_RESOURCES_DIR}/auto.meta.json" <<'EOF'
 EOF
 
 mcp_resources_templates_manual_begin
-mcp_resources_templates_register_manual '{"name":"override-me","uriTemplate":"git://{repo}/{path}","description":"manual"}'
+mcp_resources_templates_register_manual '{"name":"override-me","uriTemplate":"git+https://{repo}/{path}","description":"manual"}'
 mcp_resources_templates_register_manual '{"name":"manual-only","uriTemplate":"file:///var/log/{svc}/{date}"}'
 mcp_resources_templates_manual_finalize
 
@@ -146,5 +146,5 @@ total_templates="$(printf '%s' "${MCP_RESOURCES_TEMPLATES_REGISTRY_JSON}" | "${M
 if [ "${template_names}" != "manual-only,override-me," ]; then
 	test_fail "unexpected template names after merge: ${template_names}"
 fi
-assert_eq "git://{repo}/{path}" "${override_uri}" "manual template should override auto entry"
+assert_eq "git+https://{repo}/{path}" "${override_uri}" "manual template should override auto entry"
 assert_eq "2" "${total_templates}" "merged registry should include manual-only and override-me"

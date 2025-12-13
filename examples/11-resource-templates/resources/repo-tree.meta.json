@@ -1,6 +1,6 @@
 {
   "name": "repo-tree",
   "title": "Repo Tree",
-  "uriTemplate": "git://{repo}/{ref}/{path}",
+  "uriTemplate": "git+https://{repo}/{ref}/{path}",
   "description": "Expose files from a git repository"
 }

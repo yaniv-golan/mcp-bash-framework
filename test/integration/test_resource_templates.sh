@@ -103,7 +103,7 @@ cat >"${MANUAL_ROOT}/server.d/register.sh" <<'EOF'
 mcp_resources_templates_manual_begin
 mcp_resources_templates_register_manual '{
   "name": "override-me",
-  "uriTemplate": "git://{repo}/{path}",
+  "uriTemplate": "git+https://{repo}/{path}",
   "description": "manual wins",
   "mimeType": "application/x-git"
 }'
@@ -133,7 +133,7 @@ jq -s '
 	if ($templates | map(.name) | sort != ["manual-only","override-me"]) then err("unexpected template names") else null end,
 	if ($templates | map(select(.name == "shared-name")) | length) != 0 then err("resource collision should skip shared-name") else null end,
 	($templates[] | select(.name == "override-me")) as $override |
-	if $override.uriTemplate != "git://{repo}/{path}" then err("manual override did not win") else null end,
+	if $override.uriTemplate != "git+https://{repo}/{path}" then err("manual override did not win") else null end,
 	($templates[] | select(.name == "manual-only")) as $manual |
 	if $manual.title != "Logs by date" then err("manual-only template missing title") else null end
 ' <"${MANUAL_ROOT}/responses-manual.ndjson" >/dev/null
