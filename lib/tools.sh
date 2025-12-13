@@ -1439,19 +1439,52 @@ mcp_tools_call() {
 				"LANG=${LANG:-C}"
 			)
 			local env_line env_key env_value
+			local saw_progress_stream="false"
+			local saw_progress_token="false"
+			local saw_crlf="false"
+			local saw_progress_stream_cr="false"
+			local saw_progress_token_cr="false"
 			while IFS= read -r env_line || [ -n "${env_line}" ]; do
 				[ -z "${env_line}" ] && continue
 				# Git Bash/MSYS may emit CRLF from `env`; strip trailing CR to avoid
 				# propagating "\r" into paths like MCP_PROGRESS_STREAM.
+				case "${env_line}" in
+				*$'\r')
+					saw_crlf="true"
+					case "${env_line%%=*}" in
+					MCP_PROGRESS_STREAM) saw_progress_stream_cr="true" ;;
+					MCP_PROGRESS_TOKEN) saw_progress_token_cr="true" ;;
+					esac
+					;;
+				esac
 				env_line="${env_line%$'\r'}"
 				env_key="${env_line%%=*}"
 				env_value="${env_line#*=}"
 				case "${env_key}" in
 				MCP_* | MCPBASH_*)
+					case "${env_key}" in
+					MCP_PROGRESS_STREAM) saw_progress_stream="true" ;;
+					MCP_PROGRESS_TOKEN) saw_progress_token="true" ;;
+					esac
 					env_exec+=("${env_key}=${env_value}")
 					;;
 				esac
 			done < <(env)
+
+			if mcp_logging_is_enabled "debug"; then
+				local stream_present="false"
+				local token_present="false"
+				[ -n "${MCP_PROGRESS_STREAM:-}" ] && stream_present="true"
+				[ -n "${MCP_PROGRESS_TOKEN:-}" ] && token_present="true"
+				mcp_logging_debug "${MCP_TOOLS_LOGGER}" "Progress wiring: inherited stream_present=${stream_present} token_present=${token_present} passthrough_stream=${saw_progress_stream} passthrough_token=${saw_progress_token} env_crlf_stripped=${saw_crlf} stream_line_had_cr=${saw_progress_stream_cr} token_line_had_cr=${saw_progress_token_cr}"
+				if mcp_logging_verbose_enabled; then
+					# Show escaped values so hidden CR/LF or whitespace is visible.
+					local stream_q token_q
+					printf -v stream_q '%q' "${MCP_PROGRESS_STREAM:-}"
+					printf -v token_q '%q' "${MCP_PROGRESS_TOKEN:-}"
+					mcp_logging_debug "${MCP_TOOLS_LOGGER}" "Progress wiring: stream=${stream_q} token=${token_q}"
+				fi
+			fi
 
 			env_exec+=(
 				"MCP_SDK=${MCP_SDK}"
