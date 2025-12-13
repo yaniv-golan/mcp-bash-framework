@@ -42,7 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI env snapshot now runs after JSON tool detection and records PATH/env byte sizes plus `jsonTool`/`jsonToolBin` metadata (counts only; no env contents captured).
 - JSON-RPC batch handling is now protocol-aware: protocol `2025-03-26` auto-accepts batch arrays; newer protocols reject arrays unless `MCPBASH_COMPAT_BATCHES=true` is set for legacy clients, with clearer error messaging.
 - Worker wait loop sleep increased to reduce busy-wait CPU churn when slots are full.
-- Security hardening: git provider now requires allowlists, canonicalizes repo paths, and pre-checks disk space; HTTPS provider resolves hosts and blocks obfuscated private IPs; remote token guard enforces 32+ char secrets, throttles failures, and redacts tokens in debug logs; inherit tool env requires explicit opt-in; file provider closes TOCTOU gap; JSON tool overrides are ignored for root unless explicitly allowed; tool metadata parsing no longer uses eval.
+- Security hardening: git provider now requires allowlists, canonicalizes repo paths, and pre-checks disk space; HTTPS provider resolves hosts and blocks obfuscated private IPs; remote token guard enforces 32+ char secrets, throttles failures, and redacts tokens in debug logs; `MCPBASH_TOOL_ENV_MODE=inherit` now requires explicit opt-in via `MCPBASH_TOOL_ENV_INHERIT_ALLOW=true`; JSON tool overrides are ignored for root unless explicitly allowed (`MCPBASH_ALLOW_JSON_TOOL_OVERRIDE_FOR_ROOT=true`); tool metadata parsing no longer uses eval.
 - **BREAKING**: Project registry hooks are now disabled by default; set `MCPBASH_ALLOW_PROJECT_HOOKS=true` to execute `server.d/register.sh`. Hooks are refused if the file is group/world writable or ownership mismatches the current user.
 - **BREAKING**: Tool execution now defaults to deny unless explicitly allowlisted via `MCPBASH_TOOL_ALLOWLIST` (set to `*` to allow all in trusted projects). Paths are validated for ownership and safe permissions before execution.
 - Debug payload redaction now scrubs common secret keys beyond `remoteToken`.
@@ -62,12 +62,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed duplicate YAML meta from the progress-and-cancellation example (JSON is canonical).
 - Windows CI failures caused by `gojq` `E2BIG` exec errors are avoided by the jq-first detection order and exec sanity check.
 - Windows Git Bash example flakiness: runtime now guarantees `MCPBASH_STATE_DIR`/`MCPBASH_LOCK_ROOT` exist (with a short-path fallback), and example tests capture server stderr and fail fast on shutdown watchdog timeouts or `mktemp` template failures.
+- Progress/log streaming is more reliable across platforms: portable byte offsets in the flusher and explicit flushes before worker cleanup reduce missing tail output.
 - HTTPS provider pins curl connections to vetted IPs via `--resolve` to mitigate DNS rebinding SSRF between pre-check and fetch.
 - Registry refresh-path and git repo-root containment checks now use literal (non-glob) prefix comparisons to avoid metacharacter bypasses.
 - Debug payload redaction now scrubs common secret keys across the full JSON payload (not only `_meta`) to reduce accidental leakage during debugging.
 - `mcp_json_trim` rewritten to avoid O(n^2) trimming on large payloads.
 - Shutdown finish branch corrected to prevent a syntax error in staged environments.
-- `tools/call` and `resources/read` now return `-32602` (Invalid params) for tool/resource not found, instead of `-32601` (Method not found), for JSON-RPC spec compliance.
+- `MCPBASH_SHUTDOWN_TIMEOUT=0` is now treated as "use the default" to avoid accidental zero-timeout shutdowns.
+- `tools/call` now returns `-32602` (Invalid params) for tool not found, instead of `-32601` (Method not found), for JSON-RPC spec compliance.
+- `resources/read` now returns `-32002` (Resource not found) for missing resources, instead of `-32601` (Method not found), per MCP spec.
+- Resource providers no longer require the executable bit (more reliable on Git Bash/MSYS and some filesystems).
+- Git Bash CRLF handling: strip `\r` from env passthrough and metadata keys to prevent subtle Windows-only failures.
+- Completion scripts and custom providers work more reliably across platforms.
+- JSON-RPC error responses omit `id` when the request `id` is invalid/unknown (strict JSON-RPC compliance).
 
 ## [0.6.0] - 2025-12-08
 
