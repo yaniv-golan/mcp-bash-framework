@@ -13,36 +13,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 test_create_tmpdir
 
-_TEST_BUNDLE_LABEL="test_conformance_strict_shapes.sh"
-_TEST_BUNDLE_WORKSPACE=""
-_TEST_BUNDLE_STATE_DIR=""
-_TEST_BUNDLE_EXTRA_FILES=()
-
-test_conformance_bundle_set_context() {
-	local workspace="$1"
-	local stderr_file="${2:-}"
-	_TEST_BUNDLE_WORKSPACE="${workspace}"
-	_TEST_BUNDLE_STATE_DIR=""
-	if [ -n "${stderr_file}" ] && command -v test_extract_state_dir_from_stderr >/dev/null 2>&1; then
-		_TEST_BUNDLE_STATE_DIR="$(test_extract_state_dir_from_stderr "${stderr_file}" 2>/dev/null || true)"
-	fi
-	_TEST_BUNDLE_EXTRA_FILES=()
-	if [ -n "${stderr_file}" ]; then
-		_TEST_BUNDLE_EXTRA_FILES+=("${stderr_file}")
-	fi
-}
-
-test_conformance_bundle_on_exit() {
-	local status="$1"
-	if [ "${status}" -eq 0 ]; then
-		return 0
-	fi
-	if command -v test_capture_failure_bundle >/dev/null 2>&1; then
-		test_capture_failure_bundle "${_TEST_BUNDLE_LABEL}" "${_TEST_BUNDLE_WORKSPACE}" "${_TEST_BUNDLE_STATE_DIR}" "${_TEST_BUNDLE_EXTRA_FILES[@]:-}"
-	fi
-}
-
-trap 'test_conformance_bundle_on_exit "$?"' EXIT
+TEST_FAILURE_BUNDLE_LABEL="test_conformance_strict_shapes.sh"
+TEST_FAILURE_BUNDLE_WORKSPACE=""
+TEST_FAILURE_BUNDLE_STATE_DIR=""
+TEST_FAILURE_BUNDLE_EXTRA_FILES=""
 
 pick_server_json_tool() {
 	local requested="${MCPBASH_CONFORMANCE_SERVER_JSON_TOOL:-}"
@@ -87,8 +61,10 @@ run_server() {
 	local responses_file="$3"
 	local server_json_tool="$4"
 	local stderr_file="${responses_file}.stderr"
-
-	test_conformance_bundle_set_context "${workspace}" "${stderr_file}"
+	# Configure failure bundle context for test_fail() to capture on assertion failure.
+	TEST_FAILURE_BUNDLE_WORKSPACE="${workspace}"
+	TEST_FAILURE_BUNDLE_STATE_DIR=""
+	TEST_FAILURE_BUNDLE_EXTRA_FILES="${stderr_file}"
 
 	(
 		cd "${workspace}" || exit 1
@@ -98,6 +74,11 @@ run_server() {
 			MCPBASH_JSON_TOOL_BIN="$(command -v "${server_json_tool}")" \
 			./bin/mcp-bash <"${requests_file}" >"${responses_file}" 2>"${stderr_file}"
 	)
+
+	# If the server preserved state, capture that directory too.
+	if command -v test_extract_state_dir_from_stderr >/dev/null 2>&1; then
+		TEST_FAILURE_BUNDLE_STATE_DIR="$(test_extract_state_dir_from_stderr "${stderr_file}" 2>/dev/null || true)"
+	fi
 }
 
 assert_optional_next_cursor_string() {

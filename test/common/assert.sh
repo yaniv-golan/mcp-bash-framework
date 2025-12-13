@@ -5,6 +5,16 @@ set -euo pipefail
 
 test_fail() {
 	local message="${1:-assertion failed}"
+	# Best-effort: capture a failure bundle into MCPBASH_LOG_DIR when configured.
+	# This makes CI failures (especially on Windows runners) diagnosable from artifacts.
+	if command -v test_capture_failure_bundle >/dev/null 2>&1; then
+		local label="${TEST_FAILURE_BUNDLE_LABEL:-test}"
+		local workspace="${TEST_FAILURE_BUNDLE_WORKSPACE:-}"
+		local state_dir="${TEST_FAILURE_BUNDLE_STATE_DIR:-}"
+		# Space/newline separated list of extra files to copy (best-effort).
+		# shellcheck disable=SC2086
+		test_capture_failure_bundle "${label}" "${workspace}" "${state_dir}" ${TEST_FAILURE_BUNDLE_EXTRA_FILES:-} || true
+	fi
 	printf 'ASSERTION FAILED: %s\n' "${message}" >&2
 	exit 1
 }
