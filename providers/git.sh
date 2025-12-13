@@ -341,13 +341,22 @@ if [ -z "${repo_dir_canonical}" ] || [ -z "${target}" ]; then
 	printf '%s\n' "Failed to canonicalize repository paths (requires realpath or readlink -f for safe symlink resolution)" >&2
 	exit 5
 fi
-case "${target}" in
-"${repo_dir_canonical}" | "${repo_dir_canonical}"/*) ;;
-*)
-	printf '%s\n' "File ${path} escapes repository root" >&2
-	exit 3
-	;;
-esac
+# SECURITY: do not use case/glob matching for containment checks. Paths can
+# contain glob metacharacters like []?* which would turn the check into a
+# wildcard match. Use literal string comparisons.
+base="${repo_dir_canonical}"
+if [ "${base}" != "/" ]; then
+	base="${base%/}"
+fi
+if [ "${target}" != "${base}" ]; then
+	if [ "${base}" != "/" ]; then
+		prefix="${base}/"
+		if [ "${target:0:${#prefix}}" != "${prefix}" ]; then
+			printf '%s\n' "File ${path} escapes repository root" >&2
+			exit 3
+		fi
+	fi
+fi
 if [ ! -f "${target}" ]; then
 	printf '%s\n' "File ${path} not found in repository" >&2
 	exit 3

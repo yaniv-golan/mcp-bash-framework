@@ -32,8 +32,24 @@ mcp_registry_resolve_scan_root() {
 			candidate="${MCPBASH_PROJECT_ROOT%/}/${candidate}"
 			;;
 		esac
-		if [ -d "${candidate}" ] && [[ "${candidate}" == "${default_dir}"* ]]; then
-			scan_root="${candidate}"
+		if [ -d "${candidate}" ]; then
+			# SECURITY: do not use glob/pattern matching for containment checks.
+			# Paths may contain glob metacharacters like []?* which would turn a
+			# prefix check into a wildcard match (e.g., default[1] matching default1).
+			local base="${default_dir}"
+			if [ "${base}" != "/" ]; then
+				base="${base%/}"
+			fi
+			if [ "${candidate}" = "${base}" ]; then
+				scan_root="${candidate}"
+			elif [ "${base}" = "/" ]; then
+				scan_root="${candidate}"
+			else
+				local prefix="${base}/"
+				if [ "${candidate:0:${#prefix}}" = "${prefix}" ]; then
+					scan_root="${candidate}"
+				fi
+			fi
 		fi
 	fi
 
