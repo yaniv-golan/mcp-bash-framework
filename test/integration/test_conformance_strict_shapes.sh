@@ -100,7 +100,7 @@ server_json_tool="$(pick_server_json_tool)"
 COMP_ROOT="${TEST_TMPDIR}/conformance-completion"
 test_stage_workspace "${COMP_ROOT}"
 mkdir -p "${COMP_ROOT}/completions"
-cp -a "${MCPBASH_HOME}/examples/10-completions/server.d/register.sh" "${COMP_ROOT}/server.d/register.sh"
+cp -a "${MCPBASH_HOME}/examples/10-completions/server.d/register.json" "${COMP_ROOT}/server.d/register.json"
 cp -a "${MCPBASH_HOME}/examples/10-completions/completions/suggest.sh" "${COMP_ROOT}/completions/suggest.sh"
 
 cat >"${COMP_ROOT}/requests.ndjson" <<'EOF'
@@ -152,10 +152,10 @@ fi
 #
 MANUAL_ROOT="${TEST_TMPDIR}/conformance-manual"
 test_stage_workspace "${MANUAL_ROOT}"
-cp -a "${MCPBASH_HOME}/examples/09-manual-registration/server.d" "${MANUAL_ROOT}/"
-cp -a "${MCPBASH_HOME}/examples/09-manual-registration/tools" "${MANUAL_ROOT}/"
-cp -a "${MCPBASH_HOME}/examples/09-manual-registration/resources" "${MANUAL_ROOT}/"
-cp -a "${MCPBASH_HOME}/examples/09-manual-registration/prompts" "${MANUAL_ROOT}/"
+cp -a "${MCPBASH_HOME}/examples/09-registry-overrides/server.d" "${MANUAL_ROOT}/"
+cp -a "${MCPBASH_HOME}/examples/09-registry-overrides/tools" "${MANUAL_ROOT}/"
+cp -a "${MCPBASH_HOME}/examples/09-registry-overrides/resources" "${MANUAL_ROOT}/"
+cp -a "${MCPBASH_HOME}/examples/09-registry-overrides/prompts" "${MANUAL_ROOT}/"
 
 cat >"${MANUAL_ROOT}/requests.ndjson" <<'EOF'
 {"jsonrpc":"2.0","id":"init","method":"initialize","params":{}}
@@ -219,15 +219,11 @@ if ! jq -e '
 fi
 
 # progress notifications present and well-typed
-if ! jq -e '
-	[select(.method=="notifications/progress") | .params.progress] as $p
+# Use -s to slurp NDJSON into an array; without it, jq processes each line
+# independently and -e fails if ANY line produces false (non-progress lines).
+if ! jq -s -e '
+	[.[] | select(.method=="notifications/progress") | .params.progress] as $p
 	| ($p | length) >= 1
 ' "${MANUAL_ROOT}/responses.ndjson" >/dev/null; then
-	# Dump diagnostics to CI output before failing
-	printf '\n=== Server stderr (diagnostics) ===\n' >&2
-	cat "${MANUAL_ROOT}/responses.ndjson.stderr" >&2 || true
-	printf '\n=== All responses (looking for notifications/progress) ===\n' >&2
-	jq -c 'select(.method)' "${MANUAL_ROOT}/responses.ndjson" >&2 || true
-	printf '\n=== End diagnostics ===\n' >&2
 	test_fail "expected at least one notifications/progress event"
 fi
