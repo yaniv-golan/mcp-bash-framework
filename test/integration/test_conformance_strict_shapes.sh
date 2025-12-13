@@ -198,32 +198,21 @@ printf '%s' "${prompts_list}" | jq -e '
 assert_optional_next_cursor_string "${prompts_list}"
 
 # resources/read must resolve by uri and honor custom provider
-if ! jq -e '
-	select(.id=="rread") |
-	(.result.contents | type) == "array" and
-	(.result.contents[0].uri == "echo://Hello-from-manual-registry") and
-	(.result.contents[0].text == "Hello-from-manual-registry")
-' "${MANUAL_ROOT}/responses.ndjson" >/dev/null; then
-	test_fail "resources/read shape mismatch for echo:// provider"
-fi
+assert_ndjson_shape "${MANUAL_ROOT}/responses.ndjson" '.id=="rread"' \
+	'(.result.contents | type) == "array" and
+	 (.result.contents[0].uri == "echo://Hello-from-manual-registry") and
+	 (.result.contents[0].text == "Hello-from-manual-registry")' \
+	"resources/read shape mismatch for echo:// provider"
 
 # prompts/get message content must be a single object
-if ! jq -e '
-	select(.id=="pget") |
-	(.result.messages | type) == "array" and
-	(.result.messages[0].content | type) == "object" and
-	(.result.messages[0].content.type == "text") and
-	(.result.messages[0].content.text | type) == "string"
-' "${MANUAL_ROOT}/responses.ndjson" >/dev/null; then
-	test_fail "prompts/get message content shape mismatch"
-fi
+assert_ndjson_shape "${MANUAL_ROOT}/responses.ndjson" '.id=="pget"' \
+	'(.result.messages | type) == "array" and
+	 (.result.messages[0].content | type) == "object" and
+	 (.result.messages[0].content.type == "text") and
+	 (.result.messages[0].content.text | type) == "string"' \
+	"prompts/get message content shape mismatch"
 
 # progress notifications present and well-typed
-# Use -s to slurp NDJSON into an array; without it, jq processes each line
-# independently and -e fails if ANY line produces false (non-progress lines).
-if ! jq -s -e '
-	[.[] | select(.method=="notifications/progress") | .params.progress] as $p
-	| ($p | length) >= 1
-' "${MANUAL_ROOT}/responses.ndjson" >/dev/null; then
-	test_fail "expected at least one notifications/progress event"
-fi
+assert_ndjson_min "${MANUAL_ROOT}/responses.ndjson" \
+	'.method=="notifications/progress"' 1 \
+	"expected at least one notifications/progress event"
