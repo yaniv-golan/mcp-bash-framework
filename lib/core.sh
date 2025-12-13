@@ -810,6 +810,18 @@ mcp_core_worker_entry() {
 		mcp_core_worker_emit "${key}" "${response}"
 	fi
 
+	# Progress/log delivery:
+	# - When live progress is disabled, emit all buffered progress/log lines here.
+	# - When live progress is enabled, a background flusher streams lines while the
+	#   worker runs, but Git Bash/CI scheduling can cause the worker to exit and
+	#   delete its stream files before the flusher observes the final writes.
+	#   Do a final best-effort flush before cleanup so at least one progress event
+	#   is emitted when tools report progress (avoids flaky CI on Windows).
+	if [ "${MCPBASH_ENABLE_LIVE_PROGRESS:-false}" = "true" ] && [ -n "${key}" ]; then
+		mcp_core_flush_stream "${key}" "progress" || true
+		mcp_core_flush_stream "${key}" "log" || true
+	fi
+
 	if [ "${MCPBASH_ENABLE_LIVE_PROGRESS:-false}" != "true" ] && [ -n "${progress_stream}" ]; then
 		mcp_core_emit_progress_stream "${key}" "${progress_stream}"
 	fi
