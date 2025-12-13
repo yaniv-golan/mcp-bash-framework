@@ -3,12 +3,85 @@
 
 set -euo pipefail
 
-mcp_policy_ip_is_private() {
+mcp_policy_ipv4_is_private() {
 	local ip="$1"
 	case "${ip}" in
 	"" | localhost | 127.* | 0.0.0.0 | 10.* | 192.168.* | 172.1[6-9].* | 172.2[0-9].* | 172.3[0-1].* | 169.254.*)
 		return 0
 		;;
+	esac
+	return 1
+}
+
+mcp_policy_ipv4_from_v4mapped_hex() {
+	# Convert IPv4-mapped IPv6 in hex form to dotted IPv4.
+	# Examples:
+	#   ::ffff:7f00:1            -> 127.0.0.1
+	#   0:0:0:0:0:ffff:0a00:0001 -> 10.0.0.1
+	local ip="$1"
+	ip="$(printf '%s' "${ip}" | tr '[:upper:]' '[:lower:]')"
+	# Strip brackets and zone IDs.
+	if [ "${ip#\[}" != "${ip}" ]; then
+		ip="${ip#[}"
+		ip="${ip%]}"
+	fi
+	ip="${ip%%%*}"
+
+	case "${ip}" in
+	*":ffff:"*) ;;
+	*)
+		return 1
+		;;
+	esac
+
+	# Use the last ":ffff:" segment (handles full forms with multiple hextets).
+	local tail="${ip##*:ffff:}"
+	# Must be two hextets separated by ":" (some stacks may omit leading zeros).
+	case "${tail}" in
+	*:*) ;;
+	*) return 1 ;;
+	esac
+	local hi="${tail%%:*}"
+	local lo="${tail#*:}"
+	[ -n "${hi}" ] && [ -n "${lo}" ] || return 1
+	# Ensure hex-only hextets up to 4 digits.
+	if ! printf '%s' "${hi}" | grep -Eq '^[0-9a-f]{1,4}$'; then
+		return 1
+	fi
+	if ! printf '%s' "${lo}" | grep -Eq '^[0-9a-f]{1,4}$'; then
+		return 1
+	fi
+
+	local hi_val lo_val
+	hi_val=$((16#${hi}))
+	lo_val=$((16#${lo}))
+	local a b c d
+	a=$(((hi_val >> 8) & 255))
+	b=$((hi_val & 255))
+	c=$(((lo_val >> 8) & 255))
+	d=$((lo_val & 255))
+	printf '%s.%s.%s.%s' "${a}" "${b}" "${c}" "${d}"
+}
+
+mcp_policy_ip_is_private() {
+	local ip="$1"
+	# Normalize for matching: strip brackets and zone IDs, and lowercase.
+	if [ "${ip#\[}" != "${ip}" ]; then
+		ip="${ip#[}"
+		ip="${ip%]}"
+	fi
+	ip="${ip%%%*}"
+	ip="$(printf '%s' "${ip}" | tr '[:upper:]' '[:lower:]')"
+
+	case "${ip}" in
+	"" | localhost)
+		return 0
+		;;
+	esac
+	if mcp_policy_ipv4_is_private "${ip}"; then
+		return 0
+	fi
+	case "${ip}" in
 	::1 | "[::1]" | fe80:* | fc??:* | fd??:*)
 		return 0
 		;;
@@ -19,6 +92,12 @@ mcp_policy_ip_is_private() {
 		return 0
 		;;
 	esac
+	# Catch IPv4-mapped IPv6 in hex hextet form (e.g., ::ffff:7f00:1).
+	local mapped_v4=""
+	mapped_v4="$(mcp_policy_ipv4_from_v4mapped_hex "${ip}" 2>/dev/null || true)"
+	if [ -n "${mapped_v4}" ] && mcp_policy_ipv4_is_private "${mapped_v4}"; then
+		return 0
+	fi
 	return 1
 }
 
