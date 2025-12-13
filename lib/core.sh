@@ -251,6 +251,7 @@ mcp_core_start_shutdown_watchdog() {
 	local timeout="${MCPBASH_SHUTDOWN_TIMEOUT:-5}"
 	case "${timeout}" in
 	'' | *[!0-9]*) timeout=5 ;;
+	0) timeout=5 ;;
 	esac
 	if [ -n "${MCPBASH_SHUTDOWN_WATCHDOG_PID}" ]; then
 		if kill -0 "${MCPBASH_SHUTDOWN_WATCHDOG_PID}" 2>/dev/null; then
