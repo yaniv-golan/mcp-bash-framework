@@ -111,6 +111,18 @@ if "${REPO_ROOT}/bin/mcp-bash" run-tool test.echo --args '"not-an-object"' >/dev
 fi
 assert_contains "JSON object" "$(cat "${TEST_TMPDIR}/args_err")"
 
+printf ' -> --no-refresh fails loudly on corrupt cache\n'
+mkdir -p "${PROJECT_ROOT}/.registry"
+printf '%s\n' '{"not":"a-tools-registry"' >"${PROJECT_ROOT}/.registry/tools.json"
+set +e
+"${REPO_ROOT}/bin/mcp-bash" run-tool test.echo --no-refresh --args '{"value":"ok"}' >/dev/null 2>/"${TEST_TMPDIR}/no_refresh_err"
+rc=$?
+set -e
+if [ "${rc}" -eq 0 ]; then
+	test_fail "expected --no-refresh to fail on invalid tools registry cache"
+fi
+assert_contains "invalid tools registry cache" "$(cat "${TEST_TMPDIR}/no_refresh_err")"
+
 printf ' -> timeout override permits slow tool\n'
 if "${REPO_ROOT}/bin/mcp-bash" run-tool test.slow >/dev/null 2>/"${TEST_TMPDIR}/slow_err"; then
 	test_fail "expected slow tool to time out with metadata timeout"

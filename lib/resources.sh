@@ -1187,7 +1187,11 @@ mcp_resources_templates_refresh_registry() {
 		while IFS= read -r manual_item; do
 			[ -z "${manual_item}" ] && continue
 			local manual_name
-			manual_name="$(printf '%s' "${manual_item}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.name // empty' 2>/dev/null || printf '')"
+			manual_name=""
+			if ! manual_name="$(printf '%s' "${manual_item}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.name // empty' 2>/dev/null)"; then
+				mcp_logging_warning "${MCP_RESOURCES_TEMPLATES_LOGGER}" "Manual template entry is invalid JSON; skipping"
+				continue
+			fi
 			if [ -z "${manual_name}" ]; then
 				continue
 			fi

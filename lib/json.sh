@@ -155,6 +155,82 @@ mcp_json_is_array() {
 	esac
 }
 
+mcp_json_extract_file_required() {
+	# Extract a value from a JSON file using the configured jq/gojq tool.
+	# Fails closed with a clear stderr message on parse/tool errors.
+	#
+	# Args:
+	# - $1: file path
+	# - $2: jq output mode flag (e.g., -r or -c)
+	# - $3: jq filter expression
+	# - $4: context string (for error messages)
+	local path="$1"
+	local mode="$2"
+	local filter="$3"
+	local context="${4:-}"
+
+	local json_bin="${MCPBASH_JSON_TOOL_BIN:-}"
+	if [ -z "${json_bin}" ] || ! command -v "${json_bin}" >/dev/null 2>&1; then
+		if [ -n "${context}" ]; then
+			printf '%s\n' "${context}: JSON tooling unavailable" >&2
+		fi
+		return 1
+	fi
+
+	if [ -z "${mode}" ]; then
+		mode="-r"
+	fi
+
+	local out=""
+	if ! out="$("${json_bin}" "${mode}" "${filter}" "${path}" 2>/dev/null)"; then
+		if [ -n "${context}" ]; then
+			printf '%s\n' "${context}: JSON parse failed" >&2
+		fi
+		return 1
+	fi
+	printf '%s' "${out}"
+	return 0
+}
+
+mcp_json_extract_optional() {
+	# Best-effort JSON extraction for non-critical paths.
+	# Returns $default on errors; optionally logs a warning when available.
+	#
+	# Args:
+	# - $1: JSON string
+	# - $2: jq output mode flag (e.g., -r or -c)
+	# - $3: jq filter expression
+	# - $4: default value
+	# - $5: optional logger name for mcp_logging_warning
+	# - $6: optional context string for warning message
+	local json="$1"
+	local mode="$2"
+	local filter="$3"
+	local default_value="$4"
+	local logger="${5:-}"
+	local context="${6:-}"
+
+	local json_bin="${MCPBASH_JSON_TOOL_BIN:-}"
+	if [ -z "${json_bin}" ] || ! command -v "${json_bin}" >/dev/null 2>&1; then
+		printf '%s' "${default_value}"
+		return 0
+	fi
+	if [ -z "${mode}" ]; then
+		mode="-r"
+	fi
+
+	local out=""
+	if ! out="$(printf '%s' "${json}" | "${json_bin}" "${mode}" "${filter}" 2>/dev/null)"; then
+		if [ -n "${logger}" ] && command -v mcp_logging_warning >/dev/null 2>&1 && [ -n "${context}" ]; then
+			mcp_logging_warning "${logger}" "${context}: JSON parse failed; using default"
+		fi
+		printf '%s' "${default_value}"
+		return 0
+	fi
+	printf '%s' "${out}"
+	return 0
+}
+
 mcp_json_extract_method() {
 	local json="$1"
 	if mcp_runtime_is_minimal_mode; then

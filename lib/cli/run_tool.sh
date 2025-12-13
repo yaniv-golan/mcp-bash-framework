@@ -13,6 +13,10 @@ if ! command -v mcp_roots_normalize_path >/dev/null 2>&1; then
 	# shellcheck source=../roots.sh disable=SC1090,SC1091
 	. "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/roots.sh"
 fi
+if ! command -v mcp_json_extract_file_required >/dev/null 2>&1; then
+	# shellcheck source=../json.sh disable=SC1090,SC1091
+	. "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/json.sh"
+fi
 
 # Globals: usage() from bin, MCPBASH_PROJECT_ROOT, MCPBASH_JSON_TOOL[_BIN], MCPBASH_MODE and runtime globals set by initialize_runtime_paths.
 
@@ -31,9 +35,19 @@ mcp_cli_run_tool_load_cache() {
 	# shellcheck disable=SC2034
 	MCP_TOOLS_REGISTRY_PATH="${cache_path}"
 	# shellcheck disable=SC2034
-	MCP_TOOLS_REGISTRY_HASH="$("${MCPBASH_JSON_TOOL_BIN}" -r '.hash // empty' "${cache_path}" 2>/dev/null || printf '')"
+	MCP_TOOLS_REGISTRY_HASH="$(mcp_json_extract_file_required "${cache_path}" "-r" '.hash // empty' "run-tool: invalid tools registry cache")" || return 1
+	if [ -z "${MCP_TOOLS_REGISTRY_HASH}" ]; then
+		printf 'run-tool: invalid tools registry cache (missing hash)\n' >&2
+		return 1
+	fi
 	# shellcheck disable=SC2034
-	MCP_TOOLS_TOTAL="$("${MCPBASH_JSON_TOOL_BIN}" -r '.total // 0' "${cache_path}" 2>/dev/null || printf '0')"
+	MCP_TOOLS_TOTAL="$(mcp_json_extract_file_required "${cache_path}" "-r" '.total // 0 | tostring' "run-tool: invalid tools registry cache")" || return 1
+	case "${MCP_TOOLS_TOTAL}" in
+	'' | *[!0-9]*)
+		printf 'run-tool: invalid tools registry cache (non-numeric total)\n' >&2
+		return 1
+		;;
+	esac
 	# shellcheck disable=SC2034
 	MCP_TOOLS_LAST_SCAN="$(date +%s)"
 	MCP_TOOLS_TTL="${MCP_TOOLS_TTL:-31536000}"

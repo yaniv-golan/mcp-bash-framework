@@ -77,8 +77,13 @@ mcp_tools_policy_check() {
 		return 1
 	fi
 
-	local path_rel path_abs
-	path_rel="$(printf '%s' "${metadata}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.path // ""' 2>/dev/null || printf '')"
+	local path_rel path_abs json_bin
+	json_bin="${MCPBASH_JSON_TOOL_BIN:-}"
+	if [ -n "${json_bin}" ] && command -v "${json_bin}" >/dev/null 2>&1; then
+		path_rel="$(printf '%s' "${metadata}" | "${json_bin}" -r '.path // ""' 2>/dev/null || printf '')"
+	else
+		path_rel=""
+	fi
 	if [ -n "${path_rel}" ]; then
 		path_abs="${MCPBASH_TOOLS_DIR%/}/${path_rel}"
 		if ! mcp_tools_validate_path "${path_abs}"; then
