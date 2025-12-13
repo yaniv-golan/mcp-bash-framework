@@ -38,8 +38,8 @@ jobs:
           set -euo pipefail
           version="${GITHUB_REF_NAME}"
           tarball="mcp-bash-${version}.tar.gz"
-          # Create a clean archive without .git
-          tar -czf "${tarball}" --exclude .git --transform 's,^,mcp-bash/,' .
+          # Create a clean archive from the git tree (avoids "file changed as we read it").
+          git archive --format=tar --prefix=mcp-bash/ "${GITHUB_SHA}" | gzip -n >"${tarball}"
           sha256sum "${tarball}" >SHA256SUMS
           echo "TARBALL=${tarball}" >>"$GITHUB_ENV"
 
