@@ -14,13 +14,21 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 test_create_tmpdir
 
 run_server() {
-	local workdir="$1"
+	local project_root="$1"
 	local request_file="$2"
 	local response_file="$3"
 	(
-		cd "${workdir}" || exit 1
-		MCPBASH_PROJECT_ROOT="${workdir}" ./bin/mcp-bash <"${request_file}" >"${response_file}"
+		# Run the framework from MCPBASH_HOME and point it at a throw-away project
+		# root under TEST_TMPDIR. This avoids staging/copying the entire framework
+		# into each scenario directory, which is very expensive on Windows/MSYS.
+		cd "${project_root}" || exit 1
+		MCPBASH_PROJECT_ROOT="${project_root}" mcp-bash <"${request_file}" >"${response_file}"
 	)
+}
+
+create_project_root() {
+	local dest="$1"
+	mkdir -p "${dest}/tools" "${dest}/resources" "${dest}/prompts" "${dest}/server.d"
 }
 
 base64_url_decode() {
@@ -58,9 +66,8 @@ base64_url_decode() {
 
 # --- Auto-discovery pagination and structured output ---
 AUTO_ROOT="${TEST_TMPDIR}/auto"
-test_stage_workspace "${AUTO_ROOT}"
-# Remove register.sh to force auto-discovery (chmod -x doesn't work on Windows)
-rm -f "${AUTO_ROOT}/server.d/register.sh"
+create_project_root "${AUTO_ROOT}"
+# No server.d/register.sh so auto-discovery is used.
 mkdir -p "${AUTO_ROOT}/tools"
 cp -a "${MCPBASH_HOME}/examples/00-hello-tool/tools/." "${AUTO_ROOT}/tools/"
 
@@ -140,7 +147,7 @@ test_assert_eq "$exit_code" "0"
 
 # --- Manual registration overrides ---
 MANUAL_ROOT="${TEST_TMPDIR}/manual"
-test_stage_workspace "${MANUAL_ROOT}"
+create_project_root "${MANUAL_ROOT}"
 mkdir -p "${MANUAL_ROOT}/tools/manual"
 
 cat <<'SH' >"${MANUAL_ROOT}/tools/manual/alpha.sh"
@@ -220,7 +227,7 @@ test_assert_eq "$exit_code" "0"
 
 # --- Tool environment isolation (minimal vs allowlist) ---
 ENV_ROOT="${TEST_TMPDIR}/env"
-test_stage_workspace "${ENV_ROOT}"
+create_project_root "${ENV_ROOT}"
 mkdir -p "${ENV_ROOT}/tools/env"
 
 cat <<'META' >"${ENV_ROOT}/tools/env/tool.meta.json"
@@ -254,7 +261,7 @@ JSON
 
 (
 	cd "${ENV_ROOT}" || exit 1
-	FOO="hidden" BAR="visible" MCPBASH_TOOL_ENV_MODE="minimal" MCPBASH_PROJECT_ROOT="${ENV_ROOT}" ./bin/mcp-bash <"requests.ndjson" >"responses.ndjson"
+	FOO="hidden" BAR="visible" MCPBASH_TOOL_ENV_MODE="minimal" MCPBASH_PROJECT_ROOT="${ENV_ROOT}" mcp-bash <"requests.ndjson" >"responses.ndjson"
 )
 
 foo_val="$(jq -r 'select(.id=="env") | .result.structuredContent.foo // empty' "${ENV_ROOT}/responses.ndjson")"
@@ -271,7 +278,7 @@ JSON
 
 (
 	cd "${ENV_ROOT}" || exit 1
-	FOO="hidden" BAR="visible" MCPBASH_TOOL_ENV_MODE="allowlist" MCPBASH_TOOL_ENV_ALLOWLIST="BAR" MCPBASH_PROJECT_ROOT="${ENV_ROOT}" ./bin/mcp-bash <"requests_allowlist.ndjson" >"responses_allowlist.ndjson"
+	FOO="hidden" BAR="visible" MCPBASH_TOOL_ENV_MODE="allowlist" MCPBASH_TOOL_ENV_ALLOWLIST="BAR" MCPBASH_PROJECT_ROOT="${ENV_ROOT}" mcp-bash <"requests_allowlist.ndjson" >"responses_allowlist.ndjson"
 )
 
 foo_allow="$(jq -r 'select(.id=="env-allow") | .result.structuredContent.foo // empty' "${ENV_ROOT}/responses_allowlist.ndjson")"
@@ -285,8 +292,8 @@ fi
 
 # --- Embedded resources in tool output ---
 EMBED_ROOT="${TEST_TMPDIR}/embed"
-test_stage_workspace "${EMBED_ROOT}"
-rm -f "${EMBED_ROOT}/server.d/register.sh"
+create_project_root "${EMBED_ROOT}"
+# No server.d/register.sh so auto-discovery is used.
 mkdir -p "${EMBED_ROOT}/tools/embed" "${EMBED_ROOT}/resources"
 
 cat <<'META' >"${EMBED_ROOT}/tools/embed/tool.meta.json"
@@ -336,7 +343,7 @@ test_assert_eq "${embed_resource_mime}" "text/plain"
 
 # --- Structured tool error propagation ---
 FAIL_ROOT="${TEST_TMPDIR}/fail"
-test_stage_workspace "${FAIL_ROOT}"
+create_project_root "${FAIL_ROOT}"
 mkdir -p "${FAIL_ROOT}/tools/fail"
 
 cat <<'META' >"${FAIL_ROOT}/tools/fail/tool.meta.json"
