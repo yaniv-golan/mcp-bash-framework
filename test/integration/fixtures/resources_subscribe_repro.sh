@@ -51,19 +51,25 @@ printf 'Enable payload logging via MCPBASH_DEBUG_PAYLOADS=true for stdout traces
 	cd "${WORKSPACE}" || exit 1
 	export MCPBASH_PROJECT_ROOT="${WORKSPACE}"
 
-	# Start server
-	coproc SERVER { ./bin/mcp-bash; }
+	# Start server using FIFOs (Bash 3.2+; avoids coproc which is Bash 4+).
+	mkfifo in_pipe
+	mkfifo out_pipe
+	./bin/mcp-bash <in_pipe >out_pipe &
 	SERVER_PID=$!
+
+	# Keep pipes open for the duration of the repro.
+	exec 3>in_pipe
+	exec 4<out_pipe
 
 	send() {
 		local payload="$1"
-		printf '%s\n' "${payload}" >&"${SERVER[1]}"
+		printf '%s\n' "${payload}" >&3
 		printf '>> %s\n' "${payload}"
 	}
 
 	read_response() {
 		local line
-		if read -r -u "${SERVER[0]}" line; then
+		if read -r line <&4; then
 			printf '<< %s\n' "${line}"
 			printf '%s' "${line}"
 		else
@@ -124,9 +130,11 @@ printf 'Enable payload logging via MCPBASH_DEBUG_PAYLOADS=true for stdout traces
 	if [ "${seen_update}" != "true" ]; then
 		printf 'Missing update notification\n' >&2
 		kill "${SERVER_PID}" 2>/dev/null || true
+		rm -f in_pipe out_pipe
 		exit 1
 	fi
 
 	kill "${SERVER_PID}" 2>/dev/null || true
 	wait "${SERVER_PID}" 2>/dev/null || true
+	rm -f in_pipe out_pipe
 )

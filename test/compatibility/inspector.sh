@@ -24,10 +24,7 @@ export WORKSPACE
 	# Enable startup logging for this test (disabled by default since b832516)
 	export MCPBASH_LOG_STARTUP=true
 
-	# Use a named pipe or coproc. coproc is bash 4+.
-	# Let's use a simple FIFO approach which works on older bash too if needed, but coproc is cleaner.
-	# Assuming bash 4+ since we require bash 3.2+ but macOS bash 3.2 doesn't have coproc.
-	# We'll use file descriptors redirect.
+	# Use FIFOs + file descriptors (Bash 3.2+; avoids coproc which is Bash 4+).
 
 	# Launch server with pipes
 	# We'll read from server_out and write to server_in
