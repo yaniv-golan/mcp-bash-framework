@@ -1421,7 +1421,7 @@ mcp_resources_read_file() {
 		mcp_resources_error -32603 "Resource outside allowed roots"
 		;;
 	3)
-		mcp_resources_error -32602 "Resource not found"
+		mcp_resources_error -32002 "Resource not found"
 		;;
 	*)
 		mcp_resources_error -32603 "${message:-Resource provider failed}"
@@ -1485,7 +1485,7 @@ mcp_resources_read_via_provider() {
 			mcp_resources_error -32603 "Resource outside allowed roots"
 			;;
 		3)
-			mcp_resources_error -32602 "Resource not found"
+			mcp_resources_error -32002 "Resource not found"
 			;;
 		4)
 			mcp_resources_error -32602 "${message:-Invalid resource specification}"
@@ -1531,7 +1531,7 @@ mcp_resources_read() {
 	metadata="$(mcp_resources_metadata_for_name "${name}" 2>/dev/null || echo "{}")"
 	if [ -z "${metadata}" ] || [ "${metadata}" = "{}" ]; then
 		if [ -z "${explicit_uri}" ]; then
-			mcp_resources_error -32602 "Resource not found"
+			mcp_resources_error -32002 "Resource not found"
 			return 1
 		fi
 		# Try to resolve metadata by URI (resources/read is URI-addressed in MCP).
