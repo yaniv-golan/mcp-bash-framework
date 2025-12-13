@@ -454,7 +454,16 @@ mcp_resources_scan() {
 	local duplicate_name=""
 
 	if [ -d "${resources_dir}" ]; then
-		while IFS= read -r path; do
+		while IFS= read -r -d '' path; do
+			# Refuse filenames with newlines/CR to avoid corrupting registries/logs.
+			case "${path}" in
+			*$'\n'* | *$'\r'*)
+				rm -f "${items_file}" "${names_seen_file}"
+				mcp_logging_error "${MCP_RESOURCES_LOGGER}" "Resource scan encountered unsupported filename (newline/CR) under resources/"
+				mcp_resources_error -32603 "Resource scan encountered unsupported filename (newline/CR) under resources/"
+				return 1
+				;;
+			esac
 			local rel_path="${path#"${MCPBASH_RESOURCES_DIR}"/}"
 			local base_name
 			base_name="$(basename "${path}")"
@@ -581,7 +590,7 @@ mcp_resources_scan() {
 				--argjson icons "$icons" \
 				'{name: $name, description: $desc, path: $path, uri: $uri, mimeType: $mime, provider: $provider}
 				+ (if $icons != null then {icons: $icons} else {} end)' >>"${items_file}"
-		done < <(find "${resources_dir}" -type f ! -name ".*" ! -name "*.meta.json" 2>/dev/null | LC_ALL=C sort)
+		done < <(find "${resources_dir}" -type f ! -name ".*" ! -name "*.meta.json" -print0 2>/dev/null)
 	fi
 
 	if [ -n "${duplicate_name}" ]; then
@@ -596,7 +605,7 @@ mcp_resources_scan() {
 	local items_json="[]"
 	if [ -s "${items_file}" ]; then
 		local parsed
-		if parsed="$("${MCPBASH_JSON_TOOL_BIN}" -s '.' "${items_file}" 2>/dev/null)"; then
+		if parsed="$("${MCPBASH_JSON_TOOL_BIN}" -s 'sort_by([.name, .uri, .path])' "${items_file}" 2>/dev/null)"; then
 			items_json="${parsed}"
 		fi
 	fi
@@ -774,7 +783,14 @@ mcp_resources_templates_collect_resource_names() {
 		return 0
 	fi
 
-	while IFS= read -r meta_path; do
+	while IFS= read -r -d '' meta_path; do
+		# Refuse filenames with newlines/CR to avoid corrupting registries/logs.
+		case "${meta_path}" in
+		*$'\n'* | *$'\r'*)
+			mcp_logging_warning "${MCP_RESOURCES_TEMPLATES_LOGGER}" "Skipping template metadata with unsupported filename (newline/CR)"
+			continue
+			;;
+		esac
 		local meta has_uri has_template name
 		if ! meta="$(cat "${meta_path}")"; then
 			continue
@@ -790,7 +806,7 @@ mcp_resources_templates_collect_resource_names() {
 		name="$(printf '%s' "${meta}" | "${MCPBASH_JSON_TOOL_BIN}" -r 'if (.name | type == "string") then .name else empty end' 2>/dev/null)"
 		[ -z "${name}" ] && continue
 		printf '%s\n' "${name}" >>"${output_file}"
-	done < <(find "${resources_dir}" -type f -name "*.meta.json" ! -name ".*" 2>/dev/null | LC_ALL=C sort)
+	done < <(find "${resources_dir}" -type f -name "*.meta.json" ! -name ".*" -print0 2>/dev/null)
 
 	if [ -s "${output_file}" ]; then
 		local tmp
@@ -1063,7 +1079,14 @@ mcp_resources_templates_scan() {
 	names_seen_file="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-resource-templates-names.XXXXXX")"
 
 	if [ -d "${resources_dir}" ]; then
-		while IFS= read -r meta_path; do
+		while IFS= read -r -d '' meta_path; do
+			# Refuse filenames with newlines/CR to avoid corrupting registries/logs.
+			case "${meta_path}" in
+			*$'\n'* | *$'\r'*)
+				mcp_logging_warning "${MCP_RESOURCES_TEMPLATES_LOGGER}" "Skipping template metadata with unsupported filename (newline/CR)"
+				continue
+				;;
+			esac
 			local meta has_template has_uri
 			# Strip \r to handle CRLF line endings from Windows checkouts
 			if ! meta="$(tr -d '\r' <"${meta_path}")"; then
@@ -1099,7 +1122,7 @@ mcp_resources_templates_scan() {
 			fi
 			printf '%s\n' "${name}" >>"${names_seen_file}"
 			printf '%s\n' "${normalized}" >>"${items_file}"
-		done < <(find "${resources_dir}" -type f -name "*.meta.json" ! -name ".*" 2>/dev/null | LC_ALL=C sort)
+		done < <(find "${resources_dir}" -type f -name "*.meta.json" ! -name ".*" -print0 2>/dev/null)
 	fi
 
 	local items_json="[]"

@@ -115,16 +115,39 @@ mcp_registry_fastpath_snapshot() {
 		printf '0|0|0'
 		return 0
 	fi
-	local count=0 hash mtime manifest=""
-	while IFS= read -r path; do
-		[ -z "${path}" ] && continue
+	local count=0 hash mtime
+	local tmp_manifest tmp_sorted
+	tmp_manifest="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-registry-fastpath.manifest.XXXXXX")"
+	tmp_sorted="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-registry-fastpath.sorted.XXXXXX")"
+	if [ -z "${tmp_manifest}" ] || [ -z "${tmp_sorted}" ]; then
+		printf '0|0|0'
+		return 0
+	fi
+
+	while IFS= read -r -d '' path; do
+		case "${path}" in
+		*$'\n'* | *$'\r'*)
+			# Filenames containing newlines/CR are unsupported; disable fastpath so
+			# callers fall back to full scans rather than building a corrupt hash.
+			rm -f "${tmp_manifest}" "${tmp_sorted}" 2>/dev/null || true
+			printf '0|0|0'
+			return 0
+			;;
+		esac
+		[ -n "${path}" ] || continue
 		count=$((count + 1))
 		local file_mtime
 		file_mtime="$(mcp_registry_stat_mtime "${path}")"
 		# Use relative path to avoid absolute prefixes in hash
 		local rel_path="${path#"${scan_root}/"}"
-		manifest="${manifest}${file_mtime}|${rel_path}\n"
-	done < <(find "${scan_root}" -type f ! -name ".*" 2>/dev/null | LC_ALL=C sort)
+		printf '%s|%s\n' "${file_mtime}" "${rel_path}" >>"${tmp_manifest}"
+	done < <(find "${scan_root}" -type f ! -name ".*" -print0 2>/dev/null)
+
+	LC_ALL=C sort "${tmp_manifest}" >"${tmp_sorted}" 2>/dev/null || true
+	local manifest=""
+	manifest="$(cat "${tmp_sorted}" 2>/dev/null || true)"
+	rm -f "${tmp_manifest}" "${tmp_sorted}" 2>/dev/null || true
+
 	hash="$(mcp_hash_string "${manifest}")"
 	mtime="$(mcp_registry_stat_mtime "${scan_root}")"
 	printf '%s|%s|%s' "${count:-0}" "${hash:-0}" "${mtime:-0}"

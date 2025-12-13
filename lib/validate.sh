@@ -45,7 +45,14 @@ mcp_validate_tools() {
 	local fixes=0
 
 	if [ -d "${tools_root}" ]; then
-		while IFS= read -r tool_dir; do
+		while IFS= read -r -d '' tool_dir; do
+			case "${tool_dir}" in
+			*$'\n'* | *$'\r'*)
+				printf '✗ tools: unsupported directory name (newline/CR)\n'
+				errors=$((errors + 1))
+				continue
+				;;
+			esac
 			[ -d "${tool_dir}" ] || continue
 			local tool_name
 			tool_name="$(basename "${tool_dir}")"
@@ -147,7 +154,7 @@ mcp_validate_tools() {
 				printf '✗ %s - missing\n' "${rel_script}"
 				errors=$((errors + 1))
 			fi
-		done < <(find "${tools_root}" -mindepth 1 -maxdepth 1 -type d | sort)
+		done < <(find "${tools_root}" -mindepth 1 -maxdepth 1 -type d -print0 2>/dev/null)
 	fi
 
 	printf '%s %s %s\n' "${errors}" "${warnings}" "${fixes}"
@@ -162,7 +169,14 @@ mcp_validate_prompts() {
 	local fixes=0
 
 	if [ -d "${prompts_root}" ]; then
-		while IFS= read -r prompt_dir; do
+		while IFS= read -r -d '' prompt_dir; do
+			case "${prompt_dir}" in
+			*$'\n'* | *$'\r'*)
+				printf '✗ prompts: unsupported directory name (newline/CR)\n'
+				errors=$((errors + 1))
+				continue
+				;;
+			esac
 			[ -d "${prompt_dir}" ] || continue
 			local prompt_name
 			prompt_name="$(basename "${prompt_dir}")"
@@ -227,7 +241,7 @@ mcp_validate_prompts() {
 					fi
 				fi
 			fi
-		done < <(find "${prompts_root}" -mindepth 1 -maxdepth 1 -type d | sort)
+		done < <(find "${prompts_root}" -mindepth 1 -maxdepth 1 -type d -print0 2>/dev/null)
 	fi
 
 	printf '%s %s %s\n' "${errors}" "${warnings}" "${fixes}"
@@ -242,7 +256,14 @@ mcp_validate_resources() {
 	local fixes=0
 
 	if [ -d "${resources_root}" ]; then
-		while IFS= read -r res_dir; do
+		while IFS= read -r -d '' res_dir; do
+			case "${res_dir}" in
+			*$'\n'* | *$'\r'*)
+				printf '✗ resources: unsupported directory name (newline/CR)\n'
+				errors=$((errors + 1))
+				continue
+				;;
+			esac
 			[ -d "${res_dir}" ] || continue
 			local res_name
 			res_name="$(basename "${res_dir}")"
@@ -309,7 +330,7 @@ mcp_validate_resources() {
 					fi
 				fi
 			fi
-		done < <(find "${resources_root}" -mindepth 1 -maxdepth 1 -type d | sort)
+		done < <(find "${resources_root}" -mindepth 1 -maxdepth 1 -type d -print0 2>/dev/null)
 	fi
 
 	printf '%s %s %s\n' "${errors}" "${warnings}" "${fixes}"

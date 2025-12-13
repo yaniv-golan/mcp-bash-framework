@@ -711,7 +711,15 @@ mcp_tools_scan() {
 	items_file="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-tools-items.XXXXXX")"
 
 	if [ -d "${scan_root}" ]; then
-		find "${scan_root}" -type f ! -name ".*" ! -name "*.meta.json" 2>/dev/null | sort | while read -r path; do
+		while IFS= read -r -d '' path; do
+			# Refuse filenames with newlines/CR to avoid corrupting registries/logs.
+			case "${path}" in
+			*$'\n'* | *$'\r'*)
+				rm -f "${items_file}"
+				mcp_tools_error -32603 "Tool scan encountered unsupported filename (newline/CR) under tools/"
+				return 1
+				;;
+			esac
 			# On Windows (Git Bash/MSYS), -x test is unreliable. Check for shebang or .sh extension as fallback.
 			if [ ! -x "${path}" ]; then
 				# Fallback: check if file has shebang or is .sh/.bash
@@ -841,7 +849,7 @@ mcp_tools_scan() {
 				+ (if $out != null then {outputSchema: $out} else {} end)
 				+ (if $icons != null then {icons: $icons} else {} end)
 				+ (if $annotations != null then {annotations: $annotations} else {} end)' >>"${items_file}"
-		done
+		done < <(find "${scan_root}" -type f ! -name ".*" ! -name "*.meta.json" -print0 2>/dev/null)
 	fi
 
 	local timestamp
@@ -849,7 +857,7 @@ mcp_tools_scan() {
 	local items_json="[]"
 	if [ -s "${items_file}" ]; then
 		local parsed
-		if parsed="$("${MCPBASH_JSON_TOOL_BIN}" -s '.' "${items_file}" 2>/dev/null)"; then
+		if parsed="$("${MCPBASH_JSON_TOOL_BIN}" -s 'sort_by([.name, .path])' "${items_file}" 2>/dev/null)"; then
 			items_json="${parsed}"
 		fi
 	fi

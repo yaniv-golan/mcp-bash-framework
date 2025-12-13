@@ -314,7 +314,15 @@ mcp_prompts_scan() {
 	items_file="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-prompts-items.XXXXXX")"
 
 	if [ -d "${prompts_dir}" ]; then
-		find "${prompts_dir}" -type f ! -name ".*" ! -name "*.meta.json" 2>/dev/null | sort | while read -r path; do
+		while IFS= read -r -d '' path; do
+			# Refuse filenames with newlines/CR to avoid corrupting registries/logs.
+			case "${path}" in
+			*$'\n'* | *$'\r'*)
+				rm -f "${items_file}"
+				mcp_logging_error "${MCP_PROMPTS_LOGGER}" "Prompt scan encountered unsupported filename (newline/CR) under prompts/"
+				return 1
+				;;
+			esac
 			local rel_path="${path#"${MCPBASH_PROMPTS_DIR}"/}"
 			local base_name
 			base_name="$(basename "${path}")"
@@ -381,7 +389,7 @@ mcp_prompts_scan() {
 					metadata: $meta
 				}
 				+ (if $icons != null then {icons: $icons} else {} end)' >>"${items_file}"
-		done
+		done < <(find "${prompts_dir}" -type f ! -name ".*" ! -name "*.meta.json" -print0 2>/dev/null)
 	fi
 
 	local timestamp
