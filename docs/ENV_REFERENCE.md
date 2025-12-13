@@ -23,9 +23,9 @@ Authoritative list of supported environment variables. Defaults shown are the sh
 | `MCPBASH_LOG_LEVEL` | `info` | RFC-5424 level; `debug` shows discovery traces. |
 | `MCPBASH_LOG_VERBOSE` | (unset) | `true` logs full paths/manual registration output (security risk). |
 | `MCPBASH_CI_MODE` | `false` | CI defaults: safe tmp/log dirs, keep logs, timestamps, failure summary/env snapshot, GH annotations when tracing provides file/line. |
-| `MCPBASH_ENABLE_LIVE_PROGRESS` | `false` | Stream progress/logs during execution. |
+| `MCPBASH_ENABLE_LIVE_PROGRESS` | `false` | Stream progress/logs during tool execution (starts a background flusher); when `false`, progress/logs are emitted at completion. |
 | `MCPBASH_PROGRESS_FLUSH_INTERVAL` | `0.5` | Flush cadence (seconds) when live progress is enabled. |
-| `MCPBASH_RESOURCES_POLL_INTERVAL_SECS` | `2` | Resource subscription polling interval; `0` to disable. |
+| `MCPBASH_RESOURCES_POLL_INTERVAL_SECS` | `2` | Resource subscription polling interval (poller starts after first `resources/subscribe`); `0` to disable polling. |
 | `MCPBASH_ENV_PAYLOAD_THRESHOLD` | `65536` | Spill args/metadata to temp files above this many bytes. |
 | `MCPBASH_TOOL_ENV_MODE` | `minimal` | Tool env isolation: `minimal`, `inherit`, or `allowlist`. |
 | `MCPBASH_TOOL_ENV_ALLOWLIST` | (unset) | Extra env names when `MCPBASH_TOOL_ENV_MODE=allowlist`. |

@@ -34,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Installer `--verify` for tagged releases now targets the release-published tarball (`releases/download/vX.Y.Z/mcp-bash-vX.Y.Z.tar.gz`) so it stays in sync with the `SHA256SUMS` asset.
 - Tagged archive installs now attempt to verify against `SHA256SUMS` automatically when available (without requiring `--verify`).
 - Outgoing request IDs are now allocated via a lock-backed counter in the state dir to prevent cross-process ID reuse; elicitation polling in the flusher uses the shared counter.
+- Background workers now start lazily: resource subscription polling begins on first `resources/subscribe`, and the progress flusher runs only when live progress is enabled or elicitation is supported (reduces overhead on Windows runners).
 - All example tool/resource names switched to hyphenated form to match the validated naming regex.
 - Server now advertises the spec-compliant `completions` capability in initialize responses; tests assert capability presence.
 - Tool metadata parsing consolidates to a single jq pass per meta file, reducing per-tool process overhead during registry scans.

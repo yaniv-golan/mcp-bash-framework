@@ -105,7 +105,7 @@ Stable modules live under `bin/` and `lib/`, protocol handlers under `handlers/`
 - `handlers/resources.sh` supports `resources/list`, `resources/read`, `resources/subscribe`, and `resources/unsubscribe`, declining them in minimal mode.
 - `lib/resources.sh` discovers entries under `resources/`, prefers metadata files, writes `.registry/resources.json`, and uses allow-listed providers with path normalization.
 - Pagination mirrors tools via `lib/paginate.sh`, tracking registry hashes for list_changed notifications and returning `resources`, optional `nextCursor`, and an extension count via `result._meta["mcpbash/total"]`.
-- `resources/read` resolves URIs through providers (default `providers/file.sh`), enforces roots allow lists, returns MIME hints and `_meta` diagnostics, and can subscribe; optional polling (`MCPBASH_RESOURCES_POLL_INTERVAL_SECS`, default `2`, set `0` to disable) pushes updates.
+- `resources/read` resolves URIs through providers (default `providers/file.sh`), enforces roots allow lists, returns MIME hints and `_meta` diagnostics, and can subscribe; subscription polling (`MCPBASH_RESOURCES_POLL_INTERVAL_SECS`, default `2`, set `0` to disable) starts on first `resources/subscribe` and pushes updates.
 - File providers translate `C:\` prefixes into `/c/...` on Git-Bash/MSYS and honor `MSYS2_ARG_CONV_EXCL`. Git and HTTPS providers live in `providers/git.sh` and `providers/https.sh`.
 - `server.d/register.json` can supply `resources` / `resourceTemplates` for data-only overrides; `server.d/register.sh` may emit `{ "tools": [...], "resources": [...], "resourceTemplates": [...], "prompts": [...], "completions": [...] }` for hook-based overrides (opt-in).
 
@@ -122,7 +122,7 @@ Stable modules live under `bin/` and `lib/`, protocol handlers under `handlers/`
 
 ### Progress & logs
 - Workers buffer progress and log notifications and flush after handler completion by default.
-- Set `MCPBASH_ENABLE_LIVE_PROGRESS=true` to stream notifications mid-flight; adjust cadence with `MCPBASH_PROGRESS_FLUSH_INTERVAL` (seconds).
+- Set `MCPBASH_ENABLE_LIVE_PROGRESS=true` to stream notifications mid-flight (starts a background flusher); adjust cadence with `MCPBASH_PROGRESS_FLUSH_INTERVAL` (seconds).
 
 ### Completion
 - `handlers/completion.sh` serves `completion/complete`, declines in minimal mode, and caps suggestions at 100.

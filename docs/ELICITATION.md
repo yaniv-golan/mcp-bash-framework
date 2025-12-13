@@ -4,7 +4,7 @@ Elicitation lets a tool pause execution, ask the MCP client for user input, and 
 
 ## Server Behavior
 - On initialize, the server records whether the client supports elicitation and which modes (`form`, `url`).
-- While tools run, the server polls for tool-written request files (`elicit.<key>.request`) and forwards them to the client as `elicitation/create` requests with the appropriate `mode`.
+- When the client supports elicitation, the server runs a lightweight poller to watch for tool-written request files (`elicit.<key>.request`) and forwards them to the client as `elicitation/create` requests with the appropriate `mode`.
 - Client responses are normalized to `{"action": "...", "content": ...}` and written to `elicit.<key>.response`.
 - Requests pending per-worker are tracked so cancellation/cleanup can discard stale requests and late responses.
 

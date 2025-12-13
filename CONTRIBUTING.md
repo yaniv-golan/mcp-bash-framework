@@ -22,6 +22,7 @@ For CI parity (GitHub Actions uses these defaults), set `MCPBASH_CI_MODE=1` when
 ## Code style & workflow
 - Shell scripts must pass `./test/lint.sh` (shellcheck + shfmt). Keep functions small and prefer `set -euo pipefail`.
 - Guard against unset variables/arrays when using `set -u`; avoid `BASH_REMATCH` under `set -u` (use parameter expansion or only read captures when a match succeeds).
+- `README.md` is generated from `README.md.in`. After modifying `README.md.in`, run `bash scripts/render-readme.sh` and include both files in your PR (CI enforces `bash scripts/render-readme.sh --check`).
 - Branches should be short-lived and opened as PRs against `main` with a concise summary of scope and test evidence.
 - Releases should update `CHANGELOG.md` and note any breaking protocol or SDK changes.
 - Contributions are governed by the [Code of Conduct](CODE_OF_CONDUCT.md); escalate concerns via the security contact in `docs/SECURITY.md`.

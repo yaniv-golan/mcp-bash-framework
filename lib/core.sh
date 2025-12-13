@@ -92,9 +92,36 @@ mcp_core_bootstrap_state() {
 	MCP_LOG_STREAM="${MCPBASH_STATE_DIR}/logs.ndjson"
 	: >"${MCP_PROGRESS_STREAM}"
 	: >"${MCP_LOG_STREAM}"
-	mcp_core_start_progress_flusher
-	mcp_core_start_resource_poll
 	mcp_runtime_log_startup_summary
+}
+
+mcp_core_has_resource_subscriptions() {
+	[ -n "${MCPBASH_STATE_DIR:-}" ] || return 1
+	local path
+	for path in "${MCPBASH_STATE_DIR}"/resource_subscription.*; do
+		if [ -f "${path}" ]; then
+			return 0
+		fi
+	done
+	return 1
+}
+
+mcp_core_maybe_start_background_workers() {
+	# Start the progress flusher only when needed:
+	# - live progress enabled (streams while tools run), OR
+	# - elicitation supported (needed even when stdin is idle).
+	if [ "${MCPBASH_ENABLE_LIVE_PROGRESS:-false}" = "true" ]; then
+		mcp_core_start_progress_flusher
+	elif declare -F mcp_elicitation_is_supported >/dev/null 2>&1; then
+		if mcp_elicitation_is_supported; then
+			mcp_core_start_progress_flusher
+		fi
+	fi
+
+	# Start resource subscription polling only when there are subscriptions.
+	if mcp_core_has_resource_subscriptions; then
+		mcp_core_start_resource_poll
+	fi
 }
 
 mcp_core_read_loop() {
@@ -487,6 +514,7 @@ mcp_core_handle_line() {
 		if declare -F mcp_elicitation_process_requests >/dev/null 2>&1; then
 			mcp_elicitation_process_requests
 		fi
+		mcp_core_maybe_start_background_workers
 		return
 	fi
 
@@ -501,6 +529,7 @@ mcp_core_handle_line() {
 	if declare -F mcp_elicitation_process_requests >/dev/null 2>&1; then
 		mcp_elicitation_process_requests
 	fi
+	mcp_core_maybe_start_background_workers
 
 	if [ "${MCPBASH_EXIT_REQUESTED}" = true ]; then
 		mcp_core_wait_for_workers

@@ -13,17 +13,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 test_create_tmpdir
 
-case_a="${TEST_TMPDIR}/case-a"
-case_b="${TEST_TMPDIR}/case-b"
-case_c="${TEST_TMPDIR}/case-c"
-
-mkdir -p "${case_a}" "${case_b}" "${case_c}"
+WORKSPACE="${TEST_TMPDIR}/workspace"
+test_stage_workspace "${WORKSPACE}"
+mkdir -p "${WORKSPACE}/prompts"
 
 # Case A: register.json present but does not declare prompts => prompts fall through to discovery.
-WORKSPACE="${case_a}/workspace"
-test_stage_workspace "${WORKSPACE}"
-
-mkdir -p "${WORKSPACE}/prompts"
 cat >"${WORKSPACE}/prompts/demo.txt" <<'EOF'
 demo
 EOF
@@ -60,22 +54,6 @@ if [ -z "${found_name}" ]; then
 fi
 
 # Case B: register.json declares prompts as empty array => prompts are disabled (no scan).
-WORKSPACE="${case_b}/workspace"
-test_stage_workspace "${WORKSPACE}"
-
-mkdir -p "${WORKSPACE}/prompts"
-cat >"${WORKSPACE}/prompts/demo.txt" <<'EOF'
-demo
-EOF
-cat >"${WORKSPACE}/prompts/demo.meta.json" <<'EOF'
-{
-  "name": "demo-prompt",
-  "description": "Demo prompt",
-  "path": "demo.txt",
-  "arguments": {"type":"object","properties":{}}
-}
-EOF
-
 cat >"${WORKSPACE}/server.d/register.json" <<'EOF'
 {
   "version": 1,
@@ -83,8 +61,8 @@ cat >"${WORKSPACE}/server.d/register.json" <<'EOF'
 }
 EOF
 
-REQUESTS="${WORKSPACE}/requests.ndjson"
-RESPONSES="${WORKSPACE}/responses.ndjson"
+REQUESTS="${WORKSPACE}/requests_b.ndjson"
+RESPONSES="${WORKSPACE}/responses_b.ndjson"
 cat >"${REQUESTS}" <<'JSON'
 {"jsonrpc":"2.0","id":"init","method":"initialize","params":{}}
 {"jsonrpc":"2.0","method":"notifications/initialized"}
@@ -100,9 +78,6 @@ if [ -n "${found_name}" ]; then
 fi
 
 # Case C: invalid register.json fails closed and does not fall back to register.sh.
-WORKSPACE="${case_c}/workspace"
-test_stage_workspace "${WORKSPACE}"
-
 cat >"${WORKSPACE}/server.d/register.json" <<'EOF'
 {
   "version": 1,
@@ -118,9 +93,10 @@ printf 'ran\n' >"${MCPBASH_PROJECT_ROOT}/hook_ran.txt"
 exit 0
 EOF
 chmod +x "${WORKSPACE}/server.d/register.sh"
+rm -f "${WORKSPACE}/hook_ran.txt"
 
-REQUESTS="${WORKSPACE}/requests.ndjson"
-RESPONSES="${WORKSPACE}/responses.ndjson"
+REQUESTS="${WORKSPACE}/requests_c.ndjson"
+RESPONSES="${WORKSPACE}/responses_c.ndjson"
 cat >"${REQUESTS}" <<'JSON'
 {"jsonrpc":"2.0","id":"init","method":"initialize","params":{}}
 {"jsonrpc":"2.0","method":"notifications/initialized"}

@@ -448,7 +448,7 @@ The [`examples/`](examples/) directory shows common patterns end-to-end:
 - **Stdio Transport**: Standard input/output. No custom daemons or sidecars.
 - **Framework/Project Separation**: Install the framework once, create unlimited projects.
 - **Graceful Degradation**: Automatically detects available JSON tools (`gojq`, `jq`) or falls back to minimal mode if none are present.
-- **Progress Streaming**: Emits progress and log notifications; set `MCPBASH_ENABLE_LIVE_PROGRESS=true` to stream them during execution.
+- **Progress Streaming**: Emits progress and log notifications; set `MCPBASH_ENABLE_LIVE_PROGRESS=true` to stream them during execution (uses a lightweight background flusher).
 - **Debug Mode**: Run `mcp-bash debug` to capture all JSON-RPC messages for analysis. See [docs/DEBUGGING.md](docs/DEBUGGING.md).
 
 ## Configuration
@@ -468,7 +468,7 @@ The [`examples/`](examples/) directory shows common patterns end-to-end:
 | `MCPBASH_MAX_CONCURRENT_REQUESTS` | `16` | Cap concurrent worker slots. |
 | `MCPBASH_MAX_TOOL_OUTPUT_SIZE` | `10485760` | Tool stdout limit; stderr/resources inherit when unset. |
 | `MCPBASH_LOG_LEVEL` | `info` | Log level; use `debug` for discovery traces. |
-| `MCPBASH_ENABLE_LIVE_PROGRESS` | `false` | Stream progress/log notifications during execution. |
+| `MCPBASH_ENABLE_LIVE_PROGRESS` | `false` | Stream progress/log notifications during execution (starts a background flusher). |
 | `MCPBASH_ENV_PAYLOAD_THRESHOLD` | `65536` | Spill args/metadata to temp files above this size. |
 | `MCPBASH_TOOL_ENV_MODE` | `minimal` | Tool env isolation: `minimal`, `inherit`, or `allowlist`. |
 | `MCPBASH_TOOL_ENV_INHERIT_ALLOW` | `false` | Must be `true` to allow `MCPBASH_TOOL_ENV_MODE=inherit`. |

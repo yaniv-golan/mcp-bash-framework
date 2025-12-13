@@ -81,6 +81,110 @@ run_server() {
 	fi
 }
 
+start_server_session() {
+	local workspace="$1"
+	local responses_file="$2"
+	local server_json_tool="$3"
+	local stderr_file="${responses_file}.stderr"
+
+	local pipe_in="${workspace}/mcp.pipe.in"
+	local pipe_out="${workspace}/mcp.pipe.out"
+	rm -f "${pipe_in}" "${pipe_out}"
+	mkfifo "${pipe_in}" "${pipe_out}"
+
+	(
+		cd "${workspace}" || exit 1
+		MCPBASH_PROJECT_ROOT="${workspace}" \
+			MCPBASH_ALLOW_PROJECT_HOOKS="true" \
+			MCPBASH_JSON_TOOL="${server_json_tool}" \
+			MCPBASH_JSON_TOOL_BIN="$(command -v "${server_json_tool}")" \
+			./bin/mcp-bash <"${pipe_in}" >"${pipe_out}" 2>"${stderr_file}" &
+		printf '%s' "$!" >"${workspace}/mcp.session.pid"
+	) || true
+
+	# shellcheck disable=SC2094
+	exec 3>"${pipe_in}"
+	# shellcheck disable=SC2094
+	exec 4<"${pipe_out}"
+	: >"${responses_file}"
+	: >"${stderr_file}"
+
+	TEST_FAILURE_BUNDLE_WORKSPACE="${workspace}"
+	TEST_FAILURE_BUNDLE_STATE_DIR=""
+	TEST_FAILURE_BUNDLE_EXTRA_FILES="${stderr_file}"
+
+	# Export for helpers.
+	MCP_CONFORMANCE_PIPE_IN="${pipe_in}"
+	MCP_CONFORMANCE_PIPE_OUT="${pipe_out}"
+	MCP_CONFORMANCE_PID_FILE="${workspace}/mcp.session.pid"
+	export MCP_CONFORMANCE_PIPE_IN MCP_CONFORMANCE_PIPE_OUT MCP_CONFORMANCE_PID_FILE
+}
+
+stop_server_session() {
+	local workspace="$1"
+	local response_timeout="${2:-5}"
+
+	# Close pipes before waiting; prevents hangs if the server stops reading/writing.
+	exec 3>&- || true
+	exec 4<&- || true
+
+	if [ -f "${workspace}/mcp.session.pid" ]; then
+		local server_pid
+		server_pid="$(cat "${workspace}/mcp.session.pid" 2>/dev/null || true)"
+		if [ -n "${server_pid}" ]; then
+			local attempts=0
+			while [ "${attempts}" -lt $((response_timeout * 10)) ] && kill -0 "${server_pid}" 2>/dev/null; do
+				sleep 0.1 2>/dev/null || sleep 1
+				attempts=$((attempts + 1))
+			done
+			if ! kill -0 "${server_pid}" 2>/dev/null; then
+				wait "${server_pid}" 2>/dev/null || true
+			fi
+		fi
+	fi
+
+	rm -f "${workspace}/mcp.pipe.in" "${workspace}/mcp.pipe.out" "${workspace}/mcp.session.pid"
+}
+
+session_send() {
+	printf '%s\n' "$1" >&3
+}
+
+session_read_line() {
+	local timeout="${1:-5}"
+	local line=""
+	if read -r -t "${timeout}" -u 4 line; then
+		printf '%s' "${line}"
+		return 0
+	fi
+	return 1
+}
+
+session_wait_for_id() {
+	local responses_file="$1"
+	local match_id="$2"
+	local timeout="${3:-10}"
+	local end_time
+	end_time=$(($(date +%s) + timeout))
+
+	while [ "$(date +%s)" -lt "${end_time}" ]; do
+		local line=""
+		line="$(session_read_line 2 2>/dev/null || true)"
+		if [ -z "${line}" ]; then
+			continue
+		fi
+		printf '%s\n' "${line}" >>"${responses_file}"
+
+		local id
+		id="$(printf '%s' "${line}" | jq -r '.id // empty' 2>/dev/null || true)"
+		if [ "${id}" = "${match_id}" ]; then
+			printf '%s' "${line}"
+			return 0
+		fi
+	done
+	return 1
+}
+
 assert_optional_next_cursor_string() {
 	local result="$1"
 	printf '%s' "${result}" | jq -e '
@@ -103,47 +207,56 @@ mkdir -p "${COMP_ROOT}/completions"
 cp -a "${MCPBASH_HOME}/examples/10-completions/server.d/register.json" "${COMP_ROOT}/server.d/register.json"
 cp -a "${MCPBASH_HOME}/examples/10-completions/completions/suggest.sh" "${COMP_ROOT}/completions/suggest.sh"
 
-cat >"${COMP_ROOT}/requests.ndjson" <<'EOF'
-{"jsonrpc":"2.0","id":"init","method":"initialize","params":{}}
-{"jsonrpc":"2.0","method":"notifications/initialized"}
-{"jsonrpc":"2.0","id":"c1","method":"completion/complete","params":{"name":"demo.completion","arguments":{"query":"re"},"limit":3}}
-EOF
+start_server_session "${COMP_ROOT}" "${COMP_ROOT}/responses.ndjson" "${server_json_tool}"
+session_send '{"jsonrpc":"2.0","id":"init","method":"initialize","params":{}}'
+if ! session_wait_for_id "${COMP_ROOT}/responses.ndjson" "init" 10 >/dev/null; then
+	stop_server_session "${COMP_ROOT}"
+	test_fail "initialize timeout"
+fi
+session_send '{"jsonrpc":"2.0","method":"notifications/initialized"}'
+session_send '{"jsonrpc":"2.0","id":"c1","method":"completion/complete","params":{"name":"demo.completion","arguments":{"query":"re"},"limit":3}}'
+c1_line="$(session_wait_for_id "${COMP_ROOT}/responses.ndjson" "c1" 15 || true)"
+if [ -z "${c1_line}" ]; then
+	stop_server_session "${COMP_ROOT}"
+	test_fail "completion/complete timeout (page 1)"
+fi
 
-run_server "${COMP_ROOT}" "${COMP_ROOT}/requests.ndjson" "${COMP_ROOT}/responses.ndjson" "${server_json_tool}"
 assert_json_lines "${COMP_ROOT}/responses.ndjson"
 
-cursor="$(jq -r 'select(.id=="c1") | .result.completion.nextCursor // empty' "${COMP_ROOT}/responses.ndjson")"
+cursor="$(printf '%s' "${c1_line}" | jq -r '.result.completion.nextCursor // empty')"
 if [ -z "${cursor}" ] || [ "${cursor}" = "null" ]; then
+	stop_server_session "${COMP_ROOT}"
 	test_fail "expected completion cursor for demo.completion page 1"
 fi
 
-if ! jq -e '
-	select(.id=="c1") |
+if ! printf '%s' "${c1_line}" | jq -e '
 	(.result.completion | type) == "object" and
 	(.result.completion.values | type) == "array" and
 	(.result.completion.values | length) == 3 and
 	(.result.completion.hasMore | type) == "boolean" and
 	(.result.completion.hasMore == true) and
 	(.result.completion.nextCursor | type) == "string"
-' "${COMP_ROOT}/responses.ndjson" >/dev/null; then
+' >/dev/null; then
+	stop_server_session "${COMP_ROOT}"
 	test_fail "completion/complete response shape mismatch (page 1)"
 fi
 
-cat >"${COMP_ROOT}/requests_page2.ndjson" <<EOF
-{"jsonrpc":"2.0","id":"init2","method":"initialize","params":{}}
-{"jsonrpc":"2.0","method":"notifications/initialized"}
-{"jsonrpc":"2.0","id":"c2","method":"completion/complete","params":{"name":"demo.completion","cursor":"${cursor}","limit":3}}
-EOF
+session_send "$(jq -n -c --arg cursor "${cursor}" \
+	'{"jsonrpc":"2.0","id":"c2","method":"completion/complete","params":{"name":"demo.completion","cursor":$cursor,"limit":3}}')"
+c2_line="$(session_wait_for_id "${COMP_ROOT}/responses.ndjson" "c2" 15 || true)"
+stop_server_session "${COMP_ROOT}"
 
-run_server "${COMP_ROOT}" "${COMP_ROOT}/requests_page2.ndjson" "${COMP_ROOT}/responses_page2.ndjson" "${server_json_tool}"
-assert_json_lines "${COMP_ROOT}/responses_page2.ndjson"
+assert_json_lines "${COMP_ROOT}/responses.ndjson"
 
-if ! jq -e '
-	select(.id=="c2") |
+if [ -z "${c2_line}" ]; then
+	test_fail "completion/complete timeout (page 2)"
+fi
+
+if ! printf '%s' "${c2_line}" | jq -e '
 	(.result.completion.values | type) == "array" and
 	(.result.completion.values | length) == 3 and
 	(.result.completion.hasMore | type) == "boolean"
-' "${COMP_ROOT}/responses_page2.ndjson" >/dev/null; then
+' >/dev/null; then
 	test_fail "completion/complete response shape mismatch (page 2)"
 fi
 
