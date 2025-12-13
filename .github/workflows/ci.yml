@@ -119,6 +119,12 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v4
+      - name: Cache staging tar (Windows)
+        if: matrix.os == 'windows-latest'
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/mcpbash.staging
+          key: ${{ runner.os }}-staging-${{ hashFiles('bin/**','lib/**','handlers/**','providers/**','sdk/**','bootstrap/**','scaffold/**') }}
       - name: Set Go paths
         shell: bash
         run: |
@@ -131,14 +137,16 @@ jobs:
             echo "GOPATH=${win_gopath}" >> "$GITHUB_ENV"
             echo "GOMODCACHE=${win_gomodcache}" >> "$GITHUB_ENV"
             echo "GOCACHE=${win_gocache}" >> "$GITHUB_ENV"
+            echo "MCPBASH_TAR_DIR=$(cygpath -u "${RUNNER_TEMP}")/mcpbash.staging" >> "$GITHUB_ENV"
             echo "$(cygpath -u "${win_gopath}")/bin" >> "$GITHUB_PATH"
-            mkdir -p "$(cygpath -u "${win_gopath}")/bin" "$(cygpath -u "${win_gomodcache}")" "$(cygpath -u "${win_gocache}")"
+            mkdir -p "$(cygpath -u "${win_gopath}")/bin" "$(cygpath -u "${win_gomodcache}")" "$(cygpath -u "${win_gocache}")" "$(cygpath -u "${RUNNER_TEMP}")/mcpbash.staging"
           else
             echo "GOPATH=${HOME}/go" >> "$GITHUB_ENV"
             echo "GOMODCACHE=${HOME}/go/pkg/mod" >> "$GITHUB_ENV"
             echo "GOCACHE=${HOME}/.cache/go-build" >> "$GITHUB_ENV"
+            echo "MCPBASH_TAR_DIR=${RUNNER_TEMP}/mcpbash.staging" >> "$GITHUB_ENV"
             echo "${HOME}/go/bin" >> "$GITHUB_PATH"
-            mkdir -p "${HOME}/go/bin" "${HOME}/go/pkg/mod" "${HOME}/.cache/go-build"
+            mkdir -p "${HOME}/go/bin" "${HOME}/go/pkg/mod" "${HOME}/.cache/go-build" "${RUNNER_TEMP}/mcpbash.staging"
           fi
       - name: Setup Go
         id: go
@@ -202,6 +210,8 @@ jobs:
             exit 1
           fi
       - name: Examples suite
+        env:
+          MCPBASH_STAGING_TAR: ${{ matrix.os == 'windows-latest' && '1' || '0' }}
         run: test/examples/run.sh
 
       - name: Strict conformance (jq + gojq)
