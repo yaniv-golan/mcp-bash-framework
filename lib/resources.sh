@@ -56,6 +56,11 @@ if ! command -v mcp_resource_content_object_from_file >/dev/null 2>&1; then
 	. "${MCPBASH_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/lib/resource_content.sh"
 fi
 
+if ! command -v mcp_env_run_curated >/dev/null 2>&1; then
+	# shellcheck source=lib/runtime.sh disable=SC1090,SC1091
+	. "${MCPBASH_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/lib/runtime.sh"
+fi
+
 mcp_resources_file_uri_from_path() {
 	mcp_uri_file_uri_from_path "$1"
 }
@@ -1403,10 +1408,13 @@ mcp_resources_read_file() {
 	tmp_err="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-resource-file.XXXXXX")"
 	local output status
 	if output="$(
-		env \
-			MCPBASH_HOME="${MCPBASH_HOME}" \
-			MCP_RESOURCES_ROOTS="${MCP_RESOURCES_ROOTS:-${MCPBASH_RESOURCES_DIR}}" \
-			"${script}" "${uri}" 2>"${tmp_err}"
+		(
+			local env_pairs=(
+				"MCPBASH_HOME=${MCPBASH_HOME}"
+				"MCP_RESOURCES_ROOTS=${MCP_RESOURCES_ROOTS:-${MCPBASH_RESOURCES_DIR}}"
+			)
+			mcp_env_run_curated provider "${env_pairs[@]}" -- "${script}" "${uri}"
+		) 2>"${tmp_err}"
 	)"; then
 		rm -f "${tmp_err}"
 		printf '%s' "${output}"
@@ -1467,10 +1475,32 @@ mcp_resources_read_via_provider() {
 		tmp_err="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-resource-provider.XXXXXX")"
 		local output status
 		if output="$(
-			env \
-				MCPBASH_HOME="${MCPBASH_HOME}" \
-				MCP_RESOURCES_ROOTS="${MCP_RESOURCES_ROOTS:-${MCPBASH_RESOURCES_DIR}}" \
-				"${provider_runner[@]}" "${uri}" 2>"${tmp_err}"
+			(
+				local env_pairs=(
+					"MCPBASH_HOME=${MCPBASH_HOME}"
+					"MCP_RESOURCES_ROOTS=${MCP_RESOURCES_ROOTS:-${MCPBASH_RESOURCES_DIR}}"
+				)
+				case "${provider}" in
+				git)
+					if [ -n "${SSH_AUTH_SOCK-}" ]; then env_pairs+=("SSH_AUTH_SOCK=${SSH_AUTH_SOCK}"); fi
+					if [ -n "${GIT_SSH_COMMAND-}" ]; then env_pairs+=("GIT_SSH_COMMAND=${GIT_SSH_COMMAND}"); fi
+					if [ -n "${GIT_ASKPASS-}" ]; then env_pairs+=("GIT_ASKPASS=${GIT_ASKPASS}"); fi
+					;;
+				https)
+					if [ -n "${SSL_CERT_FILE-}" ]; then env_pairs+=("SSL_CERT_FILE=${SSL_CERT_FILE}"); fi
+					if [ -n "${SSL_CERT_DIR-}" ]; then env_pairs+=("SSL_CERT_DIR=${SSL_CERT_DIR}"); fi
+					if [ -n "${CURL_CA_BUNDLE-}" ]; then env_pairs+=("CURL_CA_BUNDLE=${CURL_CA_BUNDLE}"); fi
+					;;
+				esac
+				if [ -n "${http_proxy-}" ]; then env_pairs+=("http_proxy=${http_proxy}"); fi
+				if [ -n "${https_proxy-}" ]; then env_pairs+=("https_proxy=${https_proxy}"); fi
+				if [ -n "${no_proxy-}" ]; then env_pairs+=("no_proxy=${no_proxy}"); fi
+				if [ -n "${HTTP_PROXY-}" ]; then env_pairs+=("HTTP_PROXY=${HTTP_PROXY}"); fi
+				if [ -n "${HTTPS_PROXY-}" ]; then env_pairs+=("HTTPS_PROXY=${HTTPS_PROXY}"); fi
+				if [ -n "${NO_PROXY-}" ]; then env_pairs+=("NO_PROXY=${NO_PROXY}"); fi
+
+				mcp_env_run_curated provider "${env_pairs[@]}" -- "${provider_runner[@]}" "${uri}"
+			) 2>"${tmp_err}"
 		)"; then
 			rm -f "${tmp_err}"
 			printf '%s' "${output}"

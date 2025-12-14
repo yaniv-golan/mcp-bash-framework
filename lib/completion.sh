@@ -5,6 +5,11 @@ set -euo pipefail
 
 MCP_COMPLETION_LOGGER="${MCP_COMPLETION_LOGGER:-mcp.completion}"
 
+if ! command -v mcp_env_run_curated >/dev/null 2>&1; then
+	# shellcheck source=lib/runtime.sh disable=SC1090,SC1091
+	. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/runtime.sh"
+fi
+
 mcp_completion_suggestions="[]"
 mcp_completion_has_more=false
 mcp_completion_cursor=""
@@ -642,9 +647,29 @@ mcp_completion_run_provider() {
 			MCP_COMPLETION_PROVIDER_RESULT_ERROR="Completion script not found"
 			return 1
 		fi
+		# On Windows (Git Bash/MSYS), -x test is unreliable. If the completion script
+		# exists but isn't executable, fall back to invoking it via bash when it
+		# looks like a script (shebang or .sh/.bash extension).
+		local provider_runner=("${abs_script}")
 		if [ ! -x "${abs_script}" ]; then
-			MCP_COMPLETION_PROVIDER_RESULT_ERROR="Completion script not executable"
-			return 1
+			local first_line=""
+			IFS= read -r first_line <"${abs_script}" 2>/dev/null || first_line=""
+			case "${abs_script}" in
+			*.sh | *.bash)
+				provider_runner=(bash "${abs_script}")
+				;;
+			*)
+				case "${first_line}" in
+				'#!'*)
+					provider_runner=(bash "${abs_script}")
+					;;
+				*)
+					MCP_COMPLETION_PROVIDER_RESULT_ERROR="Completion script not executable"
+					return 1
+					;;
+				esac
+				;;
+			esac
 		fi
 		local tmp_out tmp_err
 		tmp_out="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-completion.out.XXXXXX")"
@@ -658,8 +683,7 @@ mcp_completion_run_provider() {
 			fi
 			(
 				cd "${MCPBASH_PROJECT_ROOT}" || exit 1
-				local runner=(
-					env
+				local env_pairs=(
 					"MCPBASH_JSON_TOOL_BIN=${MCPBASH_JSON_TOOL_BIN}"
 					"MCPBASH_JSON_TOOL=${MCPBASH_JSON_TOOL}"
 					"MCP_COMPLETION_NAME=${name}"
@@ -672,9 +696,9 @@ mcp_completion_run_provider() {
 					"MCP_PROMPT_METADATA=${MCP_COMPLETION_PROVIDER_METADATA}"
 				)
 				if [ -n "${timeout}" ]; then
-					with_timeout "${timeout}" -- "${runner[@]}" "${abs_script}"
+					with_timeout "${timeout}" -- mcp_env_run_curated provider "${env_pairs[@]}" -- "${provider_runner[@]}"
 				else
-					"${runner[@]}" "${abs_script}"
+					mcp_env_run_curated provider "${env_pairs[@]}" -- "${provider_runner[@]}"
 				fi
 			) >"${tmp_out}" 2>"${tmp_err}"
 		elif [ "${MCP_COMPLETION_PROVIDER_TYPE}" = "resource" ]; then
@@ -685,8 +709,7 @@ mcp_completion_run_provider() {
 			fi
 			(
 				cd "${MCPBASH_PROJECT_ROOT}" || exit 1
-				local runner=(
-					env
+				local env_pairs=(
 					"MCPBASH_JSON_TOOL_BIN=${MCPBASH_JSON_TOOL_BIN}"
 					"MCPBASH_JSON_TOOL=${MCPBASH_JSON_TOOL}"
 					"MCP_COMPLETION_NAME=${name}"
@@ -701,16 +724,15 @@ mcp_completion_run_provider() {
 					"MCP_RESOURCE_METADATA=${MCP_COMPLETION_PROVIDER_METADATA}"
 				)
 				if [ -n "${timeout}" ]; then
-					with_timeout "${timeout}" -- "${runner[@]}" "${abs_script}"
+					with_timeout "${timeout}" -- mcp_env_run_curated provider "${env_pairs[@]}" -- "${provider_runner[@]}"
 				else
-					"${runner[@]}" "${abs_script}"
+					mcp_env_run_curated provider "${env_pairs[@]}" -- "${provider_runner[@]}"
 				fi
 			) >"${tmp_out}" 2>"${tmp_err}"
 		else
 			(
 				cd "${MCPBASH_PROJECT_ROOT}" || exit 1
-				local runner=(
-					env
+				local env_pairs=(
 					"MCPBASH_JSON_TOOL_BIN=${MCPBASH_JSON_TOOL_BIN}"
 					"MCPBASH_JSON_TOOL=${MCPBASH_JSON_TOOL}"
 					"MCP_COMPLETION_NAME=${name}"
@@ -720,9 +742,9 @@ mcp_completion_run_provider() {
 					"MCP_COMPLETION_ARGS_HASH=${args_hash}"
 				)
 				if [ -n "${timeout}" ]; then
-					with_timeout "${timeout}" -- "${runner[@]}" "${abs_script}"
+					with_timeout "${timeout}" -- mcp_env_run_curated provider "${env_pairs[@]}" -- "${provider_runner[@]}"
 				else
-					"${runner[@]}" "${abs_script}"
+					mcp_env_run_curated provider "${env_pairs[@]}" -- "${provider_runner[@]}"
 				fi
 			) >"${tmp_out}" 2>"${tmp_err}"
 		fi

@@ -29,6 +29,11 @@ if ! command -v mcp_registry_resolve_scan_root >/dev/null 2>&1; then
 	. "${MCPBASH_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/lib/registry.sh"
 fi
 
+if ! command -v mcp_env_run_curated >/dev/null 2>&1; then
+	# shellcheck source=lib/runtime.sh disable=SC1090,SC1091
+	. "${MCPBASH_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/lib/runtime.sh"
+fi
+
 mcp_prompts_scan_root() {
 	mcp_registry_resolve_scan_root "${MCPBASH_PROMPTS_DIR}"
 }
@@ -590,7 +595,14 @@ mcp_prompts_render() {
 		export_pairs=""
 	fi
 
-	local env_cmd=("env" "-i" "PATH=${PATH}")
+	local envsubst_bin=""
+	envsubst_bin="$(command -v envsubst 2>/dev/null || true)"
+	if [ -z "${envsubst_bin}" ] || [ ! -x "${envsubst_bin}" ]; then
+		mcp_prompts_error -32603 "envsubst not available"
+		return 1
+	fi
+
+	local env_pairs=()
 	while IFS=$'\t' read -r export_key export_value; do
 		[ -z "${export_key}" ] && continue
 		case "${export_value}" in
@@ -598,11 +610,13 @@ mcp_prompts_render() {
 			continue
 			;;
 		esac
-		env_cmd+=("${export_key}=${export_value}")
+		env_pairs+=("${export_key}=${export_value}")
 	done <<<"${export_pairs}"
 
 	local text
-	if ! text="$("${env_cmd[@]}" envsubst <"${full_path}")"; then
+	# Security: emulate `env -i` by scrubbing the environment before running envsubst,
+	# and export only the allowed key/value pairs derived from args.
+	if ! text="$(mcp_env_run_curated prompt-subst "${env_pairs[@]}" -- "${envsubst_bin}" <"${full_path}")"; then
 		return 1
 	fi
 
