@@ -66,19 +66,20 @@ query="$(printf '%s' "${MCP_COMPLETION_ARGS_JSON:-{}}" | jq -r '(.query // .pref
 Stdout (any of):
 - JSON array of suggestions:
   ```json
-  [{"type":"text","text":"alpha"},{"type":"text","text":"beta"}]
+  ["alpha","beta"]
   ```
 - Object with `suggestions` plus pagination fields:
   ```json
   {
-    "suggestions": [{"type":"text","text":"alpha"}],
+    "suggestions": ["alpha"],
     "hasMore": true,
     "next": 1,             // optional numeric offset for next page
     "cursor": "opaque"      // optional cursor string (takes precedence over next)
   }
   ```
 
-`type` is typically `"text"`; other content types are supported by the MCP schema.
+Notes:
+- Providers must emit **`string[]`** suggestions (and `suggestions` must be `string[]` when using the object form).
 
 ## Minimal Mode
 - Completion is declined with `-32601` when JSON tooling is unavailable or `MCPBASH_FORCE_MINIMAL=true`.

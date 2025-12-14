@@ -234,6 +234,7 @@ EOF
 		(.result.completion | type) == "object" and
 		(.result.completion.values | type) == "array" and
 		(.result.completion.values | length) == 3 and
+		([.result.completion.values[] | type] | all(. == "string")) and
 		(.result.completion.hasMore | type) == "boolean" and
 		(.result.completion.hasMore == true) and
 		(.result.completion.nextCursor | type) == "string"
@@ -254,6 +255,7 @@ EOF
 		select(.id=="c2") |
 		(.result.completion.values | type) == "array" and
 		(.result.completion.values | length) == 3 and
+		([.result.completion.values[] | type] | all(. == "string")) and
 		(.result.completion.hasMore | type) == "boolean"
 	' "${COMP_ROOT}/responses_page2.ndjson" >/dev/null; then
 		test_fail "completion/complete response shape mismatch (page 2)"
@@ -285,6 +287,7 @@ else
 		(.result.completion | type) == "object" and
 		(.result.completion.values | type) == "array" and
 		(.result.completion.values | length) == 3 and
+		([.result.completion.values[] | type] | all(. == "string")) and
 		(.result.completion.hasMore | type) == "boolean" and
 		(.result.completion.hasMore == true) and
 		(.result.completion.nextCursor | type) == "string"
@@ -307,6 +310,7 @@ else
 	if ! printf '%s' "${c2_line}" | jq -e '
 		(.result.completion.values | type) == "array" and
 		(.result.completion.values | length) == 3 and
+		([.result.completion.values[] | type] | all(. == "string")) and
 		(.result.completion.hasMore | type) == "boolean"
 	' >/dev/null; then
 		test_fail "completion/complete response shape mismatch (page 2)"

@@ -19,14 +19,14 @@ offset="${MCP_COMPLETION_OFFSET:-0}"
 	--argjson offset "${offset}" '
 		def matches($q):
 			if ($q | length) == 0 then true
-			else (.text | ascii_downcase | contains($q | ascii_downcase))
+			else (. | ascii_downcase | contains($q | ascii_downcase))
 			end;
 
 		[
-			{type:"text", text:"__NAME__ task one"},
-			{type:"text", text:"__NAME__ task two"},
-			{type:"text", text:"__NAME__ task three"},
-			{type:"text", text:"__NAME__ task four"}
+			"__NAME__ task one",
+			"__NAME__ task two",
+			"__NAME__ task three",
+			"__NAME__ task four"
 		] as $all
 		| ($all | map(select(matches($query)))) as $filtered
 		| ($filtered[$offset:$offset+$limit]) as $page

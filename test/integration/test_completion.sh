@@ -35,13 +35,11 @@ fi
 
 resp_json="$(grep '"id":"2"' "${TMP}/responses.ndjson" | head -n1)"
 suggestions_len="$(echo "$resp_json" | jq '.result.completion.values | length')"
-suggestion_type="$(echo "$resp_json" | jq -r '.result.completion.values[0].type')"
-suggestion_text="$(echo "$resp_json" | jq -r '.result.completion.values[0].text')"
+suggestion_text="$(echo "$resp_json" | jq -r '.result.completion.values[0]')"
 has_more="$(echo "$resp_json" | jq '.result.completion.hasMore')"
 cursor="$(echo "$resp_json" | jq -r '.result.completion.nextCursor // empty')"
 
 test_assert_eq "$suggestions_len" "1"
-test_assert_eq "$suggestion_type" "text"
 if [[ "$suggestion_text" != *"plan roadmap"* ]]; then
 	test_fail "suggestion text mismatch: $suggestion_text"
 fi
@@ -66,7 +64,7 @@ page2_json="$(grep '"id":"page2"' "${TMP}/responses_page2.ndjson" | head -n1)"
 if [ -z "${page2_json}" ]; then
 	test_fail "missing page2 completion response"
 fi
-page2_text="$(echo "${page2_json}" | jq -r '.result.completion.values[0].text // empty')"
+page2_text="$(echo "${page2_json}" | jq -r '.result.completion.values[0] // empty')"
 page2_has_more="$(echo "${page2_json}" | jq -r '.result.completion.hasMore // false')"
 if [[ "${page2_text}" != *"snippet"* ]]; then
 	test_fail "second page suggestion unexpected: ${page2_text}"

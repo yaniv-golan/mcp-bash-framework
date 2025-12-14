@@ -506,7 +506,8 @@ mcp_completion_normalize_output() {
 	local script_output="$1"
 	local limit="${2:-5}"
 	local start="${3:-0}"
-	printf '%s' "$(
+	local out=""
+	if ! out="$(
 		"${MCPBASH_JSON_TOOL_BIN}" -n -c \
 			--arg raw "${script_output}" \
 			--argjson limit "${limit}" \
@@ -519,15 +520,20 @@ mcp_completion_normalize_output() {
 					if ($value | type) == "boolean" then $value else false end;
 				def numeric_or_null($value):
 					(try ($value | tonumber) catch null);
+				def ensure_string_array($value):
+					if ($value | type) != "array" then error("suggestions must be an array")
+					elif ([ $value[] | type ] | all(. == "string")) then $value
+					else error("suggestions must be string[]")
+					end;
 
 				(parse($raw)) as $payload
 				| if $payload == null then
 					{suggestions: [], hasMore: false, next: null, cursor: ""}
 				elif ($payload | type) == "array" then
-					{suggestions: $payload, hasMore: false, next: null, cursor: ""}
+					{suggestions: ensure_string_array($payload), hasMore: false, next: null, cursor: ""}
 				else
 					{
-						suggestions: ($payload.suggestions // []),
+						suggestions: ensure_string_array(($payload.suggestions // [])),
 						hasMore: bool($payload.hasMore),
 						next: $payload.next,
 						cursor: ($payload.nextCursor // $payload.cursor // "")
@@ -545,7 +551,10 @@ mcp_completion_normalize_output() {
 					end))
 				| (.cursor = (if (.cursor | type) == "string" then .cursor else "" end))
 			'
-	)"
+	)"; then
+		return 1
+	fi
+	printf '%s' "${out}"
 }
 
 mcp_completion_builtin_generate() {
@@ -575,9 +584,9 @@ mcp_completion_builtin_generate() {
 			--argjson limit "${limit}" \
 			--argjson offset "${offset}" '
 				[
-					{type: "text", text: $base},
-					{type: "text", text: $base_snippet},
-					{type: "text", text: $base_example}
+					$base,
+					$base_snippet,
+					$base_example
 				] as $candidates
 				| ($candidates[$offset:$offset+$limit]) as $limited
 				| ($limited | length) as $count
@@ -796,7 +805,7 @@ mcp_completion_add_text() {
 		mcp_completion_has_more=true
 		return 1
 	fi
-	if ! mcp_completion_suggestions="$(printf '%s' "${mcp_completion_suggestions}" | "${MCPBASH_JSON_TOOL_BIN}" -c --arg text "${text}" '. + [{type: "text", text: $text}]' 2>/dev/null)"; then
+	if ! mcp_completion_suggestions="$(printf '%s' "${mcp_completion_suggestions}" | "${MCPBASH_JSON_TOOL_BIN}" -c --arg text "${text}" '. + [$text]' 2>/dev/null)"; then
 		mcp_completion_suggestions="[]"
 		return 1
 	fi
@@ -811,7 +820,18 @@ mcp_completion_add_json() {
 		mcp_completion_has_more=true
 		return 1
 	fi
-	if ! mcp_completion_suggestions="$(printf '%s' "${mcp_completion_suggestions}" | "${MCPBASH_JSON_TOOL_BIN}" -c --argjson payload "${json_payload:-"{}"}" '. + [$payload]' 2>/dev/null)"; then
+	# Legacy internal completion items were content objects; completions are now string-only.
+	# Accept only JSON strings here (callers should use mcp_completion_add_text for plain strings).
+	if ! mcp_completion_suggestions="$(
+		"${MCPBASH_JSON_TOOL_BIN}" -n -c \
+			--argjson list "${mcp_completion_suggestions}" \
+			--arg raw "${json_payload:-""}" '
+				(try ($raw | fromjson) catch null) as $payload
+				| if $payload == null then error("invalid json") else . end
+				| if ($payload | type) != "string" then error("completion items must be strings") else . end
+				| ($list // []) + [$payload]
+			' 2>/dev/null
+	)"; then
 		mcp_completion_suggestions="[]"
 		return 1
 	fi

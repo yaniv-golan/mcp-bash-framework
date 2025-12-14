@@ -10,7 +10,7 @@ query="$(printf '%s' "${args}" | "${bin}" -r '(.query // .prefix // "")' 2>/dev/
 
 # Small static catalog; filter by substring.
 cat <<'JSON' | "${bin}" -c --arg q "${query}" '
-	[.[] | select(($q == "") or (. | contains($q))) | {type:"text",text:.}]
+	[.[] | select(($q == "") or (. | contains($q)))]
 	| .[0:3]
 '
 ["retry","review","reset","rebase","reflog","remote"]

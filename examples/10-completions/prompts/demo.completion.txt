@@ -1,0 +1,4 @@
+This is a demo prompt for testing completions in the Inspector UI.
+
+Query: ${query}
+

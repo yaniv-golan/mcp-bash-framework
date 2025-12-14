@@ -16,9 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Error-path JSON stderr logs no longer print full request payloads on parse/extract failures; logs now include bounded, single-line summaries (bytes/hash/excerpt).
 - Tool tracing no longer dumps full args/_meta payloads into xtrace output for SDK helpers; traces remain usable while reducing accidental secret leakage.
+- Completion results are now spec-shaped: `result.completion.values` is emitted as `string[]` (MCP `2025-11-25`).
 
 ### Documentation
 - Expanded MCP Inspector troubleshooting (origin allowlist + large `PATH` causing connect failures) and clarified completion request shape expectations in completion docs/examples.
+- Updated `examples/10-completions` to include a demo prompt so completions can be exercised directly from the MCP Inspector UI (Prompts tab).
 
 ## [0.7.0] - 2025-12-13
 

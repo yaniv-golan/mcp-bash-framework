@@ -1,0 +1,15 @@
+{
+  "name": "demo.completion",
+  "description": "Demo prompt that exposes a `query` argument so the Inspector UI can trigger completion/complete",
+  "path": "demo.completion.txt",
+  "arguments": {
+    "type": "object",
+    "properties": {
+      "query": {
+        "type": "string",
+        "description": "Text to complete"
+      }
+    }
+  }
+}
+
