@@ -7,6 +7,8 @@ For the full list of environment knobs and defaults, see [docs/ENV_REFERENCE.md]
 - `VERBOSE=1` streams per-test logs and re-enables JSON tooling discovery logs (default is quiet).
 - `UNICODE=1` uses ✅/❌; default output is ASCII `[PASS]/[FAIL]`.
 - `MCPBASH_LOG_JSON_TOOL=log` forces JSON tooling detection logs even when `VERBOSE` is off.
+- Integration runner: `MCPBASH_INTEGRATION_ONLY` / `MCPBASH_INTEGRATION_SKIP` filter which `test/integration/test_*.sh` scripts are executed (unknown names fail fast).
+- Integration runner: `MCPBASH_INTEGRATION_TEST_TIMEOUT_SECONDS` enforces a per-test watchdog timeout (a timeout fails the test and reports `[TIMEOUT]`).
 - Tar staging: CI turns it on (`MCPBASH_CI_MODE=1`); default is off locally. Override with `MCPBASH_STAGING_TAR=1` to force use or `=0` to disable.
 - Quick start (all suites): `./test/run-all.sh` (add `--skip-integration`/`--skip-examples`/`--skip-stress`/`--skip-smoke` as needed).
 

@@ -5,6 +5,13 @@ permissions:
 on:
   push:
   pull_request:
+  workflow_dispatch:
+    inputs:
+      windows_verbose:
+        description: 'Enable VERBOSE=1 on Windows for debugging'
+        required: false
+        default: false
+        type: boolean
   schedule:
     - cron: '0 6 * * 1'
 
@@ -177,16 +184,24 @@ jobs:
           MCPBASH_CI_VERBOSE: ${{ matrix.os == 'windows-latest' && 'true' || 'false' }}
           MCPBASH_TRACE_TOOLS: ${{ matrix.os == 'windows-latest' && 'true' || 'false' }}
           MCPBASH_INTEGRATION_TMP: ${{ runner.temp }}/mcpbash-integration
-          # Enable verbose output on Windows for easier debugging
-          VERBOSE: ${{ matrix.os == 'windows-latest' && '1' || '0' }}
+          # Default to non-verbose on Windows to reduce hang risk; enable via workflow_dispatch input when debugging.
+          VERBOSE: ${{ matrix.os == 'windows-latest' && github.event_name == 'workflow_dispatch' && inputs.windows_verbose == true && '1' || '0' }}
         run: |
           set -euo pipefail
+          if [ "${RUNNER_OS}" = "Windows" ]; then
+            if [ "${GITHUB_EVENT_NAME}" = "schedule" ] || [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+              export MCPBASH_INTEGRATION_TEST_TIMEOUT_SECONDS=300
+            else
+              export MCPBASH_INTEGRATION_ONLY="test_bootstrap.sh test_cli_scaffold_test.sh test_cli_validate.sh test_lifecycle_gating.sh test_windows_env_size_tools_call.sh test_windows_env_size_providers.sh test_resources.sh test_prompts.sh"
+              export MCPBASH_INTEGRATION_TEST_TIMEOUT_SECONDS=180
+            fi
+          fi
           start="$(date +%s)"
           test/integration/run.sh
           end="$(date +%s)"
           echo "duration=$((end - start))" >> "$GITHUB_OUTPUT"
       - name: Upload integration logs on failure
-        if: failure()
+        if: failure() || cancelled()
         uses: actions/upload-artifact@v4
         with:
           name: integration-logs-${{ matrix.os }}
@@ -210,9 +225,15 @@ jobs:
             exit 1
           fi
       - name: Examples suite
+        id: examples
         env:
           MCPBASH_STAGING_TAR: ${{ matrix.os == 'windows-latest' && '1' || '0' }}
-        run: test/examples/run.sh
+        run: |
+          set -euo pipefail
+          start="$(date +%s)"
+          test/examples/run.sh
+          end="$(date +%s)"
+          echo "duration=$((end - start))" >> "$GITHUB_OUTPUT"
 
       - name: Strict conformance (jq + gojq)
         if: matrix.os == 'ubuntu-latest'

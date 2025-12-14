@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Tool environment isolation no longer spawns external `env`; uses bash built-ins (`compgen -e`, `unset`) to avoid `E2BIG`/`Argument list too long` failures on Windows/Git Bash with large environments.
 - **BREAKING**: Completion/resource providers now run under a curated environment by default (`MCPBASH_PROVIDER_ENV_MODE=isolate`) to reduce `E2BIG` risk; opt into inheritance with `MCPBASH_PROVIDER_ENV_MODE=inherit` + `MCPBASH_PROVIDER_ENV_INHERIT_ALLOW=true` or selectively pass variables via `MCPBASH_PROVIDER_ENV_MODE=allowlist`.
 - **BREAKING**: `completion/complete` requests are now **spec-shape only** (MCP `2025-11-25`: `params.ref` + `params.argument`). The legacy `params.name`/`params.arguments` shape is no longer accepted.
+- CI: Windows integration runs default to non-verbose output and use a PR allowlist to reduce runtime; scheduled runs keep the full suite with per-test timeouts and better log preservation on cancellation.
 
 ### Fixed
 - Error-path JSON stderr logs no longer print full request payloads on parse/extract failures; logs now include bounded, single-line summaries (bytes/hash/excerpt).

@@ -38,6 +38,7 @@ trap cleanup_suite_tmp EXIT INT TERM
 
 PASS_ICON="[PASS]"
 FAIL_ICON="[FAIL]"
+TIMEOUT_ICON="[TIMEOUT]"
 if [ "${UNICODE}" = "1" ]; then
 	PASS_ICON="✅"
 	FAIL_ICON="❌"
@@ -51,6 +52,7 @@ TESTS=(
 	"test_conformance_strict_shapes.sh"
 	"test_installer.sh"
 	"test_tools.sh"
+	"test_tools_meta.sh"
 	"test_windows_env_size_tools_call.sh"
 	"test_windows_env_size_providers.sh"
 	"test_tools_policy.sh"
@@ -88,6 +90,71 @@ TESTS=(
 
 passed=0
 failed=0
+
+MCPBASH_INTEGRATION_TEST_TIMEOUT_SECONDS="${MCPBASH_INTEGRATION_TEST_TIMEOUT_SECONDS:-0}"
+export MCPBASH_INTEGRATION_TEST_TIMEOUT_SECONDS
+
+test_exists_in_suite() {
+	local want="$1"
+	local t
+	for t in "${TESTS[@]}"; do
+		if [ "${t}" = "${want}" ]; then
+			return 0
+		fi
+	done
+	return 1
+}
+
+apply_only_and_skip_filters() {
+	local only_raw="${MCPBASH_INTEGRATION_ONLY:-}"
+	local skip_raw="${MCPBASH_INTEGRATION_SKIP:-}"
+
+	local -a selected=()
+	local token
+
+	if [ -n "${only_raw}" ]; then
+		for token in ${only_raw}; do
+			if ! test_exists_in_suite "${token}"; then
+				printf 'Unknown test in MCPBASH_INTEGRATION_ONLY: %s\n' "${token}" >&2
+				exit 1
+			fi
+			local already=false
+			local s
+			for s in "${selected[@]}"; do
+				if [ "${s}" = "${token}" ]; then
+					already=true
+					break
+				fi
+			done
+			if [ "${already}" != true ]; then
+				selected+=("${token}")
+			fi
+		done
+	else
+		selected=("${TESTS[@]}")
+	fi
+
+	if [ -n "${skip_raw}" ]; then
+		for token in ${skip_raw}; do
+			if ! test_exists_in_suite "${token}"; then
+				printf 'Unknown test in MCPBASH_INTEGRATION_SKIP: %s\n' "${token}" >&2
+				exit 1
+			fi
+			local -a filtered=()
+			local s
+			for s in "${selected[@]}"; do
+				if [ "${s}" != "${token}" ]; then
+					filtered+=("${s}")
+				fi
+			done
+			selected=("${filtered[@]}")
+		done
+	fi
+
+	TESTS=("${selected[@]}")
+}
+
+apply_only_and_skip_filters
 total="${#TESTS[@]}"
 
 get_test_desc() {
@@ -108,29 +175,79 @@ get_test_desc() {
 	fi
 }
 
+run_with_timeout() {
+	local timeout_seconds="$1"
+	shift
+
+	"$@" &
+	local pid=$!
+
+	if [ "${timeout_seconds}" -le 0 ]; then
+		wait "${pid}"
+		return $?
+	fi
+
+	local deadline=$((SECONDS + timeout_seconds))
+	while kill -0 "${pid}" 2>/dev/null; do
+		if [ "${SECONDS}" -ge "${deadline}" ]; then
+			kill -TERM "${pid}" 2>/dev/null || true
+			sleep 2 2>/dev/null || sleep 2
+			kill -KILL "${pid}" 2>/dev/null || true
+			wait "${pid}" 2>/dev/null || true
+			return 124
+		fi
+		sleep 1 2>/dev/null || sleep 1
+	done
+
+	wait "${pid}"
+	return $?
+}
+
+run_verbose_test_to_log() {
+	local test_script="$1"
+	local log_file="$2"
+
+	(
+		set -o pipefail
+		bash "${SCRIPT_DIR}/${test_script}" 2>&1 | while IFS= read -r line || [ -n "${line}" ]; do
+			printf '[%s] %s\n' "${test_script}" "${line}"
+		done
+		exit "${PIPESTATUS[0]}"
+	) | tee "${log_file}"
+	return "${PIPESTATUS[0]}"
+}
+
+run_quiet_test_to_log() {
+	local test_script="$1"
+	local log_file="$2"
+	bash "${SCRIPT_DIR}/${test_script}" >"${log_file}" 2>&1
+}
+
 run_test() {
 	local test_script="$1"
 	local index="$2"
-	local desc log_file start end elapsed status
+	local desc log_file start end elapsed status timed_out status_icon
 	desc="$(get_test_desc "${test_script}")"
 	log_file="${LOG_DIR}/${test_script}.log"
 	start="$(date +%s)"
+	timed_out=false
 
 	if [ "${VERBOSE}" = "1" ]; then
-		(
-			set -o pipefail
-			bash "${SCRIPT_DIR}/${test_script}" 2>&1 | while IFS= read -r line || [ -n "${line}" ]; do
-				printf '[%s] %s\n' "${test_script}" "${line}"
-			done
-			exit "${PIPESTATUS[0]}"
-		) | tee "${log_file}"
-		status="${PIPESTATUS[0]}"
-	else
-		if bash "${SCRIPT_DIR}/${test_script}" >"${log_file}" 2>&1; then
+		if run_with_timeout "${MCPBASH_INTEGRATION_TEST_TIMEOUT_SECONDS}" run_verbose_test_to_log "${test_script}" "${log_file}"; then
 			status=0
 		else
 			status=$?
 		fi
+	else
+		if run_with_timeout "${MCPBASH_INTEGRATION_TEST_TIMEOUT_SECONDS}" run_quiet_test_to_log "${test_script}" "${log_file}"; then
+			status=0
+		else
+			status=$?
+		fi
+	fi
+
+	if [ "${status}" -eq 124 ]; then
+		timed_out=true
 	fi
 
 	end="$(date +%s)"
@@ -140,7 +257,11 @@ run_test() {
 		printf '[%02d/%02d] %s — %s ... %s (%ss)\n' "${index}" "${total}" "${test_script}" "${desc}" "${PASS_ICON}" "${elapsed}"
 		passed=$((passed + 1))
 	else
-		printf '[%02d/%02d] %s — %s ... %s (%ss)\n' "${index}" "${total}" "${test_script}" "${desc}" "${FAIL_ICON}" "${elapsed}" >&2
+		status_icon="${FAIL_ICON}"
+		if [ "${timed_out}" = true ]; then
+			status_icon="${TIMEOUT_ICON}"
+		fi
+		printf '[%02d/%02d] %s — %s ... %s (%ss)\n' "${index}" "${total}" "${test_script}" "${desc}" "${status_icon}" "${elapsed}" >&2
 		printf '  log: %s\n' "${log_file}" >&2
 		# Copy the failing test log into MCPBASH_LOG_DIR (CI uploads it reliably).
 		if command -v test_capture_failure_bundle >/dev/null 2>&1; then
