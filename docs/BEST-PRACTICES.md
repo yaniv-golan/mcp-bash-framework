@@ -535,7 +535,7 @@ fi
 - Capture stderr and propagate actionable diagnostics; see `examples/01-args-and-validation/tools/echo-arg/tool.sh:30-36` for human-readable error surfaces.
 - Wrap risky filesystem/network calls in helper functions so they can be retried or mocked in unit tests.
 - For richer tool failure context, enable `MCPBASH_TOOL_STDERR_CAPTURE` and tune `MCPBASH_TOOL_STDERR_TAIL_LIMIT` (default 4096 bytes). Timeouts include exit code and stderr tail when `MCPBASH_TOOL_TIMEOUT_CAPTURE` is on (default).
-- For tricky shell tools, opt into tracing with `MCPBASH_TRACE_TOOLS=true`; traces go to per-invocation logs under `MCPBASH_STATE_DIR` (cap via `MCPBASH_TRACE_MAX_BYTES`, adjust PS4 with `MCPBASH_TRACE_PS4`). Trace lines are added to `error.data.traceLine` when enabled.
+- For tricky shell tools, opt into tracing with `MCPBASH_TRACE_TOOLS=true`; traces go to per-invocation logs under `MCPBASH_STATE_DIR` (cap via `MCPBASH_TRACE_MAX_BYTES`, adjust PS4 with `MCPBASH_TRACE_PS4`). SDK helpers suppress xtrace around secret-bearing args/_meta payload expansions, but tools can still leak secrets if they print values explicitly. Trace lines are added to `error.data.traceLine` when enabled.
 
 ### 4.4 Logging & instrumentation
 - Use `MCPBASH_LOG_LEVEL` for startup defaults, then rely on `logging/setLevel` requests for runtime tuning (§6.2).

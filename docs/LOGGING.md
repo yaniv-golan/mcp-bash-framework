@@ -7,7 +7,7 @@
 - Argument values are never logged; debug traces focus on flow (method, ids, counts, byte sizes).
 - Startup diagnostics (transport, cwd, project root, JSON tool) are written to stderr only when `MCPBASH_LOG_STARTUP=true` or `MCPBASH_LOG_VERBOSE=true` while running over the stdio transport so stdout stays JSON-only for clients and Inspector.
 - Tool stderr capture is opt-in configurable: `MCPBASH_TOOL_STDERR_CAPTURE` (`true`/`false`), `MCPBASH_TOOL_STDERR_TAIL_LIMIT` (bytes, default 4096), and `MCPBASH_TOOL_TIMEOUT_CAPTURE` for timeouts.
-- Tool tracing is opt-in: set `MCPBASH_TRACE_TOOLS=true` to enable `set -x` for shell tools, with `PS4` override via `MCPBASH_TRACE_PS4` and trace size cap via `MCPBASH_TRACE_MAX_BYTES` (default 1MB).
+- Tool tracing is opt-in: set `MCPBASH_TRACE_TOOLS=true` to enable `set -x` for shell tools, with `PS4` override via `MCPBASH_TRACE_PS4` and trace size cap via `MCPBASH_TRACE_MAX_BYTES` (default 1MB). SDK helpers suppress xtrace around secret-bearing args/_meta payload expansions, but tools can still leak secrets if they print values explicitly.
 - CI mode (`MCPBASH_CI_MODE=true`) sets safe defaults for tmp root/log dir, keeps logs, enables timestamps (`MCPBASH_LOG_TIMESTAMP=true`), and can start at debug with `MCPBASH_CI_VERBOSE=true`. CI mode also writes `failure-summary.jsonl` and `env-snapshot.json` (PATH/env byte sizes + selected JSON tool metadata, no env dump) under the log dir and emits GitHub Actions `::error` annotations when tracing provides file/line.
 
 ## Verbose Mode (paths + script output)

@@ -1401,6 +1401,7 @@ mcp_tools_call() {
 		MCP_SDK="${MCPBASH_HOME}/sdk"
 		MCP_TOOL_NAME="${name}"
 		MCP_TOOL_PATH="${absolute_path}"
+		# NOTE: Assign secret-bearing MCP_TOOL_*_JSON values before enabling xtrace.
 		MCP_TOOL_ARGS_JSON="${args_env_value}"
 		MCP_TOOL_METADATA_JSON="${metadata_env_value}"
 		MCP_TOOL_META_JSON="${request_meta_env_value}"
@@ -1476,11 +1477,15 @@ mcp_tools_call() {
 				export MCP_ELICIT_RESPONSE_FILE="${elicit_response_file}"
 			fi
 			if [ "${trace_enabled}" = "true" ]; then
+				# Best-effort: ensure the trace file is not world-readable before xtrace
+				# starts writing. On Windows/Git Bash, chmod is best-effort; treat trace
+				# files as sensitive regardless.
+				: >"${trace_file}" 2>/dev/null || true
+				chmod 600 "${trace_file}" 2>/dev/null || true
 				if exec 9>"${trace_file}"; then
 					export BASH_XTRACEFD=9
 					export PS4="${trace_ps4}"
 					export MCPBASH_TRACE_FILE="${trace_file}"
-					: >"${trace_file}"
 				else
 					trace_active="false"
 				fi

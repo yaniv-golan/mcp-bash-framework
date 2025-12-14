@@ -21,6 +21,7 @@ mcp-bash keeps the attack surface small: every tool is a subprocess with a contr
 - Scope file access with `MCP_RESOURCES_ROOTS` (resources) and MCP Roots for tools (`MCPBASH_ROOTS`/`config/roots.json` when clients don’t provide roots); avoid mixing Windows/POSIX roots on Git-Bash/MSYS.
 - Logging defaults to `info` and follows RFC-5424 levels via `logging/setLevel`. Paths and manual-registration script output are redacted unless `MCPBASH_LOG_VERBOSE=true`; avoid enabling verbose mode in shared or remote environments as it exposes file paths, usernames, and cache locations.
 - Payload debug logs scrub common secret fields (best-effort) and should remain disabled in production; combining `MCPBASH_DEBUG_PAYLOADS=true` with remote access still risks secret exposure if logs are forwarded.
+- Tool tracing (`MCPBASH_TRACE_TOOLS=true`) is a debugging feature; treat trace files as potentially sensitive. The SDK suppresses xtrace around secret-bearing args/meta payload expansions, but tools can still leak secrets if they print values explicitly.
 - JSON parse/extract failure logs are bounded, single-line summaries (byte count, optional hash, sanitized excerpt) to reduce secret leakage and log injection risk. Do not rely on stderr logs to reconstruct full client requests.
   - When you need full request capture for debugging, do it in a controlled layer **outside** mcp-bash:
     - In the **host application** that bridges/feeds stdio (or a wrapper script), tee stdin to a protected file (strict permissions, short retention, and treat as secret-bearing).

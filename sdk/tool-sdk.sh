@@ -115,15 +115,64 @@ mcp_json_arr() {
 __mcp_sdk_payload_from_env() {
 	local inline="$1"
 	local file_path="$2"
+	# SECURITY: When xtrace is enabled (bash -x / set -x), avoid expanding
+	# secret-bearing JSON payloads as command arguments in trace output.
+	local _mcp_xtrace_was_on=false
+	case $- in
+	*x*)
+		_mcp_xtrace_was_on=true
+		set +x
+		;;
+	esac
+
 	if [ -n "${file_path}" ] && [ -f "${file_path}" ]; then
 		cat "${file_path}"
-		return 0
+	else
+		printf '%s' "${inline}"
 	fi
-	printf '%s' "${inline}"
+
+	if [ "${_mcp_xtrace_was_on}" = true ]; then
+		set -x
+	fi
+}
+
+__mcp_sdk_payload_from_env_vars() {
+	# SECURITY: Avoid passing secret-bearing payloads as function arguments when
+	# xtrace is enabled. Accept variable names and perform indirection with xtrace
+	# suspended so bash -x does not print full payloads into trace logs.
+	local inline_var="$1"
+	local file_var="$2"
+	local default_value="${3:-}"
+
+	local _mcp_xtrace_was_on=false
+	case $- in
+	*x*)
+		_mcp_xtrace_was_on=true
+		set +x
+		;;
+	esac
+
+	local file_path=""
+	if [ -n "${file_var}" ]; then
+		file_path="${!file_var:-}"
+	fi
+	if [ -n "${file_path}" ] && [ -f "${file_path}" ]; then
+		cat "${file_path}"
+	else
+		local inline="${default_value}"
+		if [ -n "${inline_var}" ]; then
+			inline="${!inline_var:-${default_value}}"
+		fi
+		printf '%s' "${inline}"
+	fi
+
+	if [ "${_mcp_xtrace_was_on}" = true ]; then
+		set -x
+	fi
 }
 
 mcp_args_raw() {
-	__mcp_sdk_payload_from_env "${MCP_TOOL_ARGS_JSON:-"{}"}" "${MCP_TOOL_ARGS_FILE:-}"
+	__mcp_sdk_payload_from_env_vars MCP_TOOL_ARGS_JSON MCP_TOOL_ARGS_FILE "{}"
 }
 
 # Request metadata helpers -----------------------------------------------------
@@ -134,7 +183,7 @@ mcp_args_raw() {
 
 mcp_meta_raw() {
 	# Return the raw _meta JSON from the tools/call request.
-	__mcp_sdk_payload_from_env "${MCP_TOOL_META_JSON:-"{}"}" "${MCP_TOOL_META_FILE:-}"
+	__mcp_sdk_payload_from_env_vars MCP_TOOL_META_JSON MCP_TOOL_META_FILE "{}"
 }
 
 mcp_meta_get() {
@@ -145,15 +194,29 @@ mcp_meta_get() {
 		printf ''
 		return 1
 	fi
+	local _mcp_xtrace_was_on=false
+	case $- in
+	*x*)
+		_mcp_xtrace_was_on=true
+		set +x
+		;;
+	esac
+
 	local payload
 	payload="$(mcp_meta_raw)"
+	local rc=0
 	if command -v "${MCPBASH_JSON_TOOL_BIN:-}" >/dev/null 2>&1; then
-		printf '%s' "${payload}" | "${MCPBASH_JSON_TOOL_BIN}" -rc "${filter}" 2>/dev/null
+		printf '%s' "${payload}" | "${MCPBASH_JSON_TOOL_BIN}" -rc "${filter}" 2>/dev/null || rc=$?
 	else
 		__mcp_sdk_warn "mcp_meta_get: JSON tooling unavailable; use mcp_meta_raw instead"
 		printf ''
-		return 1
+		rc=1
 	fi
+
+	if [ "${_mcp_xtrace_was_on}" = true ]; then
+		set -x
+	fi
+	return "${rc}"
 }
 
 # Extract a value from the arguments JSON using a jq filter (returns empty string if unavailable).
@@ -164,15 +227,29 @@ mcp_args_get() {
 		printf ''
 		return 1
 	fi
+	local _mcp_xtrace_was_on=false
+	case $- in
+	*x*)
+		_mcp_xtrace_was_on=true
+		set +x
+		;;
+	esac
+
 	local payload
 	payload="$(mcp_args_raw)"
+	local rc=0
 	if command -v "${MCPBASH_JSON_TOOL_BIN:-}" >/dev/null 2>&1; then
-		printf '%s' "${payload}" | "${MCPBASH_JSON_TOOL_BIN}" -rc "${filter}" 2>/dev/null
+		printf '%s' "${payload}" | "${MCPBASH_JSON_TOOL_BIN}" -rc "${filter}" 2>/dev/null || rc=$?
 	else
 		__mcp_sdk_warn "mcp_args_get: JSON tooling unavailable; use mcp_args_raw instead"
 		printf ''
-		return 1
+		rc=1
 	fi
+
+	if [ "${_mcp_xtrace_was_on}" = true ]; then
+		set -x
+	fi
+	return "${rc}"
 }
 
 mcp_args_require() {
