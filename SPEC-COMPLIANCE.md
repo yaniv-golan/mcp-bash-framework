@@ -31,7 +31,7 @@ This table shows when features were introduced in the MCP specification and when
 | **Resources** | | | | |
 | Resources (list/read) | 2024-11-05 | 0.1.0 | ✅ Full | File/HTTPS/Git providers |
 | Resource Subscriptions | 2024-11-05 | 0.1.0 | ✅ Full | Change notifications |
-| Resource Templates | 2024-11-05 | 0.6.1 | ✅ Full | Auto-discovery + manual registration with hash-based pagination |
+| Resource Templates | 2024-11-05 | 0.7.0 | ✅ Full | Auto-discovery + manual registration with hash-based pagination |
 | Resource Icons (SEP-973) | 2025-11-25 | 0.5.0 | ✅ Full | Local files converted to data URIs |
 | Resources listChanged Notification | 2025-06-18 | 0.1.0 | ✅ Full | Registry change detection |
 | Binary-safe Resource Payloads | 2024-11-05 | 0.6.0 | ✅ Full | Detect binary MIME and emit `blob` base64 instead of raw text |
