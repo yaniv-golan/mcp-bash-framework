@@ -338,7 +338,7 @@ Framework (Install Once)               Your Project (Version Control This)
 
 ## Direct Tool Execution (run-tool)
 
-Use `run-tool` to invoke a single tool without starting the full MCP server. This wires the same environment as the server (SDK path, args, metadata, roots). Tool names must match `^[a-zA-Z0-9_-]{1,64}$`; Some clients, including Claude Desktop, enforces this and rejects dotted names, so prefer hyphens/underscores for namespaces.
+Use `run-tool` to invoke a single tool without starting the full MCP server. This wires the same environment as the server (SDK path, args, metadata, roots). Tool names must match `^[a-zA-Z0-9_-]{1,64}$`; some clients, including Claude Desktop, enforce this and reject dotted names, so prefer hyphens/underscores for namespaces.
 
 ```bash
 # Basic invocation (project inferred from CWD or MCPBASH_PROJECT_ROOT)
