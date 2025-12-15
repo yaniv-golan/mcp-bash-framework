@@ -79,7 +79,7 @@ chmod -x "${ROOT}/completions/suggest.sh" 2>/dev/null || true
 
 mkdir -p "${ROOT}/prompts"
 cat <<'EOF_PROMPT' >"${ROOT}/prompts/alpha.txt"
-Hello ${name}!
+Hello {{name}}!
 EOF_PROMPT
 cat <<'EOF_META' >"${ROOT}/prompts/alpha.meta.json"
 {"name": "prompt.alpha", "description": "Alpha prompt", "arguments": {"type": "object", "properties": {"name": {"type": "string"}}}, "role": "system"}

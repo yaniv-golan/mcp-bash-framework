@@ -568,11 +568,12 @@ mcp_env_apply_curated_policy() {
 	fi
 
 	local env_key
-	for env_key in $(compgen -e); do
+	local to_unset=()
+	while IFS= read -r env_key; do
 		case "${policy}:${env_key}" in
 		prompt-subst:PATH) ;;
 		prompt-subst:*)
-			unset "${env_key}" 2>/dev/null || true
+			to_unset+=("${env_key}")
 			;;
 		provider:PATH | provider:HOME | provider:TMPDIR | provider:TMP | provider:TEMP | provider:LANG | provider:LC_ALL) ;;
 		provider:USERPROFILE | provider:APPDATA | provider:SYSTEMROOT | provider:MSYSTEM | provider:MSYS2_ARG_CONV_EXCL) ;;
@@ -582,14 +583,23 @@ mcp_env_apply_curated_policy() {
 			if [ "${env_mode}" = "allowlist" ]; then
 				case "${allowlist_names}" in
 				*" ${env_key} "*) ;;
-				*) unset "${env_key}" 2>/dev/null || true ;;
+				*) to_unset+=("${env_key}") ;;
 				esac
 			else
-				unset "${env_key}" 2>/dev/null || true
+				to_unset+=("${env_key}")
 			fi
 			;;
 		esac
-	done
+	done < <(compgen -e)
+
+	if [ "${#to_unset[@]}" -gt 0 ]; then
+		local chunk=200
+		local i=0
+		while [ "${i}" -lt "${#to_unset[@]}" ]; do
+			unset "${to_unset[@]:i:chunk}" 2>/dev/null || true
+			i=$((i + chunk))
+		done
+	fi
 
 	case "${policy}" in
 	prompt-subst)

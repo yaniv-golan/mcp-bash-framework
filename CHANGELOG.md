@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Completion providers, resource providers, and prompt rendering no longer rely on spawning external `env` in their execution paths (improves Windows/Git Bash reliability with large environments).
 - CI env snapshots no longer rely on spawning external `env` when estimating environment size.
 - Resource provider execution no longer breaks under Bash 3.2 `set -u` when running in curated environments (fixes macOS CI integration failures).
+- Windows/Git Bash: curated provider env scrubbing is faster (batch unsets), avoiding provider-suite timeouts under very large environments.
 
 ### Documentation
 - Expanded MCP Inspector troubleshooting (origin allowlist + large `PATH` causing connect failures) and clarified completion request shape expectations in completion docs/examples.
