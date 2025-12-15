@@ -103,10 +103,9 @@ cat <<JSON >"${ROOT}/requests_completion_only.ndjson"
 {"jsonrpc":"2.0","id":"c1","method":"completion/complete","params":{"ref":{"type":"ref/prompt","name":"example"},"argument":{"name":"query","value":"x"},"limit":2}}
 JSON
 
-(
-	cd "${ROOT}" || exit 1
-	inflate_environment
-)
+# Inflate the environment once (persistently) to keep the test fast while still
+# exercising large-env behavior for both run cases.
+inflate_environment
 
 run_case() {
 	local label="$1"
