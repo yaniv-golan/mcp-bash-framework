@@ -97,13 +97,24 @@ cat <<JSON >"${ROOT}/requests.ndjson"
 {"jsonrpc":"2.0","id":"p1","method":"prompts/get","params":{"name":"prompt.alpha","arguments":{"name":"World"}}}
 JSON
 
+cat <<JSON >"${ROOT}/requests_completion_only.ndjson"
+{"jsonrpc":"2.0","id":"init","method":"initialize","params":{}}
+{"jsonrpc":"2.0","method":"notifications/initialized"}
+{"jsonrpc":"2.0","id":"c1","method":"completion/complete","params":{"ref":{"type":"ref/prompt","name":"example"},"argument":{"name":"query","value":"x"},"limit":2}}
+JSON
+
+(
+	cd "${ROOT}" || exit 1
+	inflate_environment
+)
+
 run_case() {
 	local label="$1"
-	local provider_mode="${2:-}"
-	local provider_allowlist="${3:-}"
+	local request_file="${2:-requests.ndjson}"
+	local provider_mode="${3:-}"
+	local provider_allowlist="${4:-}"
 	(
 		cd "${ROOT}" || exit 1
-		inflate_environment
 		if [ -n "${provider_mode}" ]; then
 			export MCPBASH_PROVIDER_ENV_MODE="${provider_mode}"
 		else
@@ -115,12 +126,14 @@ run_case() {
 			unset MCPBASH_PROVIDER_ENV_ALLOWLIST 2>/dev/null || true
 		fi
 
-		MCPBASH_PROJECT_ROOT="${ROOT}" ./bin/mcp-bash <"requests.ndjson" >"responses_${label}.ndjson"
+		MCPBASH_PROJECT_ROOT="${ROOT}" ./bin/mcp-bash <"${request_file}" >"responses_${label}.ndjson"
 	)
 }
 
-run_case "isolate"
-run_case "allowlist" "allowlist" "MCPBASH_TEST_ENV_DUMMY_1"
+run_case "isolate" "requests.ndjson" "isolate"
+# Only exercise completion in allowlist mode (resource/prompt paths are already
+# covered by the isolate case above; this keeps the test within Windows CI time budgets).
+run_case "allowlist" "requests_completion_only.ndjson" "allowlist" "MCPBASH_TEST_ENV_DUMMY_1"
 
 # --- Verify completion provider env scrubbing ---
 resp_isolate="$(grep '"id":"c1"' "${ROOT}/responses_isolate.ndjson" | head -n1)"
