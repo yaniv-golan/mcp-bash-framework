@@ -892,7 +892,10 @@ mcp_core_worker_cleanup() {
 	fi
 
 	if [ -n "${stderr_file}" ] && [ -f "${stderr_file}" ]; then
-		rm -f "${stderr_file}"
+		# Preserve worker stderr when explicitly requested (useful for CI/debugging).
+		if [ "${MCPBASH_PRESERVE_STATE:-false}" != "true" ]; then
+			rm -f "${stderr_file}"
+		fi
 	fi
 }
 

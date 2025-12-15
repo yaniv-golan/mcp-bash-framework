@@ -595,13 +595,6 @@ mcp_prompts_render() {
 		export_pairs=""
 	fi
 
-	local envsubst_bin=""
-	envsubst_bin="$(command -v envsubst 2>/dev/null || true)"
-	if [ -z "${envsubst_bin}" ] || [ ! -x "${envsubst_bin}" ]; then
-		mcp_prompts_error -32603 "envsubst not available"
-		return 1
-	fi
-
 	local env_pairs=()
 	while IFS=$'\t' read -r export_key export_value; do
 		[ -z "${export_key}" ] && continue
@@ -614,10 +607,21 @@ mcp_prompts_render() {
 	done <<<"${export_pairs}"
 
 	local text
-	# Security: emulate `env -i` by scrubbing the environment before running envsubst,
-	# and export only the allowed key/value pairs derived from args.
-	if ! text="$(mcp_env_run_curated prompt-subst "${env_pairs[@]}" -- "${envsubst_bin}" <"${full_path}")"; then
-		return 1
+	text="$(cat -- "${full_path}" 2>/dev/null || true)"
+
+	# Support {{var}} placeholders using the allowed key/value pairs.
+	if [ -n "${export_pairs}" ]; then
+		while IFS=$'\t' read -r export_key export_value; do
+			[ -n "${export_key}" ] || continue
+			case "${export_value}" in
+			*$'\n'*)
+				continue
+				;;
+			esac
+			local escaped_value
+			escaped_value="$(printf '%s' "${export_value}" | sed -e 's/[\\&|]/\\&/g')"
+			text="$(printf '%s' "${text}" | sed -e "s|{{${export_key}}}|${escaped_value}|g")"
+		done <<<"${export_pairs}"
 	fi
 
 	mcp_prompts_emit_render_result "${text}" "${normalized_args}" "${role}" "${description}" "${metadata_value}"

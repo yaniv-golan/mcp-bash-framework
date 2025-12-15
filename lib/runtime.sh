@@ -640,15 +640,18 @@ mcp_env_run_curated() {
 	fi
 
 	local pair key value
-	for pair in "${injected_pairs[@]}"; do
-		key="${pair%%=*}"
-		value="${pair#*=}"
-		if ! [[ "${key}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
-			printf '%s\n' "mcp-bash: invalid env var name in curated env: ${key}" >&2
-			return 1
-		fi
-		export "${key}=${value}"
-	done
+	# Bash 3.2 + `set -u`: expanding an empty array triggers "unbound variable".
+	if [ "${#injected_pairs[@]}" -gt 0 ]; then
+		for pair in "${injected_pairs[@]}"; do
+			key="${pair%%=*}"
+			value="${pair#*=}"
+			if ! [[ "${key}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+				printf '%s\n' "mcp-bash: invalid env var name in curated env: ${key}" >&2
+				return 1
+			fi
+			export "${key}=${value}"
+		done
+	fi
 
 	exec "$@"
 }
@@ -940,7 +943,7 @@ mcp_runtime_set_process_group() {
 
 	# Check if the process is already its own group leader (job control worked)
 	local pgid
-	pgid="$(ps -o pgid= -p "${pid}" 2>/dev/null | tr -d ' ')"
+	pgid="$(ps -o pgid= -p "${pid}" 2>/dev/null | tr -d ' ' || true)"
 	if [ -n "${pgid}" ] && [ "${pgid}" = "${pid}" ]; then
 		return 0
 	fi
@@ -956,7 +959,7 @@ mcp_runtime_lookup_pgid() {
 	[ -n "${pid}" ] || return 1
 
 	# Use ps to look up the process group ID (POSIX-compliant)
-	pgid="$(ps -o pgid= -p "${pid}" 2>/dev/null | tr -d ' ')"
+	pgid="$(ps -o pgid= -p "${pid}" 2>/dev/null | tr -d ' ' || true)"
 
 	# Fallback to assuming pid == pgid if ps fails
 	if [ -z "${pgid}" ]; then

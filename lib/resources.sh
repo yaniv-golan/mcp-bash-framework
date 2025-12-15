@@ -1471,45 +1471,51 @@ mcp_resources_read_via_provider() {
 	fi
 
 	if [ "${#provider_runner[@]}" -gt 0 ]; then
+		local tmp_out
+		tmp_out="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-resource-provider.out.XXXXXX")"
 		local tmp_err
 		tmp_err="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-resource-provider.XXXXXX")"
-		local output status
-		if output="$(
-			(
-				local env_pairs=(
-					"MCPBASH_HOME=${MCPBASH_HOME}"
-					"MCP_RESOURCES_ROOTS=${MCP_RESOURCES_ROOTS:-${MCPBASH_RESOURCES_DIR}}"
-				)
-				case "${provider}" in
-				git)
-					if [ -n "${SSH_AUTH_SOCK-}" ]; then env_pairs+=("SSH_AUTH_SOCK=${SSH_AUTH_SOCK}"); fi
-					if [ -n "${GIT_SSH_COMMAND-}" ]; then env_pairs+=("GIT_SSH_COMMAND=${GIT_SSH_COMMAND}"); fi
-					if [ -n "${GIT_ASKPASS-}" ]; then env_pairs+=("GIT_ASKPASS=${GIT_ASKPASS}"); fi
-					;;
-				https)
-					if [ -n "${SSL_CERT_FILE-}" ]; then env_pairs+=("SSL_CERT_FILE=${SSL_CERT_FILE}"); fi
-					if [ -n "${SSL_CERT_DIR-}" ]; then env_pairs+=("SSL_CERT_DIR=${SSL_CERT_DIR}"); fi
-					if [ -n "${CURL_CA_BUNDLE-}" ]; then env_pairs+=("CURL_CA_BUNDLE=${CURL_CA_BUNDLE}"); fi
-					;;
-				esac
-				if [ -n "${http_proxy-}" ]; then env_pairs+=("http_proxy=${http_proxy}"); fi
-				if [ -n "${https_proxy-}" ]; then env_pairs+=("https_proxy=${https_proxy}"); fi
-				if [ -n "${no_proxy-}" ]; then env_pairs+=("no_proxy=${no_proxy}"); fi
-				if [ -n "${HTTP_PROXY-}" ]; then env_pairs+=("HTTP_PROXY=${HTTP_PROXY}"); fi
-				if [ -n "${HTTPS_PROXY-}" ]; then env_pairs+=("HTTPS_PROXY=${HTTPS_PROXY}"); fi
-				if [ -n "${NO_PROXY-}" ]; then env_pairs+=("NO_PROXY=${NO_PROXY}"); fi
+		local status=0
+		if (
+			local env_pairs=(
+				"MCPBASH_HOME=${MCPBASH_HOME}"
+				"MCP_RESOURCES_ROOTS=${MCP_RESOURCES_ROOTS:-${MCPBASH_RESOURCES_DIR}}"
+			)
+			case "${provider}" in
+			git)
+				if [ -n "${SSH_AUTH_SOCK-}" ]; then env_pairs+=("SSH_AUTH_SOCK=${SSH_AUTH_SOCK-}"); fi
+				if [ -n "${GIT_SSH_COMMAND-}" ]; then env_pairs+=("GIT_SSH_COMMAND=${GIT_SSH_COMMAND-}"); fi
+				if [ -n "${GIT_ASKPASS-}" ]; then env_pairs+=("GIT_ASKPASS=${GIT_ASKPASS-}"); fi
+				;;
+			https)
+				if [ -n "${SSL_CERT_FILE-}" ]; then env_pairs+=("SSL_CERT_FILE=${SSL_CERT_FILE-}"); fi
+				if [ -n "${SSL_CERT_DIR-}" ]; then env_pairs+=("SSL_CERT_DIR=${SSL_CERT_DIR-}"); fi
+				if [ -n "${CURL_CA_BUNDLE-}" ]; then env_pairs+=("CURL_CA_BUNDLE=${CURL_CA_BUNDLE-}"); fi
+				;;
+			esac
+			if [ -n "${http_proxy-}" ]; then env_pairs+=("http_proxy=${http_proxy-}"); fi
+			if [ -n "${https_proxy-}" ]; then env_pairs+=("https_proxy=${https_proxy-}"); fi
+			if [ -n "${no_proxy-}" ]; then env_pairs+=("no_proxy=${no_proxy-}"); fi
+			if [ -n "${HTTP_PROXY-}" ]; then env_pairs+=("HTTP_PROXY=${HTTP_PROXY-}"); fi
+			if [ -n "${HTTPS_PROXY-}" ]; then env_pairs+=("HTTPS_PROXY=${HTTPS_PROXY-}"); fi
+			if [ -n "${NO_PROXY-}" ]; then env_pairs+=("NO_PROXY=${NO_PROXY-}"); fi
 
-				mcp_env_run_curated provider "${env_pairs[@]}" -- "${provider_runner[@]}" "${uri}"
-			) 2>"${tmp_err}"
-		)"; then
+			# Bash 3.2 + `set -u`: expanding an empty array triggers "unbound variable".
+			mcp_env_run_curated provider ${env_pairs[@]:+"${env_pairs[@]}"} -- "${provider_runner[@]}" "${uri}"
+		) >"${tmp_out}" 2>"${tmp_err}"; then
+			status=0
+		else
+			status=$?
+		fi
+		if [ "${status}" -eq 0 ]; then
 			rm -f "${tmp_err}"
-			printf '%s' "${output}"
+			cat "${tmp_out}"
+			rm -f "${tmp_out}"
 			return 0
 		fi
-		status=$?
 		local message
 		message="$(cat "${tmp_err}" 2>/dev/null || true)"
-		rm -f "${tmp_err}"
+		rm -f "${tmp_err}" "${tmp_out}"
 		case "${status}" in
 		2)
 			mcp_resources_error -32603 "Resource outside allowed roots"

@@ -30,7 +30,7 @@ rm -f "${AUTO_ROOT}/server.d/register.sh"
 mkdir -p "${AUTO_ROOT}/prompts"
 
 cat <<'EOF_PROMPT' >"${AUTO_ROOT}/prompts/alpha.txt"
-Hello ${name}!
+Hello {{name}}!
 EOF_PROMPT
 
 cat <<'EOF_META' >"${AUTO_ROOT}/prompts/alpha.meta.json"
@@ -38,7 +38,7 @@ cat <<'EOF_META' >"${AUTO_ROOT}/prompts/alpha.meta.json"
 EOF_META
 
 cat <<'EOF_PROMPT' >"${AUTO_ROOT}/prompts/beta.txt"
-Beta prompt for ${topic}
+Beta prompt for {{topic}}
 EOF_PROMPT
 
 cat <<'EOF_META' >"${AUTO_ROOT}/prompts/beta.meta.json"
@@ -95,11 +95,11 @@ rm -rf "${MANUAL_ROOT}/prompts"
 mkdir -p "${MANUAL_ROOT}/prompts/manual"
 
 cat <<'EOF_PROMPT' >"${MANUAL_ROOT}/prompts/manual/greet.txt"
-Greetings ${name}, welcome aboard.
+Greetings {{name}}, welcome aboard.
 EOF_PROMPT
 
 cat <<'EOF_PROMPT' >"${MANUAL_ROOT}/prompts/manual/farewell.txt"
-Goodbye ${name}, see you soon.
+Goodbye {{name}}, see you soon.
 EOF_PROMPT
 
 cat <<'EOF_SCRIPT' >"${MANUAL_ROOT}/server.d/register.sh"

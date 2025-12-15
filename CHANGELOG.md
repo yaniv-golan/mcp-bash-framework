@@ -13,7 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Tool environment isolation no longer spawns external `env`; uses bash built-ins (`compgen -e`, `unset`) to avoid `E2BIG`/`Argument list too long` failures on Windows/Git Bash with large environments.
 - **BREAKING**: Completion/resource providers now run under a curated environment by default (`MCPBASH_PROVIDER_ENV_MODE=isolate`) to reduce `E2BIG` risk; opt into inheritance with `MCPBASH_PROVIDER_ENV_MODE=inherit` + `MCPBASH_PROVIDER_ENV_INHERIT_ALLOW=true` or selectively pass variables via `MCPBASH_PROVIDER_ENV_MODE=allowlist`.
 - **BREAKING**: `completion/complete` requests are now **spec-shape only** (MCP `2025-11-25`: `params.ref` + `params.argument`). The legacy `params.name`/`params.arguments` shape is no longer accepted.
+- **BREAKING**: Prompt templating only substitutes `{{var}}` placeholders from `prompts/get` arguments; other placeholder syntaxes are treated as literal text.
 - CI: Windows integration runs default to non-verbose output and use a PR allowlist to reduce runtime; scheduled runs keep the full suite with per-test timeouts and better log preservation on cancellation.
+- When `MCPBASH_PRESERVE_STATE=true`, per-request worker stderr logs (`stderr.*.log`) are preserved for debugging.
 
 ### Fixed
 - Error-path JSON stderr logs no longer print full request payloads on parse/extract failures; logs now include bounded, single-line summaries (bytes/hash/excerpt).
@@ -21,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Completion results are now spec-shaped: `result.completion.values` is emitted as `string[]` (MCP `2025-11-25`).
 - Completion providers, resource providers, and prompt rendering no longer rely on spawning external `env` in their execution paths (improves Windows/Git Bash reliability with large environments).
 - CI env snapshots no longer rely on spawning external `env` when estimating environment size.
+- Resource provider execution no longer breaks under Bash 3.2 `set -u` when running in curated environments (fixes macOS CI integration failures).
 
 ### Documentation
 - Expanded MCP Inspector troubleshooting (origin allowlist + large `PATH` causing connect failures) and clarified completion request shape expectations in completion docs/examples.
