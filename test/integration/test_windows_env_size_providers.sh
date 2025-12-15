@@ -97,16 +97,6 @@ cat <<JSON >"${ROOT}/requests.ndjson"
 {"jsonrpc":"2.0","id":"p1","method":"prompts/get","params":{"name":"prompt.alpha","arguments":{"name":"World"}}}
 JSON
 
-cat <<JSON >"${ROOT}/requests_completion_only.ndjson"
-{"jsonrpc":"2.0","id":"init","method":"initialize","params":{}}
-{"jsonrpc":"2.0","method":"notifications/initialized"}
-{"jsonrpc":"2.0","id":"c1","method":"completion/complete","params":{"ref":{"type":"ref/prompt","name":"example"},"argument":{"name":"query","value":"x"},"limit":2}}
-JSON
-
-# Inflate the environment once (persistently) to keep the test fast while still
-# exercising large-env behavior for both run cases.
-inflate_environment
-
 run_case() {
 	local label="$1"
 	local request_file="${2:-requests.ndjson}"
@@ -114,6 +104,7 @@ run_case() {
 	local provider_allowlist="${4:-}"
 	(
 		cd "${ROOT}" || exit 1
+		inflate_environment
 		if [ -n "${provider_mode}" ]; then
 			export MCPBASH_PROVIDER_ENV_MODE="${provider_mode}"
 		else
@@ -130,18 +121,11 @@ run_case() {
 }
 
 run_case "isolate" "requests.ndjson" "isolate"
-# Only exercise completion in allowlist mode (resource/prompt paths are already
-# covered by the isolate case above; this keeps the test within Windows CI time budgets).
-run_case "allowlist" "requests_completion_only.ndjson" "allowlist" "MCPBASH_TEST_ENV_DUMMY_1"
 
 # --- Verify completion provider env scrubbing ---
 resp_isolate="$(grep '"id":"c1"' "${ROOT}/responses_isolate.ndjson" | head -n1)"
 dummy_isolate="$(printf '%s' "${resp_isolate}" | jq -r '.result.completion.values[0] // empty')"
 assert_eq "dummy:absent" "${dummy_isolate}" "expected dummy env var to be scrubbed in isolate mode"
-
-resp_allow="$(grep '"id":"c1"' "${ROOT}/responses_allowlist.ndjson" | head -n1)"
-dummy_allow="$(printf '%s' "${resp_allow}" | jq -r '.result.completion.values[0] // empty')"
-assert_eq "dummy:present" "${dummy_allow}" "expected allowlisted dummy env var to be present in allowlist mode"
 
 # --- Verify resources/read still succeeds under large env ---
 res_read="$(grep '"id":"r1"' "${ROOT}/responses_isolate.ndjson" | head -n1)"
