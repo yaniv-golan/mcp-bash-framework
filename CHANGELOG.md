@@ -5,7 +5,7 @@ All notable changes to mcp-bash-framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.8.0] - 2025-12-15
+## [0.8.0] - 2025-12-16
 
 ### Added
 
@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dev: Unit test runner supports filtering and enforces per-test timeouts (`MCPBASH_UNIT_TEST_TIMEOUT_SECONDS`) to avoid hangs and orphaned subprocesses.
 
 ### Fixed
+- `mcp-bash validate` no longer warns about directory/tool name mismatches when tool names use the server namespace prefix with camelCase (e.g., `git-hex-cherryPickSingle` in a `cherry-pick-single` directory). The validator now strips the server name prefix from `server.meta.json` before comparing.
 - Error-path JSON stderr logs no longer print full request payloads on parse/extract failures; logs now include bounded, single-line summaries (bytes/hash/excerpt).
 - Tool tracing no longer dumps full args/_meta payloads into xtrace output for SDK helpers; traces remain usable while reducing accidental secret leakage.
 - Completion results are now spec-shaped: `result.completion.values` is emitted as `string[]` (MCP `2025-11-25`).

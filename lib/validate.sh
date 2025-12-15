@@ -101,10 +101,29 @@ mcp_validate_tools() {
 						fi
 						if [ -n "${t_name}" ] && [ "${t_name}" != "${tool_name}" ]; then
 							# Allow namespace.camelCase names to coexist with kebab-case dirs.
-							# Normalize by stripping namespace, lowercasing, and removing non-alnum.
-							local t_norm dir_norm
-							t_norm="$(printf '%s' "${t_name##*.}" | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:]')"
+							# Strip server prefix (hyphen-delimited) or dot-delimited namespace,
+							# then normalize (lowercase + remove non-alnum) for kebab↔camel comparison.
+							local t_stripped t_norm dir_norm
+							t_stripped="${t_name}"
+
+							# 1. Strip hyphen-prefixed server namespace (e.g., "git-hex-cherryPick" → "cherryPick")
+							if [ -n "${MCPBASH_SERVER_NAME:-}" ] && [ "${MCPBASH_SERVER_NAME}" != "${MCPBASH_SERVER_NAME%-}" ]; then
+								# Server name shouldn't end with hyphen; normalize it
+								local srv_prefix="${MCPBASH_SERVER_NAME%-}-"
+							else
+								local srv_prefix="${MCPBASH_SERVER_NAME:-}-"
+							fi
+							if [ -n "${MCPBASH_SERVER_NAME:-}" ] && [[ "${t_stripped}" == "${srv_prefix}"* ]]; then
+								t_stripped="${t_stripped#"${srv_prefix}"}"
+							fi
+
+							# 2. Strip dot-prefixed namespace (e.g., "example.hello" → "hello")
+							t_stripped="${t_stripped##*.}"
+
+							# 3. Normalize: lowercase + remove non-alphanumeric (handles kebab↔camel)
+							t_norm="$(printf '%s' "${t_stripped}" | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:]')"
 							dir_norm="$(printf '%s' "${tool_name}" | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:]')"
+
 							if [ "${t_norm}" != "${dir_norm}" ]; then
 								printf '⚠ tools/%s - directory name does not match tool.meta.json name "%s"\n' "${tool_name}" "${t_name}"
 								warnings=$((warnings + 1))

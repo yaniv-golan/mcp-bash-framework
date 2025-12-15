@@ -80,6 +80,21 @@ echo "no-shebang"
 SH
 chmod +x "${ERROR_ROOT}/tools/no-shebang/tool.sh"
 
+# server-prefix + camelCase name with kebab-case dir (should NOT warn)
+mkdir -p "${ERROR_ROOT}/tools/my-tool"
+cat >"${ERROR_ROOT}/tools/my-tool/tool.meta.json" <<'META'
+{
+  "name": "validate-errors-myTool",
+  "description": "Tool with server prefix and camelCase",
+  "inputSchema": { "type": "object" }
+}
+META
+cat >"${ERROR_ROOT}/tools/my-tool/tool.sh" <<'SH'
+#!/usr/bin/env bash
+echo "my-tool"
+SH
+chmod +x "${ERROR_ROOT}/tools/my-tool/tool.sh"
+
 set +e
 error_output="$(
 	cd "${ERROR_ROOT}" && "${MCPBASH_TEST_ROOT}/bin/mcp-bash" validate 2>&1
@@ -95,6 +110,11 @@ assert_contains "tools/invalid/tool.meta.json - invalid JSON" "${error_output}" 
 assert_contains "tools/no-name/tool.meta.json - missing required \"name\"" "${error_output}" "expected missing name error"
 assert_contains "tools/mismatch - directory name does not match tool.meta.json name \"other-name\"" "${error_output}" "expected name mismatch warning"
 assert_contains "tools/no-shebang/tool.sh - missing shebang" "${error_output}" "expected missing shebang warning"
+
+# Server-prefix + camelCase name with kebab-case dir should NOT warn (DX improvement)
+if printf '%s\n' "${error_output}" | grep -q 'tools/my-tool - directory name does not match'; then
+	test_fail "validate incorrectly warned about server-prefix + camelCase name (my-tool vs validate-errors-myTool)"
+fi
 
 # --- --fix flow (skip on Windows Git Bash) ---
 case "$(uname -s 2>/dev/null)" in
