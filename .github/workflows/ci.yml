@@ -181,8 +181,8 @@ jobs:
           MCPBASH_LOG_DIR: ${{ runner.temp }}/mcpbash-logs
           MCPBASH_LOG_TIMESTAMP: "true"
           MCPBASH_KEEP_LOGS: "true"
-          MCPBASH_CI_VERBOSE: ${{ matrix.os == 'windows-latest' && 'true' || 'false' }}
-          MCPBASH_TRACE_TOOLS: ${{ matrix.os == 'windows-latest' && 'true' || 'false' }}
+          MCPBASH_CI_VERBOSE: ${{ matrix.os == 'windows-latest' && github.event_name == 'workflow_dispatch' && inputs.windows_verbose == true && 'true' || 'false' }}
+          MCPBASH_TRACE_TOOLS: ${{ matrix.os == 'windows-latest' && github.event_name == 'workflow_dispatch' && inputs.windows_verbose == true && 'true' || 'false' }}
           MCPBASH_INTEGRATION_TMP: ${{ runner.temp }}/mcpbash-integration
           # Default to non-verbose on Windows to reduce hang risk; enable via workflow_dispatch input when debugging.
           VERBOSE: ${{ matrix.os == 'windows-latest' && github.event_name == 'workflow_dispatch' && inputs.windows_verbose == true && '1' || '0' }}
@@ -193,7 +193,7 @@ jobs:
               export MCPBASH_INTEGRATION_TEST_TIMEOUT_SECONDS=300
             else
               export MCPBASH_INTEGRATION_ONLY="test_bootstrap.sh test_cli_scaffold_test.sh test_cli_validate.sh test_lifecycle_gating.sh test_windows_env_size_tools_call.sh test_windows_env_size_providers.sh test_resources.sh test_prompts.sh"
-              export MCPBASH_INTEGRATION_TEST_TIMEOUT_SECONDS=180
+              export MCPBASH_INTEGRATION_TEST_TIMEOUT_SECONDS=240
             fi
           fi
           start="$(date +%s)"
@@ -208,6 +208,8 @@ jobs:
           path: |
             ${{ runner.temp }}/mcpbash-integration/logs/
             ${{ runner.temp }}/mcpbash-logs
+            ${{ runner.temp }}/mcpbash.state.*
+            ${{ runner.temp }}/mcpbash.bootstrap.*
           retention-days: 7
       - name: Enforce Windows integration budget
         if: matrix.os == 'windows-latest'
