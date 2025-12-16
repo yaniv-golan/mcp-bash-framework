@@ -45,6 +45,7 @@ See [DEBUGGING.md](DEBUGGING.md) for log analysis tooling.
 
 - **Optional fields**: if a field is optional and typed as `string`, prefer **omitting** it instead of emitting `null`.
   - Examples: `nextCursor` in list results, `nextCursor` in `completion/complete`.
+- **Resource templates discoverability**: templates are accessed via `resources/templates/list`, but are not advertised via a dedicated server capability flag; probe the method (and treat `-32601` as “unsupported”).
 - **prompts/list `arguments`**: must be an **array** of `{name, description?, required?}`, not a JSON Schema object.
 - **prompts/get message content**: `messages[].content` is a **single content object**, not an array.
 - **resources/read is URI-addressed**: custom providers need metadata to be found by `uri`.
@@ -87,4 +88,3 @@ This repo includes a strict conformance test that exercises the same shape const
 
 - `test/integration/test_conformance_strict_shapes.sh`
 - `test/conformance/run.sh` (runs conformance under `jq` and `gojq` when available)
-

@@ -171,7 +171,7 @@ Key behaviors:
 - Template names may not collide with resource names; conflicts are skipped with a warning. Manual templates override auto-discovered templates that share a name.
 - Discovery results are cached in `.registry/resource-templates.json` with hash-based pagination. TTL is controlled via `MCP_RESOURCES_TEMPLATES_TTL` (default 5s).
 - Changes to templates trigger the existing `notifications/resources/list_changed` path (`MCP_RESOURCES_CHANGED` flag is shared with resources).
-- `resources/templates/list` supports the same `limit` extension and `total` field as other list endpoints; cursor decoding uses the templates registry hash so stale cursors are rejected after changes.
+- `resources/templates/list` supports the same `limit` extension as other list endpoints and exposes the full count via `result._meta["mcpbash/total"]`; cursor decoding uses the templates registry hash so stale cursors are rejected after changes.
 
 ## Declarative registration (`server.d/register.json`)
 

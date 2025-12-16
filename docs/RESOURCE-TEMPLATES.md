@@ -2,6 +2,14 @@
 
 Resource templates advertise families of resources using RFC 6570 URI templates (e.g., `file:///{path}`, `git+https://{repo}/{ref}/{path}`). The server **does not expand templates**; clients call `resources/templates/list`, expand the template client-side, then pass the concrete URI to `resources/read`.
 
+## Discoverability (capabilities)
+
+The MCP schema defines the `resources/templates/list` method, but server capabilities do **not** include a dedicated “templates supported” flag under `capabilities.resources`. Clients should treat templates as discoverable by probing the method:
+
+- Call `resources/templates/list`.
+- If the server returns `-32601` (method not found), treat templates as unsupported.
+- If it succeeds (even with an empty `resourceTemplates` array), templates are supported.
+
 ## Auto-discovery (`resources/*.meta.json`)
 
 Add `uriTemplate` to a resource meta file (omit `uri`):
