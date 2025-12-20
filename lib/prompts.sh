@@ -107,14 +107,13 @@ mcp_prompts_manual_finalize() {
 	local total
 	total="$(printf '%s' "${items_json}" | "${MCPBASH_JSON_TOOL_BIN}" 'length')"
 
-	MCP_PROMPTS_REGISTRY_JSON="$("${MCPBASH_JSON_TOOL_BIN}" -n \
+	MCP_PROMPTS_REGISTRY_JSON="$(printf '%s' "${items_json}" | "${MCPBASH_JSON_TOOL_BIN}" -s \
 		--arg hash "${hash}" \
-		--argjson items "${items_json}" \
 		--argjson total "${total}" \
 		'{
 			version: 1,
 			generatedAt: (now | todate),
-			items: $items,
+			items: .[0],
 			total: $total,
 			hash: $hash
 		}
@@ -182,14 +181,13 @@ mcp_prompts_apply_manual_json() {
 	total="$(printf '%s' "${items_json}" | "${MCPBASH_JSON_TOOL_BIN}" 'length')"
 
 	local registry_json
-	registry_json="$("${MCPBASH_JSON_TOOL_BIN}" -n \
+	registry_json="$(printf '%s' "${items_json}" | "${MCPBASH_JSON_TOOL_BIN}" -s \
 		--arg hash "${hash}" \
-		--argjson items "${items_json}" \
 		--argjson total "${total}" \
 		'{
 			version: 1,
 			generatedAt: (now | todate),
-			items: $items,
+			items: .[0],
 			total: $total,
 			hash: $hash
 		}
@@ -417,13 +415,12 @@ mcp_prompts_scan() {
 	'' | *[!0-9]*) total=0 ;;
 	esac
 
-	MCP_PROMPTS_REGISTRY_JSON="$("${MCPBASH_JSON_TOOL_BIN}" -n \
+	MCP_PROMPTS_REGISTRY_JSON="$(printf '%s' "${items_json}" | "${MCPBASH_JSON_TOOL_BIN}" -s \
 		--arg ver "1" \
 		--arg ts "${timestamp}" \
 		--arg hash "${hash}" \
-		--argjson items "${items_json}" \
 		--argjson total "${total}" \
-		'{version: $ver|tonumber, generatedAt: $ts, items: $items, hash: $hash, total: $total}')"
+		'{version: ($ver|tonumber), generatedAt: $ts, items: .[0], hash: $hash, total: $total}')"
 
 	MCP_PROMPTS_REGISTRY_HASH="${hash}"
 	MCP_PROMPTS_TOTAL="${total}"

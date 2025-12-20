@@ -261,12 +261,11 @@ ${name}"
 	'' | *[!0-9]*) total=0 ;;
 	esac
 
-	MCP_COMPLETION_MANUAL_REGISTRY_JSON="$("${MCPBASH_JSON_TOOL_BIN}" -n \
+	MCP_COMPLETION_MANUAL_REGISTRY_JSON="$(printf '%s' "${items_json}" | "${MCPBASH_JSON_TOOL_BIN}" -s \
 		--arg ts "${timestamp}" \
 		--arg hash "${hash}" \
-		--argjson items "${items_json}" \
 		--argjson total "${total}" \
-		'{version: 1, generatedAt: $ts, items: $items, hash: $hash, total: $total}')"
+		'{version: 1, generatedAt: $ts, items: .[0], hash: $hash, total: $total}')"
 	MCP_COMPLETION_MANUAL_LOADED=true
 	return 0
 }

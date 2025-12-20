@@ -5,11 +5,14 @@ All notable changes to mcp-bash-framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.8.1] - Unreleased
+## [0.8.1] - 2025-12-20
 
 ### Added
 - `mcp-bash doctor`: added `--dry-run` (propose actions) and `--fix` (managed-install-only repairs), plus `--min-version`/`--archive`/`--verify`/`--ref` upgrade inputs, a concurrency lock, and JSON contract fields `schemaVersion`, `exitCode`, `findings`, `proposedActions`, and `actionsTaken`.
 - Installer now writes `INSTALLER.json` into managed installs so `doctor --fix` can reliably distinguish managed vs user-managed installs.
+
+### Fixed
+- Windows/Git Bash: registry builds no longer pass large item payloads via `--argjson`, avoiding `E2BIG`/`Argument list too long` failures when icons are inlined.
 
 ### Documentation
 - Clarified resource template discoverability: templates are listed via `resources/templates/list` and are not advertised via a dedicated capabilities flag; clients should probe the method (treat `-32601` as unsupported).

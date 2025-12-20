@@ -625,13 +625,12 @@ mcp_resources_scan() {
 	'' | *[!0-9]*) total=0 ;;
 	esac
 
-	MCP_RESOURCES_REGISTRY_JSON="$("${MCPBASH_JSON_TOOL_BIN}" -n \
+	MCP_RESOURCES_REGISTRY_JSON="$(printf '%s' "${items_json}" | "${MCPBASH_JSON_TOOL_BIN}" -s \
 		--arg ver "1" \
 		--arg ts "${timestamp}" \
 		--arg hash "${hash}" \
-		--argjson items "${items_json}" \
 		--argjson total "${total}" \
-		'{version: $ver|tonumber, generatedAt: $ts, items: $items, hash: $hash, total: $total}')"
+		'{version: ($ver|tonumber), generatedAt: $ts, items: .[0], hash: $hash, total: $total}')"
 
 	MCP_RESOURCES_REGISTRY_HASH="${hash}"
 	MCP_RESOURCES_TOTAL="${total}"
@@ -1287,13 +1286,12 @@ mcp_resources_templates_refresh_registry() {
 	total="$(printf '%s' "${merged_items_json}" | "${MCPBASH_JSON_TOOL_BIN}" 'length')"
 
 	local previous_hash="${MCP_RESOURCES_TEMPLATES_REGISTRY_HASH}"
-	MCP_RESOURCES_TEMPLATES_REGISTRY_JSON="$("${MCPBASH_JSON_TOOL_BIN}" -n \
+	MCP_RESOURCES_TEMPLATES_REGISTRY_JSON="$(printf '%s' "${merged_items_json}" | "${MCPBASH_JSON_TOOL_BIN}" -s \
 		--arg ver "1" \
 		--arg ts "${timestamp}" \
 		--arg hash "${hash}" \
-		--argjson items "${merged_items_json}" \
 		--argjson total "${total}" \
-		'{version: $ver|tonumber, generatedAt: $ts, items: $items, hash: $hash, total: $total}')"
+		'{version: ($ver|tonumber), generatedAt: $ts, items: .[0], hash: $hash, total: $total}')"
 
 	MCP_RESOURCES_TEMPLATES_REGISTRY_HASH="${hash}"
 	MCP_RESOURCES_TEMPLATES_TOTAL="${total}"

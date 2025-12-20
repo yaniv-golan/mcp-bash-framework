@@ -899,13 +899,12 @@ mcp_tools_scan() {
 	'' | *[!0-9]*) total=0 ;;
 	esac
 
-	MCP_TOOLS_REGISTRY_JSON="$("${MCPBASH_JSON_TOOL_BIN}" -n \
+	MCP_TOOLS_REGISTRY_JSON="$(printf '%s' "${items_json}" | "${MCPBASH_JSON_TOOL_BIN}" -s \
 		--arg ver "1" \
 		--arg ts "${timestamp}" \
 		--arg hash "${hash}" \
-		--argjson items "${items_json}" \
 		--argjson total "${total}" \
-		'{version: $ver|tonumber, generatedAt: $ts, items: $items, hash: $hash, total: $total}')"
+		'{version: ($ver|tonumber), generatedAt: $ts, items: .[0], hash: $hash, total: $total}')"
 
 	MCP_TOOLS_REGISTRY_HASH="${hash}"
 	MCP_TOOLS_TOTAL="${total}"
