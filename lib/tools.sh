@@ -333,7 +333,7 @@ mcp_tools_embed_resource_from_path() {
 mcp_tools_collect_embedded_resources() {
 	local spec_file="$1"
 
-	if [ "${MCPBASH_JSON_TOOL:-none}" = "none" ]; then
+	if [[ "${MCPBASH_JSON_TOOL:-none}" = "none" ]]; then
 		return 0
 	fi
 
@@ -578,10 +578,56 @@ mcp_tools_init() {
 	mkdir -p "${MCPBASH_REGISTRY_DIR}"
 }
 
+mcp_tools_output_schema_error_data() {
+	local tool_name="$1"
+	local exit_code="$2"
+	local stderr_tail="$3"
+	local trace_line="$4"
+	local trace_available="$5"
+
+	case "${exit_code}" in
+	"" | *[!0-9-]*) exit_code=0 ;;
+	esac
+	case "${trace_available}" in
+	"true" | "false") ;;
+	*) trace_available="false" ;;
+	esac
+
+	if ! mcp_tools_debug_errors_enabled; then
+		printf 'null'
+		return 0
+	fi
+	if [ "${MCPBASH_JSON_TOOL:-none}" = "none" ]; then
+		printf 'null'
+		return 0
+	fi
+
+	"${MCPBASH_JSON_TOOL_BIN}" -n \
+		--arg tool "${tool_name}" \
+		--argjson exitCode "${exit_code}" \
+		--argjson traceAvailable "${trace_available}" \
+		--arg stderr "${stderr_tail}" \
+		--arg traceLine "${trace_line}" \
+		'
+		{
+			tool: $tool,
+			exitCode: $exitCode,
+			traceAvailable: $traceAvailable
+		}
+		| if ($stderr|length) > 0 then .stderrTail = $stderr else . end
+		| if ($traceLine|length) > 0 then .traceLine = $traceLine else . end
+		' 2>/dev/null || printf 'null'
+}
+
 mcp_tools_validate_output_schema() {
 	local stdout_file="$1"
 	local output_schema="$2"
 	local has_json_tool="$3"
+	local tool_name="${4:-}"
+	local exit_code="${5:-0}"
+	local stderr_tail="${6:-}"
+	local trace_line="${7:-}"
+	local trace_available="${8:-false}"
 
 	# Skip validation if no schema or no JSON tool
 	if [ "${output_schema}" = "null" ] || [ -z "${output_schema}" ] || [ "${has_json_tool}" != "true" ]; then
@@ -591,12 +637,16 @@ mcp_tools_validate_output_schema() {
 	# Parse the tool output as JSON
 	local structured_json=""
 	if ! structured_json="$("${MCPBASH_JSON_TOOL_BIN}" -c '.' "${stdout_file}" 2>/dev/null)"; then
-		_mcp_tools_emit_error -32603 "Tool output is not valid JSON for declared outputSchema" "null"
+		local data_json
+		data_json="$(mcp_tools_output_schema_error_data "${tool_name}" "${exit_code}" "${stderr_tail}" "${trace_line}" "${trace_available}")"
+		_mcp_tools_emit_error -32603 "Tool output is not valid JSON for declared outputSchema" "${data_json}"
 		return 1
 	fi
 
 	if [ -z "${structured_json}" ]; then
-		_mcp_tools_emit_error -32603 "Tool output is empty for declared outputSchema" "null"
+		local data_json
+		data_json="$(mcp_tools_output_schema_error_data "${tool_name}" "${exit_code}" "${stderr_tail}" "${trace_line}" "${trace_available}")"
+		_mcp_tools_emit_error -32603 "Tool output is empty for declared outputSchema" "${data_json}"
 		return 1
 	fi
 
@@ -638,7 +688,9 @@ mcp_tools_validate_output_schema() {
 	set -e
 
 	if [ "${validation_status}" -ne 0 ]; then
-		_mcp_tools_emit_error -32603 "Tool output does not satisfy outputSchema" "null"
+		local data_json
+		data_json="$(mcp_tools_output_schema_error_data "${tool_name}" "${exit_code}" "${stderr_tail}" "${trace_line}" "${trace_available}")"
+		_mcp_tools_emit_error -32603 "Tool output does not satisfy outputSchema" "${data_json}"
 		return 1
 	fi
 
@@ -647,7 +699,9 @@ mcp_tools_validate_output_schema() {
 		return 0
 	fi
 
-	_mcp_tools_emit_error -32603 "Tool output does not satisfy outputSchema" "null"
+	local data_json
+	data_json="$(mcp_tools_output_schema_error_data "${tool_name}" "${exit_code}" "${stderr_tail}" "${trace_line}" "${trace_available}")"
+	_mcp_tools_emit_error -32603 "Tool output does not satisfy outputSchema" "${data_json}"
 	return 1
 }
 
@@ -1060,6 +1114,14 @@ mcp_tools_timeout_capture_enabled() {
 	esac
 }
 
+mcp_tools_debug_errors_enabled() {
+	local flag="${MCPBASH_DEBUG_ERRORS:-false}"
+	case "${flag}" in
+	"" | "0" | "false" | "FALSE" | "no" | "off") return 1 ;;
+	*) return 0 ;;
+	esac
+}
+
 mcp_tools_stderr_tail() {
 	local file="$1"
 	local limit="${2:-4096}"
@@ -1082,6 +1144,41 @@ mcp_tools_trace_ps4() {
 		return 0
 	fi
 	printf '+ ${BASH_SOURCE[0]##*/}:${LINENO}: '
+}
+
+mcp_tools_trace_mode() {
+	local mode="fd"
+	if [[ "${BASH_VERSINFO[0]:-0}" -lt 4 ]]; then
+		mode="stderr"
+	fi
+	printf '%s' "${mode}"
+}
+
+mcp_tools_trace_split_stderr() {
+	local stderr_file="$1"
+	local trace_file="$2"
+	local tmp_root="$3"
+	[[ -n "${stderr_file}" ]] || return 0
+	[[ -f "${stderr_file}" ]] || return 0
+	[[ -n "${trace_file}" ]] || return 0
+
+	local tmp_file=""
+	if [[ -n "${tmp_root}" ]]; then
+		tmp_file="$(mktemp "${tmp_root}/mcp-tools-stderr.XXXXXX" 2>/dev/null || true)"
+	fi
+	if [[ -z "${tmp_file}" ]]; then
+		local fallback_root="${TMPDIR:-/tmp}"
+		tmp_file="$(mktemp "${fallback_root%/}/mcp-tools-stderr.XXXXXX" 2>/dev/null || true)"
+	fi
+	[[ -n "${tmp_file}" ]] || return 0
+
+	: >"${trace_file}" 2>/dev/null || true
+	awk -v trace_file="${trace_file}" '
+		/^\+?[[:space:]]*[^:]+:[0-9]+:[[:space:]]*/ { print >> trace_file; next }
+		{ print }
+	' "${stderr_file}" >"${tmp_file}" 2>/dev/null || true
+
+	mv "${tmp_file}" "${stderr_file}" 2>/dev/null || rm -f "${tmp_file}" 2>/dev/null || true
 }
 
 mcp_tools_json_escape() {
@@ -1245,9 +1342,12 @@ mcp_tools_call() {
 		# Fallback: invoke via shell if not marked executable but looks runnable
 		tool_runner=(bash "${absolute_path}")
 	fi
+	local safe_name
+	safe_name="$(printf '%s' "${name}" | tr -c 'A-Za-z0-9._-' '_')"
 	local trace_enabled="false"
 	local trace_file=""
 	local trace_ps4=""
+	local trace_mode=""
 	local trace_max_bytes="${MCPBASH_TRACE_MAX_BYTES:-1048576}"
 	case "${trace_max_bytes}" in
 	'' | *[!0-9]*) trace_max_bytes=1048576 ;;
@@ -1255,8 +1355,7 @@ mcp_tools_call() {
 	if mcp_tools_trace_enabled && [ -n "${MCPBASH_STATE_DIR:-}" ]; then
 		trace_enabled="true"
 		trace_ps4="$(mcp_tools_trace_ps4)"
-		local safe_name
-		safe_name="$(printf '%s' "${name}" | tr -c 'A-Za-z0-9._-' '_')"
+		trace_mode="$(mcp_tools_trace_mode)"
 		local trace_base="${MCPBASH_LOG_DIR:-${MCPBASH_STATE_DIR}}"
 		mkdir -p "${trace_base}" 2>/dev/null || true
 		trace_file="${trace_base}/trace.${safe_name}.${BASHPID:-$$}.${RANDOM}.log"
@@ -1267,6 +1366,17 @@ mcp_tools_call() {
 			if [[ "${absolute_path}" =~ \.(sh|bash)$ ]] || head -n1 "${absolute_path}" 2>/dev/null | grep -qi 'bash\|sh'; then
 				tool_runner=(bash -x "${absolute_path}")
 			fi
+		fi
+	fi
+
+	local debug_log_file=""
+	if [[ -z "${MCPBASH_DEBUG_LOG:-}" ]]; then
+		local debug_base="${MCPBASH_LOG_DIR:-${MCPBASH_STATE_DIR:-}}"
+		if [[ -n "${debug_base}" ]]; then
+			mkdir -p "${debug_base}" 2>/dev/null || true
+			local debug_id="${MCPBASH_WORKER_KEY:-${BASHPID:-$$}}"
+			debug_id="$(printf '%s' "${debug_id}" | tr -c 'A-Za-z0-9._-' '_')"
+			debug_log_file="${debug_base}/tool-debug.${safe_name}.${debug_id}.${RANDOM}.log"
 		fi
 	fi
 
@@ -1471,6 +1581,11 @@ mcp_tools_call() {
 			export MCPBASH_JSON_TOOL="${MCPBASH_JSON_TOOL:-}"
 			export MCPBASH_JSON_TOOL_BIN="${MCPBASH_JSON_TOOL_BIN:-}"
 			export MCPBASH_MODE="${MCPBASH_MODE:-full}"
+			if [[ -n "${MCPBASH_DEBUG_LOG:-}" ]]; then
+				export MCPBASH_DEBUG_LOG
+			elif [[ -n "${debug_log_file}" ]]; then
+				export MCPBASH_DEBUG_LOG="${debug_log_file}"
+			fi
 			if [ "${elicit_supported}" = "1" ]; then
 				export MCP_ELICIT_REQUEST_FILE="${elicit_request_file}"
 				export MCP_ELICIT_RESPONSE_FILE="${elicit_response_file}"
@@ -1481,12 +1596,14 @@ mcp_tools_call() {
 				# files as sensitive regardless.
 				: >"${trace_file}" 2>/dev/null || true
 				chmod 600 "${trace_file}" 2>/dev/null || true
-				if exec 9>"${trace_file}"; then
-					export BASH_XTRACEFD=9
-					export PS4="${trace_ps4}"
-					export MCPBASH_TRACE_FILE="${trace_file}"
-				else
-					trace_active="false"
+				export PS4="${trace_ps4}"
+				export MCPBASH_TRACE_FILE="${trace_file}"
+				if [[ "${trace_mode}" = "fd" ]]; then
+					if exec 9>"${trace_file}"; then
+						export BASH_XTRACEFD=9
+					else
+						trace_active="false"
+					fi
 				fi
 			fi
 			if declare -F mcp_roots_wait_ready >/dev/null 2>&1; then
@@ -1650,6 +1767,9 @@ mcp_tools_call() {
 	'' | *[!0-9]*) stderr_limit="${limit}" ;;
 	0) stderr_limit="${limit}" ;;
 	esac
+	if [[ "${trace_enabled}" = "true" && "${trace_mode}" = "stderr" && -n "${trace_file}" ]]; then
+		mcp_tools_trace_split_stderr "${stderr_file}" "${trace_file}" "${MCPBASH_TMP_ROOT:-}"
+	fi
 	local stderr_size
 	stderr_size="$(wc -c <"${stderr_file}" | tr -d ' ')"
 	if [ "${stderr_size}" -gt "${stderr_limit}" ]; then
@@ -1689,8 +1809,8 @@ mcp_tools_call() {
 		esac
 	fi
 
+	local trace_size=0
 	if [ "${trace_enabled}" = "true" ] && [ -n "${trace_file}" ] && [ -f "${trace_file}" ]; then
-		local trace_size
 		trace_size="$(wc -c <"${trace_file}" | tr -d ' ')" || trace_size=0
 		if [ "${trace_size}" -gt "${trace_max_bytes}" ]; then
 			local trace_tmp="${trace_file}.tmp"
@@ -1701,6 +1821,10 @@ mcp_tools_call() {
 	local trace_line=""
 	if [ "${trace_enabled}" = "true" ] && [ -n "${trace_file}" ] && [ -f "${trace_file}" ]; then
 		trace_line="$(tail -n 1 "${trace_file}" 2>/dev/null | head -c 512 | tr -d '\0')"
+	fi
+	local trace_available="false"
+	if [[ "${trace_enabled}" = "true" && "${trace_size}" -gt 0 ]]; then
+		trace_available="true"
 	fi
 
 	if [ "${cancelled_flag}" = "true" ]; then
@@ -1853,7 +1977,7 @@ mcp_tools_call() {
 
 	set -e
 
-	if ! mcp_tools_validate_output_schema "${stdout_content}" "${output_schema}" "${has_json_tool}"; then
+	if ! mcp_tools_validate_output_schema "${stdout_content}" "${output_schema}" "${has_json_tool}" "${name}" "${exit_code}" "${stderr_tail}" "${trace_line}" "${trace_available}"; then
 		cleanup_tool_temp_files
 		return 1
 	fi

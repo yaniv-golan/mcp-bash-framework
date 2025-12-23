@@ -143,6 +143,8 @@ For manual control without the `debug` subcommand:
 |----------|---------|-------------|
 | `MCPBASH_DEBUG_PAYLOADS` | (unset) | Set to `true` to log all JSON-RPC messages |
 | `MCPBASH_PRESERVE_STATE` | (unset) | Set to `true` to keep state directory after exit |
+| `MCPBASH_DEBUG_ERRORS` | `false` | Include tool diagnostics (exit code, stderr tail, trace line) in outputSchema validation errors |
+| `MCPBASH_DEBUG_LOG` | (unset) | Per-tool debug log path (auto-set per invocation); SDK `mcp_debug` appends to it |
 | `MCPBASH_LOG_LEVEL` | `info` | Set to `debug` for verbose stderr logging |
 | `MCPBASH_LOG_VERBOSE` | (unset) | Set to `true` to include file paths in logs |
 | `MCPBASH_TOOL_STDERR_CAPTURE` | `true` | Include a bounded stderr tail in tool error responses (`error.data._meta.stderr` / `stderrTail`) |
@@ -156,6 +158,12 @@ For manual control without the `debug` subcommand:
 | `MCPBASH_LOG_DIR` | (unset) | Log directory; CI mode sets a default when unset |
 | `MCPBASH_KEEP_LOGS` | `false` | Preserve state/log files on exit (`true` by default in CI mode) |
 | `MCPBASH_LOG_TIMESTAMP` | `false` | Prefix log messages with UTC timestamp (`true` by default in CI mode) |
+
+For file-based checkpoints inside tools, use the SDK helper:
+
+```bash
+mcp_debug "checkpoint: starting validation"
+```
 
 ## CI Mode Notes
 - Enable with `MCPBASH_CI_MODE=true` to get CI-friendly defaults: tmp root under `RUNNER_TEMP`/`$GITHUB_WORKSPACE/.mcpbash-tmp`/`TMPDIR`, default log dir, keep-logs, and timestamped log messages.

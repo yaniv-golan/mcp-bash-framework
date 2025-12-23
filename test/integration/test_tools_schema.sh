@@ -38,13 +38,19 @@ JSON
 
 (
 	cd "${WORKSPACE}" || exit 1
-	MCPBASH_PROJECT_ROOT="${WORKSPACE}" ./bin/mcp-bash <"${WORKSPACE}/requests.ndjson" >"${WORKSPACE}/responses.ndjson"
+	MCPBASH_PROJECT_ROOT="${WORKSPACE}" MCPBASH_DEBUG_ERRORS=true ./bin/mcp-bash <"${WORKSPACE}/requests.ndjson" >"${WORKSPACE}/responses.ndjson"
 ) || true
 
 call_error="$(jq -r 'select(.id=="call") | .error.code // empty' "${WORKSPACE}/responses.ndjson")"
 if [ "${call_error}" = "" ]; then
 	test_fail "schema mismatch did not produce error"
 fi
+call_error_tool="$(jq -r 'select(.id=="call") | .error.data.tool // empty' "${WORKSPACE}/responses.ndjson")"
+test_assert_eq "schema.tool" "${call_error_tool}" "expected debug error payload to include tool name"
+call_error_exit="$(jq -r 'select(.id=="call") | .error.data.exitCode // empty' "${WORKSPACE}/responses.ndjson")"
+test_assert_eq "0" "${call_error_exit}" "expected debug error payload to include exit code"
+call_error_trace="$(jq -r 'select(.id=="call") | .error.data.traceAvailable | tostring' "${WORKSPACE}/responses.ndjson")"
+test_assert_eq "false" "${call_error_trace}" "expected debug error payload to include trace availability"
 
 # Modify tool metadata and script to force list_changed via TTL
 cat <<'META' >"${WORKSPACE}/tools/schema/tool.meta.json"

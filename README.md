@@ -472,6 +472,8 @@ The [`examples/`](examples/) directory shows common patterns end-to-end:
 | `MCPBASH_MAX_CONCURRENT_REQUESTS` | `16` | Cap concurrent worker slots. |
 | `MCPBASH_MAX_TOOL_OUTPUT_SIZE` | `10485760` | Tool stdout limit; stderr/resources inherit when unset. |
 | `MCPBASH_LOG_LEVEL` | `info` | Log level; use `debug` for discovery traces. |
+| `MCPBASH_DEBUG_ERRORS` | `false` | Include tool diagnostics in outputSchema validation errors (exit code, stderr tail, trace line). |
+| `MCPBASH_DEBUG_LOG` | (unset) | Override per-tool debug log path; SDK `mcp_debug` appends to it. |
 | `MCPBASH_ENABLE_LIVE_PROGRESS` | `false` | Stream progress/log notifications during execution (starts a background flusher). |
 | `MCPBASH_ENV_PAYLOAD_THRESHOLD` | `65536` | Spill args/metadata to temp files above this size. |
 | `MCPBASH_TOOL_ENV_MODE` | `minimal` | Tool env isolation: `minimal`, `inherit`, or `allowlist`. |
@@ -516,6 +518,7 @@ If no `server.meta.json` exists, the server uses smart defaults based on your pr
 ### Tool SDK environment
 - `MCPBASH_JSON_TOOL` and `MCPBASH_JSON_TOOL_BIN` point to the detected JSON processor (`gojq`/`jq`) and are injected into tool processes when available.
 - `MCPBASH_MODE` is `full` when JSON tooling is present and `minimal` otherwise; SDK helpers warn and downgrade behaviour when running in minimal mode.
+- `MCPBASH_DEBUG_LOG` points to a per-invocation debug log file (when available); use `mcp_debug` inside tools to append file-based checkpoints.
 - `MCPBASH_TOOL_ENV_MODE` controls isolation for tool processes (`minimal`, `inherit`, or `allowlist`), but MCPBASH/MCP-prefixed variables (including JSON tool hints) are always propagated. Example allowlist for minimal exposure: `MCPBASH_TOOL_ENV_MODE=allowlist MCPBASH_TOOL_ENV_ALLOWLIST=HOME,PATH`.
 
 ### Capability Modes

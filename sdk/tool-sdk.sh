@@ -462,6 +462,19 @@ mcp_log_error() {
 	mcp_log "error" "$1" "$(__mcp_sdk_json_escape "$2")"
 }
 
+mcp_debug() {
+	if [[ -z "${MCPBASH_DEBUG_LOG:-}" ]]; then
+		return 0
+	fi
+	local message="$*"
+	local timestamp=""
+	timestamp="$(date +%H:%M:%S 2>/dev/null || true)"
+	if [ -z "${timestamp}" ]; then
+		timestamp="??:??:??"
+	fi
+	printf '[%s] %s\n' "${timestamp}" "${message}" >>"${MCPBASH_DEBUG_LOG}" 2>/dev/null || true
+}
+
 mcp_fail() {
 	local code="$1"
 	local message="${2:-}"

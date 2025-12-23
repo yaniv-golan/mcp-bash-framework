@@ -5,6 +5,18 @@ All notable changes to mcp-bash-framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.2] - Unreleased
+
+### Added
+- Tools now receive a per-invocation debug log path via `MCPBASH_DEBUG_LOG`; the SDK exposes `mcp_debug` to write to it.
+- Output schema validation errors can include diagnostic metadata when `MCPBASH_DEBUG_ERRORS=true`.
+
+### Fixed
+- Tool tracing on bash 3.2 now reconstructs trace logs from stderr to avoid empty trace files on macOS runners.
+
+### Documentation
+- Documented the new debug log channel and opt-in error diagnostics.
+
 ## [0.8.1] - 2025-12-20
 
 ### Added

@@ -41,6 +41,8 @@ Authoritative list of supported environment variables. Defaults shown are the sh
 | `MCPBASH_ALLOW_JSON_TOOL_OVERRIDE_FOR_ROOT` | `false` | Allow `MCPBASH_JSON_TOOL{,_BIN}` overrides when running as root. |
 | `MCPBASH_COMPAT_BATCHES` | (unset) | Enable legacy batch request support (auto-enabled when protocol is `2025-03-26`; use only for out-of-spec clients on newer protocols). |
 | `MCPBASH_DEBUG_PAYLOADS` | (unset) | Write full message payloads to `${TMPDIR}/mcpbash.state.*`. |
+| `MCPBASH_DEBUG_ERRORS` | `false` | When `true`, include tool diagnostics (exit code, stderr tail, trace line) in outputSchema validation errors. |
+| `MCPBASH_DEBUG_LOG` | (unset) | Override the per-tool debug log path; when unset, tools get a per-invocation file under the log/state dir. |
 | `MCPBASH_PRESERVE_STATE` | (unset) | Preserve state dir after exit (useful with `MCPBASH_DEBUG_PAYLOADS`; includes per-request `stderr.*.log` worker captures). |
 | `MCPBASH_REMOTE_TOKEN` | (unset) | Shared secret for proxied deployments (minimum 32 characters). |
 | `MCPBASH_REMOTE_TOKEN_KEY` | `mcpbash/remoteToken` | JSON path for token lookup. |
