@@ -5,7 +5,17 @@ All notable changes to mcp-bash-framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.8.2] - 2925-12-23
+## [0.8.3] - 2025-12-26
+
+### Added
+- `mcp-bash validate` now validates icons format per MCP spec: icons must be objects with `src` property, not plain strings. Catches the common "expected object, received string" error that causes strict MCP clients (Cursor, Claude Desktop, MCP Inspector) to reject servers.
+- `mcp-bash validate --inspector` flag prints the command to run MCP Inspector CLI for strict schema validation.
+
+### Documentation
+- Added "Common Schema Errors" section to DEBUGGING.md documenting icons format errors and strict client validation failures.
+- Added troubleshooting flowchart to DEBUGGING.md for diagnosing "works from CLI but fails in clients" issues.
+
+## [0.8.2] - 2025-12-23
 
 ### Added
 - Tools now receive a per-invocation debug log path via `MCPBASH_DEBUG_LOG`; the SDK exposes `mcp_debug` to write to it.

@@ -28,7 +28,7 @@ This guide distils hands-on recommendations for designing, building, and operati
 | `bin/mcp-bash scaffold resource <name>` | Produce resource boilerplate wired to the file provider | [§4.1](#41-scaffold-workflow) |
 | `bin/mcp-bash scaffold test` | Create a lightweight test harness (`test/run.sh`, `test/README.md`) | [§4.1](#41-scaffold-workflow) |
 | `bin/mcp-bash run-tool <name>` | Invoke a tool without starting the server (supports `--dry-run`, `--roots`, `--timeout`, `--verbose`, `--minimal`, `--print-env`) | [§5.2](#52-local-workflow) |
-| `bin/mcp-bash validate` | Validate project structure and metadata (`--json`, `--strict`, `--explain-defaults` for CI) | [§5.2](#52-local-workflow) |
+| `bin/mcp-bash validate` | Validate project structure and metadata (`--json`, `--strict`, `--explain-defaults` for CI, `--inspector` for MCP Inspector CLI validation) | [§5.2](#52-local-workflow) |
 | `bin/mcp-bash doctor` | Diagnose environment and installation issues (`--json` for CI/log parsing; `--dry-run`/`--fix` for managed-install repair) | [§2](#2-environment--tooling) |
 | `bin/mcp-bash registry status` | Show registry cache status (hash/mtime/counts) | [§5.2](#52-local-workflow) |
 | `./test/lint.sh` | Run shellcheck + shfmt gates; wraps commands from [TESTING.md](../TESTING.md) | [§5.2](#52-local-workflow) |

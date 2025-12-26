@@ -16,6 +16,7 @@ mcp_cli_validate() {
 	local json_mode="false"
 	local explain_defaults="false"
 	local strict="false"
+	local inspector="false"
 
 	while [ $# -gt 0 ]; do
 		case "$1" in
@@ -35,13 +36,21 @@ mcp_cli_validate() {
 		--strict)
 			strict="true"
 			;;
+		--inspector)
+			inspector="true"
+			;;
 		--help | -h)
 			cat <<'EOF'
 Usage:
   mcp-bash validate [--project-root DIR] [--fix] [--json]
-                     [--explain-defaults] [--strict]
+                     [--explain-defaults] [--strict] [--inspector]
 
 Validate the current MCP project structure and metadata.
+
+Options:
+  --inspector  Show command to run MCP Inspector CLI for strict schema
+               validation. The inspector catches schema violations that
+               basic validation may miss.
 EOF
 			exit 0
 			;;
@@ -256,5 +265,30 @@ EOF
 	fi
 
 	printf 'All checks passed (warnings: %d).\n' "${warnings}"
+
+	# Show MCP Inspector instructions if requested
+	if [ "${inspector}" = "true" ]; then
+		printf '\n'
+		printf 'To run MCP Inspector for strict schema validation:\n\n'
+
+		local mcp_bash_bin
+
+		# Use project's bin/mcp-bash if it exists, otherwise use framework's
+		if [ -x "${project_root}/bin/mcp-bash" ]; then
+			mcp_bash_bin="${project_root}/bin/mcp-bash"
+		elif [ -x "${MCPBASH_HOME}/bin/mcp-bash" ]; then
+			mcp_bash_bin="${MCPBASH_HOME}/bin/mcp-bash"
+		else
+			mcp_bash_bin="./bin/mcp-bash"
+		fi
+
+		printf '  npx @modelcontextprotocol/inspector --cli --transport stdio -- \\\n'
+		printf '    MCPBASH_PROJECT_ROOT="%s" %s\n\n' "${project_root}" "${mcp_bash_bin}"
+		printf 'This opens an interactive CLI where you can test methods like:\n'
+		printf '  tools/list, resources/list, prompts/list, initialize\n\n'
+		printf 'Schema violations will be reported with exact field paths.\n'
+		printf 'See docs/INSPECTOR.md for more details.\n'
+	fi
+
 	exit 0
 }

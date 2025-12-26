@@ -72,7 +72,19 @@ If the web UI fails to connect even though stdio works:
 
 MCP Inspector also has a CLI mode that can invoke a small set of methods (tools/resources/prompts/logging). This avoids the UI proxy and is useful for quick smoke checks.
 
-Example:
+### Built-in command generator
+
+To get the command for running MCP Inspector on your project:
+
+```bash
+mcp-bash validate --inspector
+```
+
+This prints the exact `npx` command with your project's paths configured. Copy and run it to open an interactive CLI where you can test methods and see schema violations.
+
+### Manual invocation
+
+For more control, invoke Inspector CLI directly:
 
 ```bash
 /opt/homebrew/bin/npx --yes @modelcontextprotocol/inspector --cli --transport stdio -- \

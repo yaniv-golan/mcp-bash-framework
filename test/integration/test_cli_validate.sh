@@ -223,4 +223,72 @@ if printf '%s\n' "${post_fix_output_multi}" | grep -q 'resources/example/example
 	test_fail "validate still reports resource script as not executable after --fix"
 fi
 
+# --- Icons format validation ---
+ICONS_ROOT="${TEST_TMPDIR}/validate-icons"
+mkdir -p "${ICONS_ROOT}/server.d" "${ICONS_ROOT}/tools/bad-icons" "${ICONS_ROOT}/tools/good-icons"
+
+# Server with invalid icons (plain strings instead of objects)
+cat >"${ICONS_ROOT}/server.d/server.meta.json" <<'META'
+{
+  "name": "icons-test",
+  "icons": ["icon.svg", "icon.png"]
+}
+META
+
+# Tool with invalid icons (plain strings)
+cat >"${ICONS_ROOT}/tools/bad-icons/tool.meta.json" <<'META'
+{
+  "name": "bad-icons",
+  "description": "Tool with invalid icons format",
+  "inputSchema": { "type": "object" },
+  "icons": ["./icon.svg"]
+}
+META
+cat >"${ICONS_ROOT}/tools/bad-icons/tool.sh" <<'SH'
+#!/usr/bin/env bash
+echo "bad-icons"
+SH
+chmod +x "${ICONS_ROOT}/tools/bad-icons/tool.sh"
+
+# Tool with valid icons (objects with src property)
+cat >"${ICONS_ROOT}/tools/good-icons/tool.meta.json" <<'META'
+{
+  "name": "good-icons",
+  "description": "Tool with valid icons format",
+  "inputSchema": { "type": "object" },
+  "icons": [{"src": "./icon.svg"}, {"src": "https://example.com/icon.png"}]
+}
+META
+cat >"${ICONS_ROOT}/tools/good-icons/tool.sh" <<'SH'
+#!/usr/bin/env bash
+echo "good-icons"
+SH
+chmod +x "${ICONS_ROOT}/tools/good-icons/tool.sh"
+
+set +e
+icons_output="$(
+	cd "${ICONS_ROOT}" && "${MCPBASH_TEST_ROOT}/bin/mcp-bash" validate 2>&1
+)"
+icons_status=$?
+set -e
+
+if [ "${icons_status}" -eq 0 ]; then
+	test_fail "validate succeeded despite invalid icons format"
+fi
+
+# Should report icons error for server.meta.json
+assert_contains "server.d/server.meta.json" "${icons_output}" "expected icons error for server meta"
+assert_contains "icons" "${icons_output}" "expected icons format error"
+assert_contains "src" "${icons_output}" "expected error to mention src property"
+
+# Should report icons error for bad-icons tool
+assert_contains "tools/bad-icons/tool.meta.json" "${icons_output}" "expected icons error for bad-icons tool"
+
+# Should NOT report icons error for good-icons tool (it should pass)
+if printf '%s\n' "${icons_output}" | grep -q 'tools/good-icons/tool.meta.json.*icons'; then
+	test_fail "validate incorrectly reported icons error for valid icons format"
+fi
+
+printf 'Icons format validation passed.\n'
+
 printf 'CLI validate errors and --fix flow passed.\n'

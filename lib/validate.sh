@@ -3,6 +3,62 @@
 
 set -euo pipefail
 
+# Validate icons array format per MCP spec.
+# Icons must be objects with 'src' property, not plain strings.
+# Usage: mcp_validate_icons <json_tool_bin> <meta_path>
+# Returns: "ok" if valid/missing, error message if invalid
+mcp_validate_icons() {
+	local json_tool_bin="$1"
+	local meta_path="$2"
+
+	# Check if icons field exists
+	local has_icons
+	has_icons="$("${json_tool_bin}" -r 'if has("icons") then "yes" else "no" end' "${meta_path}" 2>/dev/null || printf 'no')"
+
+	if [ "${has_icons}" = "no" ]; then
+		printf 'ok'
+		return 0
+	fi
+
+	# Check if icons is an array
+	local icons_type
+	icons_type="$("${json_tool_bin}" -r '.icons | type' "${meta_path}" 2>/dev/null || printf 'unknown')"
+
+	if [ "${icons_type}" != "array" ]; then
+		printf 'icons must be an array, got %s' "${icons_type}"
+		return 0
+	fi
+
+	# Check if icons array is empty (valid)
+	local icons_len
+	icons_len="$("${json_tool_bin}" -r '.icons | length' "${meta_path}" 2>/dev/null || printf '0')"
+
+	if [ "${icons_len}" = "0" ]; then
+		printf 'ok'
+		return 0
+	fi
+
+	# Check that all icons are objects with 'src' property
+	local icons_valid
+	icons_valid="$("${json_tool_bin}" -r '
+		.icons |
+		if length == 0 then true
+		else all(type == "object" and has("src"))
+		end
+	' "${meta_path}" 2>/dev/null || printf 'false')"
+
+	if [ "${icons_valid}" = "true" ]; then
+		printf 'ok'
+	else
+		# Find which icons are invalid for better error message
+		local bad_indices
+		bad_indices="$("${json_tool_bin}" -r '
+			[.icons | to_entries[] | select(.value | (type != "object") or (has("src") | not)) | .key] | join(", ")
+		' "${meta_path}" 2>/dev/null || printf '?')"
+		printf 'icons[%s] must be objects with "src" property (e.g., {"src": "./icon.svg"})' "${bad_indices}"
+	fi
+}
+
 mcp_validate_server_meta() {
 	local json_tool_available="$1"
 	local errors=0
@@ -20,7 +76,17 @@ mcp_validate_server_meta() {
 				if [ -z "${srv_name}" ]; then
 					printf '✗ server.d/server.meta.json - missing required "name" field\n'
 					errors=$((errors + 1))
-				else
+				fi
+
+				# Validate icons format
+				local icons_result
+				icons_result="$(mcp_validate_icons "${MCPBASH_JSON_TOOL_BIN}" "${server_meta}")"
+				if [ "${icons_result}" != "ok" ]; then
+					printf '✗ server.d/server.meta.json - %s\n' "${icons_result}"
+					errors=$((errors + 1))
+				fi
+
+				if [ -n "${srv_name}" ] && [ "${icons_result}" = "ok" ]; then
 					printf '✓ server.d/server.meta.json - valid\n'
 				fi
 			fi
@@ -84,6 +150,14 @@ mcp_validate_tools() {
 							printf '⚠ %s - inputSchema has no "type" or "properties"\n' "${rel_meta}"
 							warnings=$((warnings + 1))
 						fi
+						# Validate icons format
+						local icons_result
+						icons_result="$(mcp_validate_icons "${MCPBASH_JSON_TOOL_BIN}" "${meta_path}")"
+						if [ "${icons_result}" != "ok" ]; then
+							printf '✗ %s - %s\n' "${rel_meta}" "${icons_result}"
+							errors=$((errors + 1))
+						fi
+
 						if [ -n "${t_name}" ]; then
 							if [[ "${t_name}" != *"-"* && "${t_name}" != *"_"* && "${t_name}" != *"."* ]]; then
 								printf '⚠ %s - namespace recommended (prefix tool name, e.g., myproj-hello)\n' "${rel_meta}"
@@ -95,7 +169,7 @@ mcp_validate_tools() {
 								warnings=$((warnings + 1))
 								name_ok="false"
 							fi
-							if [ "${name_ok}" = "true" ]; then
+							if [ "${name_ok}" = "true" ] && [ "${icons_result}" = "ok" ]; then
 								printf '✓ %s - valid\n' "${rel_meta}"
 							fi
 						fi
@@ -221,7 +295,16 @@ mcp_validate_prompts() {
 							printf '⚠ %s - missing "description"\n' "${rel_meta}"
 							warnings=$((warnings + 1))
 						fi
-						if [ -n "${p_name}" ]; then
+
+						# Validate icons format
+						local icons_result
+						icons_result="$(mcp_validate_icons "${MCPBASH_JSON_TOOL_BIN}" "${meta_path}")"
+						if [ "${icons_result}" != "ok" ]; then
+							printf '✗ %s - %s\n' "${rel_meta}" "${icons_result}"
+							errors=$((errors + 1))
+						fi
+
+						if [ -n "${p_name}" ] && [ "${icons_result}" = "ok" ]; then
 							printf '✓ %s - valid\n' "${rel_meta}"
 						fi
 					fi
@@ -315,7 +398,16 @@ mcp_validate_resources() {
 								;;
 							esac
 						fi
-						if [ -n "${r_name}" ] && [ -n "${r_uri}" ]; then
+
+						# Validate icons format
+						local icons_result
+						icons_result="$(mcp_validate_icons "${MCPBASH_JSON_TOOL_BIN}" "${meta_path}")"
+						if [ "${icons_result}" != "ok" ]; then
+							printf '✗ %s - %s\n' "${rel_meta}" "${icons_result}"
+							errors=$((errors + 1))
+						fi
+
+						if [ -n "${r_name}" ] && [ -n "${r_uri}" ] && [ "${icons_result}" = "ok" ]; then
 							printf '✓ %s - valid\n' "${rel_meta}"
 						fi
 					fi

@@ -192,8 +192,97 @@ Debug logs contain **all message payloads**, including:
 rm -rf ${TMPDIR:-/tmp}/mcpbash.debug.*
 ```
 
+## Common Schema Errors
+
+This section documents schema violations that pass basic validation but fail with strict MCP clients (Cursor, Claude Desktop, MCP Inspector).
+
+### "expected object, received string" for icons
+
+**Symptom**: MCP Inspector or Cursor fails with:
+```
+serverInfo.icons[0] - expected object, received string
+```
+
+**Cause**: The `icons` field uses plain strings instead of objects with `src` property.
+
+**Wrong**:
+```json
+{
+  "icons": ["path/to/icon.svg"]
+}
+```
+
+**Correct**:
+```json
+{
+  "icons": [{"src": "path/to/icon.svg"}]
+}
+```
+
+This applies to:
+- `server.d/server.meta.json` (server icons)
+- `tools/*/tool.meta.json` (tool icons)
+- `prompts/*/prompt.meta.json` (prompt icons)
+- `resources/*/resource.meta.json` (resource icons)
+
+**Fix**: Run `mcp-bash validate --strict` which now validates icons format.
+
+### Strict client validation failures
+
+If raw stdio works but MCP Inspector/Cursor/Claude Desktop fails:
+
+1. The response likely violates the MCP schema in a way basic validation doesn't catch
+2. Run `mcp-bash validate --strict` first
+3. Run `mcp-bash validate --inspector` for full MCP Inspector validation
+4. Or test manually with Inspector CLI:
+   ```bash
+   npx @modelcontextprotocol/inspector --cli --transport stdio -- \
+     ./bin/mcp-bash --method tools/list
+   ```
+5. Inspector CLI gives the exact schema validation error with field path
+
+### Missing or invalid required fields
+
+Common issues:
+- Tool missing `name` or `description`
+- Resource missing `uri`
+- Invalid `inputSchema` (must have `type` or `properties`)
+
+Run `mcp-bash validate` to catch these before testing with clients.
+
+## Troubleshooting Flowchart
+
+When a server works from CLI but fails in MCP clients, follow this diagnostic path:
+
+```
+1. Does raw stdio work?
+   $ echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' | ./bin/mcp-bash
+
+   No  -> Check: MCPBASH_PROJECT_ROOT, file permissions, framework install
+   Yes -> Continue to step 2
+
+2. Does basic validation pass?
+   $ mcp-bash validate --strict
+
+   No  -> Fix validation errors (icons format, missing fields, etc.)
+   Yes -> Continue to step 3
+
+3. Does MCP Inspector validation pass?
+   $ mcp-bash validate --inspector
+
+   No  -> Inspector shows exact schema violation - fix it
+   Yes -> Continue to step 4
+
+4. Still failing in Cursor/Claude Desktop?
+   Check:
+   - macOS quarantine: xattr -r -d com.apple.quarantine ./
+   - PATH issues: use absolute paths or wrapper script
+   - TCC permissions: grant Full Disk Access if in protected folder
+   - Use login-aware wrapper: mcp-bash config --wrapper-env > wrapper.sh
+```
+
 ## See Also
 
 - [LOGGING.md](LOGGING.md) - General logging configuration
 - [INSPECTOR.md](INSPECTOR.md) - MCP Inspector recipes + strict-client pitfalls
-- [BEST-PRACTICES.md](BEST-PRACTICES.md) - Debugging flowchart
+- [BEST-PRACTICES.md](BEST-PRACTICES.md) - Best practices guide
