@@ -119,20 +119,20 @@ EOF
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SHELL_PROFILE=""
 
-if [ -f "${HOME}/.zshrc" ]; then
-	SHELL_PROFILE="${HOME}/.zshrc"
-elif [ -f "${HOME}/.bash_profile" ]; then
-	SHELL_PROFILE="${HOME}/.bash_profile"
-elif [ -f "${HOME}/.bashrc" ]; then
-	SHELL_PROFILE="${HOME}/.bashrc"
-fi
+# Source shell profiles to get PATH (pyenv, nvm, rbenv, etc.)
+# GUI apps like Claude Desktop don't inherit terminal environment.
+# Source both login and interactive profiles since version managers
+# may be configured in either location.
+_source_profile() { [ -f "$1" ] && . "$1" >/dev/null 2>&1 || true; }
 
-if [ -n "${SHELL_PROFILE}" ]; then
-	# shellcheck source=/dev/null
-	. "${SHELL_PROFILE}"
-fi
+# zsh: .zprofile (login) + .zshrc (interactive)
+_source_profile "${HOME}/.zprofile"
+_source_profile "${HOME}/.zshrc"
+# bash: .bash_profile or .profile (login) + .bashrc (interactive)
+_source_profile "${HOME}/.bash_profile"
+_source_profile "${HOME}/.profile"
+_source_profile "${HOME}/.bashrc"
 
 # Find mcp-bash: prefer PATH (via shell profile), then XDG location, then legacy
 MCP_BASH=""
