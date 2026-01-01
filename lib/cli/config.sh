@@ -111,17 +111,18 @@ EOF
 	fi
 
 	if [ "${mode}" = "wrapper" ]; then
+		# Generate wrapper content using printf to avoid bash 3.2 heredoc parsing issues
+		# (bash 3.2 has problems with heredocs inside command substitutions)
 		local wrapper_content
-		if [ "${wrapper_env}" = "true" ]; then
-			wrapper_content="$(
-				cat <<'EOF'
-#!/usr/bin/env bash
+		wrapper_content='#!/usr/bin/env bash
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
+'
+		if [ "${wrapper_env}" = "true" ]; then
+			wrapper_content="${wrapper_content}"'
 # Source shell profiles to get PATH (pyenv, nvm, rbenv, etc.)
-# GUI apps like Claude Desktop don't inherit terminal environment.
+# GUI apps like Claude Desktop do not inherit terminal environment.
 # Source both login and interactive profiles since version managers
 # may be configured in either location.
 _source_profile() { [ -f "$1" ] && . "$1" >/dev/null 2>&1 || true; }
@@ -135,35 +136,13 @@ _source_profile "${HOME}/.profile"
 _source_profile "${HOME}/.bashrc"
 
 # Find mcp-bash: prefer PATH (via shell profile), then XDG location, then legacy
-MCP_BASH=""
-if command -v mcp-bash >/dev/null 2>&1; then
-	MCP_BASH="$(command -v mcp-bash)"
-elif [ -f "${HOME}/.local/bin/mcp-bash" ]; then
-	MCP_BASH="${HOME}/.local/bin/mcp-bash"
-elif [ -f "${MCPBASH_HOME:-}/bin/mcp-bash" ]; then
-	MCP_BASH="${MCPBASH_HOME}/bin/mcp-bash"
-fi
-
-if [ -z "${MCP_BASH}" ]; then
-	printf 'Error: mcp-bash not found in PATH or ~/.local/bin\n' >&2
-	printf 'Install: download release + verify checksum (README), fallback: curl -fsSL https://raw.githubusercontent.com/yaniv-golan/mcp-bash-framework/main/install.sh | bash -- --yes\n' >&2
-	exit 1
-fi
-
-export MCPBASH_PROJECT_ROOT="${SCRIPT_DIR}"
-exec "${MCP_BASH}" "$@"
-EOF
-			)"
+'
 		else
-			wrapper_content="$(
-				cat <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
+			wrapper_content="${wrapper_content}"'
 # Find mcp-bash: prefer PATH, then XDG location, then legacy
-MCP_BASH=""
+'
+		fi
+		wrapper_content="${wrapper_content}"'MCP_BASH=""
 if command -v mcp-bash >/dev/null 2>&1; then
 	MCP_BASH="$(command -v mcp-bash)"
 elif [ -f "${HOME}/.local/bin/mcp-bash" ]; then
@@ -173,16 +152,14 @@ elif [ -f "${MCPBASH_HOME:-}/bin/mcp-bash" ]; then
 fi
 
 if [ -z "${MCP_BASH}" ]; then
-	printf 'Error: mcp-bash not found in PATH or ~/.local/bin\n' >&2
-	printf 'Install: download release + verify checksum (README), fallback: curl -fsSL https://raw.githubusercontent.com/yaniv-golan/mcp-bash-framework/main/install.sh | bash -- --yes\n' >&2
+	printf '"'"'Error: mcp-bash not found in PATH or ~/.local/bin\n'"'"' >&2
+	printf '"'"'Install: see README for download and verification instructions\n'"'"' >&2
 	exit 1
 fi
 
 export MCPBASH_PROJECT_ROOT="${SCRIPT_DIR}"
 exec "${MCP_BASH}" "$@"
-EOF
-			)"
-		fi
+'
 
 		# Validate server name is safe for use as filename
 		if ! mcp_scaffold_validate_name "${server_name}"; then
