@@ -428,6 +428,12 @@ mcp_runtime_init_paths() {
 	fi
 	mkdir -p "${MCPBASH_SERVER_DIR}" >/dev/null 2>&1 || true
 
+	# Providers directory (project-level custom providers)
+	# Unlike other content directories, this is NOT auto-created (providers are optional)
+	if [ -z "${MCPBASH_PROVIDERS_DIR:-}" ]; then
+		MCPBASH_PROVIDERS_DIR="${MCPBASH_PROJECT_ROOT}/providers"
+	fi
+
 	# Debug: log resolved paths
 	mcp_runtime_log_resolved_paths
 }
@@ -444,6 +450,7 @@ mcp-bash: Resolved paths:
   MCPBASH_RESOURCES_DIR=${MCPBASH_RESOURCES_DIR}
   MCPBASH_PROMPTS_DIR=${MCPBASH_PROMPTS_DIR}
   MCPBASH_SERVER_DIR=${MCPBASH_SERVER_DIR}
+  MCPBASH_PROVIDERS_DIR=${MCPBASH_PROVIDERS_DIR}
   MCPBASH_REGISTRY_DIR=${MCPBASH_REGISTRY_DIR}
 EOF
 	fi

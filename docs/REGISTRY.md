@@ -132,6 +132,90 @@ Entries describe resources and providers. Paths are relative to `MCPBASH_RESOURC
 - The `file` provider fails closed if no resource roots are configured; missing/non-existent roots are ignored, so ensure allowed roots exist before use.
 - Subscription notifications (`notifications/resources/updated`) are spec-shaped and only include `params.uri`; clients should call `resources/read` to fetch the updated content.
 
+## Project-Level Providers
+
+Projects can define custom resource providers by placing scripts in `${MCPBASH_PROJECT_ROOT}/providers/`. Project providers are checked before framework providers, enabling:
+
+- Custom URI schemes for domain-specific resources
+- Provider overrides for testing
+- Self-contained deployable projects
+
+### Directory Structure
+
+```
+my-project/
+├── providers/
+│   └── myapi.sh          # Custom provider for myapi:// URIs
+├── resources/
+│   └── status.meta.json  # Uses "provider": "myapi"
+└── server.d/
+    └── server.meta.json
+```
+
+### Provider Contract
+
+Project providers follow the same contract as framework providers:
+
+**Arguments**: Provider receives the full URI as `$1`
+
+**Exit codes**:
+- `0`: Success (content on stdout)
+- `2`: Resource outside allowed roots
+- `3`: Resource not found
+- `4`: Invalid resource specification
+- `5`: Fetch failed
+- `6`: Size limit exceeded
+
+**Environment**: Providers run in a curated environment with:
+- `MCPBASH_HOME` - Framework installation directory
+- `MCPBASH_PROJECT_ROOT` - Project root directory
+- `MCPBASH_PROVIDERS_DIR` - Providers directory
+- `MCP_RESOURCES_ROOTS` - Allowed resource roots (colon-separated)
+- Standard paths: `PATH`, `HOME`, `TMPDIR`, `LANG`, `LC_*`
+
+### Example Provider
+
+```bash
+#!/usr/bin/env bash
+# providers/myapi.sh - Custom provider for myapi:// URIs
+
+set -euo pipefail
+
+uri="${1:-}"
+if [ -z "${uri}" ]; then
+    printf '%s\n' "myapi provider requires myapi://<path>" >&2
+    exit 4
+fi
+
+case "${uri}" in
+myapi://status)
+    # Fetch from API
+    curl -sf "https://api.example.com/status" || exit 5
+    ;;
+myapi://*)
+    printf '%s\n' "Unknown myapi resource: ${uri#myapi://}" >&2
+    exit 3
+    ;;
+*)
+    printf '%s\n' "Invalid URI scheme for myapi provider" >&2
+    exit 4
+    ;;
+esac
+```
+
+### Precedence
+
+When both project and framework providers exist with the same name:
+1. **Project provider wins** (`${MCPBASH_PROJECT_ROOT}/providers/foo.sh`)
+2. Framework provider is fallback (`${MCPBASH_HOME}/providers/foo.sh`)
+
+To delegate to the framework provider from a project provider:
+
+```bash
+# In project provider
+exec "${MCPBASH_HOME}/providers/https.sh" "$@"
+```
+
 ## `.registry/resource-templates.json`
 
 Entries describe resource template patterns, sorted by `name`, and are refreshed independently of static resources.

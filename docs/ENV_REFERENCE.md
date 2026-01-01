@@ -8,6 +8,7 @@ Authoritative list of supported environment variables. Defaults shown are the sh
 |----------|---------|-------|
 | `MCPBASH_PROJECT_ROOT` | (required for MCP clients) | Project root containing `tools/`, `resources/`, `prompts/`, `server.d/`. |
 | `MCPBASH_TOOLS_DIR` / `MCPBASH_RESOURCES_DIR` / `MCPBASH_PROMPTS_DIR` / `MCPBASH_SERVER_DIR` | Derived from `MCPBASH_PROJECT_ROOT` | Override content and server hook locations. |
+| `MCPBASH_PROVIDERS_DIR` | `${MCPBASH_PROJECT_ROOT}/providers` | Directory for project-level resource providers. Scripts here are checked before framework providers. Unlike other content directories, not auto-created. |
 | `MCPBASH_REGISTRY_DIR` | `$MCPBASH_PROJECT_ROOT/.registry` | Registry cache location. |
 | `MCPBASH_REGISTRY_MAX_BYTES` | `104857600` | Registry size guard (bytes). |
 | `MCPBASH_REGISTRY_REFRESH_PATH` | (unset) | Limit registry refresh to a subpath (must be a literal subpath of the default scan dir; no glob semantics). |

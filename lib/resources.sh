@@ -1439,7 +1439,33 @@ mcp_resources_read_file() {
 mcp_resources_read_via_provider() {
 	local provider="$1"
 	local uri="$2"
-	local script="${MCPBASH_HOME}/providers/${provider}.sh"
+	local script=""
+
+	# Check project-level providers first (if directory exists)
+	if [ -n "${MCPBASH_PROVIDERS_DIR:-}" ] && [ -d "${MCPBASH_PROVIDERS_DIR}" ]; then
+		local project_script="${MCPBASH_PROVIDERS_DIR}/${provider}.sh"
+		if [ -f "${project_script}" ]; then
+			script="${project_script}"
+		fi
+	fi
+
+	# Fall back to framework providers
+	if [ -z "${script}" ]; then
+		script="${MCPBASH_HOME}/providers/${provider}.sh"
+	fi
+
+	# Debug log which provider is being used (case for string matching per bash-conventions.mdc)
+	if declare -F mcp_logging_is_enabled >/dev/null 2>&1 && mcp_logging_is_enabled "debug"; then
+		case "${script}" in
+		"${MCPBASH_PROVIDERS_DIR}"/*)
+			mcp_logging_debug "${MCP_RESOURCES_LOGGER}" "Using project provider: ${script}"
+			;;
+		*)
+			mcp_logging_debug "${MCP_RESOURCES_LOGGER}" "Using framework provider: ${script}"
+			;;
+		esac
+	fi
+
 	# On Windows (Git Bash/MSYS), -x test is unreliable. If the provider script
 	# exists but isn't executable, fall back to invoking it via bash when it looks
 	# like a script (shebang or .sh/.bash extension).
@@ -1477,6 +1503,8 @@ mcp_resources_read_via_provider() {
 		if (
 			local env_pairs=(
 				"MCPBASH_HOME=${MCPBASH_HOME}"
+				"MCPBASH_PROJECT_ROOT=${MCPBASH_PROJECT_ROOT:-}"
+				"MCPBASH_PROVIDERS_DIR=${MCPBASH_PROVIDERS_DIR:-}"
 				"MCP_RESOURCES_ROOTS=${MCP_RESOURCES_ROOTS:-${MCPBASH_RESOURCES_DIR}}"
 			)
 			case "${provider}" in

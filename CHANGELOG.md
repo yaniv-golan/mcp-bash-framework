@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.8.4] - Unreleased
 
+### Added
+- **Project-level resource providers**: Projects can now define custom resource providers in `${MCPBASH_PROJECT_ROOT}/providers/`. Project providers are checked before framework providers, enabling custom URI schemes (e.g., `xaffinity://`, `myapi://`) without modifying the framework installation. See `docs/REGISTRY.md` for details.
+- New environment variable `MCPBASH_PROVIDERS_DIR` for overriding the providers directory location.
+
 ### Fixed
 - Shell profile sourcing now loads all relevant profiles (`.zprofile`, `.zshrc`, `.bash_profile`, `.profile`, `.bashrc`) instead of only the first one found. Ensures version managers like pyenv, nvm, and rbenv are properly available when MCP servers are launched from GUI applications like Claude Desktop.
 

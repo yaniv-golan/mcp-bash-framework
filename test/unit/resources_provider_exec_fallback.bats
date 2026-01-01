@@ -23,8 +23,10 @@ test_create_tmpdir
 
 export MCPBASH_TMP_ROOT="${TEST_TMPDIR}"
 export MCPBASH_HOME="${TEST_TMPDIR}/home"
+export MCPBASH_PROJECT_ROOT="${TEST_TMPDIR}/project"
+export MCPBASH_PROVIDERS_DIR="${MCPBASH_PROJECT_ROOT}/providers"
 export MCPBASH_RESOURCES_DIR="${TEST_TMPDIR}/resources"
-mkdir -p "${MCPBASH_HOME}/providers" "${MCPBASH_RESOURCES_DIR}"
+mkdir -p "${MCPBASH_HOME}/providers" "${MCPBASH_PROVIDERS_DIR}" "${MCPBASH_RESOURCES_DIR}"
 
 cat >"${MCPBASH_HOME}/providers/git.sh" <<'EOF'
 #!/usr/bin/env bash
@@ -35,9 +37,22 @@ EOF
 # Intentionally do NOT chmod +x to simulate Git Bash/MSYS execute-bit issues.
 chmod -x "${MCPBASH_HOME}/providers/git.sh" 2>/dev/null || true
 
-printf ' -> runs non-executable provider via bash fallback\n'
+printf ' -> runs non-executable framework provider via bash fallback\n'
 out="$(mcp_resources_read_via_provider "git" "git+https://example/repo#main:README.md")"
 assert_eq "ok:provider-ran:git+https://example/repo#main:README.md" "${out}" "expected provider to run via bash fallback"
+
+# --- Test project-level provider execute-bit fallback ---
+printf ' -> runs non-executable project provider via bash fallback\n'
+
+cat >"${MCPBASH_PROVIDERS_DIR}/project.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s' "ok:project-provider-ran:${1}"
+EOF
+chmod -x "${MCPBASH_PROVIDERS_DIR}/project.sh" 2>/dev/null || true
+
+out="$(mcp_resources_read_via_provider "project" "project://test")"
+assert_eq "ok:project-provider-ran:project://test" "${out}" "expected project provider via bash fallback"
 
 printf 'resources provider exec fallback test passed.\n'
 
