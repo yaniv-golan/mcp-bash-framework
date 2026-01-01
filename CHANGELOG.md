@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Shell profile sourcing now loads all relevant profiles (`.zprofile`, `.zshrc`, `.bash_profile`, `.profile`, `.bashrc`) instead of only the first one found. Ensures version managers like pyenv, nvm, and rbenv are properly available when MCP servers are launched from GUI applications like Claude Desktop.
+- `config --wrapper` and `--wrapper-env` now work on macOS system bash (3.2) by avoiding heredocs inside command substitutions.
 
 ## [0.8.3] - 2025-12-26
 

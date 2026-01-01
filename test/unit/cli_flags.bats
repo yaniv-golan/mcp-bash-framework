@@ -59,16 +59,16 @@ wrapper_output="$("${REPO_ROOT}/bin/mcp-bash" config --project-root "${PROJECT_R
 assert_contains "#!/usr/bin/env bash" "${wrapper_output}"
 assert_contains "MCPBASH_PROJECT_ROOT" "${wrapper_output}"
 assert_contains "mcp-bash not found" "${wrapper_output}"
-assert_contains "download release + verify checksum" "${wrapper_output}"
+assert_contains "see README for download" "${wrapper_output}"
 if [[ -f "${PROJECT_ROOT}/cli-flags-test.sh" ]]; then
 	test_fail "Wrapper file should not be created in non-TTY context"
 fi
 
 printf ' -> config --wrapper-env emits profile-aware wrapper\n'
 wrapper_env_output="$("${REPO_ROOT}/bin/mcp-bash" config --project-root "${PROJECT_ROOT}" --wrapper-env)"
-assert_contains "SHELL_PROFILE" "${wrapper_env_output}"
-assert_contains '. "${SHELL_PROFILE}"' "${wrapper_env_output}"
-assert_contains "download release + verify checksum" "${wrapper_env_output}"
+assert_contains "_source_profile" "${wrapper_env_output}"
+assert_contains '_source_profile "${HOME}/.zshrc"' "${wrapper_env_output}"
+assert_contains "see README for download" "${wrapper_env_output}"
 
 printf ' -> config --wrapper rejects invalid server names but still emits script to stdout\n'
 bad_project="${TEST_TMPDIR}/badproj"
