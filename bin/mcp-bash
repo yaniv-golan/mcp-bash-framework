@@ -61,6 +61,9 @@ Usage:
   mcp-bash doctor          # diagnose environment and installation issues
   mcp-bash registry refresh [--project-root DIR] [--no-notify] [--quiet] [--filter PATH]
   mcp-bash registry status [--project-root DIR]
+  mcp-bash bundle [--output DIR] [--name NAME] [--version VERSION]
+                  [--validate] [--verbose]
+                           # create distributable MCPB bundle
 
 Note: running without MCPBASH_PROJECT_ROOT starts a temporary getting-started helper tool.
 Remote deployments: set MCPBASH_REMOTE_TOKEN to require per-request _meta token; see docs/REMOTE.md.
@@ -308,6 +311,14 @@ if [ "${cli_cmd}" = "scaffold" ]; then
 	esac
 fi
 
+if [ "${cli_cmd}" = "bundle" ]; then
+	shift
+	# shellcheck source=lib/cli/bundle.sh disable=SC1091
+	. "${MCPBASH_HOME}/lib/cli/bundle.sh"
+	mcp_cli_bundle "$@"
+	exit $?
+fi
+
 if [ "${cli_cmd}" = "debug" ]; then
 	shift
 	export MCPBASH_DEBUG_PAYLOADS=true
@@ -324,6 +335,13 @@ if [ "${cli_cmd}" = "debug" ]; then
 	printf 'mcp-bash debug: logging to %s/payload.debug.log\n' "${MCPBASH_STATE_DIR}" >&2
 	main "$@"
 	exit $?
+fi
+
+# Catch unknown commands before falling through to server mode
+if [ -n "${cli_cmd}" ] && [[ ! "${cli_cmd}" =~ ^- ]]; then
+	printf 'Unknown command: %s\n\n' "${cli_cmd}" >&2
+	printf 'Run "mcp-bash --help" for available commands.\n' >&2
+	exit 2
 fi
 
 main "$@"

@@ -1,0 +1,31 @@
+{
+  "manifest_version": "0.3",
+  "name": "__NAME__",
+  "version": "__VERSION__",
+  "display_name": "__DISPLAY_NAME__",
+  "description": "__DESCRIPTION__",
+  "author": {
+    "name": "__AUTHOR_NAME__",
+    "email": "__AUTHOR_EMAIL__",
+    "url": "__AUTHOR_URL__"
+  },
+  "repository": {
+    "type": "git",
+    "url": "__REPOSITORY_URL__"
+  },
+  "server": {
+    "type": "binary",
+    "entry_point": "server/run-server.sh",
+    "mcp_config": {
+      "command": "${__dirname}/server/run-server.sh",
+      "args": [],
+      "env": {
+        "MCPBASH_PROJECT_ROOT": "${__dirname}/server",
+        "MCPBASH_TOOL_ALLOWLIST": "*"
+      }
+    }
+  },
+  "compatibility": {
+    "platforms": ["darwin", "linux"]
+  }
+}

@@ -5,7 +5,7 @@
   "websiteUrl": "https://github.com/yaniv-golan/mcp-bash-framework",
   "icons": [
     {
-      "src": "https://raw.githubusercontent.com/yaniv-golan/mcp-bash-framework/main/assets/icon.svg",
+      "src": "https://raw.githubusercontent.com/yaniv-golan/mcp-bash-framework/main/assets/mcp-bash-framework-icon.svg",
       "sizes": ["any"],
       "mimeType": "image/svg+xml"
     }

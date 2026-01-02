@@ -5,6 +5,24 @@ All notable changes to mcp-bash-framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - Unreleased
+
+### Added
+- **MCPB bundle support**: `mcp-bash bundle` creates distributable `.mcpb` packages for one-click installation in MCPB-compatible clients (e.g., Claude Desktop). Bundles include the embedded framework, tools, resources, prompts, and a generated manifest following MCPB specification v0.3.
+- Optional `mcpb.conf` configuration file for customizing bundle metadata (name, version, author, repository). Values fall back to `server.d/server.meta.json`, `VERSION` file, and git config.
+- Automatic icon inclusion: `icon.png` or `icon.svg` in project root is bundled for client UI display.
+- New documentation: `docs/MCPB.md` covers bundle creation, configuration, structure, and troubleshooting.
+- GitHub Actions workflow `.github/workflows/bundle.yml` for CI testing of bundle creation across platforms.
+- Example Makefile with `make bundle` target in `examples/00-hello-tool/`.
+
+### Changed
+- Renamed default icon from `assets/icon.svg` to `assets/mcp-bash-framework-icon.svg` for clarity.
+- `mcp-bash new` now includes `mcp-bash bundle` in the "Next steps" output.
+
+### Fixed
+- Project root detection now recognizes valid projects under `MCPBASH_HOME` (e.g., `examples/`) by checking for `server.d/server.meta.json` before skipping framework-internal paths.
+- Unknown CLI commands now display an error message instead of silently entering server mode.
+
 ## [0.8.4] - 2026-01-01
 
 ### Added

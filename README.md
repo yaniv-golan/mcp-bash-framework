@@ -25,6 +25,7 @@ Edit README.md.in and run: bash scripts/render-readme.sh
 - [Configuration](#configuration)
 - [Learn by Example](#learn-by-example)
 - [Documentation](#documentation)
+- [Built with mcp-bash](#built-with-mcp-bash)
 - [FAQ](#faq)
 
 > **The most complete MCP implementation in pure Bash.** Tools, resources, prompts, elicitation, roots, progress, cancellation—the full spec, no runtimes beyond your shell.
@@ -113,13 +114,13 @@ command -v jq >/dev/null 2>&1 || command -v gojq >/dev/null 2>&1 || printf '%s\n
 Quick install (good for local dev / trusted networks):
 
 ```bash
-curl -fsSL "https://raw.githubusercontent.com/yaniv-golan/mcp-bash-framework/v0.8.4/install.sh" | bash -s -- --yes --version "v0.8.4"
+curl -fsSL "https://raw.githubusercontent.com/yaniv-golan/mcp-bash-framework/v0.8.5/install.sh" | bash -s -- --yes --version "v0.8.5"
 ```
 
 Verified install (recommended for production / security-sensitive environments):
 
 ```bash
-version="v0.8.4"
+version="v0.8.5"
 file="mcp-bash-${version}.tar.gz"
 curl -fsSLO "https://github.com/yaniv-golan/mcp-bash-framework/releases/download/${version}/${file}"
 curl -fsSLO "https://github.com/yaniv-golan/mcp-bash-framework/releases/download/${version}/SHA256SUMS"
@@ -148,7 +149,7 @@ echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc  # or ~/.zshrc (if not 
 Pin a release with the installer (auto-prefixes `v` for bare versions):
 
 ```bash
-bash install.sh --verify <sha256-from-SHA256SUMS> --version 0.8.4
+bash install.sh --verify <sha256-from-SHA256SUMS> --version 0.8.5
 ```
 
 ### 1.5 Verify It Works (30 seconds)
@@ -614,6 +615,18 @@ printf 'See embedded report for details'
 ```
 
 See the dedicated example at `examples/06-embedded-resources/`.
+
+## Built with mcp-bash
+
+If you've built an MCP server using this framework, show it off! Add this badge to your project's README:
+
+[![MCP Bash Framework](https://img.shields.io/badge/MCP-MCP_Bash_Framework-green?logo=modelcontextprotocol)](https://github.com/yaniv-golan/mcp-bash-framework)
+
+```markdown
+[![MCP Bash Framework](https://img.shields.io/badge/MCP-MCP_Bash_Framework-green?logo=modelcontextprotocol)](https://github.com/yaniv-golan/mcp-bash-framework)
+```
+
+We'd love to see what you build—consider [opening a discussion](https://github.com/yaniv-golan/mcp-bash-framework/discussions) to share your project with the community.
 
 ## FAQ
 
