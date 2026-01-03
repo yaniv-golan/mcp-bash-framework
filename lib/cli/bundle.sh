@@ -802,8 +802,9 @@ mcp_cli_bundle() {
 	mcp_bundle_generate_manifest "${staging_dir}" "${MCPBASH_PROJECT_ROOT}"
 	printf '  \342\234\223 Generated manifest.json\n'
 
-	# Create output directory if needed
+	# Create output directory if needed and resolve to absolute path
 	mkdir -p "${output_dir}"
+	output_dir="$(cd "${output_dir}" && pwd)"
 
 	# Create archive
 	local bundle_filename="${RESOLVED_NAME}-${RESOLVED_VERSION}.mcpb"
