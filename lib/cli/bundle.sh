@@ -737,11 +737,6 @@ mcp_cli_bundle() {
 	# Find project root
 	mcp_scaffold_require_project_root
 
-	# Check dependencies
-	if ! mcp_bundle_check_dependencies; then
-		exit 3
-	fi
-
 	# Validate project
 	printf 'Validating project...\n'
 	if ! mcp_bundle_validate_project "${MCPBASH_PROJECT_ROOT}" "${verbose}"; then
@@ -768,6 +763,11 @@ mcp_cli_bundle() {
 	if [ "${validate_only}" = "true" ]; then
 		printf '\n\342\234\223 Validation passed. Bundle would be: %s-%s.mcpb\n' "${RESOLVED_NAME}" "${RESOLVED_VERSION}"
 		exit 0
+	fi
+
+	# Check dependencies (only needed for actual bundling, not validation)
+	if ! mcp_bundle_check_dependencies; then
+		exit 3
 	fi
 
 	# Create staging directory
