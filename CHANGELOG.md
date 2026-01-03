@@ -5,12 +5,18 @@ All notable changes to mcp-bash-framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.9.1] - Unreleased
+## [0.9.1] - 2026-01-03
+
+### Added
+- Installer now uses exit code 3 for policy refusal (user declined prompt or `MCPBASH_HOME` is set), allowing CI/CD scripts to distinguish "user/policy declined" from actual failures (exit 1).
+- Installer help text now documents exit codes (0=success, 1=error, 2=invalid args, 3=policy refusal).
+- README now includes installer exit codes table and CI/CD installation patterns (tarball+SHA256 and git+SHA verification).
 
 ### Fixed
 - Installer color escape codes now render correctly (use `$'\033[...]'` syntax instead of single-quoted literals).
 - Installer now prompts interactively via `/dev/tty` when run via `curl | bash`, instead of auto-confirming overwrites.
 - Installer messaging clarifies when auto-confirm is due to `--yes` flag vs no TTY available.
+- Installer verification error messages now include filename, expected/actual SHA values, and guidance on possible causes (corrupted download, MITM attack, version mismatch).
 
 ## [0.9.0] - 2026-01-03
 

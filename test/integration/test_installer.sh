@@ -18,6 +18,9 @@ test_require_command git
 test_create_tmpdir
 INSTALL_ROOT="${TEST_TMPDIR}/install-root"
 
+# Unset MCPBASH_HOME for tests that should succeed (policy refusal test sets it explicitly)
+unset MCPBASH_HOME
+
 printf ' -> install from local source\n'
 INSTALL_BRANCH="$(git -C "${MCPBASH_TEST_ROOT}" rev-parse --abbrev-ref HEAD)"
 MCPBASH_INSTALL_LOCAL_SOURCE="${MCPBASH_TEST_ROOT}" "${MCPBASH_TEST_ROOT}/install.sh" --dir "${INSTALL_ROOT}" --branch "${INSTALL_BRANCH}" --yes
@@ -81,6 +84,45 @@ status=$?
 set -e
 if [ "${status}" -eq 0 ]; then
 	test_fail "installer succeeded with invalid branch against local repo"
+fi
+
+printf ' -> exit code 3 when MCPBASH_HOME is set (policy refusal)\n'
+POLICY_DIR="${TEST_TMPDIR}/policy-install"
+set +e
+MCPBASH_HOME="/some/user/managed/path" MCPBASH_INSTALL_LOCAL_SOURCE="${MCPBASH_TEST_ROOT}" "${MCPBASH_TEST_ROOT}/install.sh" --dir "${POLICY_DIR}" --yes >/dev/null 2>&1
+status=$?
+set -e
+assert_eq "3" "${status}" "MCPBASH_HOME set should exit with code 3"
+
+printf ' -> verification error includes filename and expected/actual SHA\n'
+VERIFY_ERR_DIR="${TEST_TMPDIR}/verify-err-install"
+VERIFY_ERR_ARCHIVE="${TEST_TMPDIR}/mcp-bash-v0.0.1.tar.gz"
+# Reuse the archive from earlier (or create a fresh one)
+if [ ! -f "${VERIFY_ERR_ARCHIVE}" ]; then
+	VERIFY_STAGE="${TEST_TMPDIR}/verify-stage"
+	mkdir -p "${VERIFY_STAGE}/mcp-bash"
+	(cd "${MCPBASH_TEST_ROOT}" && tar -cf - --exclude .git .) | (cd "${VERIFY_STAGE}/mcp-bash" && tar -xf -)
+	(cd "${VERIFY_STAGE}" && tar -czf "${VERIFY_ERR_ARCHIVE}" mcp-bash)
+fi
+# Use a fake SHA to trigger verification failure
+FAKE_SHA="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+set +e
+err_output=$("${MCPBASH_TEST_ROOT}/install.sh" --dir "${VERIFY_ERR_DIR}" --archive "${VERIFY_ERR_ARCHIVE}" --verify "${FAKE_SHA}" --yes 2>&1)
+status=$?
+set -e
+assert_eq "1" "${status}" "checksum mismatch should exit with code 1"
+# Check that error message includes key components
+if ! printf '%s' "${err_output}" | grep -q "SHA256 checksum verification failed for:"; then
+	test_fail "verification error should include 'SHA256 checksum verification failed for:'"
+fi
+if ! printf '%s' "${err_output}" | grep -q "Expected:"; then
+	test_fail "verification error should include 'Expected:'"
+fi
+if ! printf '%s' "${err_output}" | grep -q "Got:"; then
+	test_fail "verification error should include 'Got:'"
+fi
+if ! printf '%s' "${err_output}" | grep -q "${FAKE_SHA}"; then
+	test_fail "verification error should include expected SHA value"
 fi
 
 printf 'Installer integration test passed.\n'

@@ -102,6 +102,12 @@ Examples:
   # Fallback (less safe): curl -fsSL .../install.sh | bash -s -- --yes
   # CI-friendly fallback: curl -fsSL .../install.sh | bash -s -- --yes --version v0.4.0  # auto-prefixes v
 
+Exit Codes:
+  0 - Success
+  1 - Error (checksum failed, missing deps, extraction failed, etc.)
+  2 - Invalid arguments
+  3 - Policy refusal (user declined prompt, MCPBASH_HOME set)
+
 Note: Installs to ~/.local/share/mcp-bash with a symlink in ~/.local/bin (XDG compliant)
 EOF
 		exit 0
@@ -202,11 +208,19 @@ if [ -d "${INSTALL_DIR}" ]; then
 		fi
 		printf "\n"
 		if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-			info "Installation cancelled"
-			exit 0
+			info "Installation cancelled by user."
+			exit 3
 		fi
 	fi
 	rm -rf "${INSTALL_DIR}"
+fi
+
+# Check for MCPBASH_HOME override (policy refusal - user manages their own install)
+if [ -n "${MCPBASH_HOME:-}" ]; then
+	error "MCPBASH_HOME is set (${MCPBASH_HOME})"
+	error "This indicates a user-managed installation. The installer will not modify it."
+	error "Unset MCPBASH_HOME to allow the installer to manage the installation."
+	exit 3
 fi
 
 # Determine install strategy (git clone vs verified archive)
@@ -357,7 +371,17 @@ else
 				if [ "${cleanup_archive}" -eq 1 ]; then
 					rm -f "${archive_path}" || true
 				fi
-				error "Checksum mismatch! Expected ${VERIFY_SHA256}, got ${computed_sha}"
+				error "SHA256 checksum verification failed for: ${archive_path##*/}"
+				printf "\n" >&2
+				error "This may indicate:"
+				error "  - Corrupted download (try again)"
+				error "  - Man-in-the-middle attack"
+				error "  - Version mismatch"
+				printf "\n" >&2
+				error "Expected: ${VERIFY_SHA256}"
+				error "Got:      ${computed_sha}"
+				printf "\n" >&2
+				error "For manual verification, see: https://github.com/yaniv-golan/mcp-bash-framework/releases"
 				exit 1
 			fi
 			success "Archive checksum verified (--verify)"
@@ -421,7 +445,17 @@ else
 							if [ "${cleanup_archive}" -eq 1 ]; then
 								rm -f "${archive_path}" || true
 							fi
-							error "Checksum mismatch! Expected ${expected_sha}, got ${computed_sha}"
+							error "SHA256 checksum verification failed for: ${canonical_file}"
+							printf "\n" >&2
+							error "This may indicate:"
+							error "  - Corrupted download (try again)"
+							error "  - Man-in-the-middle attack"
+							error "  - Version mismatch"
+							printf "\n" >&2
+							error "Expected: ${expected_sha}"
+							error "Got:      ${computed_sha}"
+							printf "\n" >&2
+							error "For manual verification, see: https://github.com/yaniv-golan/mcp-bash-framework/releases"
 							exit 1
 						fi
 						success "Archive checksum verified (SHA256SUMS)"
