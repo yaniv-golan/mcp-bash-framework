@@ -32,6 +32,7 @@ mcp_health_check_env() {
 	fi
 }
 
+# shellcheck disable=SC2120  # Optional arg defaults to MCPBASH_PROJECT_ROOT
 mcp_health_run_project_checks() {
 	local project_root="${1:-${MCPBASH_PROJECT_ROOT:-}}"
 	local checks_file="${project_root}/server.d/health-checks.sh"
@@ -143,6 +144,7 @@ mcp_cli_health_probe() {
 	fi
 
 	# Run optional project health checks (server.d/health-checks.sh)
+	# shellcheck disable=SC2119  # Uses MCPBASH_PROJECT_ROOT default
 	if ! mcp_health_run_project_checks; then
 		project_status="failed"
 		any_fail=1
