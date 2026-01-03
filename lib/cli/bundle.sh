@@ -385,7 +385,7 @@ mcp_bundle_copy_project() {
 	BUNDLED_ICON=""
 
 	# Copy project directories if they exist
-	for dir in tools resources prompts completions server.d; do
+	for dir in tools resources prompts completions server.d lib providers; do
 		if [ -d "${project_root}/${dir}" ]; then
 			cp -R "${project_root}/${dir}" "${staging_server}/"
 			if [ "${verbose}" = "true" ]; then

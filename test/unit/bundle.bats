@@ -143,4 +143,15 @@ if ! jq -e '.version == "9.9.9"' "${EXTRACT_DIR}/manifest.json" >/dev/null; then
 	test_fail "manifest version not overridden"
 fi
 
+printf ' -> lib/ and providers/ directories are bundled when present\n'
+rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+mkdir -p "${PROJECT_ROOT}/lib"
+mkdir -p "${PROJECT_ROOT}/providers/custom"
+echo '# shared library code' > "${PROJECT_ROOT}/lib/utils.sh"
+echo '# custom provider' > "${PROJECT_ROOT}/providers/custom/provider.sh"
+(cd "${PROJECT_ROOT}" && "${REPO_ROOT}/bin/mcp-bash" bundle --output "${OUTPUT_DIR}" >/dev/null)
+unzip -q "${OUTPUT_DIR}/test-server-1.2.3.mcpb" -d "${EXTRACT_DIR}"
+assert_file_exists "${EXTRACT_DIR}/server/lib/utils.sh"
+assert_file_exists "${EXTRACT_DIR}/server/providers/custom/provider.sh"
+
 printf 'Bundle tests passed.\n'

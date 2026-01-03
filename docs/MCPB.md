@@ -97,6 +97,9 @@ my-server-1.0.0.mcpb
     ├── tools/
     ├── resources/
     ├── prompts/
+    ├── completions/
+    ├── lib/                # Optional: project shared libraries
+    ├── providers/          # Optional: custom resource providers
     └── server.d/
 ```
 
@@ -192,7 +195,12 @@ Recommended specifications:
 
    # Test the wrapper script directly
    /tmp/bundle-test/server/run-server.sh --health
+
+   # Run in debug mode for full payload logging
+   MCPBASH_PROJECT_ROOT=/tmp/bundle-test/server /tmp/bundle-test/server/.mcp-bash/bin/mcp-bash debug
    ```
+
+   See [DEBUGGING.md](DEBUGGING.md) for comprehensive debugging guidance including MCP Inspector integration, log analysis, and troubleshooting flowcharts.
 
 ## Publishing to MCP Registry
 
