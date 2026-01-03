@@ -121,6 +121,7 @@ Size guardrails: `mcp_core_guard_response_size` rejects oversized responses with
 - **Prompt render failed (`-32603`)**: Ensure the prompt file exists and is readable.
 - **Resource/provider failures (`-32603`, message includes provider detail such as "Unable to read resource")**: Confirm the provider is supported (`file`, `git`, `https`), URI is valid, and payload size is within `MCPBASH_MAX_RESOURCE_BYTES`.
 - **Minimal mode responses (`-32601`)**: Ensure `jq`/`gojq` is available or unset `MCPBASH_FORCE_MINIMAL` to enable tools/resources/prompts.
+- **jq parse error in tool output**: Often caused by external CLI failures producing empty stdout. Using `2>/dev/null` hides stderr but doesn't prevent empty output—add `|| echo '{}'` fallback. See [BEST-PRACTICES.md § Calling external CLI tools](BEST-PRACTICES.md#calling-external-cli-tools).
 
 ## Operational Safeguards
 

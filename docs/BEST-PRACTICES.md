@@ -52,6 +52,12 @@ This guide distils hands-on recommendations for designing, building, and operati
 | `mcp_is_cancelled` | Check cancellation | `if mcp_is_cancelled; then exit 1; fi` |
 | `mcp_log_info` | Structured logging | `mcp_log_info "tool" "message"` |
 
+### External command patterns
+| Pattern | Purpose | Example |
+| --- | --- | --- |
+| `cmd \| jq '...' \|\| echo '{}'` | Safe jq pipeline with fallback | `data=$(mycli get "$id" 2>/dev/null \| jq '.data // {}' \|\| echo '{}')` |
+| `cmd 2>/dev/null \|\| echo '{...}'` | JSON fallback on CLI failure | `result=$(mycli query 2>/dev/null \|\| echo '{"items":[]}')` |
+
 ### Environment variables
 | Variable | Description | Notes |
 | --- | --- | --- |
@@ -537,6 +543,67 @@ fi
 - For richer tool failure context, enable `MCPBASH_TOOL_STDERR_CAPTURE` and tune `MCPBASH_TOOL_STDERR_TAIL_LIMIT` (default 4096 bytes). Timeouts include exit code and stderr tail when `MCPBASH_TOOL_TIMEOUT_CAPTURE` is on (default).
 - For tricky shell tools, opt into tracing with `MCPBASH_TRACE_TOOLS=true`; traces go to per-invocation logs under `MCPBASH_STATE_DIR` (cap via `MCPBASH_TRACE_MAX_BYTES`, adjust PS4 with `MCPBASH_TRACE_PS4`). SDK helpers suppress xtrace around secret-bearing args/_meta payload expansions, but tools can still leak secrets if they print values explicitly. Trace lines are added to `error.data.traceLine` when enabled.
 
+#### Calling external CLI tools
+
+When your tool wraps external commands (CLIs, APIs via curl, etc.), handle failures explicitly to avoid empty output breaking jq pipelines.
+
+**Anti-pattern (fails silently):**
+```bash
+# ❌ If external_cli fails, $data becomes empty string, then jq fails with "invalid JSON"
+data=$(external_cli get-entity "$id" 2>/dev/null | jq -c '.data')
+```
+
+**Correct pattern (with fallback):**
+```bash
+# ✅ Two-layer defense: jq handles null/missing keys, || handles empty stdin
+data=$(external_cli get-entity "$id" 2>/dev/null | jq -c '.data // {}' || echo '{}')
+
+# For arrays:
+items=$(external_cli list-items 2>/dev/null | jq -c '.items // []' || echo '[]')
+```
+
+**Why this matters:**
+- `2>/dev/null` hides CLI stderr but still produces empty stdout on failure
+- Empty string piped to jq causes: `jq: parse error (unexpected end of input)`
+- This breaks `--argjson` when building composite responses
+
+**Composing multiple external sources:**
+```bash
+# Fetch data from multiple sources with fallbacks
+entity=$(my_cli entity get "$id" 2>/dev/null | jq -c '.data.entity // {}' || echo '{}')
+notes=$(my_cli notes ls --entity-id "$id" 2>/dev/null | jq -c '.data.notes // []' || echo '[]')
+metadata=$(my_cli metadata get "$id" 2>/dev/null | jq -c '.data // null' || echo 'null')
+
+# Now safe to compose - all variables contain valid JSON
+mcp_emit_json "$(jq -n \
+    --argjson entity "$entity" \
+    --argjson notes "$notes" \
+    --argjson metadata "$metadata" \
+    '{entity: $entity, notes: $notes, metadata: $metadata}'
+)"
+```
+
+**Fallback defaults by JSON type:**
+
+| Expected Type | Fallback |
+|---------------|----------|
+| Object | `'{}'` |
+| Array | `'[]'` |
+| String | `'""'` |
+| Null | `'null'` |
+
+**Preserving errors for debugging:**
+
+If you need to log CLI errors while still having a fallback:
+```bash
+tmp_err="$(mktemp)"
+result=$(failing_command 2>"$tmp_err" | jq -c '.data // {}' || echo '{}')
+if [[ -s "$tmp_err" ]]; then
+    mcp_log_warn "mytool" "CLI warning: $(cat "$tmp_err")"
+fi
+rm -f "$tmp_err"
+```
+
 ### 4.4 Logging & instrumentation
 - Use `MCPBASH_LOG_LEVEL` for startup defaults, then rely on `logging/setLevel` requests for runtime tuning (§6.2).
 - Enable `MCPBASH_LOG_VERBOSE=true` when debugging path-related issues; paths and manual-registration script output are redacted by default. **Warning**: verbose mode exposes file paths and usernames—disable after troubleshooting. See [docs/LOGGING.md](LOGGING.md).
@@ -820,5 +887,6 @@ flowchart TD
 ## Doc changelog
 | Date | Version | Notes |
 | --- | --- | --- |
+| 2026-01-03 | v1.2 | Added "Calling external CLI tools" section (§4.3) with safe jq pipeline patterns, fallback defaults table, and external command quick reference. Added cross-reference in ERRORS.md. |
 | 2025-12-05 | v1.1 | Expanded SDK documentation: comprehensive coverage of `mcp_args_require`, `mcp_args_bool`, `mcp_args_int`, `mcp_require_path`, structured output helpers, and `run-tool` CLI usage patterns. Added SDK quick reference table. |
 | 2024-10-18 | v1.0 | Initial publication covering development, testing, operations, and contribution guidance. |
