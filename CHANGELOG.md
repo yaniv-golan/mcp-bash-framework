@@ -5,6 +5,13 @@ All notable changes to mcp-bash-framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.1] - Unreleased
+
+### Fixed
+- Installer color escape codes now render correctly (use `$'\033[...]'` syntax instead of single-quoted literals).
+- Installer now prompts interactively via `/dev/tty` when run via `curl | bash`, instead of auto-confirming overwrites.
+- Installer messaging clarifies when auto-confirm is due to `--yes` flag vs no TTY available.
+
 ## [0.9.0] - 2026-01-03
 
 ### Added

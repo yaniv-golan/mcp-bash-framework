@@ -13,11 +13,11 @@ ARCHIVE_VERIFIED="false"
 
 # Colors (if terminal supports)
 if [ -t 1 ]; then
-	RED='\033[0;31m'
-	GREEN='\033[0;32m'
-	YELLOW='\033[0;33m'
-	BLUE='\033[0;34m'
-	NC='\033[0m'
+	RED=$'\033[0;31m'
+	GREEN=$'\033[0;32m'
+	YELLOW=$'\033[0;33m'
+	BLUE=$'\033[0;34m'
+	NC=$'\033[0m'
 else
 	RED='' GREEN='' YELLOW='' BLUE='' NC=''
 fi
@@ -113,9 +113,16 @@ EOF
 	esac
 done
 
-# Auto-enable non-interactive mode when stdin is not a TTY (e.g., piped in CI)
-if [ ! -t 0 ]; then
-	YES=true
+# Auto-enable non-interactive mode only when truly non-interactive (no TTY available)
+# Skip this check if user explicitly passed --yes (honor their intent)
+NON_INTERACTIVE_REASON=""
+if [ ! -t 0 ] && [ "${YES}" != "true" ]; then
+	# stdin is piped, but check if /dev/tty is available for prompting
+	if [ ! -e /dev/tty ]; then
+		YES=true
+		NON_INTERACTIVE_REASON="no TTY available"
+	fi
+	# If /dev/tty exists, we can still prompt interactively even with piped stdin
 fi
 
 # Normalize tag/ref: accept both v0.4.0 and 0.4.0 by prefixing v when missing.
@@ -180,10 +187,19 @@ if [ -d "${INSTALL_DIR}" ]; then
 	warn "Directory ${INSTALL_DIR} already exists (prior mcp-bash installation)"
 	warn "Re-installing will DELETE this directory and all its contents!"
 	if [ "${YES}" = "true" ]; then
-		# Note: curl | bash runs non-interactively and will reach here automatically
-		info "Overwriting (--yes mode or non-TTY stdin)"
+		if [ -n "${NON_INTERACTIVE_REASON}" ]; then
+			info "Auto-confirming due to ${NON_INTERACTIVE_REASON}"
+		else
+			info "Overwriting (--yes flag)"
+		fi
 	else
-		read -p "Overwrite? [y/N] " -n 1 -r
+		# Read from /dev/tty to support prompting even when stdin is piped (curl | bash)
+		if [ -t 0 ]; then
+			read -p "Overwrite? [y/N] " -n 1 -r
+		else
+			printf "Overwrite? [y/N] "
+			read -n 1 -r </dev/tty
+		fi
 		printf "\n"
 		if [[ ! $REPLY =~ ^[Yy]$ ]]; then
 			info "Installation cancelled"
