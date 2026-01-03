@@ -21,10 +21,12 @@ Edit README.md.in and run: bash scripts/render-readme.sh
 - [Why Bash?](#why-bash)
 - [Quick Start](#quick-start)
 - [Configure Your MCP Client](#configure-your-mcp-client)
+- [MCPB Bundles](#mcpb-bundles)
 - [Project Structure](#project-structure)
 - [Configuration](#configuration)
 - [Learn by Example](#learn-by-example)
 - [Documentation](#documentation)
+- [Built with mcp-bash](#built-with-mcp-bash)
 - [FAQ](#faq)
 
 > **The most complete MCP implementation in pure Bash.** Tools, resources, prompts, elicitation, roots, progress, cancellation—the full spec, no runtimes beyond your shell.
@@ -41,6 +43,7 @@ Edit README.md.in and run: bash scripts/render-readme.sh
 mcp-bash new my-server && cd my-server
 mcp-bash scaffold tool my-tool   # edit tools/my-tool/tool.sh
 mcp-bash config --client cursor  # paste into your MCP client
+mcp-bash bundle                  # create distributable package
 ```
 
 ## What you’ll build
@@ -113,13 +116,13 @@ command -v jq >/dev/null 2>&1 || command -v gojq >/dev/null 2>&1 || printf '%s\n
 Quick install (good for local dev / trusted networks):
 
 ```bash
-curl -fsSL "https://raw.githubusercontent.com/yaniv-golan/mcp-bash-framework/v0.8.4/install.sh" | bash -s -- --yes --version "v0.8.4"
+curl -fsSL "https://raw.githubusercontent.com/yaniv-golan/mcp-bash-framework/v0.9.0/install.sh" | bash -s -- --yes --version "v0.9.0"
 ```
 
 Verified install (recommended for production / security-sensitive environments):
 
 ```bash
-version="v0.8.4"
+version="v0.9.0"
 file="mcp-bash-${version}.tar.gz"
 curl -fsSLO "https://github.com/yaniv-golan/mcp-bash-framework/releases/download/${version}/${file}"
 curl -fsSLO "https://github.com/yaniv-golan/mcp-bash-framework/releases/download/${version}/SHA256SUMS"
@@ -148,7 +151,7 @@ echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc  # or ~/.zshrc (if not 
 Pin a release with the installer (auto-prefixes `v` for bare versions):
 
 ```bash
-bash install.sh --verify <sha256-from-SHA256SUMS> --version 0.8.4
+bash install.sh --verify <sha256-from-SHA256SUMS> --version 0.9.0
 ```
 
 ### 1.5 Verify It Works (30 seconds)
@@ -323,6 +326,42 @@ Picking a wrapper:
 **CI-tested platforms:** Ubuntu, macOS, Windows (Git Bash). CI validates the MCP protocol layer via integration tests, not specific client applications.
 
 Using a different client? Any MCP-compliant stdio client should work. [Open an issue](https://github.com/yaniv-golan/mcp-bash-framework/issues) if you hit compatibility problems.
+
+## MCPB Bundles
+
+Package your server for one-click installation in Claude Desktop:
+
+```bash
+mcp-bash bundle
+# Creates: my-server-1.0.0.mcpb
+```
+
+Double-click the `.mcpb` file to install, or drag it to Claude Desktop.
+
+### Quick Configuration
+
+Create `mcpb.conf` in your project root to customize the bundle:
+
+```bash
+MCPB_NAME="my-server"
+MCPB_AUTHOR_NAME="Your Name"
+MCPB_AUTHOR_EMAIL="you@example.com"
+MCPB_REPOSITORY="https://github.com/you/my-server"
+```
+
+Without a config file, metadata is auto-resolved from `server.meta.json`, `VERSION`, and git config.
+
+### Bundle Options
+
+```bash
+mcp-bash bundle --validate          # Check without creating
+mcp-bash bundle --output ./dist     # Output to specific directory
+mcp-bash bundle --verbose           # Show detailed progress
+```
+
+The bundle includes your tools, resources, prompts, and an embedded copy of the mcp-bash framework—fully self-contained for distribution.
+
+> [Full bundling guide](docs/MCPB.md)
 
 ## Project Structure
 
@@ -574,6 +613,7 @@ See [docs/WINDOWS.md](docs/WINDOWS.md) for full guidance and workarounds.
 - [**Examples**](examples/) - Learn by example: hello-world, args, logging, progress, real-world video processing.
 
 ### Feature Guides
+- [**MCPB Bundles**](docs/MCPB.md) - One-click distribution via Claude Desktop and MCP Registry.
 - [**Elicitation**](docs/ELICITATION.md) - Form and URL modes, SDK helpers, and client capability checks.
 - [**Roots**](docs/ROOTS.md) - Roots/list flow, env wiring, validation, and fallbacks.
 - [**Completions**](docs/COMPLETION.md) - Manual registration, provider types, pagination, and script contracts.
@@ -614,6 +654,18 @@ printf 'See embedded report for details'
 ```
 
 See the dedicated example at `examples/06-embedded-resources/`.
+
+## Built with mcp-bash
+
+If you've built an MCP server using this framework, show it off! Add this badge to your project's README:
+
+[![MCP Bash Framework](https://img.shields.io/badge/MCP-MCP_Bash_Framework-green?logo=modelcontextprotocol)](https://github.com/yaniv-golan/mcp-bash-framework)
+
+```markdown
+[![MCP Bash Framework](https://img.shields.io/badge/MCP-MCP_Bash_Framework-green?logo=modelcontextprotocol)](https://github.com/yaniv-golan/mcp-bash-framework)
+```
+
+We'd love to see what you build—consider [opening a discussion](https://github.com/yaniv-golan/mcp-bash-framework/discussions) to share your project with the community.
 
 ## FAQ
 

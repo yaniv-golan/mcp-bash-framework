@@ -684,6 +684,13 @@ Document configuration in `server.d/README.md` (if present) so on-call operators
 - Run a nightly job that executes `bin/mcp-bash registry refresh --no-notify` to rebuild registries; use `--project-root` in CI/offline contexts.
 - Validate metadata via project-local checks before merging large batches of tools/resources.
 
+### 6.6 Distribution with MCPB bundles
+- Use `mcp-bash bundle` to create distributable `.mcpb` packages for one-click installation in Claude Desktop and other MCP clients.
+- Add `mcpb.conf` to customize bundle metadata (name, version, author, repository); values fall back to `server.d/server.meta.json`, `VERSION` file, and git config.
+- Include an `icon.png` or `icon.svg` in your project root for visual identification in client UIs.
+- Test bundles locally by extracting and running `./server/run-server.sh --health` before distribution.
+- See [docs/MCPB.md](MCPB.md) for complete bundling documentation.
+
 ## 7. Security & compliance
 - Start with [docs/SECURITY.md](SECURITY.md) for threat model context. Apply principle of least privilege by scoping `MCP_RESOURCES_ROOTS` and keeping tool environments minimal (`MCPBASH_TOOL_ENV_MODE`).
 - Prefer declarative registration (`server.d/register.json`) when possible; it avoids executing project shell code during list/refresh flows. If you use hook registration, it is opt-in (`MCPBASH_ALLOW_PROJECT_HOOKS=true`) and must be owned by the current user with no group/world write bits—review and sign `server.d/register.sh` like application code.

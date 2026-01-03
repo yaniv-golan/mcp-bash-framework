@@ -128,8 +128,8 @@ mcp_runtime_is_stdio_transport() {
 }
 
 mcp_runtime_find_project_root() {
-	# Walk up from the given directory to find a project marker (server.d/server.meta.json),
-	# skipping any paths that live under MCPBASH_HOME (framework layout, examples, scaffold).
+	# Walk up from the given directory to find a project marker (server.d/server.meta.json).
+	# Skips framework-internal paths under MCPBASH_HOME unless they contain a project marker.
 	# Prints the detected project root on success.
 	local start_dir="${1:-${PWD}}"
 	local dir="${start_dir}"
@@ -138,7 +138,13 @@ mcp_runtime_find_project_root() {
 	dir="$(mcp_path_normalize --physical "${dir}")"
 
 	while [ -n "${dir}" ] && [ "${dir}" != "/" ]; do
-		# Skip framework-internal paths (bootstrap/, examples/, scaffold/, etc.)
+		# Check for project marker first - valid projects under MCPBASH_HOME (e.g., examples/) are recognized
+		if [ -f "${dir}/server.d/server.meta.json" ]; then
+			printf '%s' "${dir}"
+			return 0
+		fi
+
+		# Skip framework-internal paths (scaffold/, lib/, etc.) that lack a project marker
 		if [ -n "${MCPBASH_HOME:-}" ]; then
 			case "${dir}" in
 			"${MCPBASH_HOME}" | "${MCPBASH_HOME}/"*)
@@ -146,11 +152,6 @@ mcp_runtime_find_project_root() {
 				continue
 				;;
 			esac
-		fi
-
-		if [ -f "${dir}/server.d/server.meta.json" ]; then
-			printf '%s' "${dir}"
-			return 0
 		fi
 
 		dir="$(dirname "${dir}")"

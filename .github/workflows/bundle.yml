@@ -1,0 +1,95 @@
+name: Bundle
+
+on:
+  push:
+    paths:
+      - "lib/cli/bundle.sh"
+      - "scaffold/bundle/**"
+      - "examples/00-hello-tool/**"
+      - ".github/workflows/bundle.yml"
+  pull_request:
+    paths:
+      - "lib/cli/bundle.sh"
+      - "scaffold/bundle/**"
+      - "examples/00-hello-tool/**"
+      - ".github/workflows/bundle.yml"
+  workflow_dispatch:
+
+jobs:
+  bundle-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies (Windows)
+        if: runner.os == 'Windows'
+        run: choco install jq zip unzip -y
+
+      - name: Set up environment
+        run: |
+          echo "MCPBASH_HOME=${GITHUB_WORKSPACE}" >> "$GITHUB_ENV"
+          echo "${GITHUB_WORKSPACE}/bin" >> "$GITHUB_PATH"
+
+      - name: Validate bundle command exists
+        run: |
+          mcp-bash bundle --help
+
+      - name: Validate example project
+        working-directory: examples/00-hello-tool
+        run: |
+          mcp-bash bundle --validate
+
+      - name: Create bundle
+        working-directory: examples/00-hello-tool
+        run: |
+          mcp-bash bundle --verbose --output ./dist
+
+      - name: Verify bundle created
+        working-directory: examples/00-hello-tool
+        run: |
+          ls -la dist/
+          test -f dist/hello-tool-example-1.0.0.mcpb
+
+      - name: Verify bundle structure
+        working-directory: examples/00-hello-tool
+        run: |
+          mkdir -p /tmp/bundle-test
+          unzip -d /tmp/bundle-test dist/hello-tool-example-1.0.0.mcpb
+          # Verify manifest
+          test -f /tmp/bundle-test/manifest.json
+          # Verify server directory
+          test -d /tmp/bundle-test/server
+          # Verify entry point
+          test -f /tmp/bundle-test/server/run-server.sh
+          test -x /tmp/bundle-test/server/run-server.sh
+          # Verify embedded framework
+          test -d /tmp/bundle-test/server/.mcp-bash
+          test -f /tmp/bundle-test/server/.mcp-bash/bin/mcp-bash
+          # Verify tools copied
+          test -d /tmp/bundle-test/server/tools/hello
+
+      - name: Verify manifest content
+        working-directory: examples/00-hello-tool
+        run: |
+          jq -e '.manifest_version == "0.3"' /tmp/bundle-test/manifest.json
+          jq -e '.name == "hello-tool-example"' /tmp/bundle-test/manifest.json
+          jq -e '.version == "1.0.0"' /tmp/bundle-test/manifest.json
+          jq -e '.server.type == "binary"' /tmp/bundle-test/manifest.json
+          jq -e '.server.entry_point == "server/run-server.sh"' /tmp/bundle-test/manifest.json
+          jq -e '.server.mcp_config.command' /tmp/bundle-test/manifest.json
+
+      - name: Upload bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundle-${{ matrix.os }}
+          path: examples/00-hello-tool/dist/*.mcpb
+          retention-days: 7

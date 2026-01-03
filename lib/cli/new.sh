@@ -79,7 +79,9 @@ EOF
 
 	printf '\nNext steps:\n'
 	printf '  cd %s\n' "${name}"
-	printf '  mcp-bash scaffold tool <name>\n'
+	printf '  mcp-bash scaffold tool <name>     # create a tool\n'
+	printf '  mcp-bash config --client cursor   # get client config\n'
+	printf '  mcp-bash bundle                   # create distributable package\n'
 
 	exit 0
 }

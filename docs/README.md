@@ -15,3 +15,4 @@ Quick entry points for common tasks and reference material.
 - **Security & remote**: [SECURITY.md](SECURITY.md), [REMOTE.md](REMOTE.md)
 - **Debugging/tests**: [DEBUGGING.md](DEBUGGING.md), [TESTING.md](../TESTING.md)
 - **Best practices**: [BEST-PRACTICES.md](BEST-PRACTICES.md), [LOGGING.md](LOGGING.md), [MINIMAL-MODE.md](MINIMAL-MODE.md)
+- **Distribution**: [MCPB.md](MCPB.md) — MCPB bundle format for one-click installation

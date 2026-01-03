@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Resolve script directory (works with symlinks)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Source login shell profiles for GUI app compatibility (pyenv, nvm, rbenv, etc.)
+# Set MCPB_SKIP_LOGIN_SHELL=1 to disable this behavior
+if [[ -z "${MCPB_SKIP_LOGIN_SHELL:-}" ]]; then
+  for rc in "$HOME/.bash_profile" "$HOME/.zshrc" "$HOME/.profile" "$HOME/.bashrc"; do
+    if [[ -f "$rc" ]]; then
+      # shellcheck disable=SC1090
+      source "$rc" 2>/dev/null || true
+      break
+    fi
+  done
+fi
+
+# Set project root to this bundle's server directory
+export MCPBASH_PROJECT_ROOT="${SCRIPT_DIR}"
+
+# Use bundled gojq if present (Phase 2)
+if [[ -f "${SCRIPT_DIR}/.mcp-bash/bin/gojq" ]]; then
+  export MCPBASH_JSON_TOOL="gojq"
+  export MCPBASH_JSON_TOOL_BIN="${SCRIPT_DIR}/.mcp-bash/bin/gojq"
+fi
+
+# Execute the embedded framework
+exec "${SCRIPT_DIR}/.mcp-bash/bin/mcp-bash" "$@"

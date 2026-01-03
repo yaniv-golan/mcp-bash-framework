@@ -8,6 +8,34 @@ Minimum layout for an MCP-Bash project:
 - `prompts/` — prompt templates and metadata.
 - `.registry/` — auto-generated registries (ignored by VCS).
 - `lib/` — optional shared helpers you source from tools/resources/prompts.
+- `mcpb.conf` — optional bundle configuration for `mcp-bash bundle`.
+- `icon.png` or `icon.svg` — optional server icon for client UIs.
+
+## Bundle Configuration (mcpb.conf)
+
+Optional shell-sourceable configuration for `mcp-bash bundle`:
+
+```bash
+# mcpb.conf - Bundle configuration (optional)
+
+# Server metadata (overrides server.meta.json if set)
+# MCPB_NAME="my-server"
+# MCPB_VERSION="1.0.0"
+# MCPB_DESCRIPTION="My MCP server built with mcp-bash"
+
+# Author information (recommended for registry listing)
+MCPB_AUTHOR_NAME="Your Name"
+MCPB_AUTHOR_EMAIL="you@example.com"
+MCPB_AUTHOR_URL="https://github.com/you"
+
+# Repository URL
+MCPB_REPOSITORY="https://github.com/you/my-server"
+
+# Files to exclude from bundle (space-separated patterns)
+# MCPB_EXCLUDE="*.log .git test/"
+```
+
+Values fall back to `server.d/server.meta.json`, `VERSION` file, and git config when not specified. See [docs/MCPB.md](MCPB.md) for complete bundling documentation.
 
 Shared library convention:
 

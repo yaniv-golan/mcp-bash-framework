@@ -1,0 +1,53 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <title>MCP-Bash Framework Icon</title>
+  <defs>
+    <style>
+      .terminal-bg { fill: #0d1117; }
+      .terminal-header { fill: #21262d; }
+      .terminal-text { fill: #00FF00; }
+    </style>
+  </defs>
+
+  <!-- Main Terminal Window Body -->
+  <rect x="0" y="0" width="512" height="512" rx="64" ry="64" class="terminal-bg" />
+
+  <!-- Terminal Header Bar -->
+  <path d="M0,64 C0,28.65 28.65,0 64,0 H448 C483.35,0 512,28.65 512,64 V96 H0 V64 Z" class="terminal-header" />
+
+  <!-- UI Dots -->
+  <circle cx="48" cy="48" r="10" fill="#ff5f56" />
+  <circle cx="88" cy="48" r="10" fill="#ffbd2e" />
+  <circle cx="128" cy="48" r="10" fill="#27c93f" />
+
+  <!-- Prompt Text Group -->
+  <!-- Shifted X translate from 46 to 36 to re-center the wider text block -->
+  <g transform="translate(36, 230) scale(0.95)">
+
+    <!-- Character: % -->
+    <g class="terminal-text">
+       <rect x="10" y="0" width="20" height="20" rx="4" />
+       <rect x="50" y="60" width="20" height="20" rx="4" />
+       <path d="M65,0 L80,0 L25,80 L10,80 Z" />
+    </g>
+
+    <!-- Character: M (Ends at x=200) -->
+    <path d="M120,0 H140 L160,35 L180,0 H200 V80 H180 V30 L160,65 L140,30 V80 H120 Z" class="terminal-text" />
+
+    <!-- Character: C -->
+    <!-- Widened from 40px to 60px. Now spans 220 to 280 -->
+    <path d="M280,0 H220 V80 H280 V60 H240 V20 H280 Z" class="terminal-text" />
+
+    <!-- Character: P -->
+    <!-- Shifted right by 20px (starts at 300) to account for wider C -->
+    <path d="M300,0 H330 C345,0 350,5 350,25 C350,45 345,50 330,50 H320 V80 H300 Z M320,20 V30 H330 V20 H320 Z" class="terminal-text" />
+
+    <!-- Character: > -->
+    <!-- Shifted right by 20px (starts at 390) -->
+    <path d="M390,10 L410,10 L440,40 L410,70 L390,70 L420,40 Z" class="terminal-text" />
+
+    <!-- Blinking Cursor -->
+    <!-- Shifted right by 20px (starts at 455) -->
+    <rect x="455" y="10" width="20" height="60" class="terminal-text" />
+
+  </g>
+</svg>
