@@ -21,7 +21,7 @@ Edit README.md.in and run: bash scripts/render-readme.sh
 - [Why Bash?](#why-bash)
 - [Quick Start](#quick-start)
 - [Configure Your MCP Client](#configure-your-mcp-client)
-- [Distribution (MCPB Bundles)](#distribution-mcpb-bundles)
+- [MCPB Bundles](#mcpb-bundles)
 - [Project Structure](#project-structure)
 - [Configuration](#configuration)
 - [Learn by Example](#learn-by-example)
@@ -43,6 +43,7 @@ Edit README.md.in and run: bash scripts/render-readme.sh
 mcp-bash new my-server && cd my-server
 mcp-bash scaffold tool my-tool   # edit tools/my-tool/tool.sh
 mcp-bash config --client cursor  # paste into your MCP client
+mcp-bash bundle                  # create distributable package
 ```
 
 ## What you’ll build
@@ -115,13 +116,13 @@ command -v jq >/dev/null 2>&1 || command -v gojq >/dev/null 2>&1 || printf '%s\n
 Quick install (good for local dev / trusted networks):
 
 ```bash
-curl -fsSL "https://raw.githubusercontent.com/yaniv-golan/mcp-bash-framework/v0.8.5/install.sh" | bash -s -- --yes --version "v0.8.5"
+curl -fsSL "https://raw.githubusercontent.com/yaniv-golan/mcp-bash-framework/v0.9.0/install.sh" | bash -s -- --yes --version "v0.9.0"
 ```
 
 Verified install (recommended for production / security-sensitive environments):
 
 ```bash
-version="v0.8.5"
+version="v0.9.0"
 file="mcp-bash-${version}.tar.gz"
 curl -fsSLO "https://github.com/yaniv-golan/mcp-bash-framework/releases/download/${version}/${file}"
 curl -fsSLO "https://github.com/yaniv-golan/mcp-bash-framework/releases/download/${version}/SHA256SUMS"
@@ -150,7 +151,7 @@ echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc  # or ~/.zshrc (if not 
 Pin a release with the installer (auto-prefixes `v` for bare versions):
 
 ```bash
-bash install.sh --verify <sha256-from-SHA256SUMS> --version 0.8.5
+bash install.sh --verify <sha256-from-SHA256SUMS> --version 0.9.0
 ```
 
 ### 1.5 Verify It Works (30 seconds)
@@ -326,27 +327,41 @@ Picking a wrapper:
 
 Using a different client? Any MCP-compliant stdio client should work. [Open an issue](https://github.com/yaniv-golan/mcp-bash-framework/issues) if you hit compatibility problems.
 
-## Distribution (MCPB Bundles)
+## MCPB Bundles
 
-Package your server for one-click installation in MCPB-compatible clients:
+Package your server for one-click installation in Claude Desktop:
 
 ```bash
-cd ~/my-mcp-server
-mcp-bash bundle                        # Create distributable .mcpb package
-mcp-bash bundle --platform darwin      # macOS-only bundle
-mcp-bash bundle --include-gojq         # Include gojq for systems without jq
+mcp-bash bundle
+# Creates: my-server-1.0.0.mcpb
 ```
 
-The `.mcpb` file includes your tools, resources, prompts, and an embedded copy of mcp-bash. Users can double-click to install or drag to Claude Desktop.
+Double-click the `.mcpb` file to install, or drag it to Claude Desktop.
 
-**Publishing to MCP Registry:**
+### Quick Configuration
+
+Create `mcpb.conf` in your project root to customize the bundle:
+
 ```bash
-export MCP_REGISTRY_TOKEN="your-token"
-mcp-bash publish my-server-1.0.0.mcpb --dry-run  # Validate
-mcp-bash publish my-server-1.0.0.mcpb            # Submit to registry
+MCPB_NAME="my-server"
+MCPB_AUTHOR_NAME="Your Name"
+MCPB_AUTHOR_EMAIL="you@example.com"
+MCPB_REPOSITORY="https://github.com/you/my-server"
 ```
 
-See [docs/MCPB.md](docs/MCPB.md) for configuration, manifest format, and troubleshooting.
+Without a config file, metadata is auto-resolved from `server.meta.json`, `VERSION`, and git config.
+
+### Bundle Options
+
+```bash
+mcp-bash bundle --validate          # Check without creating
+mcp-bash bundle --output ./dist     # Output to specific directory
+mcp-bash bundle --verbose           # Show detailed progress
+```
+
+The bundle includes your tools, resources, prompts, and an embedded copy of the mcp-bash framework—fully self-contained for distribution.
+
+> [Full bundling guide](docs/MCPB.md)
 
 ## Project Structure
 
@@ -598,6 +613,7 @@ See [docs/WINDOWS.md](docs/WINDOWS.md) for full guidance and workarounds.
 - [**Examples**](examples/) - Learn by example: hello-world, args, logging, progress, real-world video processing.
 
 ### Feature Guides
+- [**MCPB Bundles**](docs/MCPB.md) - One-click distribution via Claude Desktop and MCP Registry.
 - [**Elicitation**](docs/ELICITATION.md) - Form and URL modes, SDK helpers, and client capability checks.
 - [**Roots**](docs/ROOTS.md) - Roots/list flow, env wiring, validation, and fallbacks.
 - [**Completions**](docs/COMPLETION.md) - Manual registration, provider types, pagination, and script contracts.

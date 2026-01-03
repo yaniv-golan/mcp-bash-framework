@@ -269,10 +269,12 @@ if [ "${cli_cmd}" = "registry" ]; then
 	refresh)
 		shift
 		mcp_registry_refresh_cli "$@"
+		exit $?
 		;;
 	status)
 		shift
 		mcp_registry_status_cli "$@"
+		exit $?
 		;;
 	*)
 		usage

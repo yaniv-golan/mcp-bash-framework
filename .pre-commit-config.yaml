@@ -7,3 +7,9 @@ repos:
         language: system
         types: [shell]
         pass_filenames: false
+      - id: render-readme
+        name: Render README.md from template
+        entry: scripts/render-readme.sh
+        language: system
+        files: ^(README\.md\.tpl|VERSION|bin/mcp-bash)$
+        pass_filenames: false
