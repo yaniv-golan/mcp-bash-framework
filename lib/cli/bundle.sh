@@ -96,7 +96,7 @@ mcp_bundle_check_dependencies() {
 
 	if [ -n "${missing}" ]; then
 		printf '  \342\234\227 Missing required commands: %s\n' "${missing}" >&2
-		printf '    Install with: brew install %s (macOS) or apt install %s (Linux)\n' "${missing}" "${missing}" >&2
+		printf '    Install: brew install %s (macOS), apt install %s (Linux), choco install %s (Windows)\n' "${missing}" "${missing}" "${missing}" >&2
 		return 3
 	fi
 
