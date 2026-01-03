@@ -3,6 +3,71 @@
 
 set -euo pipefail
 
+# Project health check helpers ------------------------------------------------
+# These are exported for use in server.d/health-checks.sh
+
+mcp_health_check_command() {
+	local cmd="$1"
+	local msg="${2:-Required command: ${cmd}}"
+
+	if command -v "${cmd}" >/dev/null 2>&1; then
+		printf '  ✓ %s\n' "${msg}" >&2
+		return 0
+	else
+		printf '  ✗ %s (not found in PATH)\n' "${msg}" >&2
+		return 1
+	fi
+}
+
+mcp_health_check_env() {
+	local var="$1"
+	local msg="${2:-Required env var: ${var}}"
+
+	if [ -n "${!var:-}" ]; then
+		printf '  ✓ %s\n' "${msg}" >&2
+		return 0
+	else
+		printf '  ✗ %s (not set)\n' "${msg}" >&2
+		return 1
+	fi
+}
+
+mcp_health_run_project_checks() {
+	local project_root="${1:-${MCPBASH_PROJECT_ROOT:-}}"
+	local checks_file="${project_root}/server.d/health-checks.sh"
+
+	if [ ! -f "${checks_file}" ]; then
+		return 0
+	fi
+
+	# Validate ownership/permissions (same checks as register.sh)
+	if ! mcp_registry_register_check_permissions "${checks_file}"; then
+		printf '  ⚠ Skipping health-checks.sh: ownership/permissions issue\n' >&2
+		return 0
+	fi
+
+	printf 'Running project health checks...\n' >&2
+
+	# Export helper functions for the hook
+	export -f mcp_health_check_command
+	export -f mcp_health_check_env
+
+	# Source and run in subshell (redirect stdout to stderr to avoid contaminating JSON output)
+	local rc=0
+	(
+		# shellcheck disable=SC1090
+		source "${checks_file}"
+	) >&2 || rc=$?
+
+	if [ ${rc} -eq 0 ]; then
+		printf '  ✓ Project health checks passed\n' >&2
+	else
+		printf '  ✗ Project health checks failed\n' >&2
+	fi
+
+	return ${rc}
+}
+
 mcp_cli_health_resolve_project_root() {
 	local override_root="$1"
 	local resolved=""
@@ -52,7 +117,7 @@ mcp_cli_health_probe() {
 	# shellcheck disable=SC2034
 	MCP_PROMPTS_LAST_SCAN=0
 
-	local tools_status="ok" resources_status="ok" prompts_status="ok"
+	local tools_status="ok" resources_status="ok" prompts_status="ok" project_status="ok"
 	local fatal=0 any_fail=0
 
 	if ! mcp_tools_refresh_registry; then
@@ -77,6 +142,12 @@ mcp_cli_health_probe() {
 		esac
 	fi
 
+	# Run optional project health checks (server.d/health-checks.sh)
+	if ! mcp_health_run_project_checks; then
+		project_status="failed"
+		any_fail=1
+	fi
+
 	local mode="full" overall="ok"
 	if mcp_runtime_is_minimal_mode; then
 		mode="minimal"
@@ -85,21 +156,23 @@ mcp_cli_health_probe() {
 		overall="unhealthy"
 	fi
 
-	local js_overall js_mode js_tool js_res js_prom js_json_tool
+	local js_overall js_mode js_tool js_res js_prom js_json_tool js_proj
 	js_overall="$(mcp_json_quote_text "${overall}")"
 	js_mode="$(mcp_json_quote_text "${mode}")"
 	js_tool="$(mcp_json_quote_text "${tools_status}")"
 	js_res="$(mcp_json_quote_text "${resources_status}")"
 	js_prom="$(mcp_json_quote_text "${prompts_status}")"
 	js_json_tool="$(mcp_json_quote_text "${MCPBASH_JSON_TOOL:-none}")"
+	js_proj="$(mcp_json_quote_text "${project_status}")"
 
-	printf '{"status":%s,"mode":%s,"jsonTool":%s,"tools":%s,"resources":%s,"prompts":%s}\n' \
+	printf '{"status":%s,"mode":%s,"jsonTool":%s,"tools":%s,"resources":%s,"prompts":%s,"projectChecks":%s}\n' \
 		"${js_overall}" \
 		"${js_mode}" \
 		"${js_json_tool}" \
 		"${js_tool}" \
 		"${js_res}" \
-		"${js_prom}"
+		"${js_prom}" \
+		"${js_proj}"
 
 	if [ "${fatal}" -eq 1 ] || [ "${any_fail}" -eq 1 ]; then
 		return 1

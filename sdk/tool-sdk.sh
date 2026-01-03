@@ -475,6 +475,73 @@ mcp_debug() {
 	printf '[%s] %s\n' "${timestamp}" "${message}" >>"${MCPBASH_DEBUG_LOG}" 2>/dev/null || true
 }
 
+# Retry helper ----------------------------------------------------------------
+#
+# mcp_with_retry <max_attempts> <base_delay> -- <command...>
+# Retries command with exponential backoff + jitter.
+# Exit codes 0, 1, 2 are not retried (success, error, invalid args).
+# Exit codes 3+ are retried (transient failures).
+#
+# Example:
+#   mcp_with_retry 3 1.0 -- curl -sf "https://api.example.com/data"
+#   mcp_with_retry 5 0.5 -- my_cli get-entity "$id"
+
+mcp_with_retry() {
+	local max_attempts="$1"
+	local base_delay="$2"
+	shift 2
+	[[ "$1" == "--" ]] && shift
+
+	# Validate inputs
+	if ! printf '%s' "${max_attempts}" | LC_ALL=C grep -Eq '^[0-9]+$'; then
+		__mcp_sdk_warn "mcp_with_retry: max_attempts must be a positive integer"
+		return 1
+	fi
+	if ! printf '%s' "${base_delay}" | LC_ALL=C grep -Eq '^[0-9]+\.?[0-9]*$'; then
+		__mcp_sdk_warn "mcp_with_retry: base_delay must be a number"
+		return 1
+	fi
+
+	local attempt=1
+	local delay="${base_delay}"
+
+	while true; do
+		# Run command and capture exit code
+		set +e
+		"$@"
+		local exit_code=$?
+		set -e
+
+		# Success
+		if [[ ${exit_code} -eq 0 ]]; then
+			return 0
+		fi
+
+		# Don't retry permanent failures (exit codes 0-2)
+		# 0 = success, 1 = general error, 2 = invalid args/usage
+		if [[ ${exit_code} -le 2 ]]; then
+			return ${exit_code}
+		fi
+
+		# Max attempts reached
+		if [[ ${attempt} -ge ${max_attempts} ]]; then
+			return ${exit_code}
+		fi
+
+		# Calculate jitter (0-50% of delay) and sleep
+		local jitter sleep_time
+		jitter=$(awk "BEGIN {srand(); print ${delay} * rand() * 0.5}")
+		sleep_time=$(awk "BEGIN {print ${delay} + ${jitter}}")
+
+		mcp_log_debug "retry" "Attempt ${attempt}/${max_attempts} failed (exit ${exit_code}), retrying in ${sleep_time}s"
+		sleep "${sleep_time}"
+
+		# Exponential backoff
+		delay=$(awk "BEGIN {print ${delay} * 2}")
+		attempt=$((attempt + 1))
+	done
+}
+
 mcp_fail() {
 	local code="$1"
 	local message="${2:-}"

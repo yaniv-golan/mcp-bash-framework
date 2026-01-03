@@ -425,7 +425,9 @@ export MCP_SDK=~/.local/share/mcp-bash/sdk
 ./tools/check-disk/tool.sh
 ```
 
-If the SDK can’t be resolved, the script exits with a clear error.
+If the SDK can't be resolved, the script exits with a clear error.
+
+Key SDK helpers include `mcp_args_require`, `mcp_emit_json`, `mcp_progress`, `mcp_log_info`, and `mcp_with_retry` for retrying transient failures. See [BEST-PRACTICES.md](docs/BEST-PRACTICES.md#sdk-helpers-quick-reference) for the complete reference.
 
 ## Roots (scoping filesystem access)
 - If the client supports MCP Roots, mcp-bash requests them after `initialized` and exposes them to tools via env (`MCP_ROOTS_JSON`, `MCP_ROOTS_PATHS`, `MCP_ROOTS_COUNT`) and SDK helpers (`mcp_roots_list`, `mcp_roots_count`, `mcp_roots_contains`).
@@ -463,6 +465,19 @@ mcp_tools_policy_check() {
 ```
 
 Use `-32602` for policy/invalid-params blocks, `-32600` for capability/auth failures. Keep logic lightweight; the hook runs on every invocation.
+
+## Health Checks Hook (optional)
+
+Verify external dependencies before serving requests by adding `server.d/health-checks.sh`:
+
+```bash
+#!/usr/bin/env bash
+# server.d/health-checks.sh
+mcp_health_check_command "jq" "JSON processor"
+mcp_health_check_env "MY_API_TOKEN" "API authentication"
+```
+
+Run `mcp-bash health` to execute checks. Results appear in the JSON output as `projectChecks: ok|failed`. See [BEST-PRACTICES.md](docs/BEST-PRACTICES.md#external-dependency-health-checks-serverdhealth-checkssh) for details.
 
 ## Learn by Example
 

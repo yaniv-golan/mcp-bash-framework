@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **MCPB bundle support**: `mcp-bash bundle` creates distributable `.mcpb` packages for one-click installation in MCPB-compatible clients (e.g., Claude Desktop). Bundles include the embedded framework, tools, resources, prompts, and a generated manifest following MCPB specification v0.3.
+- **`mcp_with_retry` SDK helper**: Retry commands with exponential backoff + jitter for transient failures. Exit codes 0-2 are not retried (permanent); 3+ trigger retry. Example: `mcp_with_retry 3 1.0 -- curl -sf "$url"`.
+- **Health checks hook**: Optional `server.d/health-checks.sh` verifies external dependencies (CLIs, env vars) before serving. Helpers `mcp_health_check_command` and `mcp_health_check_env` report results to `mcp-bash health` output as `projectChecks: ok|failed`.
 - Optional `mcpb.conf` configuration file for customizing bundle metadata (name, version, author, repository). Values fall back to `server.d/server.meta.json`, `VERSION` file, and git config.
 - Automatic icon inclusion: `icon.png` or `icon.svg` in project root is bundled for client UI display.
 - **Platform-specific builds**: `mcp-bash bundle --platform darwin|linux|win32|all` creates bundles targeting specific platforms.
@@ -28,6 +30,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Project root detection now recognizes valid projects under `MCPBASH_HOME` (e.g., `examples/`) by checking for `server.d/server.meta.json` before skipping framework-internal paths.
 - Unknown CLI commands now display an error message instead of silently entering server mode.
 - `registry status` and `registry refresh` subcommands now exit properly instead of falling through to "Unknown command" error.
+- MCPB bundles now include `lib/` and `providers/` directories when present in the project.
+
+### Documentation
+- Added "Calling external CLI tools" section to BEST-PRACTICES.md with safe jq pipeline patterns, fallback defaults table, and error preservation patterns.
+- Added "Retry with exponential backoff", "Parallel external calls", and "Rate limiting external APIs" patterns to BEST-PRACTICES.md.
+- Added "External dependency health checks" section documenting the `server.d/health-checks.sh` hook.
+- Added jq parse error troubleshooting entry to ERRORS.md with cross-reference to BEST-PRACTICES.md.
+- Added server hooks table to PROJECT-STRUCTURE.md documenting all `server.d/` hook files.
 
 ## [0.8.4] - 2026-01-01
 

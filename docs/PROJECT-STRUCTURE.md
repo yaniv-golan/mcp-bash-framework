@@ -11,6 +11,26 @@ Minimum layout for an MCP-Bash project:
 - `mcpb.conf` — optional bundle configuration for `mcp-bash bundle`.
 - `icon.png` or `icon.svg` — optional server icon for client UIs.
 
+## Server Hooks (server.d/)
+
+Optional hooks in `server.d/` customize server behavior:
+
+| Hook | Purpose | Docs |
+|------|---------|------|
+| `env.sh` | Inject environment variables at startup | [BEST-PRACTICES.md §3](BEST-PRACTICES.md#3-project-layout-primer) |
+| `policy.sh` | Gate tool execution (allowlists, read-only mode) | [BEST-PRACTICES.md §4.2](BEST-PRACTICES.md#centralized-tool-policy-serverdpolicysh) |
+| `health-checks.sh` | Verify external dependencies (CLIs, env vars) | [BEST-PRACTICES.md §4.2](BEST-PRACTICES.md#external-dependency-health-checks-serverdhealth-checkssh) |
+| `register.sh` | Dynamic/imperative tool registration | [REGISTRY.md](REGISTRY.md) |
+| `register.json` | Declarative tool overrides | [REGISTRY.md](REGISTRY.md) |
+
+Example health checks:
+```bash
+#!/usr/bin/env bash
+# server.d/health-checks.sh
+mcp_health_check_command "jq" "JSON processor"
+mcp_health_check_env "API_TOKEN" "Required API token"
+```
+
 ## Bundle Configuration (mcpb.conf)
 
 Optional shell-sourceable configuration for `mcp-bash bundle`:

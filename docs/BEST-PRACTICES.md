@@ -51,12 +51,14 @@ This guide distils hands-on recommendations for designing, building, and operati
 | `mcp_progress` | Report progress | `mcp_progress 50 "Halfway done" 100` |
 | `mcp_is_cancelled` | Check cancellation | `if mcp_is_cancelled; then exit 1; fi` |
 | `mcp_log_info` | Structured logging | `mcp_log_info "tool" "message"` |
+| `mcp_with_retry` | Retry with exponential backoff | `mcp_with_retry 3 1.0 -- curl -sf "$url"` |
 
 ### External command patterns
 | Pattern | Purpose | Example |
 | --- | --- | --- |
 | `cmd \| jq '...' \|\| echo '{}'` | Safe jq pipeline with fallback | `data=$(mycli get "$id" 2>/dev/null \| jq '.data // {}' \|\| echo '{}')` |
 | `cmd 2>/dev/null \|\| echo '{...}'` | JSON fallback on CLI failure | `result=$(mycli query 2>/dev/null \|\| echo '{"items":[]}')` |
+| `mcp_with_retry N delay -- cmd` | Retry transient failures | `mcp_with_retry 3 1.0 -- curl -sf "$url" \| jq '.' \|\| echo '{}'` |
 
 ### Environment variables
 | Variable | Description | Notes |
@@ -247,6 +249,32 @@ fi
 
 # AFTER: One line with mcp_require_path
 repo_path="$(mcp_require_path '.repoPath' --default-to-single-root)"
+```
+
+#### External dependency health checks (server.d/health-checks.sh)
+
+Use `server.d/health-checks.sh` to verify external dependencies (CLIs, environment variables) are available before the server starts serving requests. The `mcp-bash health` command runs these checks.
+
+```bash
+#!/usr/bin/env bash
+# server.d/health-checks.sh - verify external dependencies
+
+# Check required CLI tools
+mcp_health_check_command "xaffinity" "Affinity CLI"
+mcp_health_check_command "jq" "JSON processor"
+
+# Check required environment variables
+mcp_health_check_env "AFFINITY_API_KEY" "Affinity API key"
+mcp_health_check_env "MY_API_TOKEN" "Service API token"
+```
+
+The helpers print checkmarks/crosses and return appropriate exit codes:
+- `mcp_health_check_command <cmd> [message]` – Verifies command exists in PATH
+- `mcp_health_check_env <var> [message]` – Verifies environment variable is set
+
+Health check results appear in `mcp-bash health` output:
+```json
+{"status":"ok","projectChecks":"ok",...}
 ```
 
 #### Roots helpers
@@ -604,6 +632,67 @@ fi
 rm -f "$tmp_err"
 ```
 
+**Retry with exponential backoff:**
+
+For transient failures (network issues, rate limits), use the SDK retry helper:
+```bash
+# mcp_with_retry <max_attempts> <base_delay> -- <command...>
+# Exit codes 0-2 are not retried; 3+ trigger retry with backoff
+
+# Retry curl up to 3 times with 1s base delay (1s, 2s, 4s + jitter)
+data=$(mcp_with_retry 3 1.0 -- curl -sf "https://api.example.com/data" | jq -c '. // {}' || echo '{}')
+
+# Retry a CLI command
+result=$(mcp_with_retry 5 0.5 -- my_cli get-entity "$id" | jq -c '.data // {}' || echo '{}')
+```
+
+The helper uses exponential backoff with jitter to prevent thundering herd on rate-limited APIs. It logs retry attempts via `mcp_log_debug`.
+
+**Parallel external calls:**
+
+For fetching data from multiple sources concurrently:
+```bash
+# Create temp directory for results
+tmp_dir="$(mktemp -d)"
+trap 'rm -rf "$tmp_dir"' EXIT
+
+# Launch parallel fetches
+(my_cli users list > "$tmp_dir/users.json" 2>/dev/null) &
+(my_cli teams list > "$tmp_dir/teams.json" 2>/dev/null) &
+(my_cli projects list > "$tmp_dir/projects.json" 2>/dev/null) &
+
+# Wait for all
+wait
+
+# Collect results with fallbacks
+users=$(cat "$tmp_dir/users.json" 2>/dev/null | jq -c '. // []' || echo '[]')
+teams=$(cat "$tmp_dir/teams.json" 2>/dev/null | jq -c '. // []' || echo '[]')
+projects=$(cat "$tmp_dir/projects.json" 2>/dev/null | jq -c '. // []' || echo '[]')
+
+mcp_emit_json "$(jq -n --argjson u "$users" --argjson t "$teams" --argjson p "$projects" \
+    '{users: $u, teams: $t, projects: $p}')"
+```
+
+**Rate limiting external APIs:**
+
+For APIs with rate limits, implement throttling at the tool level:
+```bash
+# Simple file-based throttle (10 calls/minute)
+rate_limit_file="/tmp/myapi.rate"
+while true; do
+    now=$(date +%s)
+    last=$(cat "$rate_limit_file" 2>/dev/null || echo 0)
+    if (( now - last >= 6 )); then  # 10 calls/min = 1 per 6s
+        echo "$now" > "$rate_limit_file"
+        break
+    fi
+    sleep 1
+done
+# Now safe to call the API
+```
+
+Rate limiting semantics vary by API (per-second, per-minute, sliding windows), so implement at the tool level with knowledge of your specific API's limits.
+
 ### 4.4 Logging & instrumentation
 - Use `MCPBASH_LOG_LEVEL` for startup defaults, then rely on `logging/setLevel` requests for runtime tuning (§6.2).
 - Enable `MCPBASH_LOG_VERBOSE=true` when debugging path-related issues; paths and manual-registration script output are redacted by default. **Warning**: verbose mode exposes file paths and usernames—disable after troubleshooting. See [docs/LOGGING.md](LOGGING.md).
@@ -887,6 +976,7 @@ flowchart TD
 ## Doc changelog
 | Date | Version | Notes |
 | --- | --- | --- |
+| 2026-01-03 | v1.3 | Added `mcp_with_retry` SDK helper for retrying transient failures. Added parallel external calls and rate limiting patterns. Added project health checks hook (`server.d/health-checks.sh`). |
 | 2026-01-03 | v1.2 | Added "Calling external CLI tools" section (§4.3) with safe jq pipeline patterns, fallback defaults table, and external command quick reference. Added cross-reference in ERRORS.md. |
 | 2025-12-05 | v1.1 | Expanded SDK documentation: comprehensive coverage of `mcp_args_require`, `mcp_args_bool`, `mcp_args_int`, `mcp_require_path`, structured output helpers, and `run-tool` CLI usage patterns. Added SDK quick reference table. |
 | 2024-10-18 | v1.0 | Initial publication covering development, testing, operations, and contribution guidance. |
