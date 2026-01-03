@@ -21,6 +21,7 @@ Edit README.md.in and run: bash scripts/render-readme.sh
 - [Why Bash?](#why-bash)
 - [Quick Start](#quick-start)
 - [Configure Your MCP Client](#configure-your-mcp-client)
+- [Distribution (MCPB Bundles)](#distribution-mcpb-bundles)
 - [Project Structure](#project-structure)
 - [Configuration](#configuration)
 - [Learn by Example](#learn-by-example)
@@ -324,6 +325,28 @@ Picking a wrapper:
 **CI-tested platforms:** Ubuntu, macOS, Windows (Git Bash). CI validates the MCP protocol layer via integration tests, not specific client applications.
 
 Using a different client? Any MCP-compliant stdio client should work. [Open an issue](https://github.com/yaniv-golan/mcp-bash-framework/issues) if you hit compatibility problems.
+
+## Distribution (MCPB Bundles)
+
+Package your server for one-click installation in MCPB-compatible clients:
+
+```bash
+cd ~/my-mcp-server
+mcp-bash bundle                        # Create distributable .mcpb package
+mcp-bash bundle --platform darwin      # macOS-only bundle
+mcp-bash bundle --include-gojq         # Include gojq for systems without jq
+```
+
+The `.mcpb` file includes your tools, resources, prompts, and an embedded copy of mcp-bash. Users can double-click to install or drag to Claude Desktop.
+
+**Publishing to MCP Registry:**
+```bash
+export MCP_REGISTRY_TOKEN="your-token"
+mcp-bash publish my-server-1.0.0.mcpb --dry-run  # Validate
+mcp-bash publish my-server-1.0.0.mcpb            # Submit to registry
+```
+
+See [docs/MCPB.md](docs/MCPB.md) for configuration, manifest format, and troubleshooting.
 
 ## Project Structure
 

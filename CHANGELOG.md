@@ -11,7 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **MCPB bundle support**: `mcp-bash bundle` creates distributable `.mcpb` packages for one-click installation in MCPB-compatible clients (e.g., Claude Desktop). Bundles include the embedded framework, tools, resources, prompts, and a generated manifest following MCPB specification v0.3.
 - Optional `mcpb.conf` configuration file for customizing bundle metadata (name, version, author, repository). Values fall back to `server.d/server.meta.json`, `VERSION` file, and git config.
 - Automatic icon inclusion: `icon.png` or `icon.svg` in project root is bundled for client UI display.
-- New documentation: `docs/MCPB.md` covers bundle creation, configuration, structure, and troubleshooting.
+- **Platform-specific builds**: `mcp-bash bundle --platform darwin|linux|win32|all` creates bundles targeting specific platforms.
+- **gojq bundling**: `mcp-bash bundle --include-gojq` embeds gojq binary for systems without jq installed.
+- **Registry publishing**: `mcp-bash publish` command submits bundles to the MCP Registry with validation, dry-run support, and API token authentication.
+- New documentation: `docs/MCPB.md` covers bundle creation, configuration, structure, publishing, and troubleshooting.
 - GitHub Actions workflow `.github/workflows/bundle.yml` for CI testing of bundle creation across platforms.
 - Example Makefile with `make bundle` target in `examples/00-hello-tool/`.
 
