@@ -437,9 +437,10 @@ mcp_bundle_embed_framework() {
 		fi
 	done
 
-	# Also copy cli/common.sh for shared helpers (needed by embedded mcp-bash)
+	# Copy cli helpers needed by embedded mcp-bash
 	mkdir -p "${framework_dir}/lib/cli"
 	cp "${MCPBASH_HOME}/lib/cli/common.sh" "${framework_dir}/lib/cli/"
+	cp "${MCPBASH_HOME}/lib/cli/health.sh" "${framework_dir}/lib/cli/"
 
 	# Copy SDK
 	if [ -f "${MCPBASH_HOME}/sdk/tool-sdk.sh" ]; then
