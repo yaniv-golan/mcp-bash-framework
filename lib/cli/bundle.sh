@@ -19,14 +19,18 @@ BUNDLE_REQUIRED_LIBS="runtime json hash ids lock io paginate logging auth uri po
 # gojq release version to bundle
 GOJQ_VERSION="0.12.16"
 
-# gojq download URLs by platform/arch
-declare -A GOJQ_URLS=(
-	["darwin-amd64"]="https://github.com/itchyny/gojq/releases/download/v${GOJQ_VERSION}/gojq_v${GOJQ_VERSION}_darwin_amd64.tar.gz"
-	["darwin-arm64"]="https://github.com/itchyny/gojq/releases/download/v${GOJQ_VERSION}/gojq_v${GOJQ_VERSION}_darwin_arm64.tar.gz"
-	["linux-amd64"]="https://github.com/itchyny/gojq/releases/download/v${GOJQ_VERSION}/gojq_v${GOJQ_VERSION}_linux_amd64.tar.gz"
-	["linux-arm64"]="https://github.com/itchyny/gojq/releases/download/v${GOJQ_VERSION}/gojq_v${GOJQ_VERSION}_linux_arm64.tar.gz"
-	["win32-amd64"]="https://github.com/itchyny/gojq/releases/download/v${GOJQ_VERSION}/gojq_v${GOJQ_VERSION}_windows_amd64.zip"
-)
+# Get gojq download URL for platform/arch (Bash 3 compatible)
+_get_gojq_url() {
+	local key="$1"
+	case "${key}" in
+	darwin-amd64) echo "https://github.com/itchyny/gojq/releases/download/v${GOJQ_VERSION}/gojq_v${GOJQ_VERSION}_darwin_amd64.tar.gz" ;;
+	darwin-arm64) echo "https://github.com/itchyny/gojq/releases/download/v${GOJQ_VERSION}/gojq_v${GOJQ_VERSION}_darwin_arm64.tar.gz" ;;
+	linux-amd64) echo "https://github.com/itchyny/gojq/releases/download/v${GOJQ_VERSION}/gojq_v${GOJQ_VERSION}_linux_amd64.tar.gz" ;;
+	linux-arm64) echo "https://github.com/itchyny/gojq/releases/download/v${GOJQ_VERSION}/gojq_v${GOJQ_VERSION}_linux_arm64.tar.gz" ;;
+	win32-amd64) echo "https://github.com/itchyny/gojq/releases/download/v${GOJQ_VERSION}/gojq_v${GOJQ_VERSION}_windows_amd64.zip" ;;
+	*) echo "" ;;
+	esac
+}
 
 # Track bundled icon for manifest
 BUNDLED_ICON=""
@@ -116,7 +120,8 @@ mcp_bundle_download_gojq() {
 	esac
 
 	local url_key="${platform}-${arch}"
-	local url="${GOJQ_URLS[${url_key}]:-}"
+	local url
+	url="$(_get_gojq_url "${url_key}")"
 
 	if [ -z "${url}" ]; then
 		printf '  \342\234\227 No gojq binary available for %s-%s\n' "${platform}" "${arch}" >&2
