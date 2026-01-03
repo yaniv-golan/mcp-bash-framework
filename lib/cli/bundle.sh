@@ -16,6 +16,24 @@ cli_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Required framework files to embed (from bin/mcp-bash line 99 + additional)
 BUNDLE_REQUIRED_LIBS="runtime json hash ids lock io paginate logging auth uri policy tools_policy registry spec tools resources prompts completion timeout elicitation roots rpc core validate path resource_content resource_providers progress"
 
+# gojq release version to bundle
+GOJQ_VERSION="0.12.16"
+
+# gojq download URLs by platform/arch
+declare -A GOJQ_URLS=(
+	["darwin-amd64"]="https://github.com/itchyny/gojq/releases/download/v${GOJQ_VERSION}/gojq_v${GOJQ_VERSION}_darwin_amd64.tar.gz"
+	["darwin-arm64"]="https://github.com/itchyny/gojq/releases/download/v${GOJQ_VERSION}/gojq_v${GOJQ_VERSION}_darwin_arm64.tar.gz"
+	["linux-amd64"]="https://github.com/itchyny/gojq/releases/download/v${GOJQ_VERSION}/gojq_v${GOJQ_VERSION}_linux_amd64.tar.gz"
+	["linux-arm64"]="https://github.com/itchyny/gojq/releases/download/v${GOJQ_VERSION}/gojq_v${GOJQ_VERSION}_linux_arm64.tar.gz"
+	["win32-amd64"]="https://github.com/itchyny/gojq/releases/download/v${GOJQ_VERSION}/gojq_v${GOJQ_VERSION}_windows_amd64.zip"
+)
+
+# Track bundled icon for manifest
+BUNDLED_ICON=""
+
+# Track target platforms for manifest
+BUNDLE_PLATFORMS="darwin linux win32"
+
 mcp_bundle_usage() {
 	cat <<'EOF'
 Usage:
@@ -27,6 +45,8 @@ Options:
   --output DIR       Output directory (default: current directory)
   --name NAME        Bundle name (default: from server.meta.json or directory)
   --version VERSION  Bundle version (default: from VERSION file)
+  --platform PLAT    Target platform: darwin, linux, win32, or all (default: all)
+  --include-gojq     Bundle gojq binary for systems without jq
   --validate         Validate bundle structure without creating
   --verbose          Show detailed progress
   --help, -h         Show this help
@@ -43,14 +63,17 @@ Configuration:
     MCPB_REPOSITORY="https://github.com/you/my-server"
 
 Examples:
-  mcp-bash bundle                     # Create bundle with defaults
-  mcp-bash bundle --validate          # Check without creating
-  mcp-bash bundle --output ./dist     # Output to dist directory
+  mcp-bash bundle                        # Create bundle with defaults
+  mcp-bash bundle --validate             # Check without creating
+  mcp-bash bundle --output ./dist        # Output to dist directory
+  mcp-bash bundle --platform darwin      # macOS-only bundle
+  mcp-bash bundle --include-gojq         # Include gojq for JSON processing
 
 The bundle includes:
   - Your tools, resources, and prompts
   - An embedded copy of mcp-bash framework
   - A manifest.json for MCPB compatibility
+  - Icon (if icon.png or icon.svg exists in project root)
 
 Next steps after bundling:
   - Double-click the .mcpb file to install in any MCPB-compatible client
@@ -74,6 +97,104 @@ mcp_bundle_check_dependencies() {
 	fi
 
 	return 0
+}
+
+mcp_bundle_download_gojq() {
+	local target_dir="$1"
+	local platform="$2"
+	local verbose="$3"
+
+	# Determine architecture
+	local arch
+	case "$(uname -m)" in
+	x86_64 | amd64) arch="amd64" ;;
+	arm64 | aarch64) arch="arm64" ;;
+	*)
+		printf '  \342\234\227 Unsupported architecture: %s\n' "$(uname -m)" >&2
+		return 1
+		;;
+	esac
+
+	local url_key="${platform}-${arch}"
+	local url="${GOJQ_URLS[${url_key}]:-}"
+
+	if [ -z "${url}" ]; then
+		printf '  \342\234\227 No gojq binary available for %s-%s\n' "${platform}" "${arch}" >&2
+		return 1
+	fi
+
+	# Create temp directory for download
+	local tmp_dir
+	tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/gojq.XXXXXX")"
+	trap 'rm -rf "${tmp_dir}"' RETURN
+
+	if [ "${verbose}" = "true" ]; then
+		printf '    Downloading gojq for %s-%s...\n' "${platform}" "${arch}"
+	fi
+
+	# Download
+	local archive="${tmp_dir}/gojq.tar.gz"
+	if [ "${platform}" = "win32" ]; then
+		archive="${tmp_dir}/gojq.zip"
+	fi
+
+	if ! curl -fsSL "${url}" -o "${archive}" 2>/dev/null; then
+		printf '  \342\234\227 Failed to download gojq from %s\n' "${url}" >&2
+		return 1
+	fi
+
+	# Extract
+	mkdir -p "${tmp_dir}/extracted"
+	if [ "${platform}" = "win32" ]; then
+		unzip -q "${archive}" -d "${tmp_dir}/extracted"
+	else
+		tar -xzf "${archive}" -C "${tmp_dir}/extracted"
+	fi
+
+	# Find and copy gojq binary
+	local gojq_bin
+	gojq_bin="$(find "${tmp_dir}/extracted" -name 'gojq*' -type f | head -1)"
+
+	if [ -z "${gojq_bin}" ] || [ ! -f "${gojq_bin}" ]; then
+		printf '  \342\234\227 Could not find gojq binary in archive\n' >&2
+		return 1
+	fi
+
+	mkdir -p "${target_dir}"
+	local target_name="gojq"
+	if [ "${platform}" = "win32" ]; then
+		target_name="gojq.exe"
+	fi
+
+	cp "${gojq_bin}" "${target_dir}/${target_name}"
+	chmod +x "${target_dir}/${target_name}"
+
+	if [ "${verbose}" = "true" ]; then
+		printf '    Bundled gojq v%s for %s-%s\n' "${GOJQ_VERSION}" "${platform}" "${arch}"
+	fi
+
+	return 0
+}
+
+mcp_bundle_embed_gojq() {
+	local staging_server="$1"
+	local platforms="$2"
+	local verbose="$3"
+
+	local gojq_dir="${staging_server}/.mcp-bash/bin"
+	mkdir -p "${gojq_dir}"
+
+	# For single-platform bundles, download that platform's gojq
+	# For multi-platform, download current platform (user can re-bundle on target)
+	local platform
+	for platform in ${platforms}; do
+		if mcp_bundle_download_gojq "${gojq_dir}" "${platform}" "${verbose}"; then
+			return 0
+		fi
+	done
+
+	printf '  \342\232\240 Could not bundle gojq - bundle will require jq on target system\n' >&2
+	return 1
 }
 
 mcp_bundle_validate_project() {
@@ -255,6 +376,9 @@ mcp_bundle_copy_project() {
 	local staging_server="$2"
 	local verbose="$3"
 
+	# Reset icon tracking
+	BUNDLED_ICON=""
+
 	# Copy project directories if they exist
 	for dir in tools resources prompts completions server.d; do
 		if [ -d "${project_root}/${dir}" ]; then
@@ -273,10 +397,11 @@ mcp_bundle_copy_project() {
 		fi
 	fi
 
-	# Copy icon if present
+	# Copy icon if present (prefer PNG over SVG)
 	for icon in icon.png icon.svg; do
 		if [ -f "${project_root}/${icon}" ]; then
 			cp "${project_root}/${icon}" "${staging_server}/../"
+			BUNDLED_ICON="${icon}"
 			if [ "${verbose}" = "true" ]; then
 				printf '    Copied %s\n' "${icon}"
 			fi
@@ -384,6 +509,19 @@ mcp_bundle_generate_manifest() {
 	local template="${MCPBASH_HOME}/scaffold/bundle/manifest.json.template"
 	local output="${staging_dir}/manifest.json"
 
+	# Build platforms array from BUNDLE_PLATFORMS
+	local platforms_json="["
+	local first=true
+	for p in ${BUNDLE_PLATFORMS}; do
+		if [ "${first}" = "true" ]; then
+			platforms_json="${platforms_json}\"${p}\""
+			first=false
+		else
+			platforms_json="${platforms_json}, \"${p}\""
+		fi
+	done
+	platforms_json="${platforms_json}]"
+
 	# Use JSON tool to build manifest if available, otherwise use template
 	if [ "${MCPBASH_JSON_TOOL:-none}" != "none" ]; then
 		# Build manifest with proper JSON escaping per MCPB v0.3 spec
@@ -398,6 +536,8 @@ mcp_bundle_generate_manifest() {
 				--arg author_email "${RESOLVED_AUTHOR_EMAIL:-}" \
 				--arg author_url "${RESOLVED_AUTHOR_URL:-}" \
 				--arg repository_url "${RESOLVED_REPOSITORY:-}" \
+				--arg icon "${BUNDLED_ICON:-}" \
+				--argjson platforms "${platforms_json}" \
 				'{
 				manifest_version: "0.3",
 				name: $name,
@@ -405,6 +545,7 @@ mcp_bundle_generate_manifest() {
 				display_name: $display_name,
 				description: $description
 			}
+			| if $icon != "" then . + {icon: $icon} else . end
 			| if $author_name != "" then . + {author: {name: $author_name}} else . end
 			| if $author_email != "" then .author.email = $author_email else . end
 			| if $author_url != "" then .author.url = $author_url else . end
@@ -423,13 +564,13 @@ mcp_bundle_generate_manifest() {
 					}
 				},
 				compatibility: {
-					platforms: ["darwin", "linux", "win32"]
+					platforms: $platforms
 				}
 			}'
 		)"
 		printf '%s\n' "${manifest}" >"${output}"
 	elif [ -f "${template}" ]; then
-		# Fallback to template substitution
+		# Fallback to template substitution (doesn't support dynamic platforms/icon)
 		mcp_template_render "${template}" "${output}" \
 			"__NAME__=${RESOLVED_NAME}" \
 			"__VERSION__=${RESOLVED_VERSION}" \
@@ -441,6 +582,10 @@ mcp_bundle_generate_manifest() {
 			"__REPOSITORY_URL__=${RESOLVED_REPOSITORY:-}"
 	else
 		# Inline fallback per MCPB v0.3 spec
+		local icon_line=""
+		if [ -n "${BUNDLED_ICON:-}" ]; then
+			icon_line="\"icon\": \"${BUNDLED_ICON}\","
+		fi
 		cat >"${output}" <<EOF
 {
   "manifest_version": "0.3",
@@ -448,6 +593,7 @@ mcp_bundle_generate_manifest() {
   "version": "${RESOLVED_VERSION}",
   "display_name": "${RESOLVED_TITLE}",
   "description": "${RESOLVED_DESCRIPTION}",
+  ${icon_line}
   "server": {
     "type": "binary",
     "entry_point": "server/run-server.sh",
@@ -461,7 +607,7 @@ mcp_bundle_generate_manifest() {
     }
   },
   "compatibility": {
-    "platforms": ["darwin", "linux", "win32"]
+    "platforms": ${platforms_json}
   }
 }
 EOF
@@ -509,6 +655,8 @@ mcp_cli_bundle() {
 	local output_dir=""
 	local name_override=""
 	local version_override=""
+	local platform_override=""
+	local include_gojq="false"
 	local validate_only="false"
 	local verbose="false"
 
@@ -526,6 +674,13 @@ mcp_cli_bundle() {
 		--version)
 			shift
 			version_override="${1:-}"
+			;;
+		--platform)
+			shift
+			platform_override="${1:-}"
+			;;
+		--include-gojq)
+			include_gojq="true"
 			;;
 		--validate)
 			validate_only="true"
@@ -548,6 +703,23 @@ mcp_cli_bundle() {
 	# Default output directory
 	if [ -z "${output_dir}" ]; then
 		output_dir="${PWD}"
+	fi
+
+	# Handle platform selection
+	if [ -n "${platform_override}" ]; then
+		case "${platform_override}" in
+		darwin | linux | win32)
+			BUNDLE_PLATFORMS="${platform_override}"
+			;;
+		all)
+			BUNDLE_PLATFORMS="darwin linux win32"
+			;;
+		*)
+			printf 'Unknown platform: %s\n' "${platform_override}" >&2
+			printf 'Valid platforms: darwin, linux, win32, all\n' >&2
+			exit 2
+			;;
+		esac
 	fi
 
 	# Initialize runtime for JSON tooling and project detection
@@ -608,6 +780,13 @@ mcp_cli_bundle() {
 	# Embed framework
 	mcp_bundle_embed_framework "${staging_server}" "${verbose}"
 
+	# Embed gojq if requested
+	if [ "${include_gojq}" = "true" ]; then
+		if mcp_bundle_embed_gojq "${staging_server}" "${BUNDLE_PLATFORMS}" "${verbose}"; then
+			printf '  \342\234\223 Embedded gojq for JSON processing\n'
+		fi
+	fi
+
 	# Generate wrapper script
 	mcp_bundle_generate_wrapper "${staging_server}"
 	if [ "${verbose}" = "true" ]; then
@@ -648,6 +827,10 @@ mcp_cli_bundle() {
 
 	printf '  \342\234\223 Bundled framework (%s)\n' "${fw_size}"
 	printf '  \342\234\223 Included %s tools, %s resources, %s prompts\n' "${tools}" "${resources}" "${prompts}"
+	if [ -n "${BUNDLED_ICON:-}" ]; then
+		printf '  \342\234\223 Included icon: %s\n' "${BUNDLED_ICON}"
+	fi
+	printf '  \342\234\223 Target platforms: %s\n' "${BUNDLE_PLATFORMS}"
 	printf '\n'
 	printf 'Created: %s (%s)\n' "${output_path}" "${size}"
 	printf '\n'

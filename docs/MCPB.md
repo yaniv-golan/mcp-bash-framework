@@ -50,6 +50,8 @@ Options:
   --output DIR       Output directory (default: current directory)
   --name NAME        Bundle name (default: from server.meta.json)
   --version VERSION  Bundle version (default: from VERSION file)
+  --platform PLAT    Target platform: darwin, linux, win32, or all (default: all)
+  --include-gojq     Bundle gojq binary for systems without jq
   --validate         Validate bundle structure without creating
   --verbose          Show detailed progress
   --help, -h         Show help
@@ -69,6 +71,12 @@ mcp-bash bundle --validate
 
 # Override version
 mcp-bash bundle --version 2.0.0
+
+# Create macOS-only bundle
+mcp-bash bundle --platform darwin
+
+# Include gojq for systems without jq
+mcp-bash bundle --include-gojq
 ```
 
 ## Bundle Structure
@@ -192,7 +200,31 @@ To list your server in the official MCP Registry:
 
 1. Ensure your `mcpb.conf` has complete author information
 2. Create a public GitHub repository
-3. Submit to [registry.modelcontextprotocol.io](https://registry.modelcontextprotocol.io/)
+3. Get an API token from [registry.modelcontextprotocol.io](https://registry.modelcontextprotocol.io/)
+4. Publish using the CLI:
+
+```bash
+# Set your API token
+export MCP_REGISTRY_TOKEN="your-token-here"
+
+# Validate before publishing
+mcp-bash publish my-server-1.0.0.mcpb --dry-run
+
+# Submit to registry
+mcp-bash publish my-server-1.0.0.mcpb
+```
+
+### Publish Command Options
+
+```bash
+mcp-bash publish <bundle.mcpb> [options]
+
+Options:
+  --dry-run          Validate without submitting
+  --token TOKEN      API token (or set MCP_REGISTRY_TOKEN env var)
+  --verbose          Show detailed progress
+  --help, -h         Show help
+```
 
 ## Troubleshooting
 

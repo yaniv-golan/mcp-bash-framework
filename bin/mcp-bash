@@ -62,8 +62,10 @@ Usage:
   mcp-bash registry refresh [--project-root DIR] [--no-notify] [--quiet] [--filter PATH]
   mcp-bash registry status [--project-root DIR]
   mcp-bash bundle [--output DIR] [--name NAME] [--version VERSION]
-                  [--validate] [--verbose]
+                  [--platform PLAT] [--include-gojq] [--validate] [--verbose]
                            # create distributable MCPB bundle
+  mcp-bash publish <bundle.mcpb> [--dry-run] [--token TOKEN] [--verbose]
+                           # submit bundle to MCP Registry
 
 Note: running without MCPBASH_PROJECT_ROOT starts a temporary getting-started helper tool.
 Remote deployments: set MCPBASH_REMOTE_TOKEN to require per-request _meta token; see docs/REMOTE.md.
@@ -316,6 +318,14 @@ if [ "${cli_cmd}" = "bundle" ]; then
 	# shellcheck source=lib/cli/bundle.sh disable=SC1091
 	. "${MCPBASH_HOME}/lib/cli/bundle.sh"
 	mcp_cli_bundle "$@"
+	exit $?
+fi
+
+if [ "${cli_cmd}" = "publish" ]; then
+	shift
+	# shellcheck source=lib/cli/publish.sh disable=SC1091
+	. "${MCPBASH_HOME}/lib/cli/publish.sh"
+	mcp_cli_publish "$@"
 	exit $?
 fi
 
