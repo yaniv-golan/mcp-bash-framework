@@ -30,9 +30,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install jq (Windows)
+      - name: Install dependencies (Windows)
         if: runner.os == 'Windows'
-        run: choco install jq -y
+        run: choco install jq zip unzip -y
 
       - name: Set up environment
         run: |
