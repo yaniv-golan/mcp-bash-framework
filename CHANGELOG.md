@@ -5,7 +5,7 @@ All notable changes to mcp-bash-framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.9.0] - Unreleased
+## [0.9.0] - 2026-01-03
 
 ### Added
 - **MCPB bundle support**: `mcp-bash bundle` creates distributable `.mcpb` packages for one-click installation in MCPB-compatible clients (e.g., Claude Desktop). Bundles include the embedded framework, tools, resources, prompts, and a generated manifest following MCPB specification v0.3.
@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - New documentation: `docs/MCPB.md` covers bundle creation, configuration, structure, publishing, and troubleshooting.
 - GitHub Actions workflow `.github/workflows/bundle.yml` for CI testing of bundle creation across platforms.
 - Example Makefile with `make bundle` target in `examples/00-hello-tool/`.
+- Unit tests for `bundle` and `publish` commands.
+- Pre-commit hook for automatic README.md rendering from template.
 
 ### Changed
 - Renamed default icon from `assets/icon.svg` to `assets/mcp-bash-framework-icon.svg` for clarity.
@@ -25,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Project root detection now recognizes valid projects under `MCPBASH_HOME` (e.g., `examples/`) by checking for `server.d/server.meta.json` before skipping framework-internal paths.
 - Unknown CLI commands now display an error message instead of silently entering server mode.
+- `registry status` and `registry refresh` subcommands now exit properly instead of falling through to "Unknown command" error.
 
 ## [0.8.4] - 2026-01-01
 
