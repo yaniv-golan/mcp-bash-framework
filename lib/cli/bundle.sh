@@ -423,7 +423,7 @@ mcp_bundle_generate_manifest() {
 					}
 				},
 				compatibility: {
-					platforms: ["darwin", "linux"]
+					platforms: ["darwin", "linux", "win32"]
 				}
 			}'
 		)"
@@ -461,7 +461,7 @@ mcp_bundle_generate_manifest() {
     }
   },
   "compatibility": {
-    "platforms": ["darwin", "linux"]
+    "platforms": ["darwin", "linux", "win32"]
   }
 }
 EOF

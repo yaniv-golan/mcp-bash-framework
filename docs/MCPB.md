@@ -125,7 +125,7 @@ The generated `manifest.json` follows MCPB specification v0.3:
     }
   },
   "compatibility": {
-    "platforms": ["darwin", "linux"]
+    "platforms": ["darwin", "linux", "win32"]
   }
 }
 ```
@@ -139,8 +139,12 @@ The generated `manifest.json` follows MCPB specification v0.3:
 Bundles are compatible with:
 - **macOS** (darwin): Native support
 - **Linux**: Native support
+- **Windows** (win32): Requires bash (Git Bash, WSL, or MSYS2)
 
-Windows support is not currently included due to bash script requirements. Future versions may add Windows support via bundled shell environments.
+On Windows, ensure one of the following is installed and in PATH:
+- **Git for Windows** (includes Git Bash) - recommended
+- **WSL** (Windows Subsystem for Linux)
+- **MSYS2** or **Cygwin**
 
 The wrapper script (`run-server.sh`) sources login shell profiles for GUI app compatibility, ensuring tools like pyenv, nvm, and rbenv work correctly when launched from MCPB-compatible clients.
 
