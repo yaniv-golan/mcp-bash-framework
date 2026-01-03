@@ -693,12 +693,64 @@ done
 
 Rate limiting semantics vary by API (per-second, per-minute, sliding windows), so implement at the tool level with knowledge of your specific API's limits.
 
-### 4.4 Logging & instrumentation
+### 4.4 Common Bash Pitfalls
+
+MCP-Bash tools use `set -euo pipefail` by default. Here are common gotchas:
+
+**Post-increment from zero fails under `set -e`:**
+```bash
+# ❌ Exits with code 1 when count=0 (arithmetic evaluates to 0 = falsy)
+count=0
+((count++))  # Script exits here!
+
+# ✅ Pre-increment always succeeds
+count=0
+((++count))  # count is now 1
+
+# ✅ Or use addition assignment
+count=0
+((count += 1))  # count is now 1
+
+# ✅ Or use arithmetic expansion (never fails)
+count=0
+count=$((count + 1))
+```
+
+**Why:** `((expr))` returns exit code based on the expression's value. `((0++))` evaluates to 0 before incrementing, and 0 is falsy → exit code 1 → `set -e` aborts.
+
+**Empty arrays in strict mode:**
+```bash
+# ❌ Fails with "unbound variable" under set -u
+items=()
+for item in "${items[@]}"; do echo "$item"; done
+
+# ✅ Use conditional expansion
+items=()
+for item in "${items[@]+"${items[@]}"}"; do echo "$item"; done
+
+# ✅ Or check length first
+if (( ${#items[@]} > 0 )); then
+    for item in "${items[@]}"; do echo "$item"; done
+fi
+```
+
+**Piped commands and exit codes:**
+```bash
+# ❌ Only checks grep's exit code, not cmd's
+cmd | grep pattern
+# If cmd fails but grep succeeds, script continues
+
+# ✅ pipefail catches failures in any pipeline stage (already set by default)
+set -o pipefail
+cmd | grep pattern  # Now fails if cmd fails
+```
+
+### 4.5 Logging & instrumentation
 - Use `MCPBASH_LOG_LEVEL` for startup defaults, then rely on `logging/setLevel` requests for runtime tuning (§6.2).
 - Enable `MCPBASH_LOG_VERBOSE=true` when debugging path-related issues; paths and manual-registration script output are redacted by default. **Warning**: verbose mode exposes file paths and usernames—disable after troubleshooting. See [docs/LOGGING.md](LOGGING.md).
 - Enable `MCPBASH_DEBUG_PAYLOADS` only while debugging parser bugs; purge `${TMPDIR}/mcpbash.state.*` afterward to avoid leaking sensitive payloads.
 
-### 4.5 Documentation hooks
+### 4.6 Documentation hooks
 - Every snippet in this guide and in new PRs should cite the source path/line to keep drift manageable.
 - When adding diagrams, include descriptive text such as “_Mermaid sequence describing lifecycle negotiation_” so text-only readers stay informed (§Supporting Assets).
 
@@ -976,7 +1028,7 @@ flowchart TD
 ## Doc changelog
 | Date | Version | Notes |
 | --- | --- | --- |
-| 2026-01-03 | v1.3 | Added `mcp_with_retry` SDK helper for retrying transient failures. Added parallel external calls and rate limiting patterns. Added project health checks hook (`server.d/health-checks.sh`). |
+| 2026-01-03 | v1.3 | Added `mcp_with_retry` SDK helper for retrying transient failures. Added parallel external calls and rate limiting patterns. Added project health checks hook (`server.d/health-checks.sh`). Added "Common Bash Pitfalls" section (§4.4) covering `((var++))` under `set -e`, empty arrays, and pipefail. |
 | 2026-01-03 | v1.2 | Added "Calling external CLI tools" section (§4.3) with safe jq pipeline patterns, fallback defaults table, and external command quick reference. Added cross-reference in ERRORS.md. |
 | 2025-12-05 | v1.1 | Expanded SDK documentation: comprehensive coverage of `mcp_args_require`, `mcp_args_bool`, `mcp_args_int`, `mcp_require_path`, structured output helpers, and `run-tool` CLI usage patterns. Added SDK quick reference table. |
 | 2024-10-18 | v1.0 | Initial publication covering development, testing, operations, and contribution guidance. |
