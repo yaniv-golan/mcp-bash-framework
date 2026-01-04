@@ -927,3 +927,413 @@ mcp_elicit_titled_multi_choice() {
 	schema="$(printf '{"type":"object","properties":{"choices":{"type":"array","items":{"oneOf":[%s]}}},"required":["choices"]}' "${one_of_items}")"
 	mcp_elicit "${message}" "${schema}"
 }
+
+# CallToolResult helpers ------------------------------------------------------
+# SEP-1042: Structured response envelope helpers for MCP tools
+#
+# These helpers construct MCP-compliant CallToolResult objects with:
+# - content[]: Human-readable text for LLMs
+# - structuredContent: Machine-parseable JSON wrapped in {success, result} envelope
+# - isError: Boolean flag for error responses
+#
+# All functions return 0 to avoid set -e issues; errors are expressed via isError field.
+
+# __mcp_sdk_uint_or_default <value> <default>
+# Parse value as unsigned integer, return default if invalid
+#
+# Arguments:
+#   value   - Value to parse (may be empty, non-numeric, or negative)
+#   default - Fallback value if parsing fails (also sanitized; falls back to 0)
+#
+# Output: Validated unsigned integer to stdout
+# Returns: 0 always (never fails, always outputs valid number)
+__mcp_sdk_uint_or_default() {
+	local val="${1:-}"
+	local def="${2:-0}"
+
+	# Sanitize val: strip whitespace
+	val="${val#"${val%%[![:space:]]*}"}" # trim leading
+	val="${val%"${val##*[![:space:]]}"}" # trim trailing
+
+	# Sanitize def: strip whitespace
+	def="${def#"${def%%[![:space:]]*}"}" # trim leading
+	def="${def%"${def##*[![:space:]]}"}" # trim trailing
+
+	# Validate def is numeric; fall back to 0 if not
+	case "$def" in
+	'' | *[!0-9]*) def=0 ;;
+	esac
+
+	# Check if val is a valid non-negative integer (digits only)
+	case "$val" in
+	'' | *[!0-9]*) printf '%s' "$def" ;;
+	*) printf '%s' "$val" ;;
+	esac
+}
+
+# mcp_is_valid_json <string>
+# Check if string is valid JSON (exactly one value)
+#
+# Returns: 0 if valid single JSON value, 1 if invalid/empty/multiple
+# In minimal mode always returns 0 (assumes valid)
+#
+# NOTE: Uses -s (slurp) with length==1 to enforce single-value semantics.
+# This correctly accepts `false` and `null`, and rejects empty/whitespace/multi-value.
+mcp_is_valid_json() {
+	local str="$1"
+
+	if [ "${MCPBASH_MODE:-full}" = "minimal" ] || [ -z "${MCPBASH_JSON_TOOL_BIN:-}" ]; then
+		# Minimal mode: assume valid (can't check)
+		return 0
+	fi
+
+	# Normalize jq exit codes (jq returns 4 on parse error) to 0/1
+	if printf '%s' "$str" | "${MCPBASH_JSON_TOOL_BIN}" -e -s 'length==1' >/dev/null 2>&1; then
+		return 0
+	fi
+	return 1
+}
+
+# mcp_byte_length <string>
+# Get byte length of string (UTF-8 safe)
+#
+# Output: byte count to stdout
+mcp_byte_length() {
+	printf '%s' "$1" | wc -c | tr -d ' '
+}
+
+# mcp_result_success <json_data> [max_text_bytes]
+# Emit MCP CallToolResult with success envelope
+#
+# Arguments:
+#   json_data       - Valid JSON data to return
+#   max_text_bytes  - Max size for content[].text (default: 4096)
+#
+# Output: CallToolResult JSON to stdout
+# Returns: 0 always (MCP tool errors are expressed via isError, not exit codes)
+mcp_result_success() {
+	local data="$1"
+	# Sanitize max_text_bytes to avoid set -e hazards from non-numeric input
+	local max_text_bytes
+	max_text_bytes=$(__mcp_sdk_uint_or_default "${2:-}" 4096)
+
+	# Guard: reject empty input
+	if [ -z "$data" ]; then
+		mcp_result_error '{"type":"internal_error","message":"Empty data passed to mcp_result_success"}'
+		return 0 # Always return 0 after emitting CallToolResult
+	fi
+
+	if [ "${MCPBASH_MODE:-full}" != "minimal" ] && [ -n "${MCPBASH_JSON_TOOL_BIN:-}" ]; then
+		# Full mode: validate, wrap, and emit in a single jq pipeline
+		# - Use -s (slurp) to enforce single JSON value (reject streams like "1 2")
+		# - Use tojson on parsed value for content[].text (avoids argv pressure entirely)
+		# - Stream everything via stdin (no --arg with large payloads)
+		# NOTE: Do NOT use -n with -s; -n means "don't read input" which breaks slurp
+		printf '%s' "$data" | "${MCPBASH_JSON_TOOL_BIN}" -c -s --argjson max "$max_text_bytes" '
+            # Validate single value
+            if length != 1 then
+                {
+                    content: [{type: "text", text: "Error: input must be single JSON value"}],
+                    structuredContent: {success: false, error: {type: "internal_error", message: "Input contained multiple JSON values", count: length}},
+                    isError: true
+                }
+            else
+                .[0] as $data |
+                {success: true, result: $data} as $envelope |
+                ($envelope | tojson) as $text |
+                # Use utf8bytelength for accurate byte counting (length counts codepoints)
+                if ($text | utf8bytelength) <= $max then
+                    # Small: full envelope in text
+                    {
+                        content: [{type: "text", text: $text}],
+                        structuredContent: $envelope,
+                        isError: false
+                    }
+                else
+                    # Large: summary in text
+                    (
+                        if ($data | type) == "array" then "Success: array with \($data | length) items"
+                        elif ($data | type) == "object" then "Success: object with \($data | keys | length) keys"
+                        else "Success: \($data | tostring | .[0:100])"
+                        end
+                    ) as $summary |
+                    {
+                        content: [{type: "text", text: $summary}],
+                        structuredContent: $envelope,
+                        isError: false
+                    }
+                end
+            end
+        ' 2>/dev/null || {
+			# jq failed (invalid JSON)
+			mcp_result_error '{"type":"internal_error","message":"Invalid JSON passed to mcp_result_success"}'
+		}
+	else
+		# Minimal mode: wrap blindly (can't validate or parse)
+		local envelope
+		envelope="{\"success\":true,\"result\":${data}}"
+
+		# Byte-accurate size check
+		local size
+		size=$(printf '%s' "$envelope" | wc -c | tr -d ' ')
+
+		if [ "$size" -le "$max_text_bytes" ]; then
+			# Small: full JSON in text
+			# __mcp_sdk_json_escape returns a QUOTED string like "foo", use directly
+			local escaped_text
+			escaped_text=$(__mcp_sdk_json_escape "$envelope")
+			printf '{"content":[{"type":"text","text":%s}],"structuredContent":%s,"isError":false}\n' \
+				"$escaped_text" "$envelope"
+		else
+			# Large: generic summary (no jq to introspect type)
+			printf '{"content":[{"type":"text","text":"Success: response too large for text content"}],"structuredContent":%s,"isError":false}\n' \
+				"$envelope"
+		fi
+	fi
+	return 0
+}
+
+# mcp_result_error <error_json>
+# Emit MCP CallToolResult with error envelope
+#
+# Arguments:
+#   error_json - Error object with 'type' and 'message' fields
+#
+# Output: CallToolResult JSON to stdout
+# Returns: 0 always (MCP tool errors are expressed via isError, not exit codes)
+mcp_result_error() {
+	local error_json="$1"
+
+	# Guard: handle empty input
+	if [ -z "$error_json" ]; then
+		error_json='{"type":"internal_error","message":"Unknown error (empty error object)"}'
+	fi
+
+	# Extract message for text content (with fallback)
+	local message
+	if [ "${MCPBASH_MODE:-full}" != "minimal" ] && [ -n "${MCPBASH_JSON_TOOL_BIN:-}" ]; then
+		# Validate and normalize error_json:
+		# 1. Must be valid JSON (single value, not a stream)
+		# 2. Must be an object with type/message fields
+		# If not, wrap appropriately to guarantee well-formed error structure
+		error_json=$(printf '%s' "$error_json" | "${MCPBASH_JSON_TOOL_BIN}" -c -s '
+            if length != 1 then
+                {type:"internal_error", message:"Error payload must be single JSON value", raw:("multiple values: \(length)")}
+            elif .[0] | type != "object" then
+                {type:"internal_error", message:"Error payload must be an object", raw:(.[0] | tostring)}
+            else
+                .[0] + {type:(.[0].type // "internal_error"), message:(.[0].message // "Unknown error")}
+            end
+        ' 2>/dev/null) || {
+			# jq failed entirely (invalid JSON) - wrap raw string
+			local escaped_raw
+			escaped_raw=$(printf '%s' "$1" | "${MCPBASH_JSON_TOOL_BIN}" -Rs '.')
+			error_json=$(printf '{"type":"internal_error","message":"Invalid error JSON passed to mcp_result_error","raw":%s}' "$escaped_raw")
+		}
+
+		# Stream everything via stdin to avoid argv pressure (even for large error messages)
+		# Use tostring to ensure content[].text is always a string (even if .message is non-string)
+		printf '%s' "$error_json" | "${MCPBASH_JSON_TOOL_BIN}" -c '
+            . as $err |
+            (($err.message // "Unknown error") | tostring) as $msg |
+            {
+                content: [{type: "text", text: $msg}],
+                structuredContent: {success: false, error: $err},
+                isError: true
+            }
+        '
+	else
+		# Minimal mode: MUST produce valid JSON even if error_json is invalid
+		# Do NOT embed raw error_json; always wrap safely to guarantee valid output
+		message=$(printf '%s' "$error_json" | sed -n 's/.*"message"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+		message="${message:-Unknown error}"
+		# __mcp_sdk_json_escape returns quoted string, use directly
+		local escaped_message escaped_raw
+		escaped_message=$(__mcp_sdk_json_escape "$message")
+		escaped_raw=$(__mcp_sdk_json_escape "$error_json")
+		# Wrap error_json as escaped string to guarantee valid JSON output
+		printf '{"content":[{"type":"text","text":%s}],"structuredContent":{"success":false,"error":{"type":"internal_error","message":%s,"raw":%s}},"isError":true}\n' \
+			"$escaped_message" "$escaped_message" "$escaped_raw"
+	fi
+	return 0
+}
+
+# mcp_json_truncate <json> [max_bytes]
+# Truncate JSON arrays while preserving valid structure
+#
+# Arguments:
+#   json      - JSON data to potentially truncate
+#   max_bytes - Maximum size of the result payload (default: MCPBASH_MAX_TOOL_OUTPUT_SIZE or 10MB)
+#               NOTE: This bounds the compact serialized size of .result, not the wrapper object
+#
+# Output: {result: <data>, truncated: bool, kept?: int, total?: int, error?: object}
+# Returns: 0 always (errors expressed via .error field for set -e safety)
+#
+# Performance note: Binary search runs O(log n) jq invocations. For very large
+# arrays (10k+ elements), consider pre-filtering or pagination at the source.
+mcp_json_truncate() {
+	local json="$1"
+	# Sanitize max_bytes to avoid set -e hazards from non-numeric input
+	local max_bytes
+	max_bytes=$(__mcp_sdk_uint_or_default "${2:-}" "${MCPBASH_MAX_TOOL_OUTPUT_SIZE:-10485760}")
+
+	# Minimal mode: no truncation capability
+	if [ "${MCPBASH_MODE:-full}" = "minimal" ] || [ -z "${MCPBASH_JSON_TOOL_BIN:-}" ]; then
+		printf '{"result":%s,"truncated":false,"_warning":"truncation unavailable in minimal mode"}\n' "$json"
+		return 0
+	fi
+
+	# Guard: validate input is valid JSON (single value, not a stream)
+	# Use -s (slurp) to collect all values; output error object instead of using error()
+	# to allow bash to distinguish between empty, multi-value, and invalid JSON
+	local compact size validation_result
+	validation_result=$(printf '%s' "$json" | "${MCPBASH_JSON_TOOL_BIN}" -c -s '
+        if length == 0 then {_error: "empty", count: 0}
+        elif length > 1 then {_error: "multiple", count: length}
+        else {_ok: .[0]}
+        end
+    ' 2>/dev/null) || {
+		# jq parse error - invalid JSON
+		printf '%s' "$json" | "${MCPBASH_JSON_TOOL_BIN}" -Rs -c \
+			'{result: null, truncated: false, error: {type: "invalid_json", message: "Invalid JSON: parse error", raw: .}}'
+		return 0
+	}
+
+	# Check if validation returned an error object
+	local err_type
+	err_type=$(printf '%s' "$validation_result" | "${MCPBASH_JSON_TOOL_BIN}" -r '._error // empty')
+	if [ -n "$err_type" ]; then
+		local err_count err_msg
+		err_count=$(printf '%s' "$validation_result" | "${MCPBASH_JSON_TOOL_BIN}" -r '.count')
+		case "$err_type" in
+		empty)
+			err_msg="Empty input: expected exactly one JSON value"
+			;;
+		multiple)
+			err_msg="Multiple JSON values found ($err_count): expected exactly one"
+			;;
+		*)
+			err_msg="Validation error: $err_type"
+			;;
+		esac
+		printf '%s' "$json" | "${MCPBASH_JSON_TOOL_BIN}" -Rs -c --arg msg "$err_msg" \
+			'{result: null, truncated: false, error: {type: "invalid_json", message: $msg, raw: .}}'
+		return 0
+	fi
+
+	# Extract the valid single value
+	compact=$(printf '%s' "$validation_result" | "${MCPBASH_JSON_TOOL_BIN}" -c '._ok')
+
+	# compact is now normalized (single value, compact format)
+	# Use wc -c for byte count; printf '%s' doesn't add newlines, and command
+	# substitution strips trailing newlines from jq output, so this is accurate
+	size=$(printf '%s' "$compact" | wc -c | tr -d ' ')
+
+	# Small enough - return as-is
+	if [ "$size" -le "$max_bytes" ]; then
+		printf '%s' "$compact" | "${MCPBASH_JSON_TOOL_BIN}" -n -c '{result: input, truncated: false}'
+		return 0
+	fi
+
+	# Use compact version for all subsequent operations
+	json="$compact"
+
+	# Check if it's an array
+	local json_type
+	json_type=$(printf '%s' "$json" | "${MCPBASH_JSON_TOOL_BIN}" -r 'type')
+
+	if [ "$json_type" = "array" ]; then
+		local total
+		total=$(printf '%s' "$json" | "${MCPBASH_JSON_TOOL_BIN}" 'length')
+
+		# Early exit: if even one element exceeds max_bytes, return empty array
+		local first_elem_size first_elem
+		first_elem=$(printf '%s' "$json" | "${MCPBASH_JSON_TOOL_BIN}" -c '.[0:1]')
+		first_elem_size=$(printf '%s' "$first_elem" | wc -c | tr -d ' ')
+		if [ "$first_elem_size" -gt "$max_bytes" ]; then
+			printf '%s' "$total" | "${MCPBASH_JSON_TOOL_BIN}" -n -c \
+				'{result: [], truncated: true, kept: 0, total: (input | tonumber), _warning: "individual items exceed max_bytes"}'
+			return 0
+		fi
+
+		# Binary search for max elements that fit
+		local low high mid best best_count
+		low=1
+		high=$total
+		best="[]"
+		best_count=0
+
+		while [ "$low" -le "$high" ]; do
+			mid=$(((low + high) / 2))
+			local candidate csize
+			candidate=$(printf '%s' "$json" | "${MCPBASH_JSON_TOOL_BIN}" -c ".[:$mid]")
+			csize=$(printf '%s' "$candidate" | wc -c | tr -d ' ')
+
+			if [ "$csize" -le "$max_bytes" ]; then
+				best="$candidate"
+				best_count=$mid
+				low=$((mid + 1))
+			else
+				high=$((mid - 1))
+			fi
+		done
+
+		# Stream $best via stdin to avoid argv size limits
+		printf '%s' "$best" | "${MCPBASH_JSON_TOOL_BIN}" -n -c \
+			--argjson t "$total" \
+			--argjson k "$best_count" \
+			'{result: input, truncated: true, kept: $k, total: $t}'
+		return 0
+	fi
+
+	# Check if it's an object with .results array (common API pattern)
+	local has_results
+	has_results=$(printf '%s' "$json" | "${MCPBASH_JSON_TOOL_BIN}" -r 'if .results and (.results | type) == "array" then "yes" else "no" end')
+
+	if [ "$has_results" = "yes" ]; then
+		local total low high mid best_count
+		total=$(printf '%s' "$json" | "${MCPBASH_JSON_TOOL_BIN}" '.results | length')
+
+		# Pre-check: can we fit even with empty .results?
+		# If not, the non-.results fields are too large and we can't truncate safely
+		local empty_size empty_results
+		empty_results=$(printf '%s' "$json" | "${MCPBASH_JSON_TOOL_BIN}" -c '.results = []')
+		empty_size=$(printf '%s' "$empty_results" | wc -c | tr -d ' ')
+		if [ "$empty_size" -gt "$max_bytes" ]; then
+			"${MCPBASH_JSON_TOOL_BIN}" -n -c \
+				--arg msg "Response too large ($size bytes) even with empty results array" \
+				'{result: null, truncated: false, error: {type: "output_too_large", message: $msg}}'
+			return 0
+		fi
+
+		low=1
+		high=$total
+		best_count=0
+
+		while [ "$low" -le "$high" ]; do
+			mid=$(((low + high) / 2))
+			local test_size test_json
+			test_json=$(printf '%s' "$json" | "${MCPBASH_JSON_TOOL_BIN}" -c ".results = .results[:$mid]")
+			test_size=$(printf '%s' "$test_json" | wc -c | tr -d ' ')
+			if [ "$test_size" -le "$max_bytes" ]; then
+				best_count=$mid
+				low=$((mid + 1))
+			else
+				high=$((mid - 1))
+			fi
+		done
+
+		printf '%s' "$json" | "${MCPBASH_JSON_TOOL_BIN}" -c --argjson k "$best_count" --argjson t "$total" '
+            .results = .results[:$k] |
+            {result: ., truncated: true, kept: $k, total: $t}
+        '
+		return 0
+	fi
+
+	# Cannot truncate safely - emit error structure
+	# Still return 0 for set -e safety; error is expressed via .error field
+	"${MCPBASH_JSON_TOOL_BIN}" -n -c \
+		--arg msg "Response too large ($size bytes) and cannot be safely truncated (not an array)" \
+		'{result: null, truncated: false, error: {type: "output_too_large", message: $msg}}'
+	return 0
+}

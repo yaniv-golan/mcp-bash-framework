@@ -5,9 +5,7 @@ set -euo pipefail
 # shellcheck source=../../../../sdk/tool-sdk.sh disable=SC1091
 source "${MCP_SDK:?MCP_SDK environment variable not set}/tool-sdk.sh"
 
-value="$(mcp_args_get '.value')"
-if [[ -z "${value}" ]]; then
-	mcp_fail_invalid_args "Missing 'value' argument"
-fi
+# Use mcp_args_require for required arguments (fails with -32602 if missing)
+value="$(mcp_args_require '.value')"
 
-mcp_emit_json "$(mcp_json_obj message "You sent: ${value}")"
+mcp_result_success "$(mcp_json_obj message "You sent: ${value}")"

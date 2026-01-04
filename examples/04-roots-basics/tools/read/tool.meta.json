@@ -13,11 +13,22 @@
   },
   "outputSchema": {
     "type": "object",
-    "required": ["path", "bytes", "content"],
+    "required": ["success", "result"],
     "properties": {
-      "path": { "type": "string" },
-      "bytes": { "type": "integer" },
-      "content": { "type": "string" }
+      "success": {
+        "type": "boolean",
+        "description": "Whether the operation succeeded"
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string" },
+          "bytes": { "type": "integer" },
+          "content": { "type": "string" },
+          "error": { "type": "string" },
+          "hint": { "type": "string" }
+        }
+      }
     }
   },
   "timeoutSecs": 5

@@ -14,4 +14,4 @@ for pct in 10 40 75 100; do
 	sleep 0.5
 done
 
-mcp_emit_text "Manual registry tool finished (live_progress=${live_progress})"
+mcp_result_success "$(mcp_json_obj message "Manual registry tool finished (live_progress=${live_progress})")"

@@ -61,16 +61,29 @@ Use the SDK helpers to return the appropriate error type:
 
 ```bash
 # Tool Execution Error (LLM can self-correct)
-# Emit an error payload and exit non-zero (the framework sets result.isError=true
-# when the tool exits non-zero).
-mcp_emit_json '{"error": "Date must be in the future", "received": "2020-01-01"}'
-exit 1
+# Use mcp_result_error which sets isError=true and exits non-zero.
+mcp_result_error "$(mcp_json_obj \
+  error "Date must be in the future" \
+  received "2020-01-01"
+)"
 
-# OR use the SDK helper to emit a structured error and exit non-zero.
-# (This still becomes a Tool Execution Error result with isError=true; it is not
-# a JSON-RPC protocol error.)
-mcp_fail_invalid_args "Date must be in the future" '{"received": "2020-01-01"}'
+# For missing/malformed required parameters, use protocol error instead:
+mcp_fail_invalid_args "date parameter is required"
 ```
+
+#### Structured response envelope helpers
+
+For tools returning structured data with consistent `{success, result}` or `{success, error}` envelopes:
+
+```bash
+# Success response: isError=false, structuredContent.success=true
+mcp_result_success '{"items": [...], "count": 42}'
+
+# Error response: isError=true, structuredContent.success=false
+mcp_result_error '{"type": "not_found", "path": "/missing/file"}'
+```
+
+These helpers set the appropriate `isError` flag automatically and populate both `content[].text` (human-readable summary) and `structuredContent` (machine-readable envelope). See [BEST-PRACTICES.md §4.7](BEST-PRACTICES.md#47-building-calltoolresult-responses) for full documentation.
 
 For validation that happens early in a tool (before doing real work), prefer returning `isError: true` so the LLM learns from the feedback.
 
@@ -122,6 +135,9 @@ Size guardrails: `mcp_core_guard_response_size` rejects oversized responses with
 - **Resource/provider failures (`-32603`, message includes provider detail such as "Unable to read resource")**: Confirm the provider is supported (`file`, `git`, `https`), URI is valid, and payload size is within `MCPBASH_MAX_RESOURCE_BYTES`.
 - **Minimal mode responses (`-32601`)**: Ensure `jq`/`gojq` is available or unset `MCPBASH_FORCE_MINIMAL` to enable tools/resources/prompts.
 - **jq parse error in tool output**: Often caused by external CLI failures producing empty stdout. Using `2>/dev/null` hides stderr but doesn't prevent empty output—add `|| echo '{}'` fallback. See [BEST-PRACTICES.md § Calling external CLI tools](BEST-PRACTICES.md#calling-external-cli-tools).
+- **mcp_result_success/mcp_result_error produces no output**: Ensure JSON tooling is available (jq/gojq); in minimal mode these helpers return degraded JSON output. Check `MCPBASH_MODE` environment variable.
+- **mcp_is_valid_json rejects valid-looking JSON**: The helper validates single JSON values only; arrays with multiple root objects or trailing content are rejected. Use `jq -e . >/dev/null 2>&1` for lenient validation.
+- **mcp_json_truncate not truncating**: Ensure the second argument (max_bytes) is a positive integer. Non-numeric values default to 102400 (100KB).
 
 ## Operational Safeguards
 

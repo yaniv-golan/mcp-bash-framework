@@ -1,5 +1,29 @@
 {
   "name": "example-slow",
   "description": "Reports progress and supports cancellation",
+  "inputSchema": {
+    "type": "object",
+    "properties": {}
+  },
+  "outputSchema": {
+    "type": "object",
+    "required": ["success", "result"],
+    "properties": {
+      "success": {
+        "type": "boolean",
+        "description": "Whether the operation succeeded"
+      },
+      "result": {
+        "type": "object",
+        "required": ["message"],
+        "properties": {
+          "message": {
+            "type": "string",
+            "description": "Completion message"
+          }
+        }
+      }
+    }
+  },
   "timeoutSecs": 10
 }

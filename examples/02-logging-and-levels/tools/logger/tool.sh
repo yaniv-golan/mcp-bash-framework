@@ -7,4 +7,4 @@ source "${MCP_SDK:?MCP_SDK environment variable not set}/tool-sdk.sh"
 
 mcp_log_info "example.logger" "about to work"
 
-mcp_emit_json "$(mcp_json_obj message "Check your logging notifications")"
+mcp_result_success "$(mcp_json_obj message "Check your logging notifications")"

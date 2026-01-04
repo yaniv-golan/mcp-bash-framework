@@ -30,11 +30,25 @@
   },
   "outputSchema": {
     "type": "object",
-    "required": ["message"],
+    "required": ["success", "result"],
     "properties": {
-      "message": {
-        "type": "string",
-        "description": "Summary of the completed transcode and output location."
+      "success": {
+        "type": "boolean",
+        "description": "Whether the operation succeeded"
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "description": "Summary of the completed transcode and output location."
+          },
+          "error": { "type": "string" },
+          "input": { "type": "string" },
+          "output": { "type": "string" },
+          "preset": { "type": "string" },
+          "hint": { "type": "string" }
+        }
       }
     }
   }

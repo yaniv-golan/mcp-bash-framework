@@ -64,7 +64,7 @@ if [[ -z "${json_tool}" ]]; then
 	exit 0
 fi
 
-validate_filter='(.structuredContent.message // empty | tostring | length > 0) or (.content[]? | select(.type=="text") | (.text // "") | length > 0)'
+validate_filter='(.structuredContent.result.message // .structuredContent.message // empty | tostring | length > 0) or (.content[]? | select(.type=="text") | (.text // "") | length > 0)'
 if ! printf '%s' "${output}" | "${json_tool}" -e "${validate_filter}" >/dev/null 2>&1; then
 	printf 'Smoke test FAILED: output is not valid JSON or missing expected content.\n' >&2
 	printf '%s\n' "${output}" >&2

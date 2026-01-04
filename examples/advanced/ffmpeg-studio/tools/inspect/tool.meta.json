@@ -13,7 +13,17 @@
   },
   "outputSchema": {
     "type": "object",
-    "description": "ffprobe JSON output containing format and streams."
+    "required": ["success", "result"],
+    "properties": {
+      "success": {
+        "type": "boolean",
+        "description": "Whether the operation succeeded"
+      },
+      "result": {
+        "type": "object",
+        "description": "ffprobe JSON output containing format and streams (on success) or error details (on failure)."
+      }
+    }
   }
 }
 

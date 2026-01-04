@@ -35,18 +35,21 @@ full_path="$(mcp_ffmpeg_resolve_path "${path}" "read")"
 
 # Validation: File exists → Tool Execution Error (LLM can choose a different file)
 if [[ ! -f "${full_path}" ]]; then
-	mcp_emit_json "$(
+	mcp_result_error "$(
 		mcp_json_obj \
 			error "File not found" \
 			path "${path}" \
 			hint "Check the file exists and is within allowed media roots"
 	)"
-	exit 1
 fi
 
-# Run ffprobe
-if ! output=$(ffprobe -v quiet -print_format json -show_format -show_streams "${full_path}" 2>/dev/null); then
-	mcp_fail -32603 "Failed to inspect media file: ${path}"
-fi
+# Run ffprobe (capture stderr for error reporting)
+_stderr_file=$(mktemp)
+trap 'rm -f "$_stderr_file"' EXIT
 
-mcp_emit_json "${output}"
+if output=$(ffprobe -v quiet -print_format json -show_format -show_streams "${full_path}" 2>"$_stderr_file"); then
+	mcp_result_success "${output}"
+else
+	_stderr=$(cat "$_stderr_file")
+	mcp_fail -32603 "Failed to inspect media file: ${_stderr:-unknown error}"
+fi

@@ -5,6 +5,27 @@ All notable changes to mcp-bash-framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.2] - Unreleased
+
+### Added
+- **CallToolResult response helpers**: New SDK functions for building MCP CallToolResult responses with consistent `{success, result}` envelope patterns:
+  - `mcp_result_success` - Emit success CallToolResult with `structuredContent.success=true` and `isError=false`
+  - `mcp_result_error` - Emit error CallToolResult with `structuredContent.success=false` and `isError=true`
+  - `mcp_json_truncate` - Binary-search truncation for large JSON arrays with metadata (`truncated`, `kept`, `total`)
+  - `mcp_is_valid_json` - Validate single JSON value (handles `false`/`null` correctly via slurp mode)
+  - `mcp_byte_length` - UTF-8 safe byte length measurement
+- Documentation: Added BEST-PRACTICES.md §4.7 "Building CallToolResult responses" with examples and comparison table. Added "Capturing stdout and stderr separately" pattern to §4.3 for CLI wrapper tools.
+- Tests: Unit tests (`test/unit/sdk_result_helpers.bats`) and integration tests (`test/integration/test_result_helpers.sh`) for all new helpers.
+
+### Changed
+- **Examples updated to best practices**: All examples now use `mcp_result_success` / `mcp_result_error` helpers instead of legacy `mcp_emit_json` patterns, with corresponding `outputSchema` updates using the `{success, result}` envelope.
+- **Scaffold templates updated**: Tool scaffolds (`scaffold/tool/`, `mcpbash init` inline template) now generate code using `mcp_result_success` with proper `outputSchema` envelope pattern.
+- **Documentation examples updated**: ERRORS.md and BEST-PRACTICES.md code examples now demonstrate the recommended `mcp_result_success` / `mcp_result_error` patterns.
+- **ffmpeg-studio examples**: Added stderr capture for better error reporting in `extract` and `inspect` tools.
+
+### Fixed
+- **CallToolResult passthrough**: Framework now detects when tools emit pre-formatted CallToolResult JSON (from `mcp_result_success` / `mcp_result_error`) and uses it directly instead of wrapping it again. The `outputSchema` validation now correctly validates `structuredContent` from CallToolResult outputs.
+
 ## [0.9.1] - 2026-01-03
 
 ### Added

@@ -25,5 +25,5 @@ name="$(mcp_args_get '.name' --default 'World')"
 # mcp_progress 10 "Starting work"
 # mcp_log_info "tool" "args: ${MCP_TOOL_ARGS_JSON}"
 
-# Return result
-mcp_emit_json "$(mcp_json_obj message "Hello ${name}")"
+# Return result (uses {success, result} envelope pattern)
+mcp_result_success "$(mcp_json_obj message "Hello ${name}")"

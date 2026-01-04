@@ -12,4 +12,4 @@ for pct in 10 50 90; do
 	mcp_progress "${pct}" "Working (${pct}%)"
 	sleep 1
 done
-mcp_emit_text "Completed after progress updates"
+mcp_result_success "$(mcp_json_obj message "Completed after progress updates")"

@@ -652,12 +652,21 @@ mcp_tools_validate_output_schema() {
 
 	# Write schema to temp file to avoid shell quoting issues with --argjson
 	# Run validation using jq -s pattern (avoid --slurpfile for Windows/gojq compatibility)
+	# If tool output is already a CallToolResult (has content array), extract structuredContent for validation
 	local validation_result
 	local validation_status=0
 	set +e
 	validation_result="$(printf '%s\n%s' "${output_schema}" "${structured_json}" | "${MCPBASH_JSON_TOOL_BIN}" -s '
 		.[0] as $s |
-		.[1] as $data |
+		.[1] as $raw |
+		# Detect if output is already a CallToolResult (has content array and isError field)
+		(if ($raw | type) == "object" and ($raw.content | type) == "array" and ($raw | has("isError")) then
+			# Extract structuredContent for validation
+			$raw.structuredContent // {}
+		else
+			# Use raw output directly
+			$raw
+		end) as $data |
 		(
 			# Check required fields exist
 			(($s.required // []) | all(. as $k | $data | has($k)))
@@ -1999,31 +2008,41 @@ mcp_tools_call() {
 				exitCode: $exit_code
 			}
 		} as $base |
-		
-			# Try to parse stdout as JSON if enabled
-			if $has_json == "true" and ($stdout | length > 0) then
-				try (
-					($stdout | fromjson) as $json |
+
+		# Try to parse stdout as JSON if enabled
+		if $has_json == "true" and ($stdout | length > 0) then
+			try (
+				($stdout | fromjson) as $json |
+				# Detect if output is already a CallToolResult (has content array and isError field)
+				if ($json | type) == "object" and ($json.content | type) == "array" and ($json | has("isError")) then
+					# Tool already emitted CallToolResult - use it directly with metadata
+					$json
+					| .name = $name
+					| ._meta = ({exitCode: $exit_code} + (if ($stderr | length > 0) then {stderr: $stderr} else {} end))
+					| if $exit_code != 0 then .isError = true else . end
+				else
+					# Normal JSON output - wrap in CallToolResult
 					$base
 					| .content += [{type: "text", text: $stdout}]
 					| .structuredContent = $json
-				) catch (
-					$base | .content += [{type: "text", text: $stdout}]
-				)
+				end
+			) catch (
+				$base | .content += [{type: "text", text: $stdout}]
+			)
 		else
 			$base | .content += [{type: "text", text: $stdout}]
 		end |
-		
-		# Add stderr if present
-		if ($stderr | length > 0) then
+
+		# Add stderr if present (for non-CallToolResult outputs)
+		if (._meta.stderr | length) == 0 and ($stderr | length > 0) then
 			._meta.stderr = $stderr
 		else . end |
-		
-			# Set isError if exit code non-zero
-			if $exit_code != 0 then
-				.isError = true
-			else . end
-			'
+
+		# Set isError if exit code non-zero (for non-CallToolResult outputs)
+		if $exit_code != 0 then
+			.isError = true
+		else . end
+		'
 	)"
 
 	local embedded_resources=""

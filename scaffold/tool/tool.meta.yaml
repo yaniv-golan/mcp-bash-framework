@@ -9,11 +9,20 @@ inputSchema:
 outputSchema:
   type: object
   required:
-    - message
+    - success
+    - result
   properties:
-    message:
-      type: string
-      description: "Human-readable message produced by the tool"
+    success:
+      type: boolean
+      description: "Whether the operation succeeded"
+    result:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
+          description: "Human-readable message produced by the tool"
 annotations:
   readOnlyHint: true
   destructiveHint: false

@@ -11,4 +11,4 @@ if [ -n "${MCP_TOOL_RESOURCES_FILE:-}" ]; then
 	printf '%s\ttext/plain\n' "${report_path}" >>"${MCP_TOOL_RESOURCES_FILE}"
 fi
 
-mcp_emit_json "$(mcp_json_obj message "See embedded report for details")"
+mcp_result_success "$(mcp_json_obj message "See embedded report for details")"

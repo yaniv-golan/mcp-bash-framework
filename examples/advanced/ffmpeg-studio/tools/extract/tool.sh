@@ -32,18 +32,21 @@ full_output="$(mcp_ffmpeg_resolve_path "${output_path}" "write")"
 
 # Validation: Input exists → Tool Execution Error (LLM can choose a different file)
 if [[ ! -f "${full_input}" ]]; then
-	mcp_emit_json "$(
+	mcp_result_error "$(
 		mcp_json_obj \
 			error "Input file not found" \
 			input "${input_path}" \
 			hint "Check the file exists and is within allowed media roots"
 	)"
-	exit 1
 fi
 
-# Run ffmpeg to extract single frame
-if ffmpeg -ss "${timestamp}" -i "${full_input}" -frames:v 1 -y "${full_output}" >/dev/null 2>&1; then
-	mcp_emit_json "$(mcp_json_obj message "Frame extracted to ${output_path}")"
+# Run ffmpeg to extract single frame (capture stderr for error reporting)
+_stderr_file=$(mktemp)
+trap 'rm -f "$_stderr_file"' EXIT
+
+if ffmpeg -ss "${timestamp}" -i "${full_input}" -frames:v 1 -y "${full_output}" >/dev/null 2>"$_stderr_file"; then
+	mcp_result_success "$(mcp_json_obj message "Frame extracted to ${output_path}")"
 else
-	mcp_fail -32603 "Failed to extract frame"
+	_stderr=$(cat "$_stderr_file")
+	mcp_fail -32603 "Failed to extract frame: ${_stderr:-unknown error}"
 fi

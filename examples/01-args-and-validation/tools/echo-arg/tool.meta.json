@@ -10,11 +10,21 @@
   },
   "outputSchema": {
     "type": "object",
-    "required": ["message"],
+    "required": ["success", "result"],
     "properties": {
-      "message": {
-        "type": "string",
-        "description": "Echoed string"
+      "success": {
+        "type": "boolean",
+        "description": "Whether the operation succeeded"
+      },
+      "result": {
+        "type": "object",
+        "required": ["message"],
+        "properties": {
+          "message": {
+            "type": "string",
+            "description": "Echoed string"
+          }
+        }
       }
     }
   },

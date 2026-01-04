@@ -21,11 +21,23 @@
   },
   "outputSchema": {
     "type": "object",
-    "required": ["message"],
+    "required": ["success", "result"],
     "properties": {
-      "message": {
-        "type": "string",
-        "description": "Confirmation describing where the frame was written."
+      "success": {
+        "type": "boolean",
+        "description": "Whether the operation succeeded"
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "description": "Confirmation describing where the frame was written."
+          },
+          "error": { "type": "string" },
+          "input": { "type": "string" },
+          "hint": { "type": "string" }
+        }
       }
     }
   }

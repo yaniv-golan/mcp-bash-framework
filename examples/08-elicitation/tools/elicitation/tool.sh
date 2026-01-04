@@ -16,8 +16,7 @@ confirm_fields="$("${json_bin}" -r '[.action, (.content.confirmed // false)] | @
 confirm_action="${confirm_fields%%$'\t'*}"
 
 if [[ "${confirm_action}" != "accept" ]]; then
-	mcp_emit_text "Stopped: elicitation action=${confirm_action}"
-	exit 0
+	mcp_result_success "$(mcp_json_obj message "Stopped: elicitation action=${confirm_action}")"
 fi
 
 # 2. Simple choice (untitled single-select)
@@ -27,8 +26,7 @@ mode_action="${mode_fields%%$'\t'*}"
 mode_choice="${mode_fields#*$'\t'}"
 
 if [[ "${mode_action}" != "accept" ]]; then
-	mcp_emit_text "Stopped after mode choice: action=${mode_action}"
-	exit 0
+	mcp_result_success "$(mcp_json_obj message "Stopped after mode choice: action=${mode_action}")"
 fi
 
 # 3. Titled choice (SEP-1330: oneOf with const+title)
@@ -41,8 +39,7 @@ quality_action="${quality_fields%%$'\t'*}"
 quality_choice="${quality_fields#*$'\t'}"
 
 if [[ "${quality_action}" != "accept" ]]; then
-	mcp_emit_text "Stopped after quality choice: action=${quality_action}"
-	exit 0
+	mcp_result_success "$(mcp_json_obj message "Stopped after quality choice: action=${quality_action}")"
 fi
 
 # 4. Multi-select (SEP-1330: array with enum items)
@@ -52,8 +49,13 @@ features_action="$("${json_bin}" -r '.action' <<<"${features_resp}")"
 features_choices="$("${json_bin}" -r '(.content.choices // []) | join(", ")' <<<"${features_resp}")"
 
 if [[ "${features_action}" != "accept" ]]; then
-	mcp_emit_text "Stopped after features selection: action=${features_action}"
-	exit 0
+	mcp_result_success "$(mcp_json_obj message "Stopped after features selection: action=${features_action}")"
 fi
 
-mcp_emit_text "Elicitation complete: mode=${mode_choice}, quality=${quality_choice}, features=[${features_choices}]"
+mcp_result_success "$(
+	mcp_json_obj \
+		message "Elicitation complete" \
+		mode "${mode_choice}" \
+		quality "${quality_choice}" \
+		features "${features_choices}"
+)"

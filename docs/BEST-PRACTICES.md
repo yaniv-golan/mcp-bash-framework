@@ -52,6 +52,11 @@ This guide distils hands-on recommendations for designing, building, and operati
 | `mcp_is_cancelled` | Check cancellation | `if mcp_is_cancelled; then exit 1; fi` |
 | `mcp_log_info` | Structured logging | `mcp_log_info "tool" "message"` |
 | `mcp_with_retry` | Retry with exponential backoff | `mcp_with_retry 3 1.0 -- curl -sf "$url"` |
+| `mcp_result_success` | Emit success CallToolResult envelope | `mcp_result_success "$json_data"` |
+| `mcp_result_error` | Emit error CallToolResult envelope | `mcp_result_error '{"type":"not_found"}'` |
+| `mcp_json_truncate` | Truncate large arrays for context limits | `mcp_json_truncate "$arr" 10000` |
+| `mcp_is_valid_json` | Validate single JSON value | `if mcp_is_valid_json "$val"; then ...` |
+| `mcp_byte_length` | UTF-8 safe byte length | `len=$(mcp_byte_length "$str")` |
 
 ### External command patterns
 | Pattern | Purpose | Example |
@@ -344,7 +349,7 @@ Add file content to the `result.content` array so clients receive both text and 
 	if [ -n "${MCP_TOOL_RESOURCES_FILE:-}" ]; then
 		printf '%s\ttext/plain\n' "${payload_path}" >>"${MCP_TOOL_RESOURCES_FILE}"
 	fi
-	mcp_emit_text "See embedded report"
+	mcp_result_success "$(mcp_json_obj message "See embedded report")"
 	```
 - JSON format is also accepted: `[{"path":"/tmp/result.png","mimeType":"image/png","uri":"file:///tmp/result.png"}]` (a single object or string path works too).
 - Binary files are base64-encoded into the `blob` field; text stays in `text`.
@@ -438,7 +443,7 @@ for i in $(seq 1 "${count}"); do
 done
 
 # Return structured result
-mcp_emit_json "$(mcp_json_obj \
+mcp_result_success "$(mcp_json_obj \
   status ok \
   message "Processed ${count} items" \
   path "${repo_path}" \
@@ -521,12 +526,11 @@ count="$(mcp_args_get '.count // 10')"
 
 # ✅ DO provide actionable feedback the LLM can learn from
 if [ "${count}" -lt 1 ]; then
-  mcp_emit_json "$(mcp_json_obj \
+  mcp_result_error "$(mcp_json_obj \
     error "count must be between 1 and 100" \
     received "${count}" \
     suggestion "Try count=10 for a reasonable default"
   )"
-  exit 1  # Non-zero exit triggers isError: true in the response
 fi
 ```
 
@@ -553,12 +557,11 @@ mcp_fail_invalid_args "targetPath is required"
 
 # Tool execution error (LLM gets actionable feedback)
 if [ ! -f "${target_path}" ]; then
-  mcp_emit_json "$(mcp_json_obj \
+  mcp_result_error "$(mcp_json_obj \
     error "File not found" \
     path "${target_path}" \
     hint "Check available files with list-files tool"
   )"
-  exit 1
 fi
 ```
 
@@ -603,7 +606,7 @@ notes=$(my_cli notes ls --entity-id "$id" 2>/dev/null | jq -c '.data.notes // []
 metadata=$(my_cli metadata get "$id" 2>/dev/null | jq -c '.data // null' || echo 'null')
 
 # Now safe to compose - all variables contain valid JSON
-mcp_emit_json "$(jq -n \
+mcp_result_success "$(jq -n \
     --argjson entity "$entity" \
     --argjson notes "$notes" \
     --argjson metadata "$metadata" \
@@ -669,7 +672,7 @@ users=$(cat "$tmp_dir/users.json" 2>/dev/null | jq -c '. // []' || echo '[]')
 teams=$(cat "$tmp_dir/teams.json" 2>/dev/null | jq -c '. // []' || echo '[]')
 projects=$(cat "$tmp_dir/projects.json" 2>/dev/null | jq -c '. // []' || echo '[]')
 
-mcp_emit_json "$(jq -n --argjson u "$users" --argjson t "$teams" --argjson p "$projects" \
+mcp_result_success "$(jq -n --argjson u "$users" --argjson t "$teams" --argjson p "$projects" \
     '{users: $u, teams: $t, projects: $p}')"
 ```
 
@@ -692,6 +695,36 @@ done
 ```
 
 Rate limiting semantics vary by API (per-second, per-minute, sliding windows), so implement at the tool level with knowledge of your specific API's limits.
+
+**Capturing stdout and stderr separately:**
+
+Tools wrapping external CLIs often need separate access to stdout and stderr:
+
+```bash
+# Create temp files for capture
+_stdout_file=$(mktemp)
+_stderr_file=$(mktemp)
+trap 'rm -f "$_stdout_file" "$_stderr_file"' EXIT
+
+# Execute with capture
+"${cmd[@]}" >"$_stdout_file" 2>"$_stderr_file"
+_exit_code=$?
+
+# Read results
+_stdout=$(cat "$_stdout_file")
+_stderr=$(cat "$_stderr_file")
+
+# Use results
+if [ "$_exit_code" -eq 0 ]; then
+    mcp_result_success "$_stdout"
+else
+    # Stream stderr via stdin to avoid argv pressure with large error messages
+    mcp_result_error "$(printf '%s' "$_stderr" | "${MCPBASH_JSON_TOOL_BIN}" -Rsc --argjson c "$_exit_code" \
+        '{type: "cli_error", message: ., exitCode: $c}')"
+fi
+```
+
+**Why not a framework helper?** This pattern requires Bash 4.3+ namerefs for a clean API. Since mcp-bash supports Bash 3.2+, we document the pattern instead.
 
 ### 4.4 Common Bash Pitfalls
 
@@ -752,7 +785,125 @@ cmd | grep pattern  # Now fails if cmd fails
 
 ### 4.6 Documentation hooks
 - Every snippet in this guide and in new PRs should cite the source path/line to keep drift manageable.
-- When adding diagrams, include descriptive text such as “_Mermaid sequence describing lifecycle negotiation_” so text-only readers stay informed (§Supporting Assets).
+- When adding diagrams, include descriptive text such as "_Mermaid sequence describing lifecycle negotiation_" so text-only readers stay informed (§Supporting Assets).
+
+### 4.7 Building CallToolResult responses
+
+The SDK provides helpers for building MCP `CallToolResult` responses with consistent `{success, result}` envelope patterns. These helpers handle `structuredContent`, `content[].text` population, and `isError` flag management.
+
+#### Success responses
+
+Use `mcp_result_success` to emit a success envelope:
+
+```bash
+#!/usr/bin/env bash
+source "${MCP_SDK:?}/tool-sdk.sh"
+
+# Return structured data
+data=$(some_command | jq -c '.')
+mcp_result_success "$data"
+```
+
+The helper produces:
+```json
+{
+  "content": [{"type": "text", "text": "...summary..."}],
+  "structuredContent": {"success": true, "result": <your_data>},
+  "isError": false
+}
+```
+
+#### Error responses
+
+Use `mcp_result_error` to emit error envelopes with `isError: true`:
+
+```bash
+#!/usr/bin/env bash
+source "${MCP_SDK:?}/tool-sdk.sh"
+
+if [ ! -f "$target_path" ]; then
+  mcp_result_error "$(jq -n --arg p "$target_path" '{type:"not_found", path:$p}')"
+  exit 0  # Tool completed, error is in structured response
+fi
+```
+
+The helper produces:
+```json
+{
+  "content": [{"type": "text", "text": "error..."}],
+  "structuredContent": {"success": false, "error": {"type": "not_found", "path": "..."}},
+  "isError": true
+}
+```
+
+#### Truncating large results
+
+Use `mcp_json_truncate` to safely truncate large arrays before returning them:
+
+```bash
+#!/usr/bin/env bash
+source "${MCP_SDK:?}/tool-sdk.sh"
+
+# Fetch potentially large dataset
+items=$(my_cli list-all | jq -c '.')
+
+# Truncate to fit context window (default 100KB)
+truncated=$(mcp_json_truncate "$items" 102400)
+
+mcp_result_success "$truncated"
+```
+
+For arrays, the helper returns:
+```json
+{
+  "items": [...kept items...],
+  "truncated": true,
+  "kept": 50,
+  "total": 1000
+}
+```
+
+For objects with a `.results` array (common pagination pattern):
+```json
+{
+  "results": [...kept items...],
+  "truncated": true,
+  "kept": 50,
+  "total": 1000
+}
+```
+
+#### Validation helpers
+
+**`mcp_is_valid_json`** – Check if a value is valid single-value JSON (handles `false` and `null` correctly):
+
+```bash
+if mcp_is_valid_json "$user_input"; then
+  mcp_result_success "$user_input"
+else
+  mcp_result_error '{"type":"invalid_json","message":"Input is not valid JSON"}'
+fi
+```
+
+**`mcp_byte_length`** – Get UTF-8 safe byte length for size calculations:
+
+```bash
+payload_size=$(mcp_byte_length "$data")
+if [ "$payload_size" -gt 1048576 ]; then
+  mcp_log_warn "mytool" "Large payload: ${payload_size} bytes"
+fi
+```
+
+#### When to use result helpers vs mcp_emit_json
+
+| Scenario | Use |
+|----------|-----|
+| Simple data return (legacy) | `mcp_emit_json` |
+| Structured envelope with success/error | `mcp_result_success` / `mcp_result_error` |
+| LLM needs actionable error context | `mcp_result_error` with detailed error object |
+| Large arrays that may exceed context | `mcp_json_truncate` + `mcp_result_success` |
+
+The result helpers are recommended for new tools as they provide consistent response shapes that clients can rely on.
 
 ## 5. Testing & quality gates
 
@@ -1028,6 +1179,7 @@ flowchart TD
 ## Doc changelog
 | Date | Version | Notes |
 | --- | --- | --- |
+| 2026-01-04 | v1.4 | Added §4.7 "Building CallToolResult responses" covering `mcp_result_success`, `mcp_result_error`, `mcp_json_truncate`, `mcp_is_valid_json`, and `mcp_byte_length` helpers. Updated SDK quick reference table. Added "Capturing stdout and stderr separately" pattern to §4.3. |
 | 2026-01-03 | v1.3 | Added `mcp_with_retry` SDK helper for retrying transient failures. Added parallel external calls and rate limiting patterns. Added project health checks hook (`server.d/health-checks.sh`). Added "Common Bash Pitfalls" section (§4.4) covering `((var++))` under `set -e`, empty arrays, and pipefail. |
 | 2026-01-03 | v1.2 | Added "Calling external CLI tools" section (§4.3) with safe jq pipeline patterns, fallback defaults table, and external command quick reference. Added cross-reference in ERRORS.md. |
 | 2025-12-05 | v1.1 | Expanded SDK documentation: comprehensive coverage of `mcp_args_require`, `mcp_args_bool`, `mcp_args_int`, `mcp_require_path`, structured output helpers, and `run-tool` CLI usage patterns. Added SDK quick reference table. |

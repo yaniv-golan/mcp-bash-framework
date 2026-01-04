@@ -5,5 +5,24 @@
     "type": "object",
     "properties": {},
     "additionalProperties": false
+  },
+  "outputSchema": {
+    "type": "object",
+    "required": ["success", "result"],
+    "properties": {
+      "success": {
+        "type": "boolean",
+        "description": "Whether the operation succeeded"
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "message": { "type": "string" },
+          "mode": { "type": "string" },
+          "quality": { "type": "string" },
+          "features": { "type": "string" }
+        }
+      }
+    }
   }
 }

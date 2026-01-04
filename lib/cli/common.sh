@@ -233,7 +233,7 @@ source "${MCP_SDK:?MCP_SDK environment variable not set}/tool-sdk.sh"
 
 name="$(mcp_args_get '.name // "World"')"
 
-mcp_emit_json "$(mcp_json_obj message "Hello, ${name}!")"
+mcp_result_success "$(mcp_json_obj message "Hello, ${name}!")"
 EOF
 			chmod +x "${hello_dir}/tool.sh"
 			cat >"${hello_dir}/tool.meta.json" <<'EOF'
@@ -246,6 +246,19 @@ EOF
       "name": {
         "type": "string",
         "description": "Name to greet (default: World)"
+      }
+    }
+  },
+  "outputSchema": {
+    "type": "object",
+    "required": ["success", "result"],
+    "properties": {
+      "success": { "type": "boolean" },
+      "result": {
+        "type": "object",
+        "properties": {
+          "message": { "type": "string" }
+        }
       }
     }
   }

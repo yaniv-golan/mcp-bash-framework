@@ -5,4 +5,4 @@ set -euo pipefail
 # shellcheck disable=SC1091
 source "${MCP_SDK:?MCP_SDK environment variable not set}/tool-sdk.sh"
 
-mcp_emit_json "$(mcp_json_obj message "Hello from example tool")"
+mcp_result_success "$(mcp_json_obj message "Hello from example tool")"
