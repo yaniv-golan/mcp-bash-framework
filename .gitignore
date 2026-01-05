@@ -10,3 +10,6 @@ docs/.DS_Store
 **/.DS_Store
 # Generated MCPB bundles
 *.mcpb
+test-results/
+# npm dependencies (bats helpers)
+node_modules/

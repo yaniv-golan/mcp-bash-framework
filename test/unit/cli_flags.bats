@@ -1,31 +1,24 @@
-#!/usr/bin/env bash
+#!/usr/bin/env bats
 # Unit tests for new CLI flags: validate/config/registry/doctor.
 
-set -euo pipefail
+load '../../node_modules/bats-support/load'
+load '../../node_modules/bats-assert/load'
+load '../common/fixtures'
+load '../common/ndjson'
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+setup() {
+	unset -f jq 2>/dev/null || true
+	command -v jq >/dev/null 2>&1 || skip "jq required"
 
-# shellcheck source=test/common/env.sh
-# shellcheck disable=SC1091
-. "${REPO_ROOT}/test/common/env.sh"
-# shellcheck source=test/common/assert.sh
-# shellcheck disable=SC1091
-. "${REPO_ROOT}/test/common/assert.sh"
+	PROJECT_ROOT="${BATS_TEST_TMPDIR}/proj"
+	mkdir -p "${PROJECT_ROOT}/server.d" "${PROJECT_ROOT}/tools/hello"
+	export MCPBASH_PROJECT_ROOT="${PROJECT_ROOT}"
 
-unset -f jq 2>/dev/null || true
-
-test_require_command jq
-
-test_create_tmpdir
-PROJECT_ROOT="${TEST_TMPDIR}/proj"
-mkdir -p "${PROJECT_ROOT}/server.d" "${PROJECT_ROOT}/tools/hello"
-export MCPBASH_PROJECT_ROOT="${PROJECT_ROOT}"
-
-cat >"${PROJECT_ROOT}/server.d/server.meta.json" <<'EOF'
+	cat >"${PROJECT_ROOT}/server.d/server.meta.json" <<'EOF'
 {"name":"cli-flags-test"}
 EOF
 
-cat >"${PROJECT_ROOT}/tools/hello/tool.meta.json" <<'EOF'
+	cat >"${PROJECT_ROOT}/tools/hello/tool.meta.json" <<'EOF'
 {
   "name": "hello",
   "description": "Hello tool",
@@ -33,92 +26,87 @@ cat >"${PROJECT_ROOT}/tools/hello/tool.meta.json" <<'EOF'
 }
 EOF
 
-cat >"${PROJECT_ROOT}/tools/hello/tool.sh" <<'EOF'
+	cat >"${PROJECT_ROOT}/tools/hello/tool.sh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' '{"ok":true}'
 EOF
-chmod +x "${PROJECT_ROOT}/tools/hello/tool.sh"
+	chmod +x "${PROJECT_ROOT}/tools/hello/tool.sh"
+}
 
-printf ' -> validate --json produces machine output and strict fails on warnings\n'
-if "${REPO_ROOT}/bin/mcp-bash" validate --project-root "${PROJECT_ROOT}" --json --strict >"${TEST_TMPDIR}/validate.json" 2>/dev/null; then
-	test_fail "validate --strict should fail with warnings"
-fi
-validate_warnings="$(jq -r '.warnings' "${TEST_TMPDIR}/validate.json")"
-assert_eq "1" "${validate_warnings}" "expected one warning for missing namespace"
-validate_strict="$(jq -r '.strict' "${TEST_TMPDIR}/validate.json")"
-assert_eq "true" "${validate_strict}" "strict flag should reflect true"
+@test "cli_flags: validate --json produces machine output and strict fails on warnings" {
+	run "${MCPBASH_HOME}/bin/mcp-bash" validate --project-root "${PROJECT_ROOT}" --json --strict
+	assert_failure
+	printf '%s\n' "${output}" >"${BATS_TEST_TMPDIR}/validate.json"
+	validate_warnings="$(jq -r '.warnings' "${BATS_TEST_TMPDIR}/validate.json")"
+	assert_equal "1" "${validate_warnings}"
+	validate_strict="$(jq -r '.strict' "${BATS_TEST_TMPDIR}/validate.json")"
+	assert_equal "true" "${validate_strict}"
+}
 
-printf ' -> validate --explain-defaults emits defaults in text mode\n'
-defaults_output="$("${REPO_ROOT}/bin/mcp-bash" validate --project-root "${PROJECT_ROOT}" --explain-defaults 2>/dev/null)"
-assert_contains "Defaults used: name=cli-flags-test" "${defaults_output}"
+@test "cli_flags: validate --explain-defaults emits defaults in text mode" {
+	defaults_output="$("${MCPBASH_HOME}/bin/mcp-bash" validate --project-root "${PROJECT_ROOT}" --explain-defaults 2>/dev/null)"
+	assert_contains "Defaults used: name=cli-flags-test" "${defaults_output}"
+}
 
-printf ' -> config --wrapper outputs to stdout when non-TTY\n'
-rm -f "${PROJECT_ROOT}/cli-flags-test.sh"
-wrapper_output="$("${REPO_ROOT}/bin/mcp-bash" config --project-root "${PROJECT_ROOT}" --wrapper)"
-assert_contains "#!/usr/bin/env bash" "${wrapper_output}"
-assert_contains "MCPBASH_PROJECT_ROOT" "${wrapper_output}"
-assert_contains "mcp-bash not found" "${wrapper_output}"
-assert_contains "see README for download" "${wrapper_output}"
-if [[ -f "${PROJECT_ROOT}/cli-flags-test.sh" ]]; then
-	test_fail "Wrapper file should not be created in non-TTY context"
-fi
+@test "cli_flags: config --wrapper outputs to stdout when non-TTY" {
+	rm -f "${PROJECT_ROOT}/cli-flags-test.sh"
+	wrapper_output="$("${MCPBASH_HOME}/bin/mcp-bash" config --project-root "${PROJECT_ROOT}" --wrapper)"
+	assert_contains "#!/usr/bin/env bash" "${wrapper_output}"
+	assert_contains "MCPBASH_PROJECT_ROOT" "${wrapper_output}"
+	assert_contains "mcp-bash not found" "${wrapper_output}"
+	assert_contains "see README for download" "${wrapper_output}"
+	[ ! -f "${PROJECT_ROOT}/cli-flags-test.sh" ]
+}
 
-printf ' -> config --wrapper-env emits profile-aware wrapper\n'
-wrapper_env_output="$("${REPO_ROOT}/bin/mcp-bash" config --project-root "${PROJECT_ROOT}" --wrapper-env)"
-assert_contains "_source_profile" "${wrapper_env_output}"
-assert_contains '_source_profile "${HOME}/.zshrc"' "${wrapper_env_output}"
-assert_contains "see README for download" "${wrapper_env_output}"
+@test "cli_flags: config --wrapper-env emits profile-aware wrapper" {
+	wrapper_env_output="$("${MCPBASH_HOME}/bin/mcp-bash" config --project-root "${PROJECT_ROOT}" --wrapper-env)"
+	assert_contains "_source_profile" "${wrapper_env_output}"
+	assert_contains '_source_profile "${HOME}/.zshrc"' "${wrapper_env_output}"
+	assert_contains "see README for download" "${wrapper_env_output}"
+}
 
-printf ' -> config --wrapper rejects invalid server names but still emits script to stdout\n'
-bad_project="${TEST_TMPDIR}/badproj"
-mkdir -p "${bad_project}/server.d"
-printf '{"name":"has spaces"}' >"${bad_project}/server.d/server.meta.json"
-bad_output="$("${REPO_ROOT}/bin/mcp-bash" config --project-root "${bad_project}" --wrapper 2>&1)"
-assert_contains "#!/usr/bin/env bash" "${bad_output}"
-assert_contains "invalid characters" "${bad_output}"
-if [[ -e "${bad_project}/has spaces.sh" ]]; then
-	test_fail "Wrapper file should not be created for invalid server name"
-fi
+@test "cli_flags: config --wrapper rejects invalid server names but still emits script to stdout" {
+	bad_project="${BATS_TEST_TMPDIR}/badproj"
+	mkdir -p "${bad_project}/server.d"
+	printf '{"name":"has spaces"}' >"${bad_project}/server.d/server.meta.json"
+	bad_output="$("${MCPBASH_HOME}/bin/mcp-bash" config --project-root "${bad_project}" --wrapper 2>&1)"
+	assert_contains "#!/usr/bin/env bash" "${bad_output}"
+	assert_contains "invalid characters" "${bad_output}"
+	[ ! -e "${bad_project}/has spaces.sh" ]
+}
 
-printf ' -> config --wrapper creates file when stdout is a TTY (script)\n'
-if ! command -v script >/dev/null 2>&1; then
-	printf '    SKIP (script command not available)\n'
-else
+@test "cli_flags: config --wrapper creates file when stdout is a TTY (script)" {
+	command -v script >/dev/null 2>&1 || skip "script command not available"
+
 	# Some platforms ship a script(1) variant with differing arg order; probe before asserting.
 	if ! script -q /dev/null /bin/sh -c "echo probe" </dev/null >/dev/null 2>&1; then
-		printf '    SKIP (script command incompatible on this platform)\n'
-	else
-		rm -f "${PROJECT_ROOT}/cli-flags-test.sh"
-		script_exit=0
-		cmd_str="\"${REPO_ROOT}/bin/mcp-bash\" config --project-root \"${PROJECT_ROOT}\" --wrapper"
-		script -q /dev/null /bin/sh -c "${cmd_str}" </dev/null || script_exit=$?
-		if [ "${script_exit}" -ne 0 ]; then
-			test_fail "config --wrapper exited with code ${script_exit}"
-		fi
-		if [[ ! -f "${PROJECT_ROOT}/cli-flags-test.sh" ]]; then
-			test_fail "Wrapper file not created in TTY mode"
-		fi
-		if [[ ! -x "${PROJECT_ROOT}/cli-flags-test.sh" ]]; then
-			test_fail "Wrapper file not executable"
-		fi
-		rm -f "${PROJECT_ROOT}/cli-flags-test.sh"
+		skip "script command incompatible on this platform"
 	fi
-fi
 
-printf ' -> config --client outputs pasteable JSON\n'
-"${REPO_ROOT}/bin/mcp-bash" config --project-root "${PROJECT_ROOT}" --client claude-desktop >"${TEST_TMPDIR}/client.json"
-jq -e '.mcpServers["cli-flags-test"].command' "${TEST_TMPDIR}/client.json" >/dev/null
+	rm -f "${PROJECT_ROOT}/cli-flags-test.sh"
+	cmd_str="\"${MCPBASH_HOME}/bin/mcp-bash\" config --project-root \"${PROJECT_ROOT}\" --wrapper"
+	run script -q /dev/null /bin/sh -c "${cmd_str}"
+	assert_success
+	[ -f "${PROJECT_ROOT}/cli-flags-test.sh" ]
+	[ -x "${PROJECT_ROOT}/cli-flags-test.sh" ]
+	rm -f "${PROJECT_ROOT}/cli-flags-test.sh"
+}
 
-printf ' -> registry status outputs JSON even without cache\n'
-"${REPO_ROOT}/bin/mcp-bash" registry status --project-root "${PROJECT_ROOT}" >"${TEST_TMPDIR}/reg.json"
-jq -e '.tools.status' "${TEST_TMPDIR}/reg.json" >/dev/null
+@test "cli_flags: config --client outputs pasteable JSON" {
+	"${MCPBASH_HOME}/bin/mcp-bash" config --project-root "${PROJECT_ROOT}" --client claude-desktop >"${BATS_TEST_TMPDIR}/client.json"
+	jq -e '.mcpServers["cli-flags-test"].command' "${BATS_TEST_TMPDIR}/client.json" >/dev/null
+}
 
-printf ' -> doctor --json outputs structured data\n'
-(cd "${PROJECT_ROOT}" && "${REPO_ROOT}/bin/mcp-bash" doctor --json >"${TEST_TMPDIR}/doctor.json")
-jq -e '.schemaVersion == 1' "${TEST_TMPDIR}/doctor.json" >/dev/null
-jq -e '.exitCode == 0' "${TEST_TMPDIR}/doctor.json" >/dev/null
-jq -e '.findings | type == "array"' "${TEST_TMPDIR}/doctor.json" >/dev/null
-jq -e '.framework.version' "${TEST_TMPDIR}/doctor.json" >/dev/null
+@test "cli_flags: registry status outputs JSON even without cache" {
+	"${MCPBASH_HOME}/bin/mcp-bash" registry status --project-root "${PROJECT_ROOT}" >"${BATS_TEST_TMPDIR}/reg.json"
+	jq -e '.tools.status' "${BATS_TEST_TMPDIR}/reg.json" >/dev/null
+}
 
-printf 'CLI flags tests passed.\n'
+@test "cli_flags: doctor --json outputs structured data" {
+	(cd "${PROJECT_ROOT}" && "${MCPBASH_HOME}/bin/mcp-bash" doctor --json >"${BATS_TEST_TMPDIR}/doctor.json")
+	jq -e '.schemaVersion == 1' "${BATS_TEST_TMPDIR}/doctor.json" >/dev/null
+	jq -e '.exitCode == 0' "${BATS_TEST_TMPDIR}/doctor.json" >/dev/null
+	jq -e '.findings | type == "array"' "${BATS_TEST_TMPDIR}/doctor.json" >/dev/null
+	jq -e '.framework.version' "${BATS_TEST_TMPDIR}/doctor.json" >/dev/null
+}

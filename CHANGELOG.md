@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Tests: Unit tests (`test/unit/sdk_result_helpers.bats`) and integration tests (`test/integration/test_result_helpers.sh`) for all new helpers.
 
 ### Changed
+- **Test framework modernization**: Unit tests now use proper bats-core syntax with `@test` functions (219 tests across 40 files). Migrated from custom test runner to direct bats invocation with parallel execution support (`--jobs N` when GNU parallel available). Bats helper libraries (bats-support, bats-assert, bats-file) installed via npm instead of vendored. CI now outputs JUnit XML for test result visualization.
 - **Examples updated to best practices**: All examples now use `mcp_result_success` / `mcp_result_error` helpers instead of legacy `mcp_emit_json` patterns, with corresponding `outputSchema` updates using the `{success, result}` envelope.
 - **Scaffold templates updated**: Tool scaffolds (`scaffold/tool/`, `mcpbash init` inline template) now generate code using `mcp_result_success` with proper `outputSchema` envelope pattern.
 - **Documentation examples updated**: ERRORS.md and BEST-PRACTICES.md code examples now demonstrate the recommended `mcp_result_success` / `mcp_result_error` patterns.

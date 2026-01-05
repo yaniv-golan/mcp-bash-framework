@@ -1,26 +1,20 @@
-#!/usr/bin/env bash
+#!/usr/bin/env bats
 # Unit: HTTPS provider pins DNS resolution with curl --resolve to prevent
 # DNS-rebinding TOCTOU between "check host/IPs" and the actual fetch.
 
-set -euo pipefail
+load '../../node_modules/bats-support/load'
+load '../../node_modules/bats-assert/load'
+load '../common/fixtures'
+load '../common/ndjson'
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+setup() {
+	PROVIDER="${MCPBASH_HOME}/providers/https.sh"
 
-# shellcheck source=test/common/assert.sh
-# shellcheck disable=SC1091
-. "${REPO_ROOT}/test/common/assert.sh"
+	FAKE_HOME="${BATS_TEST_TMPDIR}/home"
+	mkdir -p "${FAKE_HOME}/lib"
 
-TEST_TMPDIR="$(mktemp -d "${TMPDIR:-/tmp}/mcpbash-test.XXXXXX")"
-export TEST_TMPDIR
-trap 'rm -rf "${TEST_TMPDIR}" 2>/dev/null || true' EXIT
-
-PROVIDER="${REPO_ROOT}/providers/https.sh"
-
-FAKE_HOME="${TEST_TMPDIR}/home"
-mkdir -p "${FAKE_HOME}/lib"
-
-# Minimal policy shim so the provider sources our resolver.
-cat >"${FAKE_HOME}/lib/policy.sh" <<'EOF'
+	# Minimal policy shim so the provider sources our resolver.
+	cat >"${FAKE_HOME}/lib/policy.sh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
@@ -42,16 +36,17 @@ mcp_policy_resolve_ips() {
 }
 EOF
 
-BIN_DIR="${TEST_TMPDIR}/bin"
-mkdir -p "${BIN_DIR}"
+	BIN_DIR="${BATS_TEST_TMPDIR}/bin"
+	mkdir -p "${BIN_DIR}"
 
-CALLS_FILE="${TEST_TMPDIR}/curl.calls"
-STATE_FILE="${TEST_TMPDIR}/curl.state"
-: >"${CALLS_FILE}"
-: >"${STATE_FILE}"
+	CALLS_FILE="${BATS_TEST_TMPDIR}/curl.calls"
+	STATE_FILE="${BATS_TEST_TMPDIR}/curl.state"
+	: >"${CALLS_FILE}"
+	: >"${STATE_FILE}"
+	export CALLS_FILE STATE_FILE
 
-# Fake curl: record argv; fail first call, succeed second; write output file.
-cat >"${BIN_DIR}/curl" <<'EOF'
+	# Fake curl: record argv; fail first call, succeed second; write output file.
+	cat >"${BIN_DIR}/curl" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
@@ -84,23 +79,21 @@ if [ "${n}" -eq 1 ]; then
 fi
 exit 0
 EOF
-chmod 700 "${BIN_DIR}/curl"
+	chmod 700 "${BIN_DIR}/curl"
+}
 
-printf ' -> pins curl to resolved IPs with --resolve and retries\n'
-set +e
-PATH="${BIN_DIR}:${PATH}" \
-	CALLS_FILE="${CALLS_FILE}" \
-	STATE_FILE="${STATE_FILE}" \
-	MCPBASH_HOME="${FAKE_HOME}" \
-	MCPBASH_HTTPS_ALLOW_ALL="true" \
-	bash "${PROVIDER}" "https://example.com:8443/path" >/dev/null 2>&1
-rc=$?
-set -e
-assert_eq "0" "${rc}" "expected provider to succeed after retrying pinned IPs"
+@test "https_dns_pinning: pins curl to resolved IPs with --resolve and retries" {
+	run bash -c "
+		PATH='${BIN_DIR}:${PATH}' \
+		CALLS_FILE='${CALLS_FILE}' \
+		STATE_FILE='${STATE_FILE}' \
+		MCPBASH_HOME='${FAKE_HOME}' \
+		MCPBASH_HTTPS_ALLOW_ALL='true' \
+		bash '${PROVIDER}' 'https://example.com:8443/path'
+	"
+	assert_success
 
-calls="$(cat "${CALLS_FILE}")"
-assert_contains "--resolve example.com:8443:203.0.113.10" "${calls}" "expected --resolve for first IP"
-assert_contains "--resolve example.com:8443:203.0.113.11" "${calls}" "expected retry with --resolve for second IP"
-
-printf 'https provider DNS pinning tests passed.\n'
-
+	calls="$(cat "${CALLS_FILE}")"
+	assert_contains "--resolve example.com:8443:203.0.113.10" "${calls}"
+	assert_contains "--resolve example.com:8443:203.0.113.11" "${calls}"
+}

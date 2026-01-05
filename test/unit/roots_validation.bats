@@ -1,46 +1,39 @@
-#!/usr/bin/env bash
+#!/usr/bin/env bats
 # Unit layer: roots canonicalization and run-tool overrides.
 
-set -euo pipefail
+load '../../node_modules/bats-support/load'
+load '../../node_modules/bats-assert/load'
+load '../common/fixtures'
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+setup() {
+	# shellcheck source=lib/roots.sh
+	# shellcheck disable=SC1091
+	. "${MCPBASH_HOME}/lib/roots.sh"
+	# shellcheck source=lib/cli/run_tool.sh
+	# shellcheck disable=SC1091
+	. "${MCPBASH_HOME}/lib/cli/run_tool.sh"
 
-# shellcheck source=test/common/env.sh
-# shellcheck disable=SC1091
-. "${REPO_ROOT}/test/common/env.sh"
-# shellcheck source=test/common/assert.sh
-# shellcheck disable=SC1091
-. "${REPO_ROOT}/test/common/assert.sh"
+	ROOT_OK="${BATS_TEST_TMPDIR}/ok-root"
+	mkdir -p "${ROOT_OK}"
+}
 
-# shellcheck source=lib/roots.sh
-# shellcheck disable=SC1091
-. "${REPO_ROOT}/lib/roots.sh"
-# shellcheck source=lib/cli/run_tool.sh
-# shellcheck disable=SC1091
-. "${REPO_ROOT}/lib/cli/run_tool.sh"
+@test "roots: canonicalize rejects missing path (strict)" {
+	run mcp_roots_canonicalize_checked "${BATS_TEST_TMPDIR}/missing" "test" 1
+	assert_failure
+}
 
-test_create_tmpdir
-ROOT_OK="${TEST_TMPDIR}/ok-root"
-mkdir -p "${ROOT_OK}"
+@test "roots: canonicalize accepts existing path and resolves traversal" {
+	resolved="$(mcp_roots_canonicalize_checked "${ROOT_OK}/../ok-root" "test" 1)"
+	expected="$(cd "${ROOT_OK}" && pwd -P)"
+	assert_equal "${expected}" "${resolved}"
+}
 
-printf ' -> canonicalize rejects missing path (strict)\n'
-if mcp_roots_canonicalize_checked "${TEST_TMPDIR}/missing" "test" 1; then
-	test_fail "expected missing path to be rejected"
-fi
+@test "roots: run-tool --roots fails on invalid entry" {
+	run bash -c "MCPBASH_PROJECT_ROOT='${BATS_TEST_TMPDIR}' . '${MCPBASH_HOME}/lib/cli/run_tool.sh'; mcp_cli_run_tool_prepare_roots '${BATS_TEST_TMPDIR}/nope'"
+	assert_failure
+}
 
-printf ' -> canonicalize accepts existing path and resolves traversal\n'
-resolved="$(mcp_roots_canonicalize_checked "${ROOT_OK}/../ok-root" "test" 1)"
-expected="$(cd "${ROOT_OK}" && pwd -P)"
-assert_eq "${expected}" "${resolved}" "expected canonicalized path to match realpath"
-
-printf ' -> run-tool --roots fails on invalid entry\n'
-if MCPBASH_PROJECT_ROOT="${TEST_TMPDIR}" mcp_cli_run_tool_prepare_roots "${TEST_TMPDIR}/nope"; then
-	test_fail "expected run-tool roots validation to fail for invalid path"
-fi
-
-printf ' -> run-tool --roots accepts existing entry\n'
-if ! MCPBASH_PROJECT_ROOT="${TEST_TMPDIR}" mcp_cli_run_tool_prepare_roots "${ROOT_OK}"; then
-	test_fail "expected run-tool roots validation to pass for existing path"
-fi
-
-printf 'roots validation tests passed.\n'
+@test "roots: run-tool --roots accepts existing entry" {
+	run bash -c "MCPBASH_PROJECT_ROOT='${BATS_TEST_TMPDIR}' . '${MCPBASH_HOME}/lib/cli/run_tool.sh'; mcp_cli_run_tool_prepare_roots '${ROOT_OK}'"
+	assert_success
+}

@@ -1,58 +1,55 @@
-#!/usr/bin/env bash
+#!/usr/bin/env bats
 # Unit: resources provider dispatch should not depend on executable bit.
 #
 # Git Bash/MSYS can ignore execute bits; resource providers should still run
 # when the script exists and looks runnable (shebang / .sh extension).
 
-set -euo pipefail
+load '../../node_modules/bats-support/load'
+load '../../node_modules/bats-assert/load'
+load '../common/fixtures'
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+setup() {
+	# shellcheck source=lib/resources.sh
+	# shellcheck disable=SC1091
+	. "${MCPBASH_HOME}/lib/resources.sh"
 
-# shellcheck source=test/common/env.sh
-# shellcheck disable=SC1091
-. "${REPO_ROOT}/test/common/env.sh"
-# shellcheck source=test/common/assert.sh
-# shellcheck disable=SC1091
-. "${REPO_ROOT}/test/common/assert.sh"
+	export MCPBASH_TMP_ROOT="${BATS_TEST_TMPDIR}"
+	export MCPBASH_HOME="${BATS_TEST_TMPDIR}/home"
+	export MCPBASH_PROJECT_ROOT="${BATS_TEST_TMPDIR}/project"
+	export MCPBASH_PROVIDERS_DIR="${MCPBASH_PROJECT_ROOT}/providers"
+	export MCPBASH_RESOURCES_DIR="${BATS_TEST_TMPDIR}/resources"
+	mkdir -p "${MCPBASH_HOME}/providers" "${MCPBASH_PROVIDERS_DIR}" "${MCPBASH_RESOURCES_DIR}"
+}
 
-# shellcheck source=lib/resources.sh
-# shellcheck disable=SC1091
-. "${REPO_ROOT}/lib/resources.sh"
-
-test_create_tmpdir
-
-export MCPBASH_TMP_ROOT="${TEST_TMPDIR}"
-export MCPBASH_HOME="${TEST_TMPDIR}/home"
-export MCPBASH_PROJECT_ROOT="${TEST_TMPDIR}/project"
-export MCPBASH_PROVIDERS_DIR="${MCPBASH_PROJECT_ROOT}/providers"
-export MCPBASH_RESOURCES_DIR="${TEST_TMPDIR}/resources"
-mkdir -p "${MCPBASH_HOME}/providers" "${MCPBASH_PROVIDERS_DIR}" "${MCPBASH_RESOURCES_DIR}"
-
-cat >"${MCPBASH_HOME}/providers/git.sh" <<'EOF'
+@test "resources_provider_exec_fallback: runs non-executable framework provider via bash fallback" {
+	cat >"${MCPBASH_HOME}/providers/git.sh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s' "ok:provider-ran:${1}"
 EOF
 
-# Intentionally do NOT chmod +x to simulate Git Bash/MSYS execute-bit issues.
-chmod -x "${MCPBASH_HOME}/providers/git.sh" 2>/dev/null || true
+	# Intentionally do NOT chmod +x to simulate Git Bash/MSYS execute-bit issues.
+	chmod -x "${MCPBASH_HOME}/providers/git.sh" 2>/dev/null || true
 
-printf ' -> runs non-executable framework provider via bash fallback\n'
-out="$(mcp_resources_read_via_provider "git" "git+https://example/repo#main:README.md")"
-assert_eq "ok:provider-ran:git+https://example/repo#main:README.md" "${out}" "expected provider to run via bash fallback"
+	out="$(mcp_resources_read_via_provider "git" "git+https://example/repo#main:README.md")"
+	assert_equal "ok:provider-ran:git+https://example/repo#main:README.md" "${out}"
+}
 
-# --- Test project-level provider execute-bit fallback ---
-printf ' -> runs non-executable project provider via bash fallback\n'
+@test "resources_provider_exec_fallback: runs non-executable project provider via bash fallback" {
+	cat >"${MCPBASH_HOME}/providers/git.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s' "ok:provider-ran:${1}"
+EOF
+	chmod -x "${MCPBASH_HOME}/providers/git.sh" 2>/dev/null || true
 
-cat >"${MCPBASH_PROVIDERS_DIR}/project.sh" <<'EOF'
+	cat >"${MCPBASH_PROVIDERS_DIR}/project.sh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s' "ok:project-provider-ran:${1}"
 EOF
-chmod -x "${MCPBASH_PROVIDERS_DIR}/project.sh" 2>/dev/null || true
+	chmod -x "${MCPBASH_PROVIDERS_DIR}/project.sh" 2>/dev/null || true
 
-out="$(mcp_resources_read_via_provider "project" "project://test")"
-assert_eq "ok:project-provider-ran:project://test" "${out}" "expected project provider via bash fallback"
-
-printf 'resources provider exec fallback test passed.\n'
-
+	out="$(mcp_resources_read_via_provider "project" "project://test")"
+	assert_equal "ok:project-provider-ran:project://test" "${out}"
+}

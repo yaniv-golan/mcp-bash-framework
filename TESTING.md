@@ -4,8 +4,8 @@ For the full list of environment knobs and defaults, see [docs/ENV_REFERENCE.md]
 
 ## Runner Flags
 
-- `VERBOSE=1` streams per-test logs and re-enables JSON tooling discovery logs (default is quiet).
-- `UNICODE=1` uses ✅/❌; default output is ASCII `[PASS]/[FAIL]`.
+- `VERBOSE=1` streams per-test logs and re-enables JSON tooling discovery logs (default is quiet). Applies to integration tests.
+- `UNICODE=1` uses ✅/❌; default output is ASCII `[PASS]/[FAIL]`. Applies to integration tests.
 - `MCPBASH_LOG_JSON_TOOL=log` forces JSON tooling detection logs even when `VERBOSE` is off.
 - Integration runner: `MCPBASH_INTEGRATION_ONLY` / `MCPBASH_INTEGRATION_SKIP` filter which `test/integration/test_*.sh` scripts are executed (unknown names fail fast).
 - Integration runner: `MCPBASH_INTEGRATION_TEST_TIMEOUT_SECONDS` enforces a per-test watchdog timeout (a timeout fails the test and reports `[TIMEOUT]`).
@@ -29,11 +29,23 @@ For the full list of environment knobs and defaults, see [docs/ENV_REFERENCE.md]
 
 ## Unit Tests
 
-```
+```bash
+# Install bats and helpers (first time only)
+npm install
+
+# Run all unit tests
 ./test/unit/run.sh
+
+# Run specific test file(s)
+./test/unit/run.sh json.bats
+./test/unit/run.sh sdk_result
 ```
 
-Includes coverage for the CLI `run-tool` entrypoint, SDK helpers, path normalization, locking, pagination, and JSON utilities.
+Unit tests use [bats-core](https://bats-core.readthedocs.io/) with 219 tests across 40 files. Includes coverage for the CLI `run-tool` entrypoint, SDK helpers, path normalization, locking, pagination, and JSON utilities.
+
+- Parallel execution enabled when GNU parallel is installed (`brew install parallel`)
+- CI outputs JUnit XML to `test-results/` for test result visualization
+- Use `CI=true ./test/unit/run.sh` locally to generate JUnit output
 
 ## Integration Tests
 

@@ -1,50 +1,37 @@
-#!/usr/bin/env bash
+#!/usr/bin/env bats
 # Unit: refuse symlinked server.d/register.sh even when hooks enabled.
 
-set -euo pipefail
+load '../../node_modules/bats-support/load'
+load '../../node_modules/bats-assert/load'
+load '../common/fixtures'
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+setup() {
+	# shellcheck source=lib/registry.sh
+	# shellcheck disable=SC1091
+	. "${MCPBASH_HOME}/lib/registry.sh"
 
-# shellcheck source=test/common/env.sh
-# shellcheck disable=SC1091
-. "${REPO_ROOT}/test/common/env.sh"
-# shellcheck source=test/common/assert.sh
-# shellcheck disable=SC1091
-. "${REPO_ROOT}/test/common/assert.sh"
+	project="${BATS_TEST_TMPDIR}/proj"
+	mkdir -p "${project}/server.d"
+	chmod 700 "${project}" "${project}/server.d" 2>/dev/null || true
 
-# shellcheck source=lib/registry.sh
-# shellcheck disable=SC1091
-. "${REPO_ROOT}/lib/registry.sh"
+	export MCPBASH_PROJECT_ROOT="${project}"
+	export MCPBASH_SERVER_DIR="${project}/server.d"
+}
 
-test_create_tmpdir
+@test "registry: rejects symlinked register.sh" {
+	printf '%s\n' '#!/usr/bin/env bash' >"${project}/evil.sh"
+	printf '%s\n' 'echo "pwned"' >>"${project}/evil.sh"
+	ln -s "../evil.sh" "${project}/server.d/register.sh"
 
-project="${TEST_TMPDIR}/proj"
-mkdir -p "${project}/server.d"
-chmod 700 "${project}" "${project}/server.d" 2>/dev/null || true
+	run mcp_registry_register_check_permissions "${project}/server.d/register.sh"
+	assert_failure
+}
 
-export MCPBASH_PROJECT_ROOT="${project}"
-export MCPBASH_SERVER_DIR="${project}/server.d"
+@test "registry: accepts regular, owned, non-writable register.sh" {
+	rm -f "${project}/server.d/register.sh"
+	printf '%s\n' '#!/usr/bin/env bash' >"${project}/server.d/register.sh"
+	chmod 700 "${project}/server.d/register.sh" 2>/dev/null || true
 
-printf '%s\n' '#!/usr/bin/env bash' >"${project}/evil.sh"
-printf '%s\n' 'echo "pwned"' >>"${project}/evil.sh"
-
-ln -s "../evil.sh" "${project}/server.d/register.sh"
-
-printf ' -> rejects symlinked register.sh
-'
-set +e
-mcp_registry_register_check_permissions "${project}/server.d/register.sh"
-rc=$?
-set -e
-if [ "${rc}" -eq 0 ]; then
-	test_fail "expected symlinked register.sh to be rejected"
-fi
-
-rm -f "${project}/server.d/register.sh"
-printf '%s\n' '#!/usr/bin/env bash' >"${project}/server.d/register.sh"
-chmod 700 "${project}/server.d/register.sh" 2>/dev/null || true
-
-printf ' -> accepts regular, owned, non-writable register.sh
-'
-mcp_registry_register_check_permissions "${project}/server.d/register.sh"
-
+	run mcp_registry_register_check_permissions "${project}/server.d/register.sh"
+	assert_success
+}

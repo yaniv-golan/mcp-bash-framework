@@ -1,61 +1,59 @@
-#!/usr/bin/env bash
+#!/usr/bin/env bats
 # Unit layer: validate lock helpers from lib/lock.sh.
 
-set -euo pipefail
+load '../../node_modules/bats-support/load'
+load '../../node_modules/bats-assert/load'
+load '../../node_modules/bats-file/load'
+load '../common/fixtures'
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+setup() {
+	# shellcheck source=lib/runtime.sh
+	# shellcheck disable=SC1091
+	. "${MCPBASH_HOME}/lib/runtime.sh"
+	# shellcheck source=lib/lock.sh
+	# shellcheck disable=SC1091
+	. "${MCPBASH_HOME}/lib/lock.sh"
 
-# shellcheck source=test/common/env.sh
-# shellcheck disable=SC1091
-. "${REPO_ROOT}/test/common/env.sh"
-# shellcheck source=test/common/assert.sh
-# shellcheck disable=SC1091
-. "${REPO_ROOT}/test/common/assert.sh"
+	MCPBASH_TMP_ROOT="${BATS_TEST_TMPDIR}"
+	export MCPBASH_PROJECT_ROOT="${BATS_TEST_TMPDIR}"
+	mcp_runtime_init_paths
 
-# shellcheck source=lib/runtime.sh
-# shellcheck disable=SC1091
-. "${REPO_ROOT}/lib/runtime.sh"
-# shellcheck source=lib/lock.sh
-# shellcheck disable=SC1091
-. "${REPO_ROOT}/lib/lock.sh"
+	MCPBASH_LOCK_ROOT="${BATS_TEST_TMPDIR}/locks"
+}
 
-test_create_tmpdir
-MCPBASH_TMP_ROOT="${TEST_TMPDIR}"
-# Unit tests require a project root; point it at the temp workspace.
-export MCPBASH_PROJECT_ROOT="${TEST_TMPDIR}"
-mcp_runtime_init_paths
+@test "lock: initialization" {
+	mcp_lock_init
+	assert_equal "${BATS_TEST_TMPDIR}/locks" "${MCPBASH_LOCK_ROOT}"
+}
 
-printf ' -> lock initialization\n'
-MCPBASH_LOCK_ROOT="${TEST_TMPDIR}/locks"
-mcp_lock_init
-assert_eq "${TEST_TMPDIR}/locks" "${MCPBASH_LOCK_ROOT}"
+@test "lock: acquire/release cycle" {
+	mcp_lock_init
+	mcp_lock_acquire "unit"
+	assert_file_exist "${MCPBASH_LOCK_ROOT}/unit.lock/pid"
 
-printf ' -> acquire/release cycle\n'
-mcp_lock_acquire "unit"
-assert_file_exists "${MCPBASH_LOCK_ROOT}/unit.lock/pid"
-mcp_lock_release "unit"
-if [ -d "${MCPBASH_LOCK_ROOT}/unit.lock" ]; then
-	test_fail "lock directory not removed after release"
-fi
+	mcp_lock_release "unit"
+	[ ! -d "${MCPBASH_LOCK_ROOT}/unit.lock" ]
+}
 
-printf ' -> reap stale owner\n'
-mkdir -p "${MCPBASH_LOCK_ROOT}/stale.lock"
-printf '%s' "999999" >"${MCPBASH_LOCK_ROOT}/stale.lock/pid"
-mcp_lock_acquire "stale"
-assert_file_exists "${MCPBASH_LOCK_ROOT}/stale.lock/pid"
-mcp_lock_release "stale"
+@test "lock: reap stale owner" {
+	mcp_lock_init
+	mkdir -p "${MCPBASH_LOCK_ROOT}/stale.lock"
+	printf '%s' "999999" >"${MCPBASH_LOCK_ROOT}/stale.lock/pid"
 
-printf ' -> grace period for pid creation\n'
-MCPBASH_LOCK_REAP_GRACE_SECS=5
-mkdir -p "${MCPBASH_LOCK_ROOT}/grace.lock"
-mcp_lock_try_reap "${MCPBASH_LOCK_ROOT}/grace.lock"
-if [ ! -d "${MCPBASH_LOCK_ROOT}/grace.lock" ]; then
-	test_fail "lock reaped during grace window"
-fi
-MCPBASH_LOCK_REAP_GRACE_SECS=0
-mcp_lock_try_reap "${MCPBASH_LOCK_ROOT}/grace.lock"
-if [ -d "${MCPBASH_LOCK_ROOT}/grace.lock" ]; then
-	test_fail "stale lock without pid not reaped after grace"
-fi
+	mcp_lock_acquire "stale"
+	assert_file_exist "${MCPBASH_LOCK_ROOT}/stale.lock/pid"
+	mcp_lock_release "stale"
+}
 
-printf 'All lock tests passed.\n'
+@test "lock: grace period for pid creation" {
+	mcp_lock_init
+	MCPBASH_LOCK_REAP_GRACE_SECS=5
+	mkdir -p "${MCPBASH_LOCK_ROOT}/grace.lock"
+
+	mcp_lock_try_reap "${MCPBASH_LOCK_ROOT}/grace.lock"
+	[ -d "${MCPBASH_LOCK_ROOT}/grace.lock" ]
+
+	MCPBASH_LOCK_REAP_GRACE_SECS=0
+	mcp_lock_try_reap "${MCPBASH_LOCK_ROOT}/grace.lock"
+	[ ! -d "${MCPBASH_LOCK_ROOT}/grace.lock" ]
+}

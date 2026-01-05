@@ -1,34 +1,21 @@
-#!/usr/bin/env bash
+#!/usr/bin/env bats
 # Unit tests for HTTPS provider SSRF guardrails.
 
-set -euo pipefail
+load '../../node_modules/bats-support/load'
+load '../../node_modules/bats-assert/load'
+load '../common/fixtures'
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-
-# shellcheck source=test/common/assert.sh
-# shellcheck disable=SC1091
-. "${REPO_ROOT}/test/common/assert.sh"
-
-tmp_err=""
-
-test_create_tmpdir() {
-	# Minimal local helper (avoid depending on other test env helpers)
-	TEST_TMPDIR="$(mktemp -d "${TMPDIR:-/tmp}/mcpbash-test.XXXXXX")"
-	export TEST_TMPDIR
-	trap 'rm -rf "${TEST_TMPDIR}" 2>/dev/null || true' EXIT
+setup() {
+	PROVIDER="${MCPBASH_HOME}/providers/https.sh"
+	tmp_err="${BATS_TEST_TMPDIR}/stderr.txt"
+	: >"${tmp_err}"
 }
-
-test_create_tmpdir
-
-PROVIDER="${REPO_ROOT}/providers/https.sh"
 
 run_provider() {
 	local uri="$1"
 	shift || true
-	# Capture stderr so we can assert on error messages.
-	tmp_err="${TEST_TMPDIR}/stderr.txt"
 	: >"${tmp_err}"
-	local home="${MCPBASH_HOME_OVERRIDE:-${REPO_ROOT}}"
+	local home="${MCPBASH_HOME_OVERRIDE:-${MCPBASH_HOME}}"
 	MCPBASH_HOME="${home}" \
 		MCPBASH_HTTPS_ALLOW_HOSTS="${MCPBASH_HTTPS_ALLOW_HOSTS:-}" \
 		MCPBASH_HTTPS_DENY_HOSTS="${MCPBASH_HTTPS_DENY_HOSTS:-}" \
@@ -36,58 +23,40 @@ run_provider() {
 		bash "${PROVIDER}" "${uri}" 1>/dev/null 2>"${tmp_err}"
 }
 
-printf ' -> blocks localhost (private host)
-'
-set +e
-run_provider "https://localhost/"
-rc=$?
-set -e
-assert_eq "4" "${rc}" "expected exit 4 for private host"
+@test "https_security: blocks localhost (private host)" {
+	run run_provider "https://localhost/"
+	assert_equal "4" "${status}"
+}
 
-printf ' -> blocks userinfo@127.0.0.1 (userinfo SSRF bypass regression)
-'
-set +e
-run_provider "https://user@127.0.0.1/"
-rc=$?
-set -e
-assert_eq "4" "${rc}" "expected exit 4 for userinfo private IP"
+@test "https_security: blocks userinfo@127.0.0.1 (SSRF bypass regression)" {
+	run run_provider "https://user@127.0.0.1/"
+	assert_equal "4" "${status}"
+}
 
-printf ' -> blocks user:pass@localhost (userinfo SSRF bypass regression)
-'
-set +e
-run_provider "https://user:pass@localhost/"
-rc=$?
-set -e
-assert_eq "4" "${rc}" "expected exit 4 for userinfo localhost"
+@test "https_security: blocks user:pass@localhost (SSRF bypass regression)" {
+	run run_provider "https://user:pass@localhost/"
+	assert_equal "4" "${status}"
+}
 
-printf ' -> blocks obfuscated integer IPv4 host literal
-'
-set +e
-run_provider "https://2130706433/"
-rc=$?
-set -e
-assert_eq "4" "${rc}" "expected exit 4 for obfuscated integer IP"
+@test "https_security: blocks obfuscated integer IPv4 host literal" {
+	run run_provider "https://2130706433/"
+	assert_equal "4" "${status}"
+}
 
-printf ' -> denies public hosts by default unless allowlisted
-'
-unset MCPBASH_HTTPS_ALLOW_HOSTS MCPBASH_HTTPS_ALLOW_ALL
-set +e
-run_provider "https://example.com/"
-rc=$?
-set -e
-assert_eq "4" "${rc}" "expected exit 4 for public host when no allowlist"
-if ! grep -q "requires MCPBASH_HTTPS_ALLOW_HOSTS" "${tmp_err}"; then
-	test_fail "expected deny-by-default allowlist message"
-fi
+@test "https_security: denies public hosts by default unless allowlisted" {
+	unset MCPBASH_HTTPS_ALLOW_HOSTS MCPBASH_HTTPS_ALLOW_ALL
+	run run_provider "https://example.com/"
+	assert_equal "4" "${status}"
 
-printf ' -> enforces allowlist even if policy helpers cannot be sourced
-'
-MCPBASH_HOME_OVERRIDE="${TEST_TMPDIR}/missing-home"
-MCPBASH_HTTPS_ALLOW_HOSTS="allowed.example.com"
-unset MCPBASH_HTTPS_ALLOW_ALL
-set +e
-run_provider "https://example.com/"
-rc=$?
-set -e
-unset MCPBASH_HOME_OVERRIDE
-assert_eq "4" "${rc}" "expected exit 4 for non-allowlisted host even in fallback mode"
+	run grep -q "requires MCPBASH_HTTPS_ALLOW_HOSTS" "${tmp_err}"
+	assert_success
+}
+
+@test "https_security: enforces allowlist even if policy helpers cannot be sourced" {
+	MCPBASH_HOME_OVERRIDE="${BATS_TEST_TMPDIR}/missing-home"
+	MCPBASH_HTTPS_ALLOW_HOSTS="allowed.example.com"
+	unset MCPBASH_HTTPS_ALLOW_ALL
+
+	run run_provider "https://example.com/"
+	assert_equal "4" "${status}"
+}

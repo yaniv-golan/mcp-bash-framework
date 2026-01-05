@@ -1,15 +1,14 @@
-#!/usr/bin/env bash
+#!/usr/bin/env bats
 # Unit: README.md render drift detection.
 
-set -euo pipefail
+load '../../node_modules/bats-support/load'
+load '../../node_modules/bats-assert/load'
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-
-if ! bash "${REPO_ROOT}/scripts/render-readme.sh" --check; then
-	printf 'README render drift detected. Run:\n'
-	printf '  %s\n' "bash ${REPO_ROOT}/scripts/render-readme.sh"
-	exit 1
-fi
-
-printf 'README render test passed.\n'
-
+@test "README.md is up to date with template" {
+	run bash "${BATS_TEST_DIRNAME}/../../scripts/render-readme.sh" --check
+	if [ "${status}" -ne 0 ]; then
+		echo "README render drift detected. Run:"
+		echo "  bash ${BATS_TEST_DIRNAME}/../../scripts/render-readme.sh"
+	fi
+	assert_success
+}

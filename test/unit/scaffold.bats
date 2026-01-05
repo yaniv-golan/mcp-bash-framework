@@ -1,60 +1,52 @@
-#!/usr/bin/env bash
+#!/usr/bin/env bats
 # Unit layer: scaffold outputs canonical tool files.
 
-set -euo pipefail
+load '../../node_modules/bats-support/load'
+load '../../node_modules/bats-assert/load'
+load '../../node_modules/bats-file/load'
+load '../common/fixtures'
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+setup() {
+	PROJECT_ROOT="${BATS_TEST_TMPDIR}/proj"
+	mkdir -p "${PROJECT_ROOT}"
+	export MCPBASH_PROJECT_ROOT="${PROJECT_ROOT}"
+}
 
-# shellcheck source=test/common/env.sh
-# shellcheck disable=SC1091
-. "${REPO_ROOT}/test/common/env.sh"
-# shellcheck source=test/common/assert.sh
-# shellcheck disable=SC1091
-. "${REPO_ROOT}/test/common/assert.sh"
+@test "scaffold: creates tool files" {
+	run "${MCPBASH_HOME}/bin/mcp-bash" scaffold tool hello
+	assert_success
 
-test_require_command jq
+	assert_file_exist "${PROJECT_ROOT}/tools/hello/tool.sh"
+	assert_file_exist "${PROJECT_ROOT}/tools/hello/tool.meta.json"
+	assert_file_exist "${PROJECT_ROOT}/tools/hello/README.md"
 
-test_create_tmpdir
-PROJECT_ROOT="${TEST_TMPDIR}/proj"
-mkdir -p "${PROJECT_ROOT}"
-export MCPBASH_PROJECT_ROOT="${PROJECT_ROOT}"
+	run jq -e '.name == "hello"' "${PROJECT_ROOT}/tools/hello/tool.meta.json"
+	assert_success
+}
 
-printf ' -> scaffold tool\n'
-"${REPO_ROOT}/bin/mcp-bash" scaffold tool hello >/dev/null
-assert_file_exists "${PROJECT_ROOT}/tools/hello/tool.sh"
-assert_file_exists "${PROJECT_ROOT}/tools/hello/tool.meta.json"
-assert_file_exists "${PROJECT_ROOT}/tools/hello/README.md"
+@test "scaffold: creates prompt files" {
+	run "${MCPBASH_HOME}/bin/mcp-bash" scaffold prompt welcome
+	assert_success
 
-if ! jq -e '.name == "hello"' "${PROJECT_ROOT}/tools/hello/tool.meta.json" >/dev/null; then
-	test_fail "tool.meta.json does not contain expected tool name"
-fi
+	assert_file_exist "${PROJECT_ROOT}/prompts/welcome/welcome.txt"
+	assert_file_exist "${PROJECT_ROOT}/prompts/welcome/welcome.meta.json"
+	assert_file_exist "${PROJECT_ROOT}/prompts/welcome/README.md"
 
-printf ' -> scaffold prompt\n'
-"${REPO_ROOT}/bin/mcp-bash" scaffold prompt welcome >/dev/null
-assert_file_exists "${PROJECT_ROOT}/prompts/welcome/welcome.txt"
-assert_file_exists "${PROJECT_ROOT}/prompts/welcome/welcome.meta.json"
-assert_file_exists "${PROJECT_ROOT}/prompts/welcome/README.md"
+	run jq -e '.name == "prompt.welcome"' "${PROJECT_ROOT}/prompts/welcome/welcome.meta.json"
+	assert_success
+}
 
-if ! jq -e '.name == "prompt.welcome"' "${PROJECT_ROOT}/prompts/welcome/welcome.meta.json" >/dev/null; then
-	test_fail "prompt.meta.json does not contain expected prompt name"
-fi
+@test "scaffold: creates resource files with file:// URI" {
+	run "${MCPBASH_HOME}/bin/mcp-bash" scaffold resource sample
+	assert_success
 
-printf ' -> scaffold resource\n'
-"${REPO_ROOT}/bin/mcp-bash" scaffold resource sample >/dev/null
-assert_file_exists "${PROJECT_ROOT}/resources/sample/sample.txt"
-assert_file_exists "${PROJECT_ROOT}/resources/sample/sample.meta.json"
-assert_file_exists "${PROJECT_ROOT}/resources/sample/README.md"
+	assert_file_exist "${PROJECT_ROOT}/resources/sample/sample.txt"
+	assert_file_exist "${PROJECT_ROOT}/resources/sample/sample.meta.json"
+	assert_file_exist "${PROJECT_ROOT}/resources/sample/README.md"
 
-if ! jq -e '.name == "resource.sample"' "${PROJECT_ROOT}/resources/sample/sample.meta.json" >/dev/null; then
-	test_fail "resource.meta.json does not contain expected resource name"
-fi
-resource_uri="$(jq -r '.uri // ""' "${PROJECT_ROOT}/resources/sample/sample.meta.json")"
-case "${resource_uri}" in
-file://*)
-	;;
-*)
-	test_fail "resource URI not file:// prefixed: ${resource_uri}"
-	;;
-esac
+	run jq -e '.name == "resource.sample"' "${PROJECT_ROOT}/resources/sample/sample.meta.json"
+	assert_success
 
-printf 'Scaffold test passed.\n'
+	resource_uri="$(jq -r '.uri // ""' "${PROJECT_ROOT}/resources/sample/sample.meta.json")"
+	[[ "${resource_uri}" == file://* ]]
+}

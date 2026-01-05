@@ -1,0 +1,11 @@
+{
+  "name": "mcp-bash",
+  "private": true,
+  "description": "MCP server framework for bash",
+  "devDependencies": {
+    "bats": "^1.11.0",
+    "bats-assert": "^2.2.0",
+    "bats-file": "github:bats-core/bats-file",
+    "bats-support": "^0.3.0"
+  }
+}

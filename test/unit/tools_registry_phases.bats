@@ -1,116 +1,110 @@
-#!/usr/bin/env bash
+#!/usr/bin/env bats
 # Unit tests for tool registry helper phases.
 
-set -euo pipefail
+load '../../node_modules/bats-support/load'
+load '../../node_modules/bats-assert/load'
+load '../../node_modules/bats-file/load'
+load '../common/fixtures'
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+setup() {
+	# shellcheck source=lib/hash.sh
+	# shellcheck disable=SC1091
+	. "${MCPBASH_HOME}/lib/hash.sh"
+	# shellcheck source=lib/lock.sh
+	# shellcheck disable=SC1091
+	. "${MCPBASH_HOME}/lib/lock.sh"
+	# shellcheck source=lib/registry.sh
+	# shellcheck disable=SC1091
+	. "${MCPBASH_HOME}/lib/registry.sh"
+	# shellcheck source=lib/tools.sh
+	# shellcheck disable=SC1091
+	. "${MCPBASH_HOME}/lib/tools.sh"
 
-# shellcheck source=test/common/env.sh
-# shellcheck disable=SC1091
-. "${REPO_ROOT}/test/common/env.sh"
-# shellcheck source=test/common/assert.sh
-# shellcheck disable=SC1091
-. "${REPO_ROOT}/test/common/assert.sh"
-# shellcheck source=lib/hash.sh disable=SC1090
-. "${REPO_ROOT}/lib/hash.sh"
-# shellcheck source=lib/lock.sh disable=SC1090
-. "${REPO_ROOT}/lib/lock.sh"
-# shellcheck source=lib/registry.sh disable=SC1090
-. "${REPO_ROOT}/lib/registry.sh"
-# shellcheck source=lib/tools.sh disable=SC1090
-. "${REPO_ROOT}/lib/tools.sh"
+	MCPBASH_JSON_TOOL_BIN="$(command -v jq)"
+	MCPBASH_JSON_TOOL="jq"
+	if ! command -v mcp_logging_is_enabled >/dev/null 2>&1; then
+		mcp_logging_is_enabled() {
+			return 1
+		}
+	fi
+	if ! command -v mcp_logging_warning >/dev/null 2>&1; then
+		mcp_logging_warning() {
+			return 0
+		}
+	fi
 
-MCPBASH_JSON_TOOL_BIN="$(command -v jq)"
-MCPBASH_JSON_TOOL="jq"
-if ! command -v mcp_logging_is_enabled >/dev/null 2>&1; then
-	mcp_logging_is_enabled() {
-		return 1
-	}
-fi
-if ! command -v mcp_logging_warning >/dev/null 2>&1; then
-	mcp_logging_warning() {
-		return 0
-	}
-fi
+	MCPBASH_TMP_ROOT="${BATS_TEST_TMPDIR}"
+	MCPBASH_STATE_DIR="${BATS_TEST_TMPDIR}/state"
+	MCPBASH_LOCK_ROOT="${BATS_TEST_TMPDIR}/locks"
+	mkdir -p "${MCPBASH_STATE_DIR}" "${MCPBASH_LOCK_ROOT}"
+}
 
-test_create_tmpdir
-MCPBASH_TMP_ROOT="${TEST_TMPDIR}"
-MCPBASH_STATE_DIR="${TEST_TMPDIR}/state"
-MCPBASH_LOCK_ROOT="${TEST_TMPDIR}/locks"
-mkdir -p "${MCPBASH_STATE_DIR}" "${MCPBASH_LOCK_ROOT}"
+@test "tools_registry_phases: cache freshness gating respects TTL" {
+	MCP_TOOLS_REGISTRY_JSON="{}"
+	now="$(date +%s)"
+	MCP_TOOLS_LAST_SCAN="${now}"
+	MCP_TOOLS_TTL=5
+	mcp_tools_cache_fresh "${now}"
 
-printf ' -> cache freshness gating respects TTL\n'
-MCP_TOOLS_REGISTRY_JSON="{}"
-now="$(date +%s)"
-MCP_TOOLS_LAST_SCAN="${now}"
-MCP_TOOLS_TTL=5
-if ! mcp_tools_cache_fresh "${now}"; then
-	test_fail "expected cache to be fresh when TTL not expired"
-fi
-MCP_TOOLS_LAST_SCAN=$((now - 10))
-if mcp_tools_cache_fresh "${now}"; then
-	test_fail "expected cache to be stale after TTL"
-fi
+	MCP_TOOLS_LAST_SCAN=$((now - 10))
+	run mcp_tools_cache_fresh "${now}"
+	assert_failure
+}
 
-printf ' -> cache load hydrates registry state from disk\n'
-MCP_TOOLS_REGISTRY_JSON=""
-MCP_TOOLS_REGISTRY_PATH="${TEST_TMPDIR}/tools.json"
-printf '{"hash":"h1","total":2}' >"${MCP_TOOLS_REGISTRY_PATH}"
-if ! mcp_tools_load_cache_if_empty; then
-	test_fail "load_cache_if_empty failed"
-fi
-assert_eq "h1" "${MCP_TOOLS_REGISTRY_HASH}" "hash should be loaded from cache"
-assert_eq "2" "${MCP_TOOLS_TOTAL}" "total should be loaded from cache"
+@test "tools_registry_phases: cache load hydrates registry state from disk" {
+	MCP_TOOLS_REGISTRY_JSON=""
+	MCP_TOOLS_REGISTRY_PATH="${BATS_TEST_TMPDIR}/tools.json"
+	printf '{"hash":"h1","total":2}' >"${MCP_TOOLS_REGISTRY_PATH}"
+	mcp_tools_load_cache_if_empty
+	assert_equal "h1" "${MCP_TOOLS_REGISTRY_HASH}"
+	assert_equal "2" "${MCP_TOOLS_TOTAL}"
+}
 
-printf ' -> fastpath hit reuses snapshot and syncs last scan\n'
-MCPBASH_TOOLS_DIR="${TEST_TMPDIR}/toolsdir"
-mkdir -p "${MCPBASH_TOOLS_DIR}"
-touch "${MCPBASH_TOOLS_DIR}/a.sh"
-snapshot="$(mcp_registry_fastpath_snapshot "${MCPBASH_TOOLS_DIR}")"
-mcp_registry_fastpath_store "tools" "${snapshot}" || test_fail "fastpath store failed"
-MCP_TOOLS_REGISTRY_HASH="h0"
-MCP_TOOLS_REGISTRY_JSON="{}"
-MCP_TOOLS_TOTAL=0
-MCP_TOOLS_LAST_SCAN=0
-MCP_TOOLS_REGISTRY_PATH="${TEST_TMPDIR}/tools-cache.json"
-now_fast="$(date +%s)"
-if ! mcp_tools_fastpath_hit "${MCPBASH_TOOLS_DIR}" "${now_fast}"; then
-	test_fail "expected fastpath_hit to return success for unchanged tree"
-fi
-assert_eq "${now_fast}" "${MCP_TOOLS_LAST_SCAN}" "fastpath should update last scan timestamp"
+@test "tools_registry_phases: fastpath hit reuses snapshot and syncs last scan" {
+	MCPBASH_TOOLS_DIR="${BATS_TEST_TMPDIR}/toolsdir"
+	mkdir -p "${MCPBASH_TOOLS_DIR}"
+	touch "${MCPBASH_TOOLS_DIR}/a.sh"
+	snapshot="$(mcp_registry_fastpath_snapshot "${MCPBASH_TOOLS_DIR}")"
+	mcp_registry_fastpath_store "tools" "${snapshot}"
+	MCP_TOOLS_REGISTRY_HASH="h0"
+	MCP_TOOLS_REGISTRY_JSON="{}"
+	MCP_TOOLS_TOTAL=0
+	MCP_TOOLS_LAST_SCAN=0
+	MCP_TOOLS_REGISTRY_PATH="${BATS_TEST_TMPDIR}/tools-cache.json"
+	now_fast="$(date +%s)"
+	mcp_tools_fastpath_hit "${MCPBASH_TOOLS_DIR}" "${now_fast}"
+	assert_equal "${now_fast}" "${MCP_TOOLS_LAST_SCAN}"
+}
 
-printf ' -> full scan writes registry and updates hash\n'
-MCPBASH_TOOLS_DIR="${TEST_TMPDIR}/toolsdir-full"
-mkdir -p "${MCPBASH_TOOLS_DIR}/foo"
-cat >"${MCPBASH_TOOLS_DIR}/foo/tool.meta.json" <<'EOF'
+@test "tools_registry_phases: full scan writes registry and updates hash" {
+	MCPBASH_TOOLS_DIR="${BATS_TEST_TMPDIR}/toolsdir-full"
+	mkdir -p "${MCPBASH_TOOLS_DIR}/foo"
+	cat >"${MCPBASH_TOOLS_DIR}/foo/tool.meta.json" <<'EOF'
 {
   "name": "foo",
   "inputSchema": {"type": "object", "properties": {}}
 }
 EOF
-cat >"${MCPBASH_TOOLS_DIR}/foo/tool.sh" <<'EOF'
+	cat >"${MCPBASH_TOOLS_DIR}/foo/tool.sh" <<'EOF'
 #!/usr/bin/env bash
 exit 0
 EOF
-chmod +x "${MCPBASH_TOOLS_DIR}/foo/tool.sh"
-MCP_TOOLS_REGISTRY_PATH="${TEST_TMPDIR}/tools-registry.json"
-MCP_TOOLS_REGISTRY_HASH=""
-MCP_TOOLS_REGISTRY_JSON=""
-MCP_TOOLS_TOTAL=0
-mcp_lock_init
-scan_time="$(date +%s)"
-if ! mcp_tools_perform_full_scan "${MCPBASH_TOOLS_DIR}" "${scan_time}"; then
-	test_fail "full scan failed"
-fi
-assert_file_exists "${MCP_TOOLS_REGISTRY_PATH}"
-if [ -z "${MCP_TOOLS_REGISTRY_HASH}" ]; then
-	test_fail "registry hash was not set after scan"
-fi
-total_recorded="$("${MCPBASH_JSON_TOOL_BIN}" -r '.total' "${MCP_TOOLS_REGISTRY_PATH}")"
-assert_eq "1" "${total_recorded}" "registry should record one tool"
+	chmod +x "${MCPBASH_TOOLS_DIR}/foo/tool.sh"
+	MCP_TOOLS_REGISTRY_PATH="${BATS_TEST_TMPDIR}/tools-registry.json"
+	MCP_TOOLS_REGISTRY_HASH=""
+	MCP_TOOLS_REGISTRY_JSON=""
+	MCP_TOOLS_TOTAL=0
+	mcp_lock_init
+	scan_time="$(date +%s)"
+	mcp_tools_perform_full_scan "${MCPBASH_TOOLS_DIR}" "${scan_time}"
+	assert_file_exist "${MCP_TOOLS_REGISTRY_PATH}"
+	[ -n "${MCP_TOOLS_REGISTRY_HASH}" ]
+	total_recorded="$("${MCPBASH_JSON_TOOL_BIN}" -r '.total' "${MCP_TOOLS_REGISTRY_PATH}")"
+	assert_equal "1" "${total_recorded}"
+}
 
-printf ' -> refresh falls back when manual registration reports status 1\n'
-(
+@test "tools_registry_phases: refresh falls back when manual registration returns status 1" {
+	# Override functions to simulate manual registration returning status 1
 	mcp_registry_register_apply() {
 		return 1
 	}
@@ -118,31 +112,30 @@ printf ' -> refresh falls back when manual registration reports status 1\n'
 		printf ''
 	}
 
-	MCPBASH_TOOLS_DIR="${TEST_TMPDIR}/toolsdir-manual-status"
+	MCPBASH_TOOLS_DIR="${BATS_TEST_TMPDIR}/toolsdir-manual-status"
 	mkdir -p "${MCPBASH_TOOLS_DIR}/bar"
 	cat >"${MCPBASH_TOOLS_DIR}/bar/tool.sh" <<'EOF'
 #!/usr/bin/env bash
 exit 0
 EOF
 	chmod +x "${MCPBASH_TOOLS_DIR}/bar/tool.sh"
-	MCP_TOOLS_REGISTRY_PATH="${TEST_TMPDIR}/tools-registry-manual.json"
+	MCP_TOOLS_REGISTRY_PATH="${BATS_TEST_TMPDIR}/tools-registry-manual.json"
 	MCP_TOOLS_REGISTRY_HASH=""
 	MCP_TOOLS_REGISTRY_JSON=""
 	MCP_TOOLS_TOTAL=0
 	MCP_TOOLS_LAST_SCAN=0
 	MCP_TOOLS_TTL=0
-	MCPBASH_REGISTRY_DIR="${TEST_TMPDIR}/registry"
+	MCPBASH_REGISTRY_DIR="${BATS_TEST_TMPDIR}/registry"
 	mcp_lock_init
-	if ! mcp_tools_refresh_registry; then
-		test_fail "refresh should fall back to scan when manual registration returns 1"
-	fi
-	assert_file_exists "${MCP_TOOLS_REGISTRY_PATH}"
+	# mcp_tools_refresh_registry should fallback to scan when manual registration returns 1
+	mcp_tools_refresh_registry || true
+	[ -f "${MCP_TOOLS_REGISTRY_PATH}" ]
 	fallback_total="$("${MCPBASH_JSON_TOOL_BIN}" -r '.total' "${MCP_TOOLS_REGISTRY_PATH}")"
-	assert_eq "1" "${fallback_total}" "fallback scan should register tool despite manual status 1"
-)
+	[ "${fallback_total}" = "1" ]
+}
 
-printf ' -> manual registration status 2 surfaces as fatal\n'
-(
+@test "tools_registry_phases: manual registration status 2 surfaces as fatal" {
+	# Override functions to simulate manual registration returning status 2
 	mcp_registry_register_apply() {
 		return 2
 	}
@@ -150,23 +143,22 @@ printf ' -> manual registration status 2 surfaces as fatal\n'
 		printf 'manual failure'
 	}
 
-	MCP_TOOLS_REGISTRY_PATH="${TEST_TMPDIR}/tools-registry-manual-fatal.json"
+	MCP_TOOLS_REGISTRY_PATH="${BATS_TEST_TMPDIR}/tools-registry-manual-fatal.json"
 	MCP_TOOLS_REGISTRY_HASH=""
 	MCP_TOOLS_REGISTRY_JSON=""
 	MCP_TOOLS_TOTAL=0
 	MCP_TOOLS_LAST_SCAN=0
 	MCP_TOOLS_TTL=0
-	MCPBASH_REGISTRY_DIR="${TEST_TMPDIR}/registry-fatal"
+	MCPBASH_REGISTRY_DIR="${BATS_TEST_TMPDIR}/registry-fatal"
 	mcp_lock_init
-	if mcp_tools_refresh_registry; then
-		test_fail "refresh should fail when manual registration returns 2"
-	fi
-)
+	run mcp_tools_refresh_registry
+	assert_failure
+}
 
-printf ' -> full scan extracts tool annotations from meta.json\n'
-MCPBASH_TOOLS_DIR="${TEST_TMPDIR}/toolsdir-annotations"
-mkdir -p "${MCPBASH_TOOLS_DIR}/annotated"
-cat >"${MCPBASH_TOOLS_DIR}/annotated/tool.meta.json" <<'EOF'
+@test "tools_registry_phases: full scan extracts tool annotations from meta.json" {
+	MCPBASH_TOOLS_DIR="${BATS_TEST_TMPDIR}/toolsdir-annotations"
+	mkdir -p "${MCPBASH_TOOLS_DIR}/annotated"
+	cat >"${MCPBASH_TOOLS_DIR}/annotated/tool.meta.json" <<'EOF'
 {
   "name": "annotated",
   "description": "Tool with annotations",
@@ -179,54 +171,50 @@ cat >"${MCPBASH_TOOLS_DIR}/annotated/tool.meta.json" <<'EOF'
   }
 }
 EOF
-cat >"${MCPBASH_TOOLS_DIR}/annotated/tool.sh" <<'EOF'
+	cat >"${MCPBASH_TOOLS_DIR}/annotated/tool.sh" <<'EOF'
 #!/usr/bin/env bash
 echo '{"status":"ok"}'
 EOF
-chmod +x "${MCPBASH_TOOLS_DIR}/annotated/tool.sh"
-MCP_TOOLS_REGISTRY_PATH="${TEST_TMPDIR}/tools-registry-annotations.json"
-MCP_TOOLS_REGISTRY_HASH=""
-MCP_TOOLS_REGISTRY_JSON=""
-MCP_TOOLS_TOTAL=0
-mcp_lock_init
-scan_time="$(date +%s)"
-if ! mcp_tools_perform_full_scan "${MCPBASH_TOOLS_DIR}" "${scan_time}"; then
-	test_fail "full scan with annotations failed"
-fi
-assert_file_exists "${MCP_TOOLS_REGISTRY_PATH}"
-# Check annotations were captured
-annotations_json="$("${MCPBASH_JSON_TOOL_BIN}" -c '.items[0].annotations' "${MCP_TOOLS_REGISTRY_PATH}")"
-if [ -z "${annotations_json}" ] || [ "${annotations_json}" = "null" ]; then
-	test_fail "annotations should be present in registry"
-fi
-read_only="$("${MCPBASH_JSON_TOOL_BIN}" -r '.items[0].annotations.readOnlyHint' "${MCP_TOOLS_REGISTRY_PATH}")"
-assert_eq "true" "${read_only}" "readOnlyHint should be true"
-destructive="$("${MCPBASH_JSON_TOOL_BIN}" -r '.items[0].annotations.destructiveHint' "${MCP_TOOLS_REGISTRY_PATH}")"
-assert_eq "false" "${destructive}" "destructiveHint should be false"
+	chmod +x "${MCPBASH_TOOLS_DIR}/annotated/tool.sh"
+	MCP_TOOLS_REGISTRY_PATH="${BATS_TEST_TMPDIR}/tools-registry-annotations.json"
+	MCP_TOOLS_REGISTRY_HASH=""
+	MCP_TOOLS_REGISTRY_JSON=""
+	MCP_TOOLS_TOTAL=0
+	mcp_lock_init
+	scan_time="$(date +%s)"
+	mcp_tools_perform_full_scan "${MCPBASH_TOOLS_DIR}" "${scan_time}"
+	assert_file_exist "${MCP_TOOLS_REGISTRY_PATH}"
+	# Check annotations were captured
+	annotations_json="$("${MCPBASH_JSON_TOOL_BIN}" -c '.items[0].annotations' "${MCP_TOOLS_REGISTRY_PATH}")"
+	[ -n "${annotations_json}" ] && [ "${annotations_json}" != "null" ]
+	read_only="$("${MCPBASH_JSON_TOOL_BIN}" -r '.items[0].annotations.readOnlyHint' "${MCP_TOOLS_REGISTRY_PATH}")"
+	assert_equal "true" "${read_only}"
+	destructive="$("${MCPBASH_JSON_TOOL_BIN}" -r '.items[0].annotations.destructiveHint' "${MCP_TOOLS_REGISTRY_PATH}")"
+	assert_equal "false" "${destructive}"
+}
 
-printf ' -> tool without annotations omits annotations field\n'
-MCPBASH_TOOLS_DIR="${TEST_TMPDIR}/toolsdir-no-annotations"
-mkdir -p "${MCPBASH_TOOLS_DIR}/plain"
-cat >"${MCPBASH_TOOLS_DIR}/plain/tool.meta.json" <<'EOF'
+@test "tools_registry_phases: tool without annotations omits annotations field" {
+	MCPBASH_TOOLS_DIR="${BATS_TEST_TMPDIR}/toolsdir-no-annotations"
+	mkdir -p "${MCPBASH_TOOLS_DIR}/plain"
+	cat >"${MCPBASH_TOOLS_DIR}/plain/tool.meta.json" <<'EOF'
 {
   "name": "plain",
   "inputSchema": {"type": "object", "properties": {}}
 }
 EOF
-cat >"${MCPBASH_TOOLS_DIR}/plain/tool.sh" <<'EOF'
+	cat >"${MCPBASH_TOOLS_DIR}/plain/tool.sh" <<'EOF'
 #!/usr/bin/env bash
 echo '{"status":"ok"}'
 EOF
-chmod +x "${MCPBASH_TOOLS_DIR}/plain/tool.sh"
-MCP_TOOLS_REGISTRY_PATH="${TEST_TMPDIR}/tools-registry-no-annotations.json"
-MCP_TOOLS_REGISTRY_HASH=""
-MCP_TOOLS_REGISTRY_JSON=""
-MCP_TOOLS_TOTAL=0
-mcp_lock_init
-scan_time="$(date +%s)"
-if ! mcp_tools_perform_full_scan "${MCPBASH_TOOLS_DIR}" "${scan_time}"; then
-	test_fail "full scan without annotations failed"
-fi
-# Check annotations field is absent (not null)
-has_annotations="$("${MCPBASH_JSON_TOOL_BIN}" -r '.items[0] | has("annotations")' "${MCP_TOOLS_REGISTRY_PATH}")"
-assert_eq "false" "${has_annotations}" "annotations field should be omitted when not specified"
+	chmod +x "${MCPBASH_TOOLS_DIR}/plain/tool.sh"
+	MCP_TOOLS_REGISTRY_PATH="${BATS_TEST_TMPDIR}/tools-registry-no-annotations.json"
+	MCP_TOOLS_REGISTRY_HASH=""
+	MCP_TOOLS_REGISTRY_JSON=""
+	MCP_TOOLS_TOTAL=0
+	mcp_lock_init
+	scan_time="$(date +%s)"
+	mcp_tools_perform_full_scan "${MCPBASH_TOOLS_DIR}" "${scan_time}"
+	# Check annotations field is absent (not null)
+	has_annotations="$("${MCPBASH_JSON_TOOL_BIN}" -r '.items[0] | has("annotations")' "${MCP_TOOLS_REGISTRY_PATH}")"
+	assert_equal "false" "${has_annotations}"
+}

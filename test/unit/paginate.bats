@@ -1,51 +1,52 @@
-#!/usr/bin/env bash
+#!/usr/bin/env bats
 # Spec §18.2 (Unit layer): verify pagination cursor helpers.
 
-set -euo pipefail
+load '../../node_modules/bats-support/load'
+load '../../node_modules/bats-assert/load'
+load '../common/fixtures'
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+setup() {
+	# Provide JSON tooling expected by paginate helpers without full runtime init.
+	MCPBASH_JSON_TOOL="jq"
+	MCPBASH_JSON_TOOL_BIN="$(command -v jq)"
 
-# shellcheck source=test/common/assert.sh
-# shellcheck disable=SC1091
-. "${REPO_ROOT}/test/common/assert.sh"
-. "${REPO_ROOT}/test/common/env.sh"
+	# shellcheck source=lib/paginate.sh
+	# shellcheck disable=SC1091
+	. "${MCPBASH_HOME}/lib/paginate.sh"
+}
 
-# Provide JSON tooling expected by paginate helpers without full runtime init.
-MCPBASH_JSON_TOOL="jq"
-MCPBASH_JSON_TOOL_BIN="$(command -v jq)"
+@test "paginate: encode/decode roundtrip" {
+	cursor="$(mcp_paginate_encode "tools" 10 "hash-value" "2025-01-01T00:00:00Z")"
+	[ -n "${cursor}" ]
 
-# shellcheck source=lib/paginate.sh
-# shellcheck disable=SC1091
-. "${REPO_ROOT}/lib/paginate.sh"
+	decoded="$(mcp_paginate_decode "${cursor}" "tools" "hash-value")"
+	assert_equal "10" "${decoded}"
+}
 
-printf ' -> encode/decode roundtrip\n'
-cursor="$(mcp_paginate_encode "tools" 10 "hash-value" "2025-01-01T00:00:00Z")"
-if [ -z "${cursor}" ]; then
-	test_fail "cursor should not be empty"
-fi
+@test "paginate: hash mismatch detection" {
+	cursor="$(mcp_paginate_encode "tools" 10 "hash-value" "2025-01-01T00:00:00Z")"
 
-decoded="$(mcp_paginate_decode "${cursor}" "tools" "hash-value")"
-assert_eq "10" "${decoded}" "decoded offset mismatch"
+	run mcp_paginate_decode "${cursor}" "tools" "other-hash"
+	assert_failure
+}
 
-printf ' -> hash mismatch detection\n'
-if mcp_paginate_decode "${cursor}" "tools" "other-hash" >/dev/null 2>&1; then
-	test_fail "expected hash mismatch to fail"
-fi
+@test "paginate: invalid cursor rejection" {
+	run mcp_paginate_decode "not-base64" "tools" "hash-value"
+	assert_failure
+}
 
-printf ' -> invalid cursor rejection\n'
-if mcp_paginate_decode "not-base64" "tools" "hash-value" >/dev/null 2>&1; then
-	test_fail "expected invalid cursor to fail"
-fi
+@test "paginate: nextCursor present when more pages remain" {
+	payload='{"items":[1,2,3],"total":3}'
+	page="$(mcp_paginate_attach_next_cursor "${payload}" "tools" 0 2 3 "hash-value")"
 
-printf ' -> nextCursor present when more pages remain\n'
-payload='{"items":[1,2,3],"total":3}'
-page="$(mcp_paginate_attach_next_cursor "${payload}" "tools" 0 2 3 "hash-value")"
-cursor="$(printf '%s' "${page}" | jq -r '.nextCursor // empty')"
-[ -z "${cursor}" ] && test_fail "expected nextCursor on non-terminal page"
+	cursor="$(printf '%s' "${page}" | jq -r '.nextCursor // empty')"
+	[ -n "${cursor}" ]
+}
 
-printf ' -> nextCursor null on terminal page\n'
-terminal="$(mcp_paginate_attach_next_cursor "${payload}" "tools" 2 2 3 "hash-value")"
-terminal_cursor="$(printf '%s' "${terminal}" | jq -r '.nextCursor')"
-assert_eq "null" "${terminal_cursor}" "nextCursor should be null on last page"
+@test "paginate: nextCursor null on terminal page" {
+	payload='{"items":[1,2,3],"total":3}'
+	terminal="$(mcp_paginate_attach_next_cursor "${payload}" "tools" 2 2 3 "hash-value")"
 
-printf 'Pagination tests passed.\n'
+	terminal_cursor="$(printf '%s' "${terminal}" | jq -r '.nextCursor')"
+	assert_equal "null" "${terminal_cursor}"
+}

@@ -1,82 +1,81 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/usr/bin/env bats
+# Unit layer: notification consume behavior tests.
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+load '../../node_modules/bats-support/load'
+load '../../node_modules/bats-assert/load'
+load '../common/fixtures'
 
-# shellcheck source=test/common/env.sh
-. "${REPO_ROOT}/test/common/env.sh"
-# shellcheck source=test/common/assert.sh
-. "${REPO_ROOT}/test/common/assert.sh"
+setup() {
+	MCPBASH_JSON_TOOL_BIN="jq"
 
-# Mock dependencies
-MCPBASH_JSON_TOOL_BIN="jq"
-MCPBASH_HOME="${REPO_ROOT}"
+	# shellcheck source=lib/tools.sh
+	# shellcheck disable=SC1091
+	. "${MCPBASH_HOME}/lib/tools.sh"
+	# shellcheck source=lib/resources.sh
+	# shellcheck disable=SC1091
+	. "${MCPBASH_HOME}/lib/resources.sh"
+}
 
-printf ' -> consume_notification with actually_emit=false does not update state\n'
+@test "notification: consume_notification with emit=false does not update state" {
+	MCP_TOOLS_REGISTRY_HASH="abc123"
+	MCP_TOOLS_LAST_NOTIFIED_HASH=""
+	MCP_TOOLS_CHANGED=true
+	_MCP_NOTIFICATION_PAYLOAD=""
 
-# Source library to test
-# shellcheck source=lib/tools.sh
-source "${REPO_ROOT}/lib/tools.sh"
+	mcp_tools_consume_notification false
 
-# Simulate a registry with a hash
-MCP_TOOLS_REGISTRY_HASH="abc123"
-MCP_TOOLS_LAST_NOTIFIED_HASH=""
-MCP_TOOLS_CHANGED=true
-_MCP_NOTIFICATION_PAYLOAD=""
+	assert_equal "" "${_MCP_NOTIFICATION_PAYLOAD}"
+	assert_equal "" "${MCP_TOOLS_LAST_NOTIFIED_HASH}"
+}
 
-# Consume with emit=false (protocol suppression)
-# This should NOT update state
-mcp_tools_consume_notification false
+@test "notification: consume_notification with emit=true updates state" {
+	MCP_TOOLS_REGISTRY_HASH="abc123"
+	MCP_TOOLS_LAST_NOTIFIED_HASH=""
+	MCP_TOOLS_CHANGED=true
+	_MCP_NOTIFICATION_PAYLOAD=""
 
-# Should return empty (no notification)
-assert_eq "" "${_MCP_NOTIFICATION_PAYLOAD}" "Expected empty payload when emit=false"
+	mcp_tools_consume_notification true
 
-# State should NOT be updated
-assert_eq "" "${MCP_TOOLS_LAST_NOTIFIED_HASH}" "State should not change when emit=false"
+	[[ "${_MCP_NOTIFICATION_PAYLOAD}" == *"list_changed"* ]]
+	assert_equal "abc123" "${MCP_TOOLS_LAST_NOTIFIED_HASH}"
+}
 
-# Now consume with emit=true
-mcp_tools_consume_notification false  # still suppressed until change flag set again
+@test "notification: does not notify again for same hash" {
+	MCP_TOOLS_REGISTRY_HASH="abc123"
+	MCP_TOOLS_LAST_NOTIFIED_HASH=""
+	MCP_TOOLS_CHANGED=true
+	_MCP_NOTIFICATION_PAYLOAD=""
 
-# Reset change flag for emit path
-MCP_TOOLS_CHANGED=true
-mcp_tools_consume_notification true
+	mcp_tools_consume_notification true
+	mcp_tools_consume_notification true
 
-# Should return notification JSON
-if [[ "${_MCP_NOTIFICATION_PAYLOAD}" != *"list_changed"* ]]; then
-    test_fail "Expected list_changed notification, got: ${_MCP_NOTIFICATION_PAYLOAD}"
-fi
+	assert_equal "" "${_MCP_NOTIFICATION_PAYLOAD}"
+}
 
-# State SHOULD be updated
-assert_eq "abc123" "${MCP_TOOLS_LAST_NOTIFIED_HASH}" "State should update when emit=true"
+@test "notification: resources consume_notification updates state" {
+	MCP_RESOURCES_REGISTRY_HASH="hash1"
+	MCP_RESOURCES_LAST_NOTIFIED_HASH=""
+	MCP_RESOURCES_CHANGED=true
+	_MCP_NOTIFICATION_PAYLOAD=""
 
-# Consume again with same hash
-mcp_tools_consume_notification true
-assert_eq "" "${_MCP_NOTIFICATION_PAYLOAD}" "Should not notify again for same hash"
+	mcp_resources_consume_notification true
 
+	[[ "${_MCP_NOTIFICATION_PAYLOAD}" == *"list_changed"* ]]
+	assert_equal "hash1" "${MCP_RESOURCES_LAST_NOTIFIED_HASH}"
+}
 
-printf ' -> consume_notification updates state correctly (resources)\n'
-# Source resources lib
-# shellcheck source=lib/resources.sh
-source "${REPO_ROOT}/lib/resources.sh"
+@test "notification: resources notifies on hash change" {
+	MCP_RESOURCES_REGISTRY_HASH="hash1"
+	MCP_RESOURCES_LAST_NOTIFIED_HASH=""
+	MCP_RESOURCES_CHANGED=true
+	_MCP_NOTIFICATION_PAYLOAD=""
 
-MCP_RESOURCES_REGISTRY_HASH="hash1"
-MCP_RESOURCES_LAST_NOTIFIED_HASH=""
-MCP_RESOURCES_CHANGED=true
+	mcp_resources_consume_notification true
 
-# First notification
-mcp_resources_consume_notification true
-if [[ "${_MCP_NOTIFICATION_PAYLOAD}" != *"list_changed"* ]]; then
-    test_fail "Expected list_changed notification for resources"
-fi
-assert_eq "hash1" "${MCP_RESOURCES_LAST_NOTIFIED_HASH}" "Resources state should update"
+	MCP_RESOURCES_REGISTRY_HASH="hash2"
+	MCP_RESOURCES_CHANGED=true
+	mcp_resources_consume_notification true
 
-# Hash changes
-MCP_RESOURCES_REGISTRY_HASH="hash2"
-MCP_RESOURCES_CHANGED=true
-mcp_resources_consume_notification true
-if [[ "${_MCP_NOTIFICATION_PAYLOAD}" != *"list_changed"* ]]; then
-    test_fail "Expected list_changed notification after hash change"
-fi
-assert_eq "hash2" "${MCP_RESOURCES_LAST_NOTIFIED_HASH}" "Resources state should update after change"
-
-printf 'Notification unit tests passed.\n'
+	[[ "${_MCP_NOTIFICATION_PAYLOAD}" == *"list_changed"* ]]
+	assert_equal "hash2" "${MCP_RESOURCES_LAST_NOTIFIED_HASH}"
+}

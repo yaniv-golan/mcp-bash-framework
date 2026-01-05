@@ -1,25 +1,18 @@
-#!/usr/bin/env bash
+#!/usr/bin/env bats
 # Unit: HTTPS provider requires curl (wget fallback removed).
 
-set -euo pipefail
+load '../../node_modules/bats-support/load'
+load '../../node_modules/bats-assert/load'
+load '../common/fixtures'
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+setup() {
+	PROVIDER="${MCPBASH_HOME}/providers/https.sh"
 
-# shellcheck source=test/common/assert.sh
-# shellcheck disable=SC1091
-. "${REPO_ROOT}/test/common/assert.sh"
+	FAKE_HOME="${BATS_TEST_TMPDIR}/home"
+	mkdir -p "${FAKE_HOME}/lib"
 
-TEST_TMPDIR="$(mktemp -d "${TMPDIR:-/tmp}/mcpbash-test.XXXXXX")"
-export TEST_TMPDIR
-trap 'rm -rf "${TEST_TMPDIR}" 2>/dev/null || true' EXIT
-
-PROVIDER="${REPO_ROOT}/providers/https.sh"
-
-FAKE_HOME="${TEST_TMPDIR}/home"
-mkdir -p "${FAKE_HOME}/lib"
-
-# Minimal policy shim so the provider doesn't depend on system DNS tools.
-cat >"${FAKE_HOME}/lib/policy.sh" <<'EOF'
+	# Minimal policy shim so the provider doesn't depend on system DNS tools.
+	cat >"${FAKE_HOME}/lib/policy.sh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 mcp_policy_normalize_host() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
@@ -38,75 +31,70 @@ mcp_policy_host_allowed() { return 0; }
 mcp_policy_resolve_ips() { printf '%s\n' "203.0.113.10"; }
 EOF
 
-BIN_DIR="${TEST_TMPDIR}/bin"
-mkdir -p "${BIN_DIR}"
+	BIN_DIR="${BATS_TEST_TMPDIR}/bin"
+	mkdir -p "${BIN_DIR}"
 
-# Provide mktemp without putting /usr/bin on PATH (macOS curl lives in /usr/bin).
-cat >"${BIN_DIR}/mktemp" <<'EOF'
+	# Provide mktemp without putting /usr/bin on PATH.
+	cat >"${BIN_DIR}/mktemp" <<'EOF'
 #!/usr/bin/env bash
 exec /usr/bin/mktemp "$@"
 EOF
-chmod 700 "${BIN_DIR}/mktemp"
+	chmod 700 "${BIN_DIR}/mktemp"
 
-# Provide bash so env-based shims can run even when PATH omits /bin.
-# On Linux (usrmerge), adding /bin to PATH can also expose curl; we want curl
-# to be truly absent for this test.
-cat >"${BIN_DIR}/bash" <<'EOF'
+	# Provide bash shim.
+	cat >"${BIN_DIR}/bash" <<'EOF'
 #!/bin/bash
 exec /bin/bash "$@"
 EOF
-chmod 700 "${BIN_DIR}/bash"
+	chmod 700 "${BIN_DIR}/bash"
 
-# Provider uses an EXIT trap that calls rm; include a shim so PATH can exclude
-# /bin (usrmerge can otherwise expose curl on Linux).
-cat >"${BIN_DIR}/rm" <<'EOF'
+	# Provider uses rm in EXIT trap.
+	cat >"${BIN_DIR}/rm" <<'EOF'
 #!/bin/bash
 exec /bin/rm "$@"
 EOF
-chmod 700 "${BIN_DIR}/rm"
+	chmod 700 "${BIN_DIR}/rm"
 
-# Minimal coreutils shims (provider/policy use tr/grep).
-cat >"${BIN_DIR}/tr" <<'EOF'
+	# Minimal coreutils shims.
+	cat >"${BIN_DIR}/tr" <<'EOF'
 #!/usr/bin/env bash
 exec /usr/bin/tr "$@"
 EOF
-chmod 700 "${BIN_DIR}/tr"
+	chmod 700 "${BIN_DIR}/tr"
 
-cat >"${BIN_DIR}/grep" <<'EOF'
+	cat >"${BIN_DIR}/grep" <<'EOF'
 #!/usr/bin/env bash
 exec /usr/bin/grep "$@"
 EOF
-chmod 700 "${BIN_DIR}/grep"
+	chmod 700 "${BIN_DIR}/grep"
 
-# Provide a wget stub to prove we don't call it (curl is required).
-WGET_CALLED_FILE="${TEST_TMPDIR}/wget.called"
-cat >"${BIN_DIR}/wget" <<EOF
+	# Provide a wget stub to prove we don't call it.
+	WGET_CALLED_FILE="${BATS_TEST_TMPDIR}/wget.called"
+	export WGET_CALLED_FILE
+	cat >"${BIN_DIR}/wget" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
-: >"${WGET_CALLED_FILE:?}"
+: >"${WGET_CALLED_FILE}"
 exit 0
 EOF
-chmod 700 "${BIN_DIR}/wget"
+	chmod 700 "${BIN_DIR}/wget"
 
-stderr_file="${TEST_TMPDIR}/stderr.txt"
-: >"${stderr_file}"
+	stderr_file="${BATS_TEST_TMPDIR}/stderr.txt"
+	: >"${stderr_file}"
+}
 
-printf ' -> fails closed when curl is missing, even if wget exists\n'
-set +e
-PATH="${BIN_DIR}" \
-	MCPBASH_HOME="${FAKE_HOME}" \
-	MCPBASH_HTTPS_ALLOW_ALL="true" \
-	/bin/bash "${PROVIDER}" "https://example.com/" 1>/dev/null 2>"${stderr_file}"
-rc=$?
-set -e
+@test "https_requires_curl: fails closed when curl is missing" {
+	stderr_file="${BATS_TEST_TMPDIR}/stderr.txt"
+	run bash -c "
+		PATH='${BIN_DIR}' \
+		MCPBASH_HOME='${FAKE_HOME}' \
+		MCPBASH_HTTPS_ALLOW_ALL='true' \
+		/bin/bash '${PROVIDER}' 'https://example.com/' 2>'${stderr_file}'
+	"
+	assert_equal "4" "${status}"
 
-assert_eq "4" "${rc}" "expected exit 4 when curl is missing"
-if ! grep -q "curl is required" "${stderr_file}"; then
-	test_fail "expected missing-curl error message"
-fi
-if [ -f "${WGET_CALLED_FILE}" ]; then
-	test_fail "wget should not be called when curl is required"
-fi
+	run grep -q "curl is required" "${stderr_file}"
+	assert_success
 
-printf 'https provider requires curl tests passed.\n'
-
+	[ ! -f "${WGET_CALLED_FILE}" ]
+}
