@@ -50,7 +50,7 @@ jq_check() {
 }
 
 @test "sdk_result_helpers: mcp_result_success summarizes large responses" {
-	large=$(${MCPBASH_JSON_TOOL_BIN} -n '[range(1000)] | map({id: ., data: "x" * 100})')
+	large=$(${MCPBASH_JSON_TOOL_BIN} -n '[range(1000)] | map({id: ., data: ([range(100) | "x"] | add)})')
 	result=$(mcp_result_success "$large" 100)
 	text=$(jq_get "$result" '.content[0].text')
 	[[ "$text" == Success:* ]]
@@ -129,7 +129,7 @@ jq_check() {
 }
 
 @test "sdk_result_helpers: mcp_result_success uses tojson for argv safety" {
-	large=$(${MCPBASH_JSON_TOOL_BIN} -n '[range(1000)] | map({id: ., data: "x" * 100})')
+	large=$(${MCPBASH_JSON_TOOL_BIN} -n '[range(1000)] | map({id: ., data: ([range(100) | "x"] | add)})')
 	result=$(mcp_result_success "$large")
 	jq_check "$result" '.isError == false'
 	jq_check "$result" '.structuredContent.success == true'
@@ -258,7 +258,7 @@ jq_check() {
 }
 
 @test "sdk_result_helpers: mcp_json_truncate binary searches to max fit" {
-	large=$(${MCPBASH_JSON_TOOL_BIN} -n '[range(100)] | map({id: ., pad: "x" * 50})')
+	large=$(${MCPBASH_JSON_TOOL_BIN} -n '[range(100)] | map({id: ., pad: ([range(50) | "x"] | add)})')
 	result=$(mcp_json_truncate "$large" 500)
 	jq_check "$result" '.truncated == true'
 	jq_check "$result" '.kept < .total'
