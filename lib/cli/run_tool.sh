@@ -79,6 +79,38 @@ mcp_cli_run_tool_prepare_roots() {
 	return "${had_error}"
 }
 
+mcp_cli_run_tool_source_env() {
+	local file="$1"
+	local is_verbose="$2" # Pass verbose state as parameter for proper scoping
+	local resolved=""
+
+	# Resolve relative paths against MCPBASH_PROJECT_ROOT
+	if [[ "${file}" != /* ]]; then
+		resolved="${MCPBASH_PROJECT_ROOT}/${file}"
+	else
+		resolved="${file}"
+	fi
+
+	if [ ! -f "${resolved}" ]; then
+		printf 'run-tool: env file not found: %s\n' "${resolved}" >&2
+		return 1
+	fi
+
+	if [ ! -r "${resolved}" ]; then
+		printf 'run-tool: env file not readable: %s\n' "${resolved}" >&2
+		return 1
+	fi
+
+	# Verbose output for debugging environment issues
+	if [ "${is_verbose}" = "true" ]; then
+		printf 'run-tool: sourcing %s\n' "${resolved}" >&2
+	fi
+
+	# Source the file in current shell context
+	# shellcheck disable=SC1090
+	. "${resolved}"
+}
+
 mcp_cli_run_tool() {
 	local project_root=""
 	local args_json="{}"
@@ -93,6 +125,8 @@ mcp_cli_run_tool() {
 	local allow_all="false"
 	local allow_names=()
 	local tool_name=""
+	local with_server_env="false"
+	local source_files=()
 
 	while [ $# -gt 0 ]; do
 		case "$1" in
@@ -144,6 +178,17 @@ mcp_cli_run_tool() {
 			shift
 			project_root="${1:-}"
 			;;
+		--with-server-env)
+			with_server_env="true"
+			;;
+		--source)
+			shift
+			if [ -z "${1:-}" ]; then
+				printf 'run-tool: --source requires a file path\n' >&2
+				exit 1
+			fi
+			source_files+=("$1")
+			;;
 		--help | -h)
 			cat <<'EOF'
 Usage:
@@ -151,8 +196,14 @@ Usage:
                      [--timeout SECS] [--verbose] [--no-refresh]
                      [--minimal] [--project-root DIR] [--print-env]
                      [--allow-self] [--allow TOOL] [--allow-all]
+                     [--with-server-env] [--source FILE]...
 
 Invoke a tool directly with the same env wiring used by the server.
+
+Options:
+  --with-server-env  Source server.d/env.sh before tool execution
+  --source FILE      Source FILE before tool execution (repeatable;
+                     sourced after --with-server-env, in order specified)
 
 Examples:
   # Allow just this invocation
@@ -162,6 +213,9 @@ Examples:
   mcp-bash run-tool hello --allow-all --args @args.json
   mcp-bash run-tool hello --args @args.json --roots .
   mcp-bash run-tool hello --print-env --dry-run
+  # Source server environment before execution
+  mcp-bash run-tool hello --with-server-env --allow-self
+  mcp-bash run-tool hello --source config/test.sh --allow-self
 EOF
 			exit 0
 			;;
@@ -257,6 +311,37 @@ EOF
 		printf 'MCPBASH_HOME=%s\n' "${MCPBASH_HOME}"
 		printf 'MCP_SDK=%s\n' "${MCP_SDK:-}"
 		printf 'MCPBASH_MODE=%s\n' "${MCPBASH_MODE:-}"
+
+		# Show env sources that would be applied (not actually sourced in --print-env mode)
+		# Check for env var trigger
+		local will_source_server_env="${with_server_env}"
+		if [ "${MCPBASH_RUN_TOOL_SOURCE_SERVER_ENV:-}" = "1" ] || [ "${MCPBASH_RUN_TOOL_SOURCE_SERVER_ENV:-}" = "true" ]; then
+			will_source_server_env="true"
+		fi
+		if [ "${will_source_server_env}" = "true" ]; then
+			local server_env="${MCPBASH_PROJECT_ROOT}/server.d/env.sh"
+			if [ -f "${server_env}" ]; then
+				printf 'WILL_SOURCE_SERVER_ENV=%s\n' "${server_env}"
+			else
+				printf 'WILL_SOURCE_SERVER_ENV=(not found: %s)\n' "${server_env}"
+			fi
+		fi
+		# Guard for empty array on Windows/Git Bash
+		if [ "${#source_files[@]}" -gt 0 ] 2>/dev/null; then
+			local idx resolved
+			for idx in "${!source_files[@]}"; do
+				resolved="${source_files[${idx}]}"
+				if [[ "${resolved}" != /* ]]; then
+					resolved="${MCPBASH_PROJECT_ROOT}/${resolved}"
+				fi
+				if [ -f "${resolved}" ]; then
+					printf 'WILL_SOURCE[%d]=%s\n' "${idx}" "${resolved}"
+				else
+					printf 'WILL_SOURCE[%d]=(not found: %s)\n' "${idx}" "${resolved}"
+				fi
+			done
+		fi
+
 		if [ "${#MCPBASH_ROOTS_PATHS[@]}" -gt 0 ] 2>/dev/null; then
 			local idx
 			for idx in "${!MCPBASH_ROOTS_PATHS[@]}"; do
@@ -266,6 +351,28 @@ EOF
 			printf 'ROOTS=none\n'
 		fi
 		exit 0
+	fi
+
+	# Source environment files (after --print-env to avoid side effects in diagnostic mode)
+	if [ "${MCPBASH_RUN_TOOL_SOURCE_SERVER_ENV:-}" = "1" ] || [ "${MCPBASH_RUN_TOOL_SOURCE_SERVER_ENV:-}" = "true" ]; then
+		with_server_env="true"
+	fi
+
+	# Source server.d/env.sh if requested
+	if [ "${with_server_env}" = "true" ]; then
+		local server_env="${MCPBASH_PROJECT_ROOT}/server.d/env.sh"
+		if [ -f "${server_env}" ]; then
+			mcp_cli_run_tool_source_env "${server_env}" "${verbose}" || exit 1
+		fi
+		# Note: silently skip if server.d/env.sh doesn't exist (optional file)
+	fi
+
+	# Source any explicitly specified files (guard for empty array on Windows/Git Bash)
+	if [ "${#source_files[@]}" -gt 0 ] 2>/dev/null; then
+		local idx
+		for idx in "${!source_files[@]}"; do
+			mcp_cli_run_tool_source_env "${source_files[${idx}]}" "${verbose}" || exit 1
+		done
 	fi
 
 	if ! printf '%s' "${args_json}" | "${MCPBASH_JSON_TOOL_BIN}" -e 'type=="object"' >/dev/null 2>&1; then

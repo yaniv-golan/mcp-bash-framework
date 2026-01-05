@@ -5,6 +5,20 @@ All notable changes to mcp-bash-framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.3] - Unreleased
+
+### Added
+- **run-tool environment sourcing**: New options for sourcing environment files before tool execution:
+  - `--with-server-env`: Sources `server.d/env.sh` before running the tool, matching server runtime behavior
+  - `--source FILE`: Sources any env file before execution (repeatable; sourced after `--with-server-env`)
+  - `MCPBASH_RUN_TOOL_SOURCE_SERVER_ENV=1`: Environment variable to implicitly enable `--with-server-env` for all invocations
+  - `--print-env` now shows `WILL_SOURCE_SERVER_ENV` and `WILL_SOURCE[N]` for debugging without execution
+
+### Changed
+
+### Fixed
+
+
 ## [0.9.2] - 2026-01-05
 
 ### Added

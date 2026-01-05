@@ -29,6 +29,7 @@ mcp-bash keeps the attack surface small: every tool is a subprocess with a contr
 - Manual registration scripts run in-process; only enable trusted code or wrap it to sanitize output. Project `server.d/policy.sh` is sourced with full shell privileges; keep it in trusted, non-writable locations.
 - Outbound JSON is escaped and newline-compacted before hitting stdout to keep consumers safe.
 - State/lock/registry directories are created with `umask 077`; debug mode uses a randomized 0700 directory rather than a predictable path.
+- The `mcp-bash run-tool --source` flag executes arbitrary shell code from the specified file before tool execution. Only use with trusted files; treat `--source` paths the same as tool scripts themselves (user explicitly requests execution, implying trust). The `--with-server-env` flag sources only `server.d/env.sh` from the project root.
 
 ## Supply chain & tool audits
 - Pin tool dependencies (container digests, package versions) and verify checksums before running `bin/mcp-bash` in CI or production.

@@ -1,5 +1,12 @@
 #!/usr/bin/env bash
 # Template: operators extend env defaults via this optional hook.
+#
+# This file is sourced by the MCP server before handling requests.
+# Use it to configure environment for all tools in this project.
+#
+# For CLI testing with the same environment:
+#   mcp-bash run-tool my-tool --with-server-env --args '{}'
+# Or set MCPBASH_RUN_TOOL_SOURCE_SERVER_ENV=1 to always source this file.
 
 # Placeholder variables; full configuration scaffolding arrives in later phases.
 # Example (commented): export MCPBASH_LOG_LEVEL="info"

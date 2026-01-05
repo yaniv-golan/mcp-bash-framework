@@ -80,4 +80,8 @@ Examples: `MCPBASH_STATE_DIR`, `MCPBASH_LOCK_ROOT`, `MCPBASH_TMP_ROOT`, `MCPBASH
 
 ## Test/Scaffold/Installer Helpers
 
+| Variable | Default | Notes |
+|----------|---------|-------|
+| `MCPBASH_RUN_TOOL_SOURCE_SERVER_ENV` | (unset) | When `true` or `1`, `mcp-bash run-tool` implicitly sources `server.d/env.sh` before tool execution (equivalent to `--with-server-env` flag). Useful in CI pipelines where all `run-tool` invocations should use server environment. |
+
 Examples: `MCPBASH_BASE_TAR` / `MCPBASH_BASE_TAR_META` / `MCPBASH_BASE_TAR_KEY`, `MCPBASH_STAGING_TAR`, `MCPBASH_TEST_ROOT`, `MCPBASH_INTEGRATION_TMP`, `MCPBASH_RUN_SDK_TYPESCRIPT`, `MCPBASH_LOG_JSON_TOOL` (suite logging), integration runner controls (`MCPBASH_INTEGRATION_ONLY`, `MCPBASH_INTEGRATION_SKIP`, `MCPBASH_INTEGRATION_TEST_TIMEOUT_SECONDS`), installer overrides (`MCPBASH_INSTALL_REPO_URL`). Keep these scoped to testing or packaging workflows. 
