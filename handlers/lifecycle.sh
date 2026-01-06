@@ -50,6 +50,15 @@ mcp_handle_lifecycle() {
 			mcp_logging_debug "mcp.lifecycle" "Initialize requested=${requested_version} negotiated=${negotiated_version}"
 		fi
 
+		# Log client identity for debugging (single jq pass per json-handling.mdc)
+		if mcp_logging_is_enabled "debug"; then
+			local client_info client_name client_version
+			client_info="$(printf '%s' "${json_payload}" | "${MCPBASH_JSON_TOOL_BIN}" -r '[(.params.clientInfo.name // "unknown"), (.params.clientInfo.version // "?")] | @tsv' 2>/dev/null || printf 'unknown\t?')"
+			client_name="${client_info%%	*}"
+			client_version="${client_info#*	}"
+			mcp_logging_debug "mcp.lifecycle" "Client: ${client_name}/${client_version} pid=$$"
+		fi
+
 		local client_caps="{}"
 		if [ "${MCPBASH_JSON_TOOL:-none}" != "none" ]; then
 			client_caps="$(printf '%s' "${json_payload}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.params.capabilities // {}' 2>/dev/null || printf '{}')"

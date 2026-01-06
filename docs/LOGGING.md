@@ -40,7 +40,7 @@ Verbose mode exposes file paths, usernames (via paths), cache locations, and man
 ## Debug Coverage (highlights)
 
 - Core: dispatch and handler responses (`lib/core.sh`).
-- Lifecycle: initialize/initialized/shutdown events (`handlers/lifecycle.sh`).
+- Lifecycle: initialize/initialized/shutdown events, client identity (name/version/pid) at connect (`handlers/lifecycle.sh`).
 - Tools: invoke/complete traces, registry refresh counts, tools/list handler (`lib/tools.sh`, `handlers/tools.sh`).
 - Prompts: list/get traces, registry refresh counts, prompts/list handler (`lib/prompts.sh`, `handlers/prompts.sh`).
 - Runtime: JSON tool detection prints tool path only when verbose is enabled (`lib/runtime.sh`).

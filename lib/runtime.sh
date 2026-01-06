@@ -307,6 +307,14 @@ mcp_runtime_init_paths() {
 	# Normalize PROJECT_ROOT (strip trailing slash for consistent path construction)
 	MCPBASH_PROJECT_ROOT="${MCPBASH_PROJECT_ROOT%/}"
 
+	# Export framework version for tool diagnostics
+	if [[ -f "${MCPBASH_HOME}/VERSION" ]]; then
+		MCPBASH_FRAMEWORK_VERSION="$(tr -d '[:space:]' <"${MCPBASH_HOME}/VERSION" 2>/dev/null || echo 'unknown')"
+	else
+		MCPBASH_FRAMEWORK_VERSION="unknown"
+	fi
+	export MCPBASH_FRAMEWORK_VERSION
+
 	# Temporary/state directories
 	if [ -z "${MCPBASH_TMP_ROOT}" ]; then
 		local tmp="${TMPDIR:-/tmp}"

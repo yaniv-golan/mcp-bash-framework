@@ -165,6 +165,16 @@ For file-based checkpoints inside tools, use the SDK helper:
 mcp_debug "checkpoint: starting validation"
 ```
 
+## Client Identity in Debug Mode
+
+When `MCPBASH_LOG_LEVEL=debug`, the server logs the connecting client's identity at initialize:
+
+```
+[mcp.lifecycle] Client: claude-ai/0.1.0 pid=12345
+```
+
+This helps identify which mcp-bash process serves which client when multiple instances are running (common with Claude Desktop, which can spawn many server processes).
+
 ## CI Mode Notes
 - Enable with `MCPBASH_CI_MODE=true` to get CI-friendly defaults: tmp root under `RUNNER_TEMP`/`$GITHUB_WORKSPACE/.mcpbash-tmp`/`TMPDIR`, default log dir, keep-logs, and timestamped log messages.
 - CI mode writes `failure-summary.jsonl` (per-tool summaries: exit code, timeout flag, stderr tail, trace line, hashed args, counts) and a one-time `env-snapshot.json` (bash version, OS, cwd, PATH first/last/count, `pathBytes`/`envBytes` in bytes, `jsonTool`/`jsonToolBin`) under the log dir. The snapshot records counts/sizes only—no env contents are dumped.

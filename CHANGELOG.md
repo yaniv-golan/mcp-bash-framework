@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `--source FILE`: Sources any env file before execution (repeatable; sourced after `--with-server-env`)
   - `MCPBASH_RUN_TOOL_SOURCE_SERVER_ENV=1`: Environment variable to implicitly enable `--with-server-env` for all invocations
   - `--print-env` now shows `WILL_SOURCE_SERVER_ENV` and `WILL_SOURCE[N]` for debugging without execution
+- **Debug enhancements**:
+  - `MCPBASH_FRAMEWORK_VERSION`: New read-only env var exposing framework version (from `${MCPBASH_HOME}/VERSION`) at startup. Useful for consuming projects to log version banners without file reads.
+  - Client identity logging: When `MCPBASH_LOG_LEVEL=debug`, the server now logs connecting client's name/version at initialize (e.g., `Client: claude-ai/0.1.0 pid=12345`). Helps identify which mcp-bash process serves which client when multiple instances run.
 
 ### Changed
 
