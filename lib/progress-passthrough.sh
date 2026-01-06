@@ -84,6 +84,10 @@ mcp_run_with_progress() {
 			return 1
 		fi
 	fi
+	if [[ "$extract" == "json" && -z "${MCPBASH_JSON_TOOL_BIN:-}" ]]; then
+		echo "mcp_run_with_progress: MCPBASH_JSON_TOOL_BIN required for json extraction mode" >&2
+		return 1
+	fi
 
 	local tmpdir stderr_file stdout_tmp source_file pid=""
 	tmpdir="$(mktemp -d "${TMPDIR:-/tmp}/mcp-progress.XXXXXX")"
@@ -105,12 +109,12 @@ mcp_run_with_progress() {
 	trap __mcp_progress_cleanup RETURN EXIT TERM INT
 
 	# Helper to log stderr lines (extracted to avoid duplication)
+	# Uses process substitution to avoid subshell variable isolation
 	__mcp_progress_log_stderr() {
 		local file="$1" start="$2"
-		tail -c +$((start + 1)) "$file" 2>/dev/null \
-			| while IFS= read -r -t 1 line || [[ -n "$line" ]]; do
-				mcp_log_debug "mcp_run_with_progress" "subprocess stderr: $line"
-			done
+		while IFS= read -r line || [[ -n "$line" ]]; do
+			mcp_log_debug "mcp_run_with_progress" "subprocess stderr: $line"
+		done < <(tail -c +$((start + 1)) -- "$file" 2>/dev/null)
 	}
 
 	# Determine progress source
@@ -119,6 +123,9 @@ mcp_run_with_progress() {
 		# Truncate/create progress file (intentional - see Option Details in plan)
 		# Note: If external process creates file between truncation and subprocess start,
 		# this could affect unrelated data. Caller should use unique/temp paths.
+		if [[ -s "$source_file" ]]; then
+			mcp_log_warn "mcp_run_with_progress" "truncating non-empty progress file: $source_file"
+		fi
 		: >"$source_file"
 	else
 		source_file="$stderr_file"
@@ -185,9 +192,9 @@ mcp_run_with_progress() {
 
 	# Output stdout
 	if [[ -n "$stdout_file" ]]; then
-		cp "${stdout_tmp}" "$stdout_file"
+		cp -- "${stdout_tmp}" "$stdout_file"
 	else
-		cat "${stdout_tmp}"
+		cat -- "${stdout_tmp}"
 	fi
 
 	return "$exit_code"
@@ -195,70 +202,72 @@ mcp_run_with_progress() {
 
 # Private helper: process new lines from progress source file
 # Double underscore prefix per SDK conventions
+# Uses process substitution to avoid subshell variable isolation
 __mcp_progress_process_lines() {
 	local source_file="$1" start_byte="$2" pattern="$3" extract="$4" dry_run="$5" total="$6" quiet="$7"
 
-	# Read new bytes with timeout to prevent blocking on incomplete lines
-	tail -c +$((start_byte + 1)) "$source_file" 2>/dev/null \
-		| while IFS= read -r -t 1 line || [[ -n "$line" ]]; do
-			if [[ "$line" =~ $pattern ]]; then
-				local pct msg
-				case "$extract" in
-				json)
-					# Single jq call with @tsv per json-handling.mdc
-					# Use select() to skip lines where .progress is null/missing
-					local pct_msg jq_result jq_exit
-					# Capture both stdout and stderr, then check exit code
-					jq_result=$("${MCPBASH_JSON_TOOL_BIN}" -r \
-						'select(.progress != null) | [(.progress | tostring), (.message // "Working...")] | @tsv' \
-						<<<"$line" 2>&1)
-					jq_exit=$?
-					if [[ $jq_exit -ne 0 ]]; then
-						# Log parse errors at debug level for troubleshooting
-						mcp_log_debug "mcp_run_with_progress" "jq parse error on line: ${line:0:100}"
-						continue
-					fi
-					pct_msg="$jq_result"
-					[[ -n "$pct_msg" ]] || continue # select() may produce no output
-					pct="${pct_msg%%$'\t'*}"
-					msg="${pct_msg#*$'\t'}"
-					# Validate pct is numeric
-					[[ "$pct" =~ ^[0-9]+$ ]] || continue
-					;;
-				match1)
-					# Guard BASH_REMATCH with :- per bash-conventions.mdc
-					local raw_value="${BASH_REMATCH[1]:-}"
-					[[ -n "$raw_value" ]] || continue
-					if [[ -n "$total" ]]; then
-						# Raw value divided by total
-						pct=$((raw_value * 100 / total))
-					else
-						# Direct percentage (0-100)
-						pct="$raw_value"
-					fi
-					msg="$line"
-					;;
-				ratio)
-					# Guard BASH_REMATCH with :- per bash-conventions.mdc
-					local current="${BASH_REMATCH[1]:-}" total_count="${BASH_REMATCH[2]:-}"
-					[[ -n "$current" && -n "$total_count" && "$total_count" -gt 0 ]] || continue
-					pct=$((current * 100 / total_count))
-					msg="$line"
-					;;
-				esac
-
-				if [[ -n "$pct" ]]; then
-					if [[ "$dry_run" == "true" ]]; then
-						# Output to stderr to avoid mixing with subprocess stdout
-						local msg_json
-						msg_json=$(__mcp_sdk_json_escape "$msg")
-						printf '{"progress":%s,"message":%s}\n' "$pct" "$msg_json" >&2
-					else
-						mcp_progress "$pct" "$msg"
-					fi
+	# Read new bytes using process substitution (avoids subshell)
+	# Timeout of 10s handles slow CLIs while preventing indefinite blocking
+	while IFS= read -r -t 10 line || [[ -n "$line" ]]; do
+		if [[ "$line" =~ $pattern ]]; then
+			local pct msg
+			case "$extract" in
+			json)
+				# Single jq call with @tsv per json-handling.mdc
+				# Use select() to skip lines where .progress is null/missing
+				local pct_msg jq_result jq_exit
+				# Capture both stdout and stderr, then check exit code
+				jq_result=$("${MCPBASH_JSON_TOOL_BIN}" -r \
+					'select(.progress != null) | [(.progress | tostring), (.message // "Working...")] | @tsv' \
+					<<<"$line" 2>&1)
+				jq_exit=$?
+				if [[ $jq_exit -ne 0 ]]; then
+					# Log parse errors at debug level for troubleshooting
+					mcp_log_debug "mcp_run_with_progress" "jq parse error on line: ${line:0:100}"
+					continue
 				fi
-			elif [[ "$quiet" != "true" ]]; then
-				mcp_log_debug "mcp_run_with_progress" "subprocess output: $line"
+				pct_msg="$jq_result"
+				[[ -n "$pct_msg" ]] || continue # select() may produce no output
+				pct="${pct_msg%%$'\t'*}"
+				msg="${pct_msg#*$'\t'}"
+				# Validate pct is numeric (accept floats, truncate to integer)
+				[[ "$pct" =~ ^[0-9]+(\.[0-9]+)?$ ]] || continue
+				pct="${pct%%.*}"
+				;;
+			match1)
+				# Guard BASH_REMATCH with :- per bash-conventions.mdc
+				local raw_value="${BASH_REMATCH[1]:-}"
+				[[ -n "$raw_value" ]] || continue
+				if [[ -n "$total" ]]; then
+					# Raw value divided by total
+					pct=$((raw_value * 100 / total))
+				else
+					# Direct percentage (0-100)
+					pct="$raw_value"
+				fi
+				msg="$line"
+				;;
+			ratio)
+				# Guard BASH_REMATCH with :- per bash-conventions.mdc
+				local current="${BASH_REMATCH[1]:-}" total_count="${BASH_REMATCH[2]:-}"
+				[[ -n "$current" && -n "$total_count" && "$total_count" -gt 0 ]] || continue
+				pct=$((current * 100 / total_count))
+				msg="$line"
+				;;
+			esac
+
+			if [[ -n "$pct" ]]; then
+				if [[ "$dry_run" == "true" ]]; then
+					# Output to stderr to avoid mixing with subprocess stdout
+					local msg_json
+					msg_json=$(__mcp_sdk_json_escape "$msg")
+					printf '{"progress":%s,"message":%s}\n' "$pct" "$msg_json" >&2
+				else
+					mcp_progress "$pct" "$msg"
+				fi
 			fi
-		done
+		elif [[ "$quiet" != "true" ]]; then
+			mcp_log_debug "mcp_run_with_progress" "subprocess output: $line"
+		fi
+	done < <(tail -c +$((start_byte + 1)) -- "$source_file" 2>/dev/null)
 }

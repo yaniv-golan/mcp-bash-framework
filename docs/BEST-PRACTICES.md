@@ -1019,6 +1019,12 @@ mcp_run_with_progress -- script -q /dev/null some-cli --progress
 PYTHONUNBUFFERED=1 mcp_run_with_progress -- python myscript.py
 ```
 
+#### Notes
+
+- **Float progress values**: Decimal progress values (e.g., `{"progress": 50.5}`) are accepted and truncated to integers.
+- **Line timeout**: Progress lines must complete within 10 seconds. For extremely slow CLIs, use `--progress-file` with a dedicated progress output file.
+- **Progress file truncation**: When using `--progress-file`, the file is truncated at startup. A warning is logged if the file was non-empty.
+
 ## 5. Testing & quality gates
 
 ### 5.1 Test pyramid
