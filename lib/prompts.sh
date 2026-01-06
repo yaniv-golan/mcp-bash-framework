@@ -64,11 +64,6 @@ mcp_prompts_register_manual() {
 	return 0
 }
 
-mcp_prompts_hash_string() {
-	local value="$1"
-	mcp_hash_string "${value}"
-}
-
 mcp_prompts_manual_finalize() {
 	if [ "${MCP_PROMPTS_MANUAL_ACTIVE}" != "true" ]; then
 		return 0
@@ -103,7 +98,7 @@ mcp_prompts_manual_finalize() {
 	fi
 
 	local hash
-	hash="$(mcp_prompts_hash_string "${items_json}")"
+	hash="$(mcp_hash_string "${items_json}")"
 	local total
 	total="$(printf '%s' "${items_json}" | "${MCPBASH_JSON_TOOL_BIN}" 'length')"
 
@@ -176,7 +171,7 @@ mcp_prompts_apply_manual_json() {
 	fi
 
 	local hash
-	hash="$(mcp_prompts_hash_string "${items_json}")"
+	hash="$(mcp_hash_string "${items_json}")"
 	local total
 	total="$(printf '%s' "${items_json}" | "${MCPBASH_JSON_TOOL_BIN}" 'length')"
 
@@ -407,7 +402,7 @@ mcp_prompts_scan() {
 	rm -f "${items_file}"
 
 	local hash
-	hash="$(mcp_prompts_hash_string "${items_json}")"
+	hash="$(mcp_hash_string "${items_json}")"
 	local total
 	total="$(printf '%s' "${items_json}" | "${MCPBASH_JSON_TOOL_BIN}" 'length' 2>/dev/null)" || total=0
 	# Ensure total is a valid number

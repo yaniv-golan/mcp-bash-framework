@@ -51,11 +51,6 @@ MCP_COMPLETION_PROVIDER_RESULT_ERROR=""
 MCP_COMPLETION_CURSOR_OFFSET=0
 MCP_COMPLETION_CURSOR_SCRIPT_KEY=""
 
-mcp_completion_hash_string() {
-	local value="$1"
-	mcp_hash_string "${value}"
-}
-
 mcp_completion_hash_json() {
 	local json_payload="$1"
 	local compact
@@ -254,7 +249,7 @@ ${name}"
 
 	local timestamp hash total
 	timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-	hash="$(mcp_completion_hash_string "${items_json}")"
+	hash="$(mcp_hash_string "${items_json}")"
 	total="$(printf '%s' "${items_json}" | "${MCPBASH_JSON_TOOL_BIN}" 'length' 2>/dev/null)" || total=0
 	# Ensure total is a valid number
 	case "${total}" in
@@ -338,7 +333,7 @@ mcp_completion_args_hash() {
 	if ! normalized="$(printf '%s' "${args_json:-"{}"}" | "${MCPBASH_JSON_TOOL_BIN}" -S -c '.' 2>/dev/null)"; then
 		normalized="{}"
 	fi
-	mcp_completion_hash_string "${normalized}"
+	mcp_hash_string "${normalized}"
 }
 
 mcp_completion_encode_cursor() {
