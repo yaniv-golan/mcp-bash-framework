@@ -92,7 +92,7 @@ mcp_run_with_progress() {
 
 	# Cleanup trap: kill subprocess BEFORE removing tmpdir (avoid orphan processes)
 	# Use ${var:-} to guard against unbound variable when trap fires after function returns
-	# shellcheck disable=SC2329  # Function is invoked via trap
+	# shellcheck disable=SC2329,SC2317  # Function is invoked via trap
 	__mcp_progress_cleanup() {
 		if [[ -n "${pid:-}" ]]; then
 			kill "$pid" 2>/dev/null || true
