@@ -25,6 +25,9 @@ MCPB_NAME="my-server"
 MCPB_VERSION="1.0.0"
 MCPB_DESCRIPTION="My MCP server built with mcp-bash"
 
+# Long description (markdown file for extension stores)
+MCPB_LONG_DESCRIPTION_FILE="docs/DESCRIPTION.md"
+
 # Author information (recommended for registry listing)
 MCPB_AUTHOR_NAME="Your Name"
 MCPB_AUTHOR_EMAIL="you@example.com"
@@ -36,7 +39,7 @@ MCPB_REPOSITORY="https://github.com/you/my-server"
 
 If `mcpb.conf` is not present, values are resolved from:
 1. Command-line options (`--name`, `--version`)
-2. `server.d/server.meta.json`
+2. `server.d/server.meta.json` (including `long_description_file`)
 3. `VERSION` file
 4. Git config (for author info)
 5. Git remote (for repository URL)
@@ -114,6 +117,7 @@ The generated `manifest.json` follows MCPB specification v0.3:
   "version": "1.0.0",
   "display_name": "My Server",
   "description": "Description of your server",
+  "long_description": "# My Server\n\nDetailed markdown description...",
   "author": {
     "name": "Your Name",
     "email": "you@example.com",
@@ -123,6 +127,8 @@ The generated `manifest.json` follows MCPB specification v0.3:
     "type": "git",
     "url": "https://github.com/you/my-server"
   },
+  "tools_generated": true,
+  "prompts_generated": true,
   "server": {
     "type": "binary",
     "entry_point": "server/run-server.sh",
@@ -143,7 +149,14 @@ The generated `manifest.json` follows MCPB specification v0.3:
 
 **Required fields:** `manifest_version`, `name`, `version`, `description`, `author`, `server`
 
+**Optional fields:**
+- `long_description` - markdown content for extension stores (via `long_description_file`)
+- `tools_generated` - automatically set to `true` when `tools/` directory has content
+- `prompts_generated` - automatically set to `true` when `prompts/` directory has content
+
 **Note:** The `author` field is required by the MCPB spec. If not provided via `mcpb.conf` or `server.meta.json`, the bundler falls back to git config.
+
+**Note:** The `*_generated` flags indicate that tools/prompts are discovered dynamically at runtime. Clients should query `tools/list` and `prompts/list` to discover available capabilities.
 
 ## Platform Compatibility
 

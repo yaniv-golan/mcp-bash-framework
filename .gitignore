@@ -13,3 +13,4 @@ docs/.DS_Store
 test-results/
 # npm dependencies (bats helpers)
 node_modules/
+docs/proposals/

@@ -372,8 +372,31 @@ mcp_bundle_resolve_metadata() {
 		RESOLVED_REPOSITORY="$(git config --get remote.origin.url 2>/dev/null | sed 's/\.git$//' || echo "")"
 	fi
 
+	# Long description resolution (file-based)
+	RESOLVED_LONG_DESCRIPTION=""
+	local long_desc_file=""
+	if [ -n "${MCPB_LONG_DESCRIPTION_FILE:-}" ]; then
+		long_desc_file="${MCPB_LONG_DESCRIPTION_FILE}"
+	elif [ "${MCPBASH_JSON_TOOL:-none}" != "none" ] && [ -f "${project_root}/server.d/server.meta.json" ]; then
+		long_desc_file="$("${MCPBASH_JSON_TOOL_BIN}" -r '.long_description_file // empty' "${project_root}/server.d/server.meta.json" 2>/dev/null || true)"
+	fi
+	# Read file content if file reference exists
+	if [ -n "${long_desc_file}" ]; then
+		# Resolve relative path from project root
+		local full_path="${long_desc_file}"
+		if [ "${long_desc_file#/}" = "${long_desc_file}" ]; then
+			full_path="${project_root}/${long_desc_file}"
+		fi
+		if [ -f "${full_path}" ]; then
+			RESOLVED_LONG_DESCRIPTION="$(cat "${full_path}")"
+		else
+			printf '  ⚠ Warning: long_description_file not found: %s\n' "${long_desc_file}" >&2
+		fi
+	fi
+
 	export RESOLVED_NAME RESOLVED_VERSION RESOLVED_TITLE RESOLVED_DESCRIPTION
 	export RESOLVED_AUTHOR_NAME RESOLVED_AUTHOR_EMAIL RESOLVED_AUTHOR_URL RESOLVED_REPOSITORY
+	export RESOLVED_LONG_DESCRIPTION
 }
 
 mcp_bundle_copy_project() {
@@ -528,6 +551,16 @@ mcp_bundle_generate_manifest() {
 	done
 	platforms_json="${platforms_json}]"
 
+	# Detect if tools/prompts exist (for *_generated flags)
+	local has_tools="false"
+	local has_prompts="false"
+	if [ -d "${project_root}/tools" ] && [ -n "$(ls -A "${project_root}/tools" 2>/dev/null)" ]; then
+		has_tools="true"
+	fi
+	if [ -d "${project_root}/prompts" ] && [ -n "$(ls -A "${project_root}/prompts" 2>/dev/null)" ]; then
+		has_prompts="true"
+	fi
+
 	# Use JSON tool to build manifest if available, otherwise use template
 	if [ "${MCPBASH_JSON_TOOL:-none}" != "none" ]; then
 		# Build manifest with proper JSON escaping per MCPB v0.3 spec
@@ -538,12 +571,15 @@ mcp_bundle_generate_manifest() {
 				--arg version "${RESOLVED_VERSION}" \
 				--arg display_name "${RESOLVED_TITLE}" \
 				--arg description "${RESOLVED_DESCRIPTION}" \
+				--arg long_description "${RESOLVED_LONG_DESCRIPTION:-}" \
 				--arg author_name "${RESOLVED_AUTHOR_NAME:-}" \
 				--arg author_email "${RESOLVED_AUTHOR_EMAIL:-}" \
 				--arg author_url "${RESOLVED_AUTHOR_URL:-}" \
 				--arg repository_url "${RESOLVED_REPOSITORY:-}" \
 				--arg icon "${BUNDLED_ICON:-}" \
 				--argjson platforms "${platforms_json}" \
+				--argjson tools_generated "${has_tools}" \
+				--argjson prompts_generated "${has_prompts}" \
 				'{
 				manifest_version: "0.3",
 				name: $name,
@@ -551,11 +587,14 @@ mcp_bundle_generate_manifest() {
 				display_name: $display_name,
 				description: $description
 			}
+			| if $long_description != "" then . + {long_description: $long_description} else . end
 			| if $icon != "" then . + {icon: $icon} else . end
 			| if $author_name != "" then . + {author: {name: $author_name}} else . end
 			| if $author_email != "" then .author.email = $author_email else . end
 			| if $author_url != "" then .author.url = $author_url else . end
 			| if $repository_url != "" then . + {repository: {type: "git", url: $repository_url}} else . end
+			| if $tools_generated then . + {tools_generated: true} else . end
+			| if $prompts_generated then . + {prompts_generated: true} else . end
 			| . + {
 				server: {
 					type: "binary",
@@ -587,7 +626,7 @@ mcp_bundle_generate_manifest() {
 			"__AUTHOR_URL__=${RESOLVED_AUTHOR_URL:-}" \
 			"__REPOSITORY_URL__=${RESOLVED_REPOSITORY:-}"
 	else
-		# Inline fallback per MCPB v0.3 spec
+		# Inline fallback per MCPB v0.3 spec (limited functionality without JSON tool)
 		local icon_line=""
 		if [ -n "${BUNDLED_ICON:-}" ]; then
 			icon_line="\"icon\": \"${BUNDLED_ICON}\","

@@ -152,3 +152,53 @@ EOF
 	assert_file_exist "${EXTRACT_DIR}/server/lib/utils.sh"
 	assert_file_exist "${EXTRACT_DIR}/server/providers/custom/provider.sh"
 }
+
+@test "bundle: long_description_file from server.meta.json is included" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	mkdir -p "${PROJECT_ROOT}/docs"
+	cat >"${PROJECT_ROOT}/docs/DESCRIPTION.md" <<'EOF'
+# Test Server
+
+This is a **detailed** description with markdown.
+
+- Feature 1
+- Feature 2
+EOF
+	# Add long_description_file to server.meta.json
+	local meta_file="${PROJECT_ROOT}/server.d/server.meta.json"
+	local original_meta
+	original_meta="$(cat "${meta_file}")"
+	jq '. + {long_description_file: "docs/DESCRIPTION.md"}' "${meta_file}" >"${meta_file}.tmp"
+	mv "${meta_file}.tmp" "${meta_file}"
+
+	(cd "${PROJECT_ROOT}" && "${MCPBASH_HOME}/bin/mcp-bash" bundle --output "${OUTPUT_DIR}" >/dev/null)
+
+	# Restore original meta
+	echo "${original_meta}" >"${meta_file}"
+
+	unzip -q "${OUTPUT_DIR}/test-server-1.2.3.mcpb" -d "${EXTRACT_DIR}"
+	# Verify long_description is in manifest and contains expected content
+	jq -e '.long_description' "${EXTRACT_DIR}/manifest.json" >/dev/null
+	jq -e '.long_description | contains("detailed")' "${EXTRACT_DIR}/manifest.json" >/dev/null
+	jq -e '.long_description | contains("Feature 1")' "${EXTRACT_DIR}/manifest.json" >/dev/null
+}
+
+@test "bundle: tools_generated is true when tools exist" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	(cd "${PROJECT_ROOT}" && "${MCPBASH_HOME}/bin/mcp-bash" bundle --output "${OUTPUT_DIR}" >/dev/null)
+	unzip -q "${OUTPUT_DIR}/test-server-1.2.3.mcpb" -d "${EXTRACT_DIR}"
+	# Project has tools, so tools_generated should be true
+	jq -e '.tools_generated == true' "${EXTRACT_DIR}/manifest.json" >/dev/null
+}
+
+@test "bundle: prompts_generated is true when prompts exist" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	mkdir -p "${PROJECT_ROOT}/prompts"
+	echo "Hello {{name}}" >"${PROJECT_ROOT}/prompts/greeting.txt"
+	cat >"${PROJECT_ROOT}/prompts/greeting.meta.json" <<'EOF'
+{"name": "greeting", "description": "A greeting prompt"}
+EOF
+	(cd "${PROJECT_ROOT}" && "${MCPBASH_HOME}/bin/mcp-bash" bundle --output "${OUTPUT_DIR}" >/dev/null)
+	unzip -q "${OUTPUT_DIR}/test-server-1.2.3.mcpb" -d "${EXTRACT_DIR}"
+	jq -e '.prompts_generated == true' "${EXTRACT_DIR}/manifest.json" >/dev/null
+}
