@@ -35,6 +35,10 @@ MCPB_AUTHOR_URL="https://github.com/you"
 
 # Repository URL
 MCPB_REPOSITORY="https://github.com/you/my-server"
+
+# Additional directories to include in bundle (space-separated)
+# Default: tools, resources, prompts, completions, server.d, lib, providers
+MCPB_INCLUDE=".registry data/templates"
 ```
 
 If `mcpb.conf` is not present, values are resolved from:
@@ -103,8 +107,11 @@ my-server-1.0.0.mcpb
     ├── completions/
     ├── lib/                # Optional: project shared libraries
     ├── providers/          # Optional: custom resource providers
-    └── server.d/
+    ├── server.d/
+    └── <custom>/           # Optional: directories from MCPB_INCLUDE
 ```
+
+**Note:** Use `MCPB_INCLUDE` in `mcpb.conf` to bundle additional directories like `.registry`, `data/`, or `config/`. Path traversal (`..`) and absolute paths are rejected for security.
 
 ## Manifest Format
 

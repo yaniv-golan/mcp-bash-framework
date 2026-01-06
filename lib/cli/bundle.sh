@@ -65,6 +65,7 @@ Configuration:
     MCPB_AUTHOR_EMAIL="you@example.com"
     MCPB_AUTHOR_URL="https://github.com/you"
     MCPB_REPOSITORY="https://github.com/you/my-server"
+    MCPB_INCLUDE=".registry data/templates"  # Additional directories to bundle
 
 Examples:
   mcp-bash bundle                        # Create bundle with defaults
@@ -271,6 +272,7 @@ mcp_bundle_load_config() {
 	MCPB_AUTHOR_EMAIL=""
 	MCPB_AUTHOR_URL=""
 	MCPB_REPOSITORY=""
+	MCPB_INCLUDE=""
 
 	if [ -f "${config_file}" ]; then
 		# Source config file (simple KEY=VALUE format)
@@ -407,8 +409,12 @@ mcp_bundle_copy_project() {
 	# Reset icon tracking
 	BUNDLED_ICON=""
 
-	# Copy project directories if they exist
-	for dir in tools resources prompts completions server.d lib providers; do
+	# Default directories to copy
+	local default_dirs="tools resources prompts completions server.d lib providers"
+
+	# Copy default project directories if they exist
+	local dir
+	for dir in ${default_dirs}; do
 		if [ -d "${project_root}/${dir}" ]; then
 			cp -R "${project_root}/${dir}" "${staging_server}/"
 			if [ "${verbose}" = "true" ]; then
@@ -416,6 +422,67 @@ mcp_bundle_copy_project() {
 			fi
 		fi
 	done
+
+	# Copy custom directories from MCPB_INCLUDE (with validation)
+	local custom_count=0
+	if [ -n "${MCPB_INCLUDE:-}" ]; then
+		for dir in ${MCPB_INCLUDE}; do
+			# Normalize: strip trailing slash to ensure consistent cp -R behavior
+			dir="${dir%/}"
+
+			# Security: reject absolute paths, explicit ./ prefix, and path traversal
+			# Pattern catches: .., ../, /foo, foo/../bar, foo/..
+			# Note: ./.. is caught by ./* pattern (absolute/relative), not path traversal
+			case "${dir}" in
+			/* | ./*)
+				printf '  \342\232\240 Warning: MCPB_INCLUDE rejects absolute/relative path: %s\n' "${dir}" >&2
+				continue
+				;;
+			.. | */.. | ../* | */../*)
+				printf '  \342\232\240 Warning: MCPB_INCLUDE rejects path traversal: %s\n' "${dir}" >&2
+				continue
+				;;
+			esac
+
+			# Skip if path starts with or equals a default directory (avoid overlaps)
+			local skip="false"
+			local default
+			for default in ${default_dirs}; do
+				case "${dir}" in
+				"${default}" | "${default}"/*)
+					if [ "${verbose}" = "true" ]; then
+						printf '    Skipped %s/ (overlaps with default %s/)\n' "${dir}" "${default}"
+					fi
+					skip="true"
+					break
+					;;
+				esac
+			done
+			[ "${skip}" = "true" ] && continue
+
+			if [ -d "${project_root}/${dir}" ]; then
+				# Handle nested paths (e.g., config/schemas) vs top-level (e.g., .registry)
+				local target_parent
+				target_parent="$(dirname "${dir}")"
+				if [ "${target_parent}" = "." ]; then
+					cp -R "${project_root}/${dir}" "${staging_server}/"
+				else
+					mkdir -p "${staging_server}/${target_parent}"
+					cp -R "${project_root}/${dir}" "${staging_server}/${target_parent}/"
+				fi
+				custom_count=$((custom_count + 1))
+				if [ "${verbose}" = "true" ]; then
+					printf '    Copied %s/ (custom)\n' "${dir}"
+				fi
+			else
+				printf '  \342\232\240 Warning: MCPB_INCLUDE directory not found: %s\n' "${dir}" >&2
+			fi
+		done
+
+		if [ "${verbose}" = "true" ] && [ "${custom_count}" -gt 0 ]; then
+			printf '  \342\234\223 Included %s custom director%s\n' "${custom_count}" "$([ "${custom_count}" -eq 1 ] && echo "y" || echo "ies")"
+		fi
+	fi
 
 	# Copy VERSION file if present
 	if [ -f "${project_root}/VERSION" ]; then

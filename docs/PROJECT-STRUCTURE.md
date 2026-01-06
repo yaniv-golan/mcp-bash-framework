@@ -51,8 +51,9 @@ MCPB_AUTHOR_URL="https://github.com/you"
 # Repository URL
 MCPB_REPOSITORY="https://github.com/you/my-server"
 
-# Files to exclude from bundle (space-separated patterns)
-# MCPB_EXCLUDE="*.log .git test/"
+# Additional directories to include in bundle (space-separated)
+# Default: tools, resources, prompts, completions, server.d, lib, providers
+# MCPB_INCLUDE=".registry data/templates"
 ```
 
 Values fall back to `server.d/server.meta.json`, `VERSION` file, and git config when not specified. See [docs/MCPB.md](MCPB.md) for complete bundling documentation.

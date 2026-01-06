@@ -15,5 +15,6 @@ MCPB_AUTHOR_URL="https://github.com/you"
 # Repository URL
 MCPB_REPOSITORY="https://github.com/you/hello-tool-example"
 
-# Files to exclude from bundle (space-separated patterns)
-# MCPB_EXCLUDE="*.log .git test/"
+# Additional directories to include in bundle (space-separated)
+# Default: tools, resources, prompts, completions, server.d, lib, providers
+# MCPB_INCLUDE=".registry data/templates"

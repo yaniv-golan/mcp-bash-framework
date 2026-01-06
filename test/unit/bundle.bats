@@ -202,3 +202,151 @@ EOF
 	unzip -q "${OUTPUT_DIR}/test-server-1.2.3.mcpb" -d "${EXTRACT_DIR}"
 	jq -e '.prompts_generated == true' "${EXTRACT_DIR}/manifest.json" >/dev/null
 }
+
+# MCPB_INCLUDE tests
+
+@test "bundle: MCPB_INCLUDE copies custom directory" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	mkdir -p "${PROJECT_ROOT}/.registry"
+	echo '{"commands": []}' >"${PROJECT_ROOT}/.registry/commands.json"
+	echo 'MCPB_INCLUDE=".registry"' >"${PROJECT_ROOT}/mcpb.conf"
+	(cd "${PROJECT_ROOT}" && "${MCPBASH_HOME}/bin/mcp-bash" bundle --output "${OUTPUT_DIR}" >/dev/null)
+	unzip -q "${OUTPUT_DIR}/test-server-1.2.3.mcpb" -d "${EXTRACT_DIR}"
+	assert_file_exist "${EXTRACT_DIR}/server/.registry/commands.json"
+}
+
+@test "bundle: MCPB_INCLUDE copies multiple directories" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	mkdir -p "${PROJECT_ROOT}/.registry" "${PROJECT_ROOT}/config" "${PROJECT_ROOT}/data"
+	echo '{}' >"${PROJECT_ROOT}/.registry/index.json"
+	echo 'key=value' >"${PROJECT_ROOT}/config/settings.conf"
+	echo 'test data' >"${PROJECT_ROOT}/data/test.txt"
+	echo 'MCPB_INCLUDE=".registry config data"' >"${PROJECT_ROOT}/mcpb.conf"
+	(cd "${PROJECT_ROOT}" && "${MCPBASH_HOME}/bin/mcp-bash" bundle --output "${OUTPUT_DIR}" >/dev/null)
+	unzip -q "${OUTPUT_DIR}/test-server-1.2.3.mcpb" -d "${EXTRACT_DIR}"
+	assert_file_exist "${EXTRACT_DIR}/server/.registry/index.json"
+	assert_file_exist "${EXTRACT_DIR}/server/config/settings.conf"
+	assert_file_exist "${EXTRACT_DIR}/server/data/test.txt"
+}
+
+@test "bundle: MCPB_INCLUDE warns on missing directory" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	echo 'MCPB_INCLUDE="nonexistent"' >"${PROJECT_ROOT}/mcpb.conf"
+	run bash -c "cd '${PROJECT_ROOT}' && '${MCPBASH_HOME}/bin/mcp-bash' bundle --output '${OUTPUT_DIR}' 2>&1"
+	assert_success
+	[[ "${output}" =~ "MCPB_INCLUDE directory not found: nonexistent" ]]
+}
+
+@test "bundle: MCPB_INCLUDE rejects path traversal" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	echo 'MCPB_INCLUDE="../etc"' >"${PROJECT_ROOT}/mcpb.conf"
+	run bash -c "cd '${PROJECT_ROOT}' && '${MCPBASH_HOME}/bin/mcp-bash' bundle --output '${OUTPUT_DIR}' 2>&1"
+	assert_success
+	[[ "${output}" =~ "rejects path traversal" ]]
+}
+
+@test "bundle: MCPB_INCLUDE rejects absolute path" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	echo 'MCPB_INCLUDE="/etc/passwd"' >"${PROJECT_ROOT}/mcpb.conf"
+	run bash -c "cd '${PROJECT_ROOT}' && '${MCPBASH_HOME}/bin/mcp-bash' bundle --output '${OUTPUT_DIR}' 2>&1"
+	assert_success
+	[[ "${output}" =~ "rejects absolute/relative path" ]]
+}
+
+@test "bundle: MCPB_INCLUDE rejects ./ prefix" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	mkdir -p "${PROJECT_ROOT}/config"
+	echo 'test' >"${PROJECT_ROOT}/config/test.txt"
+	echo 'MCPB_INCLUDE="./config"' >"${PROJECT_ROOT}/mcpb.conf"
+	run bash -c "cd '${PROJECT_ROOT}' && '${MCPBASH_HOME}/bin/mcp-bash' bundle --output '${OUTPUT_DIR}' 2>&1"
+	assert_success
+	[[ "${output}" =~ "rejects absolute/relative path" ]]
+}
+
+@test "bundle: empty MCPB_INCLUDE has no effect" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	echo 'MCPB_INCLUDE=""' >"${PROJECT_ROOT}/mcpb.conf"
+	(cd "${PROJECT_ROOT}" && "${MCPBASH_HOME}/bin/mcp-bash" bundle --output "${OUTPUT_DIR}" >/dev/null)
+	assert_file_exist "${OUTPUT_DIR}/test-server-1.2.3.mcpb"
+}
+
+@test "bundle: MCPB_INCLUDE handles nested paths" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	mkdir -p "${PROJECT_ROOT}/config/schemas"
+	echo '{"type": "object"}' >"${PROJECT_ROOT}/config/schemas/user.json"
+	echo 'MCPB_INCLUDE="config/schemas"' >"${PROJECT_ROOT}/mcpb.conf"
+	(cd "${PROJECT_ROOT}" && "${MCPBASH_HOME}/bin/mcp-bash" bundle --output "${OUTPUT_DIR}" >/dev/null)
+	unzip -q "${OUTPUT_DIR}/test-server-1.2.3.mcpb" -d "${EXTRACT_DIR}"
+	assert_file_exist "${EXTRACT_DIR}/server/config/schemas/user.json"
+}
+
+@test "bundle: MCPB_INCLUDE skips default directory overlap" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	# tools/ already exists from setup and is a default directory
+	echo 'MCPB_INCLUDE="tools"' >"${PROJECT_ROOT}/mcpb.conf"
+	run bash -c "cd '${PROJECT_ROOT}' && '${MCPBASH_HOME}/bin/mcp-bash' bundle --output '${OUTPUT_DIR}' --verbose 2>&1"
+	assert_success
+	[[ "${output}" =~ "overlaps with default" ]] || [[ "${output}" =~ "Skipped tools/" ]]
+}
+
+@test "bundle: MCPB_INCLUDE skips subdirectory of default" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	echo 'MCPB_INCLUDE="tools/hello"' >"${PROJECT_ROOT}/mcpb.conf"
+	run bash -c "cd '${PROJECT_ROOT}' && '${MCPBASH_HOME}/bin/mcp-bash' bundle --output '${OUTPUT_DIR}' --verbose 2>&1"
+	assert_success
+	[[ "${output}" =~ "overlaps with default" ]] || [[ "${output}" =~ "Skipped tools/hello" ]]
+}
+
+@test "bundle: MCPB_INCLUDE normalizes trailing slash" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	mkdir -p "${PROJECT_ROOT}/data"
+	echo 'test' >"${PROJECT_ROOT}/data/file.txt"
+	echo 'MCPB_INCLUDE="data/"' >"${PROJECT_ROOT}/mcpb.conf"
+	(cd "${PROJECT_ROOT}" && "${MCPBASH_HOME}/bin/mcp-bash" bundle --output "${OUTPUT_DIR}" >/dev/null)
+	unzip -q "${OUTPUT_DIR}/test-server-1.2.3.mcpb" -d "${EXTRACT_DIR}"
+	# Should create data/ directory (not copy contents into server/)
+	assert_file_exist "${EXTRACT_DIR}/server/data/file.txt"
+}
+
+@test "bundle: MCPB_INCLUDE allows literal dots in name" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	mkdir -p "${PROJECT_ROOT}/v1..beta"
+	echo 'test' >"${PROJECT_ROOT}/v1..beta/notes.txt"
+	echo 'MCPB_INCLUDE="v1..beta"' >"${PROJECT_ROOT}/mcpb.conf"
+	(cd "${PROJECT_ROOT}" && "${MCPBASH_HOME}/bin/mcp-bash" bundle --output "${OUTPUT_DIR}" >/dev/null)
+	unzip -q "${OUTPUT_DIR}/test-server-1.2.3.mcpb" -d "${EXTRACT_DIR}"
+	assert_file_exist "${EXTRACT_DIR}/server/v1..beta/notes.txt"
+}
+
+@test "bundle: whitespace-only MCPB_INCLUDE has no effect" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	echo 'MCPB_INCLUDE="   "' >"${PROJECT_ROOT}/mcpb.conf"
+	(cd "${PROJECT_ROOT}" && "${MCPBASH_HOME}/bin/mcp-bash" bundle --output "${OUTPUT_DIR}" >/dev/null)
+	assert_file_exist "${OUTPUT_DIR}/test-server-1.2.3.mcpb"
+}
+
+@test "bundle: MCPB_INCLUDE handles symlink directories" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	mkdir -p "${PROJECT_ROOT}/real-data"
+	echo 'original content' >"${PROJECT_ROOT}/real-data/file.txt"
+	ln -s real-data "${PROJECT_ROOT}/linked-data"
+	# Include both real dir and symlink - symlinks become regular files after zip/unzip
+	echo 'MCPB_INCLUDE="real-data linked-data"' >"${PROJECT_ROOT}/mcpb.conf"
+	(cd "${PROJECT_ROOT}" && "${MCPBASH_HOME}/bin/mcp-bash" bundle --output "${OUTPUT_DIR}" >/dev/null)
+	unzip -q "${OUTPUT_DIR}/test-server-1.2.3.mcpb" -d "${EXTRACT_DIR}"
+	# Both directories should exist with content (symlink resolved through zip)
+	assert_file_exist "${EXTRACT_DIR}/server/real-data/file.txt"
+	[[ -e "${EXTRACT_DIR}/server/linked-data" ]]
+}
+
+@test "bundle: MCPB_INCLUDE treats glob characters literally" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	# Create directory with literal asterisk in name
+	mkdir -p "${PROJECT_ROOT}/data*test"
+	echo 'test' >"${PROJECT_ROOT}/data*test/file.txt"
+	echo 'MCPB_INCLUDE="data*test"' >"${PROJECT_ROOT}/mcpb.conf"
+	(cd "${PROJECT_ROOT}" && "${MCPBASH_HOME}/bin/mcp-bash" bundle --output "${OUTPUT_DIR}" >/dev/null)
+	unzip -q "${OUTPUT_DIR}/test-server-1.2.3.mcpb" -d "${EXTRACT_DIR}"
+	# Should find literal "data*test" directory, not glob expand
+	assert_file_exist "${EXTRACT_DIR}/server/data*test/file.txt"
+}

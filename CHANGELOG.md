@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.9.3] - Unreleased
 
 ### Added
+- **MCPB_INCLUDE config option**: New `mcpb.conf` setting to include custom directories in bundles beyond the defaults (tools, resources, prompts, completions, server.d, lib, providers). Supports nested paths like `config/schemas`. Rejects path traversal (`..`) and absolute paths for security. Warns on missing directories.
 - **run-tool environment sourcing**: New options for sourcing environment files before tool execution:
   - `--with-server-env`: Sources `server.d/env.sh` before running the tool, matching server runtime behavior
   - `--source FILE`: Sources any env file before execution (repeatable; sourced after `--with-server-env`)
