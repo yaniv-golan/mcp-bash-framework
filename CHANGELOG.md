@@ -5,7 +5,7 @@ All notable changes to mcp-bash-framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.9.3] - Unreleased
+## [0.9.3] - 2025-01-06
 
 ### Added
 - **`mcp_run_with_progress` SDK helper**: Forward subprocess progress to MCP notifications. Wraps external CLIs and parses their stderr (or a dedicated progress file) to emit progress events. Supports three extraction modes: `json` (NDJSON output), `match1` (percentage patterns like `50%`), and `ratio` (counter patterns like `[5/10]`). Includes `--progress-file` option for ffmpeg-style CLIs that write progress to dedicated files. See BEST-PRACTICES.md §4.8 for common patterns and usage examples.
