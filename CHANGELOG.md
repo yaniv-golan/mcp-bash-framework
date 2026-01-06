@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.9.3] - Unreleased
 
 ### Added
+- **`mcp_run_with_progress` SDK helper**: Forward subprocess progress to MCP notifications. Wraps external CLIs and parses their stderr (or a dedicated progress file) to emit progress events. Supports three extraction modes: `json` (NDJSON output), `match1` (percentage patterns like `50%`), and `ratio` (counter patterns like `[5/10]`). Includes `--progress-file` option for ffmpeg-style CLIs that write progress to dedicated files. See BEST-PRACTICES.md §4.8 for common patterns and usage examples.
 - **MCPB_INCLUDE config option**: New `mcpb.conf` setting to include custom directories in bundles beyond the defaults (tools, resources, prompts, completions, server.d, lib, providers). Supports nested paths like `config/schemas`. Rejects path traversal (`..`) and absolute paths for security. Warns on missing directories.
 - **run-tool environment sourcing**: New options for sourcing environment files before tool execution:
   - `--with-server-env`: Sources `server.d/env.sh` before running the tool, matching server runtime behavior

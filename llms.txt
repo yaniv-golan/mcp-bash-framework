@@ -41,7 +41,7 @@ Key points:
 
 ## SDK & Scaffolding
 
-- [Tool SDK](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/sdk/tool-sdk.sh): Shared helpers for argument parsing (`mcp_args_get`), output (`mcp_emit_json`, `mcp_emit_text`), JSON construction (`mcp_json_escape`, `mcp_json_obj`, `mcp_json_arr`), progress (`mcp_progress`), cancellation (`mcp_is_cancelled`), and logging (`mcp_log_info`, `mcp_log_warn`).
+- [Tool SDK](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/sdk/tool-sdk.sh): Shared helpers for argument parsing (`mcp_args_get`), output (`mcp_emit_json`, `mcp_emit_text`), JSON construction (`mcp_json_escape`, `mcp_json_obj`, `mcp_json_arr`), progress (`mcp_progress`, `mcp_run_with_progress`), cancellation (`mcp_is_cancelled`), and logging (`mcp_log_info`, `mcp_log_warn`).
 - [Scaffold Templates](https://github.com/yaniv-golan/mcp-bash-framework/tree/main/scaffold): Templates for generating compliant tools, resources, and prompts via `mcp-bash scaffold <type> <name>`; create a full server skeleton via `mcp-bash new <name>`.
 
 ## Configuration & Operations

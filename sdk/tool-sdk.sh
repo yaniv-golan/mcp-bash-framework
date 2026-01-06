@@ -3,6 +3,10 @@
 # Expects `MCPBASH_JSON_TOOL`/`MCPBASH_JSON_TOOL_BIN` and `MCPBASH_MODE` to be
 # injected by the server. When running with `MCPBASH_TOOL_ENV_MODE=minimal` or
 # without a JSON tool, JSON-centric helpers fall back to no-ops where possible.
+#
+# Auto-loaded helpers:
+#   - lib/path.sh: Path normalization (mcp_path_normalize)
+#   - lib/progress-passthrough.sh: Subprocess progress forwarding (mcp_run_with_progress)
 
 set -euo pipefail
 
@@ -25,6 +29,21 @@ mcp_sdk_load_path_helpers() {
 }
 
 mcp_sdk_load_path_helpers
+
+__mcp_sdk_load_progress_passthrough() {
+	if declare -F mcp_run_with_progress >/dev/null 2>&1; then
+		return 0
+	fi
+	local script_dir
+	script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+	local helper="${script_dir}/../lib/progress-passthrough.sh"
+	if [ -f "${helper}" ]; then
+		# shellcheck disable=SC1090
+		. "${helper}"
+	fi
+}
+
+__mcp_sdk_load_progress_passthrough
 
 __mcp_sdk_json_escape() {
 	# Return a quoted JSON string literal for the given value.

@@ -57,6 +57,7 @@ This guide distils hands-on recommendations for designing, building, and operati
 | `mcp_json_truncate` | Truncate large arrays for context limits | `mcp_json_truncate "$arr" 10000` |
 | `mcp_is_valid_json` | Validate single JSON value | `if mcp_is_valid_json "$val"; then ...` |
 | `mcp_byte_length` | UTF-8 safe byte length | `len=$(mcp_byte_length "$str")` |
+| `mcp_run_with_progress` | Forward subprocess progress to MCP | `mcp_run_with_progress --pattern '([0-9]+)%' --extract match1 -- wget ...` |
 
 ### External command patterns
 | Pattern | Purpose | Example |
@@ -905,6 +906,119 @@ fi
 
 The result helpers are recommended for new tools as they provide consistent response shapes that clients can rely on.
 
+### 4.8 Progress passthrough from subprocesses
+
+When wrapping external CLIs that emit progress information to stderr, use `mcp_run_with_progress` to automatically parse and forward MCP progress notifications:
+
+```bash
+mcp_run_with_progress [OPTIONS] -- COMMAND [ARGS...]
+
+Options:
+  --pattern REGEX       Match progress lines (required)
+  --extract MODE        Extraction mode: json (default), match1, ratio
+  --stdout FILE         Write stdout to file (default: stdout)
+  --interval SEC        Polling interval (default: 0.2)
+  --progress-file FILE  Read progress from file instead of stderr
+  --total N             Pre-computed total for percentage calculation
+  --dry-run             Output JSON to stderr instead of emitting
+  --quiet               Suppress debug logging of non-progress lines
+```
+
+#### Extraction modes
+
+| Mode | Description | Use Case |
+|------|-------------|----------|
+| `json` | Parse line as JSON, extract `.progress` and `.message` | CLIs with NDJSON output |
+| `match1` | Use first regex capture group as percentage (0-100) | CLIs with `50%` style output |
+| `ratio` | Calculate `capture[1] * 100 / capture[2]` | CLIs with `[5/10]` style output |
+
+#### Common patterns for well-known tools
+
+**NDJSON Progress (Custom CLIs):**
+```bash
+# Pattern: {"progress": 50, "message": "Working..."}
+mcp_run_with_progress \
+    --pattern '^\{.*"progress"' \
+    --extract json \
+    -- my-cli --progress-json
+```
+
+**Percentage-based CLIs (wget, curl, pip):**
+```bash
+# wget example
+mcp_run_with_progress \
+    --pattern '([0-9]+)%' \
+    --extract match1 \
+    -- wget -q --show-progress https://example.com/file.zip
+
+# curl example (use stdbuf for unbuffered output on Linux)
+mcp_run_with_progress \
+    --pattern '([0-9]+)\.?[0-9]*%' \
+    --extract match1 \
+    -- stdbuf -oL curl -# -O https://example.com/file.zip
+```
+
+**Counter-based CLIs (rsync, batch scripts):**
+```bash
+# rsync example
+mcp_run_with_progress \
+    --pattern '\[([0-9]+)/([0-9]+)\]' \
+    --extract ratio \
+    -- rsync -av --info=progress2 src/ dest/
+
+# Batch processing example
+mcp_run_with_progress \
+    --pattern '([0-9]+) of ([0-9]+)' \
+    --extract ratio \
+    -- batch-convert *.png
+```
+
+**ffmpeg (Progress File):**
+
+ffmpeg uses a dedicated progress output, not stderr:
+```bash
+# Get total duration first
+total_us=$(ffprobe -v error -show_entries format=duration \
+    -of default=noprint_wrappers=1:nokey=1 input.mp4 | awk '{print int($1*1000000)}')
+
+# Run with progress file
+mcp_run_with_progress \
+    --progress-file /tmp/ffprogress \
+    --total "$total_us" \
+    --pattern '^out_time_us=([0-9]+)' \
+    --extract match1 \
+    -- ffmpeg -i input.mp4 -progress /tmp/ffprogress output.mp4
+```
+
+**Docker Build:**
+```bash
+mcp_run_with_progress \
+    --pattern '^\{.*"progress"' \
+    --extract json \
+    -- docker build --progress=rawjson -t myimage .
+```
+
+#### Rate limiting interaction
+
+Progress notifications are throttled to **100 per request per minute** (configurable via `MCPBASH_MAX_PROGRESS_PER_MIN`). The `mcp_progress` helper handles throttling internally—excess notifications are dropped with a warning log. If a CLI emits progress faster than the poll interval, lines are batched in a single poll cycle.
+
+#### Stderr buffering workarounds
+
+Some CLIs buffer stderr even in non-TTY mode:
+
+```bash
+# Linux: use stdbuf to disable buffering
+mcp_run_with_progress -- stdbuf -oL some-cli --progress
+
+# macOS: stdbuf not available by default
+# Option 1: Install GNU coreutils (brew install coreutils → gstdbuf)
+# Option 2: Use script trick to force PTY-like behavior
+mcp_run_with_progress -- script -q /dev/null some-cli --progress
+
+# Python scripts: use -u flag or environment variable
+PYTHONUNBUFFERED=1 mcp_run_with_progress -- python myscript.py
+```
+
 ## 5. Testing & quality gates
 
 ### 5.1 Test pyramid
@@ -1179,6 +1293,7 @@ flowchart TD
 ## Doc changelog
 | Date | Version | Notes |
 | --- | --- | --- |
+| 2026-01-06 | v1.5 | Added §4.8 "Progress passthrough from subprocesses" covering `mcp_run_with_progress` helper for forwarding CLI progress to MCP. Includes common patterns for NDJSON, percentage, counter, and ffmpeg-style CLIs. Updated SDK quick reference table. |
 | 2026-01-04 | v1.4 | Added §4.7 "Building CallToolResult responses" covering `mcp_result_success`, `mcp_result_error`, `mcp_json_truncate`, `mcp_is_valid_json`, and `mcp_byte_length` helpers. Updated SDK quick reference table. Added "Capturing stdout and stderr separately" pattern to §4.3. |
 | 2026-01-03 | v1.3 | Added `mcp_with_retry` SDK helper for retrying transient failures. Added parallel external calls and rate limiting patterns. Added project health checks hook (`server.d/health-checks.sh`). Added "Common Bash Pitfalls" section (§4.4) covering `((var++))` under `set -e`, empty arrays, and pipefail. |
 | 2026-01-03 | v1.2 | Added "Calling external CLI tools" section (§4.3) with safe jq pipeline patterns, fallback defaults table, and external command quick reference. Added cross-reference in ERRORS.md. |
