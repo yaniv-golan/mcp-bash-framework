@@ -342,3 +342,42 @@ Entries reference prompt templates and metadata. Paths are relative to `MCPBASH_
 - Cached files are ignored if their size exceeds the configured limit or if JSON parsing fails, forcing a rescan on next access.
 
 Additional discovery rules (depth limits, hidden directory exclusion, manual registration hooks) live with the discovery scripts and comments inside this repository.
+
+## Static Registry Mode
+
+For bundle deployments where tools/resources/prompts are static and won't change at runtime, static registry mode provides faster cold start by skipping runtime discovery.
+
+**Bundles use static mode by default** - no configuration needed. The bundler automatically pre-generates `.registry/*.json` caches and sets `MCPBASH_STATIC_REGISTRY=1` in the manifest.
+
+### Enabling Static Mode
+
+```bash
+# For bundles: enabled by default, opt out with:
+# mcpb.conf
+MCPB_STATIC=false
+
+# For non-bundle production deployments:
+mcp-bash registry refresh              # Pre-generate caches
+export MCPBASH_STATIC_REGISTRY=1       # Enable static mode
+```
+
+### Behavior
+
+When `MCPBASH_STATIC_REGISTRY=1`:
+
+1. **Loads pre-generated cache immediately** without TTL checks or fastpath detection
+2. **Skips `register.sh`** (shell code execution is not trusted in static mode)
+3. **Honors `register.json`** (data-only declarative overrides are safe)
+4. **Falls back to normal discovery** if cache is missing or invalid
+5. **Respects CLI forced refresh** - `mcp-bash registry refresh` still works
+
+### Cache Format Version
+
+Cache files include a `format_version` field (currently `1`) for compatibility checking. If a cache has a different format version, static mode falls back to normal discovery.
+
+### Best Practices
+
+- **Development**: Leave `MCPBASH_STATIC_REGISTRY` unset for auto-discovery
+- **Production bundles**: Static mode is enabled by default - no action needed
+- **Opt out**: Set `MCPB_STATIC=false` in `mcpb.conf` if you need runtime discovery in bundles
+- **Debugging**: If tools don't appear, check if static mode is enabled - an info-level log message is emitted on first request to alert developers

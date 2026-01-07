@@ -39,6 +39,11 @@ MCPB_REPOSITORY="https://github.com/you/my-server"
 # Additional directories to include in bundle (space-separated)
 # Default: tools, resources, prompts, completions, server.d, lib, providers
 MCPB_INCLUDE=".registry data/templates"
+
+# Static registry mode for faster cold start (default: true)
+# Pre-generates .registry/*.json and sets MCPBASH_STATIC_REGISTRY=1 in bundle
+# Set to false to opt out: MCPB_STATIC=false
+# MCPB_STATIC=false
 ```
 
 If `mcpb.conf` is not present, values are resolved from:

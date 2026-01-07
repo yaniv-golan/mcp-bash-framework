@@ -260,7 +260,7 @@ ${name}"
 		--arg ts "${timestamp}" \
 		--arg hash "${hash}" \
 		--argjson total "${total}" \
-		'{version: 1, generatedAt: $ts, items: .[0], hash: $hash, total: $total}')"
+		'{format_version: 1, version: 1, generatedAt: $ts, items: .[0], hash: $hash, total: $total}')"
 	MCP_COMPLETION_MANUAL_LOADED=true
 	return 0
 }

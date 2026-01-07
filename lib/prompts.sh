@@ -16,7 +16,7 @@ _MCP_PROMPTS_ERR_MESSAGE=""
 # shellcheck disable=SC2034
 _MCP_PROMPTS_RESULT=""
 MCP_PROMPTS_TTL="${MCP_PROMPTS_TTL:-5}"
-MCP_PROMPTS_LAST_SCAN=0
+MCP_PROMPTS_LAST_SCAN=""  # Empty means "use cache mtime if loading"; 0 means "force scan"
 MCP_PROMPTS_LAST_NOTIFIED_HASH=""
 MCP_PROMPTS_CHANGED=false
 MCP_PROMPTS_LOGGER="${MCP_PROMPTS_LOGGER:-mcp.prompts}"
@@ -163,6 +163,39 @@ mcp_prompts_init() {
 	mkdir -p "${MCPBASH_PROMPTS_DIR}" >/dev/null 2>&1 || true
 }
 
+mcp_prompts_load_cache_if_empty() {
+	if [ -n "${MCP_PROMPTS_REGISTRY_JSON}" ] || [ ! -f "${MCP_PROMPTS_REGISTRY_PATH}" ]; then
+		return 0
+	fi
+
+	local tmp_json=""
+	if tmp_json="$(cat "${MCP_PROMPTS_REGISTRY_PATH}")"; then
+		if printf '%s' "${tmp_json}" | "${MCPBASH_JSON_TOOL_BIN}" . >/dev/null 2>&1; then
+			MCP_PROMPTS_REGISTRY_JSON="${tmp_json}"
+			MCP_PROMPTS_REGISTRY_HASH="$(printf '%s' "${MCP_PROMPTS_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.hash // empty')"
+			MCP_PROMPTS_TOTAL="$(printf '%s' "${MCP_PROMPTS_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" '.total // 0')"
+			if ! mcp_prompts_enforce_registry_limits "${MCP_PROMPTS_TOTAL}" "${MCP_PROMPTS_REGISTRY_JSON}"; then
+				return 1
+			fi
+			# Trust pre-generated cache and start TTL window from now (not file mtime, which fails for extracted bundles)
+			if [ -z "${MCP_PROMPTS_LAST_SCAN}" ]; then
+				MCP_PROMPTS_LAST_SCAN="$(date +%s)"
+			fi
+		else
+			mcp_logging_warning "${MCP_PROMPTS_LOGGER}" "Discarding invalid prompt registry cache"
+			MCP_PROMPTS_REGISTRY_JSON=""
+		fi
+	else
+		if mcp_logging_verbose_enabled; then
+			mcp_logging_warning "${MCP_PROMPTS_LOGGER}" "Failed to read prompt registry cache ${MCP_PROMPTS_REGISTRY_PATH}"
+		else
+			mcp_logging_warning "${MCP_PROMPTS_LOGGER}" "Failed to read prompt registry cache"
+		fi
+		MCP_PROMPTS_REGISTRY_JSON=""
+	fi
+	return 0
+}
+
 mcp_prompts_apply_manual_json() {
 	local manual_json="$1"
 	local items_json
@@ -213,6 +246,48 @@ mcp_prompts_refresh_registry() {
 	local scan_root
 	scan_root="$(mcp_prompts_scan_root)"
 	mcp_prompts_init
+
+	# Static registry mode: check register.json (data-only), skip register.sh (shell code)
+	if [ "${MCPBASH_STATIC_REGISTRY:-0}" = "1" ]; then
+		local json_path
+		json_path="$(mcp_registry_declarative_path)"
+
+		# Still allow declarative overrides via register.json (but NOT register.sh)
+		if [ -f "${json_path}" ]; then
+			mcp_registry_register_apply "prompts"
+			if [ "${MCP_REGISTRY_REGISTER_LAST_APPLIED:-false}" = "true" ]; then
+				return 0
+			fi
+		fi
+		# Load pre-generated cache
+		if ! mcp_prompts_load_cache_if_empty; then
+			return 1
+		fi
+		# Check format version for cache compatibility
+		if [ -n "${MCP_PROMPTS_REGISTRY_JSON}" ]; then
+			local cache_version
+			cache_version="$(printf '%s' "${MCP_PROMPTS_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.format_version // 0')"
+			if [ "${cache_version}" != "1" ]; then
+				mcp_logging_debug "${MCP_PROMPTS_LOGGER}" "Static registry mode: cache format version mismatch (expected 1, got ${cache_version}), falling back to discovery"
+				MCP_PROMPTS_REGISTRY_JSON=""
+			fi
+		fi
+		# Return if cache valid AND not CLI forced refresh (LAST_SCAN=0)
+		if [ -n "${MCP_PROMPTS_REGISTRY_JSON}" ] && [ "${MCP_PROMPTS_LAST_SCAN}" != "0" ]; then
+			# One-time info log to help developers who forget to disable static mode
+			if [ "${MCPBASH_STATIC_REGISTRY_LOGGED:-}" != "true" ]; then
+				mcp_logging_info "${MCP_PROMPTS_LOGGER}" "Static registry mode active - new tools/resources won't be discovered until restart or MCPBASH_STATIC_REGISTRY=0"
+				export MCPBASH_STATIC_REGISTRY_LOGGED=true
+			fi
+			mcp_logging_debug "${MCP_PROMPTS_LOGGER}" "Static registry mode: using pre-generated cache (${MCP_PROMPTS_TOTAL} prompts)"
+			return 0
+		fi
+		# Fall through to normal discovery if cache missing or CLI forced
+		if [ -z "${MCP_PROMPTS_REGISTRY_JSON}" ]; then
+			mcp_logging_debug "${MCP_PROMPTS_LOGGER}" "Static registry mode: cache missing/invalid, falling back to discovery"
+		fi
+	fi
+
 	local manual_status=0
 	mcp_registry_register_apply "prompts"
 	manual_status=$?
@@ -231,28 +306,8 @@ mcp_prompts_refresh_registry() {
 	local now
 	now="$(date +%s)"
 
-	if [ -z "${MCP_PROMPTS_REGISTRY_JSON}" ] && [ -f "${MCP_PROMPTS_REGISTRY_PATH}" ]; then
-		local tmp_json=""
-		if tmp_json="$(cat "${MCP_PROMPTS_REGISTRY_PATH}")"; then
-			if printf '%s' "${tmp_json}" | "${MCPBASH_JSON_TOOL_BIN}" . >/dev/null 2>&1; then
-				MCP_PROMPTS_REGISTRY_JSON="${tmp_json}"
-				MCP_PROMPTS_REGISTRY_HASH="$(printf '%s' "${MCP_PROMPTS_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.hash // empty')"
-				MCP_PROMPTS_TOTAL="$(printf '%s' "${MCP_PROMPTS_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" '.total // 0')"
-				if ! mcp_prompts_enforce_registry_limits "${MCP_PROMPTS_TOTAL}" "${MCP_PROMPTS_REGISTRY_JSON}"; then
-					return 1
-				fi
-			else
-				mcp_logging_warning "${MCP_PROMPTS_LOGGER}" "Discarding invalid prompt registry cache"
-				MCP_PROMPTS_REGISTRY_JSON=""
-			fi
-		else
-			if mcp_logging_verbose_enabled; then
-				mcp_logging_warning "${MCP_PROMPTS_LOGGER}" "Failed to read prompt registry cache ${MCP_PROMPTS_REGISTRY_PATH}"
-			else
-				mcp_logging_warning "${MCP_PROMPTS_LOGGER}" "Failed to read prompt registry cache"
-			fi
-			MCP_PROMPTS_REGISTRY_JSON=""
-		fi
+	if ! mcp_prompts_load_cache_if_empty; then
+		return 1
 	fi
 	if [ -n "${MCP_PROMPTS_REGISTRY_JSON}" ] && [ $((now - MCP_PROMPTS_LAST_SCAN)) -lt "${MCP_PROMPTS_TTL}" ]; then
 		return 0
@@ -415,7 +470,7 @@ mcp_prompts_scan() {
 		--arg ts "${timestamp}" \
 		--arg hash "${hash}" \
 		--argjson total "${total}" \
-		'{version: ($ver|tonumber), generatedAt: $ts, items: .[0], hash: $hash, total: $total}')"
+		'{format_version: 1, version: ($ver|tonumber), generatedAt: $ts, items: .[0], hash: $hash, total: $total}')"
 
 	MCP_PROMPTS_REGISTRY_HASH="${hash}"
 	MCP_PROMPTS_TOTAL="${total}"

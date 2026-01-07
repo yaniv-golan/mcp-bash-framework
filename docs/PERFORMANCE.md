@@ -6,6 +6,7 @@
 - Use `MCPBASH_DEBUG_PAYLOADS=true` sparingly while debugging to avoid skewing timings with disk I/O.
 
 ## Tuning levers
+- **Static registry mode**: Bundles use static registry mode by default for optimal cold start - no configuration needed. For non-bundle production deployments, set `MCPBASH_STATIC_REGISTRY=1` to skip runtime discovery and load pre-generated `.registry/*.json` caches directly. This eliminates cold-start overhead from filesystem scans. To opt out of static mode in bundles, set `MCPB_STATIC=false` in `mcpb.conf`.
 - **Concurrency**: `MCPBASH_MAX_CONCURRENT_REQUESTS` (default 16) sets worker slots. Increase gradually and watch CPU steal/memory pressure; decrease on small hosts.
 - **Timeouts**: Set per-tool `timeoutSecs` in `<tool>.meta.json`; global default comes from `MCPBASH_DEFAULT_TOOL_TIMEOUT` (30s by default).
 - **Registry scans**: Adjust TTLs (`MCP_TOOLS_TTL`, `MCP_RESOURCES_TTL`, `MCP_PROMPTS_TTL`) and scope (`MCPBASH_REGISTRY_REFRESH_PATH`) to reduce filesystem churn on large trees.

@@ -24,7 +24,7 @@ _MCP_TOOLS_ERROR_DATA=""
 # shellcheck disable=SC2034
 _MCP_TOOLS_RESULT=""
 MCP_TOOLS_TTL="${MCP_TOOLS_TTL:-5}"
-MCP_TOOLS_LAST_SCAN=0
+MCP_TOOLS_LAST_SCAN=""  # Empty means "use cache mtime if loading"; 0 means "force scan"
 MCP_TOOLS_LAST_NOTIFIED_HASH=""
 MCP_TOOLS_CHANGED=false
 MCP_TOOLS_MANUAL_ACTIVE=false
@@ -462,6 +462,10 @@ mcp_tools_load_cache_if_empty() {
 			if ! mcp_tools_enforce_registry_limits "${MCP_TOOLS_TOTAL}" "${MCP_TOOLS_REGISTRY_JSON}"; then
 				return 1
 			fi
+			# Trust pre-generated cache and start TTL window from now (not file mtime, which fails for extracted bundles)
+			if [ -z "${MCP_TOOLS_LAST_SCAN}" ]; then
+				MCP_TOOLS_LAST_SCAN="$(date +%s)"
+			fi
 		else
 			MCP_TOOLS_REGISTRY_JSON=""
 		fi
@@ -759,6 +763,48 @@ mcp_tools_refresh_registry() {
 	local scan_root
 	scan_root="$(mcp_tools_scan_root)"
 	mcp_tools_init
+
+	# Static registry mode: check register.json (data-only), skip register.sh (shell code)
+	if [ "${MCPBASH_STATIC_REGISTRY:-0}" = "1" ]; then
+		local json_path
+		json_path="$(mcp_registry_declarative_path)"
+
+		# Still allow declarative overrides via register.json (but NOT register.sh)
+		if [ -f "${json_path}" ]; then
+			mcp_registry_register_apply "tools"
+			if [ "${MCP_REGISTRY_REGISTER_LAST_APPLIED:-false}" = "true" ]; then
+				return 0
+			fi
+		fi
+		# Load pre-generated cache
+		if ! mcp_tools_load_cache_if_empty; then
+			return 1
+		fi
+		# Check format version for cache compatibility
+		if [ -n "${MCP_TOOLS_REGISTRY_JSON}" ]; then
+			local cache_version
+			cache_version="$(printf '%s' "${MCP_TOOLS_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.format_version // 0')"
+			if [ "${cache_version}" != "1" ]; then
+				mcp_logging_debug "${MCP_TOOLS_LOGGER}" "Static registry mode: cache format version mismatch (expected 1, got ${cache_version}), falling back to discovery"
+				MCP_TOOLS_REGISTRY_JSON=""
+			fi
+		fi
+		# Return if cache valid AND not CLI forced refresh (LAST_SCAN=0)
+		if [ -n "${MCP_TOOLS_REGISTRY_JSON}" ] && [ "${MCP_TOOLS_LAST_SCAN}" != "0" ]; then
+			# One-time info log to help developers who forget to disable static mode
+			if [ "${MCPBASH_STATIC_REGISTRY_LOGGED:-}" != "true" ]; then
+				mcp_logging_info "${MCP_TOOLS_LOGGER}" "Static registry mode active - new tools/resources won't be discovered until restart or MCPBASH_STATIC_REGISTRY=0"
+				export MCPBASH_STATIC_REGISTRY_LOGGED=true
+			fi
+			mcp_logging_debug "${MCP_TOOLS_LOGGER}" "Static registry mode: using pre-generated cache (${MCP_TOOLS_TOTAL} tools)"
+			return 0
+		fi
+		# Fall through to normal discovery if cache missing or CLI forced
+		if [ -z "${MCP_TOOLS_REGISTRY_JSON}" ]; then
+			mcp_logging_debug "${MCP_TOOLS_LOGGER}" "Static registry mode: cache missing/invalid, falling back to discovery"
+		fi
+	fi
+
 	# Registry refresh order: prefer user-provided server.d/register.sh output,
 	# then reuse cached JSON if TTL has not expired, finally fall back to a full
 	# filesystem scan (with fastpath snapshot to avoid rescanning unchanged trees).
@@ -959,7 +1005,7 @@ mcp_tools_scan() {
 		--arg ts "${timestamp}" \
 		--arg hash "${hash}" \
 		--argjson total "${total}" \
-		'{version: ($ver|tonumber), generatedAt: $ts, items: .[0], hash: $hash, total: $total}')"
+		'{format_version: 1, version: ($ver|tonumber), generatedAt: $ts, items: .[0], hash: $hash, total: $total}')"
 
 	MCP_TOOLS_REGISTRY_HASH="${hash}"
 	MCP_TOOLS_TOTAL="${total}"

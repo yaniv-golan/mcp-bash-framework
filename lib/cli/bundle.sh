@@ -38,6 +38,16 @@ BUNDLED_ICON=""
 # Track target platforms for manifest
 BUNDLE_PLATFORMS="darwin linux win32"
 
+# Track if static registry mode is enabled for manifest
+BUNDLE_STATIC_REGISTRY=""
+
+# Helper to check if a space-separated list contains an item
+mcp_bundle_list_contains() {
+	local list="$1" item="$2"
+	case " ${list} " in *" ${item} "*) return 0 ;; esac
+	return 1
+}
+
 mcp_bundle_usage() {
 	cat <<'EOF'
 Usage:
@@ -273,6 +283,7 @@ mcp_bundle_load_config() {
 	MCPB_AUTHOR_URL=""
 	MCPB_REPOSITORY=""
 	MCPB_INCLUDE=""
+	MCPB_STATIC=""
 
 	if [ -f "${config_file}" ]; then
 		# Source config file (simple KEY=VALUE format)
@@ -621,11 +632,15 @@ mcp_bundle_generate_manifest() {
 	# Detect if tools/prompts exist (for *_generated flags)
 	local has_tools="false"
 	local has_prompts="false"
+	local has_static="false"
 	if [ -d "${project_root}/tools" ] && [ -n "$(ls -A "${project_root}/tools" 2>/dev/null)" ]; then
 		has_tools="true"
 	fi
 	if [ -d "${project_root}/prompts" ] && [ -n "$(ls -A "${project_root}/prompts" 2>/dev/null)" ]; then
 		has_prompts="true"
+	fi
+	if [ "${BUNDLE_STATIC_REGISTRY:-}" = "true" ]; then
+		has_static="true"
 	fi
 
 	# Use JSON tool to build manifest if available, otherwise use template
@@ -647,6 +662,7 @@ mcp_bundle_generate_manifest() {
 				--argjson platforms "${platforms_json}" \
 				--argjson tools_generated "${has_tools}" \
 				--argjson prompts_generated "${has_prompts}" \
+				--argjson static_registry "${has_static}" \
 				'{
 				manifest_version: "0.3",
 				name: $name,
@@ -669,10 +685,10 @@ mcp_bundle_generate_manifest() {
 					mcp_config: {
 						command: "${__dirname}/server/run-server.sh",
 						args: [],
-						env: {
+						env: ({
 							MCPBASH_PROJECT_ROOT: "${__dirname}/server",
 							MCPBASH_TOOL_ALLOWLIST: "*"
-						}
+						} + (if $static_registry then {MCPBASH_STATIC_REGISTRY: "1"} else {} end))
 					}
 				},
 				compatibility: {
@@ -695,8 +711,13 @@ mcp_bundle_generate_manifest() {
 	else
 		# Inline fallback per MCPB v0.3 spec (limited functionality without JSON tool)
 		local icon_line=""
+		local static_registry_line=""
 		if [ -n "${BUNDLED_ICON:-}" ]; then
 			icon_line="\"icon\": \"${BUNDLED_ICON}\","
+		fi
+		if [ "${BUNDLE_STATIC_REGISTRY:-}" = "true" ]; then
+			static_registry_line=',
+        "MCPBASH_STATIC_REGISTRY": "1"'
 		fi
 		cat >"${output}" <<EOF
 {
@@ -714,7 +735,7 @@ mcp_bundle_generate_manifest() {
       "args": [],
       "env": {
         "MCPBASH_PROJECT_ROOT": "\${__dirname}/server",
-        "MCPBASH_TOOL_ALLOWLIST": "*"
+        "MCPBASH_TOOL_ALLOWLIST": "*"${static_registry_line}
       }
     }
   },
@@ -858,6 +879,37 @@ mcp_cli_bundle() {
 
 	# Warn if author is missing (required by MCPB spec)
 	mcp_bundle_warn_missing_author
+
+	# Static registry mode handling (default: true for zero-config fast cold start)
+	# Bundle creators can opt out with MCPB_STATIC=false in mcpb.conf
+	case "${MCPB_STATIC:-true}" in
+	false | 0 | no | off) BUNDLE_STATIC_REGISTRY="" ;;
+	*) BUNDLE_STATIC_REGISTRY="true" ;;
+	esac
+
+	if [ "${BUNDLE_STATIC_REGISTRY}" = "true" ]; then
+		if [ "${verbose}" = "true" ]; then
+			printf '  Pre-generating registry cache for static mode...\n'
+		fi
+		# Pre-generate registries (uses MCPBASH_HOME which is set by common.sh)
+		local refresh_output=""
+		if ! refresh_output=$("${MCPBASH_HOME}/bin/mcp-bash" registry refresh --project-root "${MCPBASH_PROJECT_ROOT}" --no-notify 2>&1); then
+			printf '  \342\232\240 Warning: Failed to pre-generate registries for static mode\n' >&2
+			if [ -n "${refresh_output}" ]; then
+				printf '    %s\n' "${refresh_output}" >&2
+			fi
+			printf '    Bundle will work but may have slower cold start\n' >&2
+			# Don't fail the bundle - static mode is an optimization
+		else
+			if [ "${verbose}" = "true" ]; then
+				printf '    Registry cache generated successfully\n'
+			fi
+		fi
+		# Ensure .registry is included (MCPB_INCLUDE is space-separated)
+		if ! mcp_bundle_list_contains "${MCPB_INCLUDE:-}" ".registry"; then
+			MCPB_INCLUDE="${MCPB_INCLUDE:+$MCPB_INCLUDE }.registry"
+		fi
+	fi
 
 	if [ "${verbose}" = "true" ]; then
 		printf '  \342\234\223 Resolved metadata: %s v%s\n' "${RESOLVED_NAME}" "${RESOLVED_VERSION}"

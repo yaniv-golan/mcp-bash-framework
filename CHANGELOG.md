@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.9.4] - Unreleased
 
 ### Added
+- **Static registry mode** (`MCPBASH_STATIC_REGISTRY=1`): Opt-in mode for bundle deployments that skips runtime discovery and uses pre-generated `.registry/*.json` cache files directly. Reduces cold start time by skipping TTL checks, fastpath detection, and directory scanning. When enabled:
+  - Loads pre-generated cache immediately without freshness checks
+  - Skips `register.sh` execution (shell code) but still honors `register.json` (data-only declarative overrides)
+  - Falls back to normal discovery if cache is missing/invalid
+  - Respects CLI forced refresh (`mcp-bash registry refresh` still works)
+  - Logs info message on first request to alert developers if static mode is accidentally left enabled
+  - Cache format versioning (`format_version: 1`) for future compatibility
+- **MCPB_STATIC bundle config**: Bundles now use static registry mode by default for zero-config fast cold start. The bundler automatically:
+  - Runs `registry refresh` to pre-generate `.registry/*.json` files
+  - Adds `.registry` to `MCPB_INCLUDE` if not present
+  - Sets `MCPBASH_STATIC_REGISTRY=1` in bundle manifest environment
+  - To opt out, set `MCPB_STATIC=false` in `mcpb.conf` (accepts `false`, `0`, `no`, `off`)
 - **LLM context documentation**: New `docs/LLM-CONTEXT.md` guide covering patterns for building MCP servers that LLM agents can use effectively. Includes writing effective tool descriptions, parameter documentation, including examples in metadata, documenting tool relationships, creating domain model resources, discovery tool patterns, client compatibility workarounds for custom URI schemes, and anti-patterns to avoid. Includes documentation quality checklist.
 - **BEST-PRACTICES.md §4.2 "LLM-friendly tool metadata"**: Quick reference for rich descriptions, parameter docs, and domain resources with cross-reference to full LLM-CONTEXT.md guide.
 - **docs/README.md**: Added LLM context patterns entry to documentation index.
@@ -18,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **Multi-line descriptions in resource metadata**: Fixed `lib/resources.sh` registry parsing to handle multi-line descriptions in `resource.meta.json`. Previously, descriptions with embedded newlines would break the field array parsing, causing resources to silently fall back to default names and empty descriptions. Now uses individual jq calls per field (matching the pattern already used in `lib/tools.sh`).
+- **Registry cache loading not setting LAST_SCAN**: Fixed `lib/tools.sh`, `lib/resources.sh`, and `lib/prompts.sh` to set `*_LAST_SCAN` to current time after successfully loading registry cache from disk. Previously, loading a valid cache file would leave `*_LAST_SCAN` uninitialized, causing the TTL check to always fail and trigger unnecessary full directory scans on the first request. This caused timeouts in Claude Desktop when `tools/list` took too long. The fix trusts pre-generated caches and starts the TTL window from now (not file mtime, which would fail for freshly extracted bundles). Uses empty string as the "uninitialized" state to distinguish from explicit `LAST_SCAN=0` (used by CLI commands to force a scan).
 
 ## [0.9.3] - 2025-01-06
 

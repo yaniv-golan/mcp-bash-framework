@@ -16,7 +16,7 @@ _MCP_RESOURCES_ERR_MESSAGE=""
 # shellcheck disable=SC2034
 _MCP_RESOURCES_RESULT=""
 MCP_RESOURCES_TTL="${MCP_RESOURCES_TTL:-5}"
-MCP_RESOURCES_LAST_SCAN=0
+MCP_RESOURCES_LAST_SCAN=""  # Empty means "use cache mtime if loading"; 0 means "force scan"
 MCP_RESOURCES_LAST_NOTIFIED_HASH=""
 MCP_RESOURCES_CHANGED=false
 MCP_RESOURCES_MANUAL_ACTIVE=false
@@ -27,7 +27,7 @@ MCP_RESOURCES_TEMPLATES_REGISTRY_JSON=""
 MCP_RESOURCES_TEMPLATES_REGISTRY_HASH=""
 MCP_RESOURCES_TEMPLATES_REGISTRY_PATH=""
 MCP_RESOURCES_TEMPLATES_TOTAL=0
-MCP_RESOURCES_TEMPLATES_LAST_SCAN=0
+MCP_RESOURCES_TEMPLATES_LAST_SCAN=""  # Empty means "use cache mtime if loading"; 0 means "force scan"
 MCP_RESOURCES_TEMPLATES_TTL="${MCP_RESOURCES_TEMPLATES_TTL:-5}"
 MCP_RESOURCES_TEMPLATES_MANUAL_ACTIVE=false
 MCP_RESOURCES_TEMPLATES_MANUAL_BUFFER=""
@@ -295,6 +295,39 @@ mcp_resources_init() {
 	mkdir -p "${MCPBASH_RESOURCES_DIR}" >/dev/null 2>&1 || true
 }
 
+mcp_resources_load_cache_if_empty() {
+	if [ -n "${MCP_RESOURCES_REGISTRY_JSON}" ] || [ ! -f "${MCP_RESOURCES_REGISTRY_PATH}" ]; then
+		return 0
+	fi
+
+	local tmp_json=""
+	if tmp_json="$(cat "${MCP_RESOURCES_REGISTRY_PATH}")"; then
+		if printf '%s' "${tmp_json}" | "${MCPBASH_JSON_TOOL_BIN}" . >/dev/null 2>&1; then
+			MCP_RESOURCES_REGISTRY_JSON="${tmp_json}"
+			MCP_RESOURCES_REGISTRY_HASH="$(printf '%s' "${MCP_RESOURCES_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.hash // empty')"
+			MCP_RESOURCES_TOTAL="$(printf '%s' "${MCP_RESOURCES_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" '.total // 0')"
+			if ! mcp_resources_enforce_registry_limits "${MCP_RESOURCES_TOTAL}" "${MCP_RESOURCES_REGISTRY_JSON}"; then
+				return 1
+			fi
+			# Trust pre-generated cache and start TTL window from now (not file mtime, which fails for extracted bundles)
+			if [ -z "${MCP_RESOURCES_LAST_SCAN}" ]; then
+				MCP_RESOURCES_LAST_SCAN="$(date +%s)"
+			fi
+		else
+			mcp_logging_warning "${MCP_RESOURCES_LOGGER}" "Discarding invalid resource registry cache"
+			MCP_RESOURCES_REGISTRY_JSON=""
+		fi
+	else
+		if mcp_logging_verbose_enabled; then
+			mcp_logging_warning "${MCP_RESOURCES_LOGGER}" "Failed to read resource registry cache ${MCP_RESOURCES_REGISTRY_PATH}"
+		else
+			mcp_logging_warning "${MCP_RESOURCES_LOGGER}" "Failed to read resource registry cache"
+		fi
+		MCP_RESOURCES_REGISTRY_JSON=""
+	fi
+	return 0
+}
+
 mcp_resources_apply_manual_json() {
 	local manual_json="$1"
 	local registry_json
@@ -345,6 +378,48 @@ mcp_resources_refresh_registry() {
 	local scan_root
 	scan_root="$(mcp_resources_scan_root)"
 	mcp_resources_init
+
+	# Static registry mode: check register.json (data-only), skip register.sh (shell code)
+	if [ "${MCPBASH_STATIC_REGISTRY:-0}" = "1" ]; then
+		local json_path
+		json_path="$(mcp_registry_declarative_path)"
+
+		# Still allow declarative overrides via register.json (but NOT register.sh)
+		if [ -f "${json_path}" ]; then
+			mcp_registry_register_apply "resources"
+			if [ "${MCP_REGISTRY_REGISTER_LAST_APPLIED:-false}" = "true" ]; then
+				return 0
+			fi
+		fi
+		# Load pre-generated cache
+		if ! mcp_resources_load_cache_if_empty; then
+			return 1
+		fi
+		# Check format version for cache compatibility
+		if [ -n "${MCP_RESOURCES_REGISTRY_JSON}" ]; then
+			local cache_version
+			cache_version="$(printf '%s' "${MCP_RESOURCES_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.format_version // 0')"
+			if [ "${cache_version}" != "1" ]; then
+				mcp_logging_debug "${MCP_RESOURCES_LOGGER}" "Static registry mode: cache format version mismatch (expected 1, got ${cache_version}), falling back to discovery"
+				MCP_RESOURCES_REGISTRY_JSON=""
+			fi
+		fi
+		# Return if cache valid AND not CLI forced refresh (LAST_SCAN=0)
+		if [ -n "${MCP_RESOURCES_REGISTRY_JSON}" ] && [ "${MCP_RESOURCES_LAST_SCAN}" != "0" ]; then
+			# One-time info log to help developers who forget to disable static mode
+			if [ "${MCPBASH_STATIC_REGISTRY_LOGGED:-}" != "true" ]; then
+				mcp_logging_info "${MCP_RESOURCES_LOGGER}" "Static registry mode active - new tools/resources won't be discovered until restart or MCPBASH_STATIC_REGISTRY=0"
+				export MCPBASH_STATIC_REGISTRY_LOGGED=true
+			fi
+			mcp_logging_debug "${MCP_RESOURCES_LOGGER}" "Static registry mode: using pre-generated cache (${MCP_RESOURCES_TOTAL} resources)"
+			return 0
+		fi
+		# Fall through to normal discovery if cache missing or CLI forced
+		if [ -z "${MCP_RESOURCES_REGISTRY_JSON}" ]; then
+			mcp_logging_debug "${MCP_RESOURCES_LOGGER}" "Static registry mode: cache missing/invalid, falling back to discovery"
+		fi
+	fi
+
 	if mcp_logging_is_enabled "debug"; then
 		local register_exists
 		register_exists="$([[ -x "${MCPBASH_SERVER_DIR}/register.sh" ]] && echo yes || echo no)"
@@ -373,28 +448,8 @@ mcp_resources_refresh_registry() {
 	local now
 	now="$(date +%s)"
 
-	if [ -z "${MCP_RESOURCES_REGISTRY_JSON}" ] && [ -f "${MCP_RESOURCES_REGISTRY_PATH}" ]; then
-		local tmp_json=""
-		if tmp_json="$(cat "${MCP_RESOURCES_REGISTRY_PATH}")"; then
-			if printf '%s' "${tmp_json}" | "${MCPBASH_JSON_TOOL_BIN}" . >/dev/null 2>&1; then
-				MCP_RESOURCES_REGISTRY_JSON="${tmp_json}"
-				MCP_RESOURCES_REGISTRY_HASH="$(printf '%s' "${MCP_RESOURCES_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.hash // empty')"
-				MCP_RESOURCES_TOTAL="$(printf '%s' "${MCP_RESOURCES_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" '.total // 0')"
-				if ! mcp_resources_enforce_registry_limits "${MCP_RESOURCES_TOTAL}" "${MCP_RESOURCES_REGISTRY_JSON}"; then
-					return 1
-				fi
-			else
-				mcp_logging_warning "${MCP_RESOURCES_LOGGER}" "Discarding invalid resource registry cache"
-				MCP_RESOURCES_REGISTRY_JSON=""
-			fi
-		else
-			if mcp_logging_verbose_enabled; then
-				mcp_logging_warning "${MCP_RESOURCES_LOGGER}" "Failed to read resource registry cache ${MCP_RESOURCES_REGISTRY_PATH}"
-			else
-				mcp_logging_warning "${MCP_RESOURCES_LOGGER}" "Failed to read resource registry cache"
-			fi
-			MCP_RESOURCES_REGISTRY_JSON=""
-		fi
+	if ! mcp_resources_load_cache_if_empty; then
+		return 1
 	fi
 	if [ -n "${MCP_RESOURCES_REGISTRY_JSON}" ] && [ $((now - MCP_RESOURCES_LAST_SCAN)) -lt "${MCP_RESOURCES_TTL}" ]; then
 		mcp_logging_debug "${MCP_RESOURCES_LOGGER}" "Refresh skipped due to ttl (last=${MCP_RESOURCES_LAST_SCAN})"
@@ -622,7 +677,7 @@ mcp_resources_scan() {
 		--arg ts "${timestamp}" \
 		--arg hash "${hash}" \
 		--argjson total "${total}" \
-		'{version: ($ver|tonumber), generatedAt: $ts, items: .[0], hash: $hash, total: $total}')"
+		'{format_version: 1, version: ($ver|tonumber), generatedAt: $ts, items: .[0], hash: $hash, total: $total}')"
 
 	MCP_RESOURCES_REGISTRY_HASH="${hash}"
 	MCP_RESOURCES_TOTAL="${total}"
@@ -833,6 +888,39 @@ mcp_resources_templates_init() {
 	fi
 	mkdir -p "${MCPBASH_REGISTRY_DIR}"
 	mkdir -p "${MCPBASH_RESOURCES_DIR}" >/dev/null 2>&1 || true
+}
+
+mcp_resources_templates_load_cache_if_empty() {
+	if [ -n "${MCP_RESOURCES_TEMPLATES_REGISTRY_JSON}" ] || [ ! -f "${MCP_RESOURCES_TEMPLATES_REGISTRY_PATH}" ]; then
+		return 0
+	fi
+
+	local tmp_json=""
+	if tmp_json="$(cat "${MCP_RESOURCES_TEMPLATES_REGISTRY_PATH}")"; then
+		if printf '%s' "${tmp_json}" | "${MCPBASH_JSON_TOOL_BIN}" . >/dev/null 2>&1; then
+			MCP_RESOURCES_TEMPLATES_REGISTRY_JSON="${tmp_json}"
+			MCP_RESOURCES_TEMPLATES_REGISTRY_HASH="$(printf '%s' "${tmp_json}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.hash // empty')"
+			MCP_RESOURCES_TEMPLATES_TOTAL="$(printf '%s' "${tmp_json}" | "${MCPBASH_JSON_TOOL_BIN}" '.total // 0')"
+			if ! mcp_resources_templates_enforce_registry_limits "${MCP_RESOURCES_TEMPLATES_TOTAL}" "${MCP_RESOURCES_TEMPLATES_REGISTRY_JSON}"; then
+				return 1
+			fi
+			# Trust pre-generated cache and start TTL window from now (not file mtime, which fails for extracted bundles)
+			if [ -z "${MCP_RESOURCES_TEMPLATES_LAST_SCAN}" ]; then
+				MCP_RESOURCES_TEMPLATES_LAST_SCAN="$(date +%s)"
+			fi
+		else
+			mcp_logging_warning "${MCP_RESOURCES_TEMPLATES_LOGGER}" "Discarding invalid resource templates registry cache"
+			MCP_RESOURCES_TEMPLATES_REGISTRY_JSON=""
+		fi
+	else
+		if mcp_logging_verbose_enabled; then
+			mcp_logging_warning "${MCP_RESOURCES_TEMPLATES_LOGGER}" "Failed to read resource templates registry cache ${MCP_RESOURCES_TEMPLATES_REGISTRY_PATH}"
+		else
+			mcp_logging_warning "${MCP_RESOURCES_TEMPLATES_LOGGER}" "Failed to read resource templates registry cache"
+		fi
+		MCP_RESOURCES_TEMPLATES_REGISTRY_JSON=""
+	fi
+	return 0
 }
 
 mcp_resources_templates_manual_begin() {
@@ -1137,6 +1225,47 @@ mcp_resources_templates_refresh_registry() {
 	scan_root="$(mcp_resources_scan_root)"
 	mcp_resources_templates_init
 
+	# Static registry mode: check register.json (data-only), skip register.sh (shell code)
+	if [ "${MCPBASH_STATIC_REGISTRY:-0}" = "1" ]; then
+		local json_path
+		json_path="$(mcp_registry_declarative_path)"
+
+		# Still allow declarative overrides via register.json (but NOT register.sh)
+		if [ -f "${json_path}" ]; then
+			mcp_registry_register_apply "resourceTemplates"
+			if [ "${MCP_REGISTRY_REGISTER_LAST_APPLIED:-false}" = "true" ]; then
+				return 0
+			fi
+		fi
+		# Load pre-generated cache
+		if ! mcp_resources_templates_load_cache_if_empty; then
+			return 1
+		fi
+		# Check format version for cache compatibility
+		if [ -n "${MCP_RESOURCES_TEMPLATES_REGISTRY_JSON}" ]; then
+			local cache_version
+			cache_version="$(printf '%s' "${MCP_RESOURCES_TEMPLATES_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.format_version // 0')"
+			if [ "${cache_version}" != "1" ]; then
+				mcp_logging_debug "${MCP_RESOURCES_TEMPLATES_LOGGER}" "Static registry mode: cache format version mismatch (expected 1, got ${cache_version}), falling back to discovery"
+				MCP_RESOURCES_TEMPLATES_REGISTRY_JSON=""
+			fi
+		fi
+		# Return if cache valid AND not CLI forced refresh (LAST_SCAN=0)
+		if [ -n "${MCP_RESOURCES_TEMPLATES_REGISTRY_JSON}" ] && [ "${MCP_RESOURCES_TEMPLATES_LAST_SCAN}" != "0" ]; then
+			# One-time info log to help developers who forget to disable static mode
+			if [ "${MCPBASH_STATIC_REGISTRY_LOGGED:-}" != "true" ]; then
+				mcp_logging_info "${MCP_RESOURCES_TEMPLATES_LOGGER}" "Static registry mode active - new tools/resources won't be discovered until restart or MCPBASH_STATIC_REGISTRY=0"
+				export MCPBASH_STATIC_REGISTRY_LOGGED=true
+			fi
+			mcp_logging_debug "${MCP_RESOURCES_TEMPLATES_LOGGER}" "Static registry mode: using pre-generated cache (${MCP_RESOURCES_TEMPLATES_TOTAL} templates)"
+			return 0
+		fi
+		# Fall through to normal discovery if cache missing or CLI forced
+		if [ -z "${MCP_RESOURCES_TEMPLATES_REGISTRY_JSON}" ]; then
+			mcp_logging_debug "${MCP_RESOURCES_TEMPLATES_LOGGER}" "Static registry mode: cache missing/invalid, falling back to discovery"
+		fi
+	fi
+
 	local resources_available=true
 	if [ -z "${MCP_RESOURCES_REGISTRY_JSON}" ]; then
 		if ! mcp_resources_refresh_registry 2>/dev/null; then
@@ -1171,28 +1300,8 @@ mcp_resources_templates_refresh_registry() {
 	0) ttl=5 ;;
 	esac
 
-	if [ -z "${MCP_RESOURCES_TEMPLATES_REGISTRY_JSON}" ] && [ -f "${MCP_RESOURCES_TEMPLATES_REGISTRY_PATH}" ]; then
-		local tmp_json=""
-		if tmp_json="$(cat "${MCP_RESOURCES_TEMPLATES_REGISTRY_PATH}")"; then
-			if printf '%s' "${tmp_json}" | "${MCPBASH_JSON_TOOL_BIN}" . >/dev/null 2>&1; then
-				MCP_RESOURCES_TEMPLATES_REGISTRY_JSON="${tmp_json}"
-				MCP_RESOURCES_TEMPLATES_REGISTRY_HASH="$(printf '%s' "${tmp_json}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.hash // empty')"
-				MCP_RESOURCES_TEMPLATES_TOTAL="$(printf '%s' "${tmp_json}" | "${MCPBASH_JSON_TOOL_BIN}" '.total // 0')"
-				if ! mcp_resources_templates_enforce_registry_limits "${MCP_RESOURCES_TEMPLATES_TOTAL}" "${MCP_RESOURCES_TEMPLATES_REGISTRY_JSON}"; then
-					return 1
-				fi
-			else
-				mcp_logging_warning "${MCP_RESOURCES_TEMPLATES_LOGGER}" "Discarding invalid resource templates registry cache"
-				MCP_RESOURCES_TEMPLATES_REGISTRY_JSON=""
-			fi
-		else
-			if mcp_logging_verbose_enabled; then
-				mcp_logging_warning "${MCP_RESOURCES_TEMPLATES_LOGGER}" "Failed to read resource templates registry cache ${MCP_RESOURCES_TEMPLATES_REGISTRY_PATH}"
-			else
-				mcp_logging_warning "${MCP_RESOURCES_TEMPLATES_LOGGER}" "Failed to read resource templates registry cache"
-			fi
-			MCP_RESOURCES_TEMPLATES_REGISTRY_JSON=""
-		fi
+	if ! mcp_resources_templates_load_cache_if_empty; then
+		return 1
 	fi
 
 	if [ "${MCP_RESOURCES_TEMPLATES_MANUAL_UPDATED}" != "true" ] && [ -n "${MCP_RESOURCES_TEMPLATES_REGISTRY_JSON}" ] && [ $((now - MCP_RESOURCES_TEMPLATES_LAST_SCAN)) -lt "${ttl}" ]; then
@@ -1283,7 +1392,7 @@ mcp_resources_templates_refresh_registry() {
 		--arg ts "${timestamp}" \
 		--arg hash "${hash}" \
 		--argjson total "${total}" \
-		'{version: ($ver|tonumber), generatedAt: $ts, items: .[0], hash: $hash, total: $total}')"
+		'{format_version: 1, version: ($ver|tonumber), generatedAt: $ts, items: .[0], hash: $hash, total: $total}')"
 
 	MCP_RESOURCES_TEMPLATES_REGISTRY_HASH="${hash}"
 	MCP_RESOURCES_TEMPLATES_TOTAL="${total}"
