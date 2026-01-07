@@ -1026,15 +1026,17 @@ mcp_byte_length() {
 #
 # Arguments:
 #   json_data       - Valid JSON data to return
-#   max_text_bytes  - Max size for content[].text (default: 4096)
+#   max_text_bytes  - Max size for content[].text (default: MCPBASH_MAX_TEXT_BYTES or 102400)
 #
 # Output: CallToolResult JSON to stdout
 # Returns: 0 always (MCP tool errors are expressed via isError, not exit codes)
 mcp_result_success() {
 	local data="$1"
 	# Sanitize max_text_bytes to avoid set -e hazards from non-numeric input
+	# Default: 100KB (102400) - large enough for typical LLM responses to avoid
+	# unhelpful summaries like "Success: object with 3 keys"
 	local max_text_bytes
-	max_text_bytes=$(__mcp_sdk_uint_or_default "${2:-}" 4096)
+	max_text_bytes=$(__mcp_sdk_uint_or_default "${2:-}" "${MCPBASH_MAX_TEXT_BYTES:-102400}")
 
 	# Guard: reject empty input
 	if [ -z "$data" ]; then

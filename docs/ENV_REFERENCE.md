@@ -14,6 +14,7 @@ Authoritative list of supported environment variables. Defaults shown are the sh
 | `MCPBASH_REGISTRY_REFRESH_PATH` | (unset) | Limit registry refresh to a subpath (must be a literal subpath of the default scan dir; no glob semantics). |
 | `MCPBASH_STATIC_REGISTRY` | (unset) | When `1`, skip runtime discovery and use pre-generated `.registry/*.json` cache directly. Designed for bundle deployments. Skips `register.sh` (shell code) but honors `register.json` (data-only). Falls back to normal discovery if cache missing. CLI `registry refresh` still works (overrides static mode). |
 | `MCPBASH_MAX_CONCURRENT_REQUESTS` | `16` | Worker slot cap. |
+| `MCPBASH_MAX_TEXT_BYTES` | `102400` | Max bytes for `content[].text` in `mcp_result_success` before summarization (100KB default ensures LLMs see full data). |
 | `MCPBASH_MAX_TOOL_OUTPUT_SIZE` | `10485760` | Tool stdout limit (bytes). |
 | `MCPBASH_MAX_TOOL_STDERR_SIZE` | `$MCPBASH_MAX_TOOL_OUTPUT_SIZE` | Tool stderr limit (bytes). |
 | `MCPBASH_MAX_RESOURCE_BYTES` | `$MCPBASH_MAX_TOOL_OUTPUT_SIZE` | Resource payload limit (bytes). |
