@@ -788,7 +788,8 @@ mcp_resources_poll() {
 	esac
 	local now
 	now="$(date +%s)"
-	if [ "${MCP_RESOURCES_LAST_SCAN}" -eq 0 ] || [ $((now - MCP_RESOURCES_LAST_SCAN)) -ge "${ttl}" ]; then
+	# Empty = uninitialized, 0 = CLI forced scan, else check TTL
+	if [ -z "${MCP_RESOURCES_LAST_SCAN}" ] || [ "${MCP_RESOURCES_LAST_SCAN}" -eq 0 ] || [ $((now - MCP_RESOURCES_LAST_SCAN)) -ge "${ttl}" ]; then
 		mcp_resources_refresh_registry || true
 	fi
 	mcp_resources_templates_refresh_registry || true

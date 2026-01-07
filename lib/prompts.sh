@@ -721,7 +721,8 @@ mcp_prompts_poll() {
 	esac
 	local now
 	now="$(date +%s)"
-	if [ "${MCP_PROMPTS_LAST_SCAN}" -eq 0 ] || [ $((now - MCP_PROMPTS_LAST_SCAN)) -ge "${ttl}" ]; then
+	# Empty = uninitialized, 0 = CLI forced scan, else check TTL
+	if [ -z "${MCP_PROMPTS_LAST_SCAN}" ] || [ "${MCP_PROMPTS_LAST_SCAN}" -eq 0 ] || [ $((now - MCP_PROMPTS_LAST_SCAN)) -ge "${ttl}" ]; then
 		mcp_prompts_refresh_registry || true
 	fi
 	return 0
