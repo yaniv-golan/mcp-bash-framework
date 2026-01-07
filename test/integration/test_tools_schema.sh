@@ -52,7 +52,9 @@ test_assert_eq "0" "${call_error_exit}" "expected debug error payload to include
 call_error_trace="$(jq -r 'select(.id=="call") | .error.data.traceAvailable | tostring' "${WORKSPACE}/responses.ndjson")"
 test_assert_eq "false" "${call_error_trace}" "expected debug error payload to include trace availability"
 
-# Modify tool metadata and script to force list_changed via TTL
+# Modify tool metadata and script to force list_changed
+# Invalidate registry cache so the change is detected (TTL-based detection is timing-dependent)
+test_invalidate_registry_cache "${WORKSPACE}"
 cat <<'META' >"${WORKSPACE}/tools/schema/tool.meta.json"
 {"name":"schema.tool","description":"structured (updated)","arguments":{"type":"object","properties":{}},"outputSchema":{"type":"object","properties":{"message":{"type":"string"}},"required":["message"]}}
 META

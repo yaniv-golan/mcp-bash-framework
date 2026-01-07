@@ -466,11 +466,17 @@ test_run_mcp() {
 		cd "${workspace}" || exit 1
 		# Export any POLICY_* vars inherited from calling context (shell vars aren't
 		# automatically exported to external commands like mcp-bash).
-		# Use indirect expansion ${!_var} to get the value of the variable named in _var.
-		for _var in "${!POLICY_@}"; do
-			export "${_var}=${!_var}"
-		done
-		unset _var
+		# Using env|grep instead of ${!POLICY_@} for better portability across bash versions.
+		_policy_env="$(env 2>/dev/null | grep -E '^POLICY_' || true)"
+		if [ -n "${_policy_env}" ]; then
+			while IFS= read -r _line; do
+				[ -n "${_line}" ] || continue
+				_name="${_line%%=*}"
+				_value="${_line#*=}"
+				export "${_name}=${_value}"
+			done <<<"${_policy_env}"
+		fi
+		unset _policy_env _name _value _line 2>/dev/null || true
 		# Use export to ensure vars are available to mcp-bash while preserving inherited env
 		export MCPBASH_PROJECT_ROOT="${workspace}"
 		export MCPBASH_ALLOW_PROJECT_HOOKS="${MCPBASH_ALLOW_PROJECT_HOOKS:-}"
