@@ -5,7 +5,7 @@ All notable changes to mcp-bash-framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.9.4] - Unreleased
+## [0.9.4] - 2026-01-07
 
 ### Added
 - **Static registry mode** (`MCPBASH_STATIC_REGISTRY=1`): Opt-in mode for bundle deployments that skips runtime discovery and uses pre-generated `.registry/*.json` cache files directly. Reduces cold start time by skipping TTL checks, fastpath detection, and directory scanning. When enabled:
