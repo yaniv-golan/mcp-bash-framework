@@ -849,34 +849,26 @@ mcp_tools_scan() {
 			local annotations="null"
 
 			if [ -f "${meta_json}" ]; then
-				local meta_parts=()
-				while IFS= read -r field; do
-					# Strip \r to handle CRLF line endings from Windows checkouts
-					field="${field%$'\r'}"
-					meta_parts+=("${field}")
-				done < <("${MCPBASH_JSON_TOOL_BIN}" -r '
-					[
-						(.name // ""),
-						(.description // ""),
-						(.inputSchema // .arguments // {type:"object",properties:{}} | @json),
-						(.timeoutSecs // ""),
-						(.outputSchema // null | @json),
-						(.icons // null | @json),
-						(.annotations // null | @json)
-					]
-					| .[]
-				' "${meta_json}" 2>/dev/null | tr -d '\r' || true)
+				# Read each field individually to handle multi-line descriptions correctly
+				local meta_name meta_desc meta_args meta_timeout meta_outschema meta_icons meta_annot
+				meta_name="$("${MCPBASH_JSON_TOOL_BIN}" -r '.name // ""' "${meta_json}" 2>/dev/null || true)"
+				meta_desc="$("${MCPBASH_JSON_TOOL_BIN}" -r '.description // ""' "${meta_json}" 2>/dev/null || true)"
+				meta_args="$("${MCPBASH_JSON_TOOL_BIN}" -c '.inputSchema // .arguments // {type:"object",properties:{}}' "${meta_json}" 2>/dev/null || echo '{}')"
+				meta_timeout="$("${MCPBASH_JSON_TOOL_BIN}" -r '.timeoutSecs // ""' "${meta_json}" 2>/dev/null || true)"
+				meta_outschema="$("${MCPBASH_JSON_TOOL_BIN}" -c '.outputSchema // null' "${meta_json}" 2>/dev/null || echo 'null')"
+				meta_icons="$("${MCPBASH_JSON_TOOL_BIN}" -c '.icons // null' "${meta_json}" 2>/dev/null || echo 'null')"
+				meta_annot="$("${MCPBASH_JSON_TOOL_BIN}" -c '.annotations // null' "${meta_json}" 2>/dev/null || echo 'null')"
 
-				if [ "${#meta_parts[@]}" -eq 7 ]; then
-					[ -n "${meta_parts[2]}" ] || meta_parts[2]='{}'
-					[ -n "${meta_parts[4]}" ] || meta_parts[4]='null'
-					name="${meta_parts[0]:-${name}}"
-					description="${meta_parts[1]:-${description}}"
-					arguments="${meta_parts[2]}"
-					timeout="${meta_parts[3]}"
-					output_schema="${meta_parts[4]}"
-					icons="${meta_parts[5]:-${icons}}"
-					annotations="${meta_parts[6]:-${annotations}}"
+				if [ -n "${meta_name}" ] || [ -n "${meta_desc}" ]; then
+					[ -n "${meta_args}" ] || meta_args='{}'
+					[ -n "${meta_outschema}" ] || meta_outschema='null'
+					name="${meta_name:-${name}}"
+					description="${meta_desc:-${description}}"
+					arguments="${meta_args}"
+					timeout="${meta_timeout}"
+					output_schema="${meta_outschema}"
+					icons="${meta_icons:-${icons}}"
+					annotations="${meta_annot:-${annotations}}"
 					# Convert local file paths to data URIs
 					local meta_dir
 					meta_dir="$(dirname "${meta_json}")"

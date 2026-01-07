@@ -1,12 +1,12 @@
 {
   "name": "__NAME__",
-  "description": "One-line summary for __NAME__ tool",
+  "description": "One-line summary of what __NAME__ does.\n\nWhen to use: [Describe the use case]\nNot for: [Common misconception or wrong use case]\n\nExamples:\n- __NAME__ --arg value\n- __NAME__ --flag",
   "inputSchema": {
     "type": "object",
     "properties": {
-      "name": {
+      "exampleArg": {
         "type": "string",
-        "description": "Name to include in the greeting (defaults to World)"
+        "description": "Clear description of what this parameter does and its format. Example: 'user-123'"
       }
     }
   },

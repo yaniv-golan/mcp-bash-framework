@@ -136,7 +136,36 @@ Use `bin/mcp-bash scaffold test` inside an existing project to generate a minima
 
 _Asciinema tip_: Record a short run of `bin/mcp-bash scaffold tool sample.hello` plus `./test/examples/test_examples.sh` so newcomers can view the workflow end-to-end.
 
-### 4.2 SDK usage patterns
+### 4.2 LLM-friendly tool metadata
+
+When LLMs use your MCP tools, the only context they have is your metadata. Rich descriptions directly improve tool selection accuracy and reduce errors.
+
+**Key practices:**
+
+1. **Write multi-line descriptions** - Include "when to use", "when NOT to use", and examples:
+   ```json
+   {
+     "description": "Export entries from a list.\n\nWhen to use: Retrieve entities belonging to a specific list.\nNot for: Searching all entities globally (use entity-search).\n\nExamples:\n- list-export --list-id 123\n- list-export --list-id 456 --filter 'Status=Active'"
+   }
+   ```
+
+2. **Document every parameter** - Include format, valid values, and examples:
+   ```json
+   {
+     "filter": {
+       "type": "string",
+       "description": "Filter expression. Operators: = != ~= (contains). Example: 'Status=Active'"
+     }
+   }
+   ```
+
+3. **Create domain model resources** - For complex domains, provide a resource explaining your data model that LLMs can reference.
+
+4. **Include workflow hints** - Mention related tools and typical sequences in descriptions.
+
+See [docs/LLM-CONTEXT.md](LLM-CONTEXT.md) for comprehensive patterns and a documentation checklist.
+
+### 4.3 SDK usage patterns
 
 The SDK (`sdk/tool-sdk.sh`) provides helpers that eliminate boilerplate and ensure consistent behavior across tools. Source it at the top of every tool script:
 
@@ -503,7 +532,7 @@ source "${MCPBASH_PROJECT_ROOT}/lib/helpers.sh"
 
 Keep shared code under project roots to avoid leaking out-of-scope paths; consider a `lib/` README to describe available helpers.
 
-### 4.3 Error handling patterns
+### 4.4 Error handling patterns
 
 MCP distinguishes between **Protocol Errors** and **Tool Execution Errors**. This distinction is critical for enabling LLM self-correction. See [docs/ERRORS.md](ERRORS.md) for the full reference.
 
@@ -727,7 +756,7 @@ fi
 
 **Why not a framework helper?** This pattern requires Bash 4.3+ namerefs for a clean API. Since mcp-bash supports Bash 3.2+, we document the pattern instead.
 
-### 4.4 Common Bash Pitfalls
+### 4.5 Common Bash Pitfalls
 
 MCP-Bash tools use `set -euo pipefail` by default. Here are common gotchas:
 
@@ -779,16 +808,16 @@ set -o pipefail
 cmd | grep pattern  # Now fails if cmd fails
 ```
 
-### 4.5 Logging & instrumentation
+### 4.6 Logging & instrumentation
 - Use `MCPBASH_LOG_LEVEL` for startup defaults, then rely on `logging/setLevel` requests for runtime tuning (§6.2).
 - Enable `MCPBASH_LOG_VERBOSE=true` when debugging path-related issues; paths and manual-registration script output are redacted by default. **Warning**: verbose mode exposes file paths and usernames—disable after troubleshooting. See [docs/LOGGING.md](LOGGING.md).
 - Enable `MCPBASH_DEBUG_PAYLOADS` only while debugging parser bugs; purge `${TMPDIR}/mcpbash.state.*` afterward to avoid leaking sensitive payloads.
 
-### 4.6 Documentation hooks
+### 4.7 Documentation hooks
 - Every snippet in this guide and in new PRs should cite the source path/line to keep drift manageable.
 - When adding diagrams, include descriptive text such as "_Mermaid sequence describing lifecycle negotiation_" so text-only readers stay informed (§Supporting Assets).
 
-### 4.7 Building CallToolResult responses
+### 4.8 Building CallToolResult responses
 
 The SDK provides helpers for building MCP `CallToolResult` responses with consistent `{success, result}` envelope patterns. These helpers handle `structuredContent`, `content[].text` population, and `isError` flag management.
 
@@ -906,7 +935,7 @@ fi
 
 The result helpers are recommended for new tools as they provide consistent response shapes that clients can rely on.
 
-### 4.8 Progress passthrough from subprocesses
+### 4.9 Progress passthrough from subprocesses
 
 When wrapping external CLIs that emit progress information to stderr, use `mcp_run_with_progress` to automatically parse and forward MCP progress notifications:
 
@@ -1299,7 +1328,8 @@ flowchart TD
 ## Doc changelog
 | Date | Version | Notes |
 | --- | --- | --- |
-| 2026-01-06 | v1.5 | Added §4.8 "Progress passthrough from subprocesses" covering `mcp_run_with_progress` helper for forwarding CLI progress to MCP. Includes common patterns for NDJSON, percentage, counter, and ffmpeg-style CLIs. Updated SDK quick reference table. |
+| 2026-01-07 | v1.6 | Added §4.2 "LLM-friendly tool metadata" covering rich descriptions, parameter documentation, and domain model resources. Created companion doc [LLM-CONTEXT.md](LLM-CONTEXT.md) with comprehensive patterns. Renumbered subsequent sections (§4.3-§4.9). Updated scaffold template with description guidance. |
+| 2026-01-06 | v1.5 | Added §4.9 "Progress passthrough from subprocesses" covering `mcp_run_with_progress` helper for forwarding CLI progress to MCP. Includes common patterns for NDJSON, percentage, counter, and ffmpeg-style CLIs. Updated SDK quick reference table. |
 | 2026-01-04 | v1.4 | Added §4.7 "Building CallToolResult responses" covering `mcp_result_success`, `mcp_result_error`, `mcp_json_truncate`, `mcp_is_valid_json`, and `mcp_byte_length` helpers. Updated SDK quick reference table. Added "Capturing stdout and stderr separately" pattern to §4.3. |
 | 2026-01-03 | v1.3 | Added `mcp_with_retry` SDK helper for retrying transient failures. Added parallel external calls and rate limiting patterns. Added project health checks hook (`server.d/health-checks.sh`). Added "Common Bash Pitfalls" section (§4.4) covering `((var++))` under `set -e`, empty arrays, and pipefail. |
 | 2026-01-03 | v1.2 | Added "Calling external CLI tools" section (§4.3) with safe jq pipeline patterns, fallback defaults table, and external command quick reference. Added cross-reference in ERRORS.md. |

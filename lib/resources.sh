@@ -492,30 +492,22 @@ mcp_resources_scan() {
 			local icons="null"
 
 			if [ -f "${meta_json}" ]; then
-				local meta_parts=()
-				while IFS= read -r field; do
-					# Strip \r to handle CRLF line endings from Windows checkouts
-					field="${field%$'\r'}"
-					meta_parts+=("${field}")
-				done < <("${MCPBASH_JSON_TOOL_BIN}" -r '
-					[
-						(.name // ""),
-						(.description // ""),
-						(.uri // ""),
-						(.mimeType // "text/plain"),
-						(.provider // ""),
-						(.icons // null | @json)
-					]
-					| .[]
-				' "${meta_json}" 2>/dev/null | tr -d '\r' || true)
+				# Read each field individually to handle multi-line descriptions correctly
+				local meta_name meta_desc meta_uri meta_mime meta_provider meta_icons
+				meta_name="$("${MCPBASH_JSON_TOOL_BIN}" -r '.name // ""' "${meta_json}" 2>/dev/null | tr -d '\r' || true)"
+				meta_desc="$("${MCPBASH_JSON_TOOL_BIN}" -r '.description // ""' "${meta_json}" 2>/dev/null | tr -d '\r' || true)"
+				meta_uri="$("${MCPBASH_JSON_TOOL_BIN}" -r '.uri // ""' "${meta_json}" 2>/dev/null | tr -d '\r' || true)"
+				meta_mime="$("${MCPBASH_JSON_TOOL_BIN}" -r '.mimeType // "text/plain"' "${meta_json}" 2>/dev/null | tr -d '\r' || true)"
+				meta_provider="$("${MCPBASH_JSON_TOOL_BIN}" -r '.provider // ""' "${meta_json}" 2>/dev/null | tr -d '\r' || true)"
+				meta_icons="$("${MCPBASH_JSON_TOOL_BIN}" -c '.icons // null' "${meta_json}" 2>/dev/null || echo 'null')"
 
-				if [ "${#meta_parts[@]}" -eq 6 ]; then
-					[ -n "${meta_parts[0]}" ] && name="${meta_parts[0]}"
-					description="${meta_parts[1]:-${description}}"
-					uri="${meta_parts[2]:-${uri}}"
-					mime="${meta_parts[3]:-${mime}}"
-					provider="${meta_parts[4]:-${provider}}"
-					icons="${meta_parts[5]:-${icons}}"
+				if [ -n "${meta_name}" ] || [ -n "${meta_desc}" ] || [ -n "${meta_uri}" ]; then
+					[ -n "${meta_name}" ] && name="${meta_name}"
+					description="${meta_desc:-${description}}"
+					uri="${meta_uri:-${uri}}"
+					mime="${meta_mime:-${mime}}"
+					provider="${meta_provider:-${provider}}"
+					icons="${meta_icons:-${icons}}"
 				fi
 
 				# Convert local file paths to data URIs

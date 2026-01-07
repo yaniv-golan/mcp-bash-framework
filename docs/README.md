@@ -15,5 +15,6 @@ Quick entry points for common tasks and reference material.
 - **Security & remote**: [SECURITY.md](SECURITY.md), [REMOTE.md](REMOTE.md)
 - **Debugging/tests**: [DEBUGGING.md](DEBUGGING.md), [TESTING.md](../TESTING.md)
 - **Best practices**: [BEST-PRACTICES.md](BEST-PRACTICES.md), [LOGGING.md](LOGGING.md), [MINIMAL-MODE.md](MINIMAL-MODE.md)
-- **Response helpers**: [BEST-PRACTICES.md §4.7](BEST-PRACTICES.md#47-building-calltoolresult-responses) — `mcp_result_success`, `mcp_result_error`, `mcp_json_truncate`
+- **LLM context patterns**: [LLM-CONTEXT.md](LLM-CONTEXT.md) — writing descriptions, examples, domain resources for LLM tool use
+- **Response helpers**: [BEST-PRACTICES.md §4.8](BEST-PRACTICES.md#48-building-calltoolresult-responses) — `mcp_result_success`, `mcp_result_error`, `mcp_json_truncate`
 - **Distribution**: [MCPB.md](MCPB.md) — MCPB bundle format for one-click installation

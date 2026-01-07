@@ -5,6 +5,20 @@ All notable changes to mcp-bash-framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.4] - Unreleased
+
+### Added
+- **LLM context documentation**: New `docs/LLM-CONTEXT.md` guide covering patterns for building MCP servers that LLM agents can use effectively. Includes writing effective tool descriptions, parameter documentation, including examples in metadata, documenting tool relationships, creating domain model resources, discovery tool patterns, client compatibility workarounds for custom URI schemes, and anti-patterns to avoid. Includes documentation quality checklist.
+- **BEST-PRACTICES.md §4.2 "LLM-friendly tool metadata"**: Quick reference for rich descriptions, parameter docs, and domain resources with cross-reference to full LLM-CONTEXT.md guide.
+- **docs/README.md**: Added LLM context patterns entry to documentation index.
+
+### Changed
+- **Scaffold template improvements**: `scaffold/tool/tool.meta.json` now generates description placeholders with "When to use", "Not for", and "Examples" sections to encourage LLM-friendly documentation from the start. Parameter descriptions include format examples.
+- **BEST-PRACTICES.md section renumbering**: Sections §4.3-§4.9 renumbered to accommodate new §4.2.
+
+### Fixed
+- **Multi-line descriptions in resource metadata**: Fixed `lib/resources.sh` registry parsing to handle multi-line descriptions in `resource.meta.json`. Previously, descriptions with embedded newlines would break the field array parsing, causing resources to silently fall back to default names and empty descriptions. Now uses individual jq calls per field (matching the pattern already used in `lib/tools.sh`).
+
 ## [0.9.3] - 2025-01-06
 
 ### Added
