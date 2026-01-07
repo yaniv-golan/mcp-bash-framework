@@ -18,6 +18,25 @@ Output:
 mcp-bash debug: logging to /tmp/mcpbash.debug.12345/payload.debug.log
 ```
 
+## Debug File (Persistent Debug Mode)
+
+Instead of setting `MCPBASH_LOG_LEVEL=debug` each time, create a `.debug` marker file:
+
+```bash
+touch server.d/.debug    # Enable debug logging
+rm server.d/.debug       # Disable debug logging
+```
+
+Only the file's existence matters—contents are ignored. An empty file works fine.
+
+**Precedence**: Environment variable always wins. If `MCPBASH_LOG_LEVEL` is set, the `.debug` file is ignored.
+
+**Tip**: Add `server.d/.debug` to your `.gitignore` to prevent accidental commits:
+```
+# Debug marker file (enables MCPBASH_LOG_LEVEL=debug)
+server.d/.debug
+```
+
 ## Claude Desktop on macOS (PATH + quarantine)
 
 Claude Desktop often execs servers directly (no login shell), so `~/.zshrc`/`~/.bash_profile` are skipped and PATH/env customizations (nvm/pyenv/uv/rbenv, etc.) are missing. Common symptoms: `ENOENT` / `command not found`, `transport closed unexpectedly`, missing env vars. Location can matter on macOS: Desktop/Documents/Downloads are TCC-protected and Downloads is frequently quarantined.

@@ -8,6 +8,10 @@
 #   mcp-bash run-tool my-tool --with-server-env --args '{}'
 # Or set MCPBASH_RUN_TOOL_SOURCE_SERVER_ENV=1 to always source this file.
 
+# Debug mode: touch server.d/.debug to enable debug logging
+# (equivalent to MCPBASH_LOG_LEVEL=debug but persisted in the project)
+# The .debug file is checked automatically; no env.sh code needed.
+#
 # Placeholder variables; full configuration scaffolding arrives in later phases.
 # Example (commented): export MCPBASH_LOG_LEVEL="info"
 #

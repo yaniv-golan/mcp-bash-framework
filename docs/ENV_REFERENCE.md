@@ -23,7 +23,7 @@ Authoritative list of supported environment variables. Defaults shown are the sh
 | `MCPBASH_DEFAULT_TOOL_TIMEOUT` | `30` | Default tool timeout (seconds). |
 | `MCPBASH_DEFAULT_SUBSCRIBE_TIMEOUT` | `120` | Default `resources/subscribe` timeout (seconds). |
 | `MCPBASH_SHUTDOWN_TIMEOUT` | `5` | Graceful shutdown timeout (seconds). |
-| `MCPBASH_LOG_LEVEL` | `info` | RFC-5424 level; `debug` shows discovery traces. |
+| `MCPBASH_LOG_LEVEL` | `info` | RFC-5424 level; `debug` shows discovery traces. Can also be enabled via `server.d/.debug` file (see [DEBUGGING.md](DEBUGGING.md#debug-file-persistent-debug-mode)). |
 | `MCPBASH_LOG_VERBOSE` | (unset) | `true` logs full paths/manual registration output (security risk). |
 | `MCPBASH_CI_MODE` | `false` | CI defaults: safe tmp/log dirs, keep logs, timestamps, failure summary/env snapshot, GH annotations when tracing provides file/line. |
 | `MCPBASH_ENABLE_LIVE_PROGRESS` | `false` | Stream progress/logs during tool execution (starts a background flusher); when `false`, progress/logs are emitted at completion. |

@@ -437,6 +437,14 @@ mcp_runtime_init_paths() {
 	fi
 	mkdir -p "${MCPBASH_SERVER_DIR}" >/dev/null 2>&1 || true
 
+	# --- Debug file detection ---
+	# Enable debug logging if .debug marker file exists in server.d/
+	# Env var takes precedence over file (standard Unix convention)
+	if [ -z "${MCPBASH_LOG_LEVEL:-}" ] && [ -n "${MCPBASH_SERVER_DIR:-}" ] && [ -f "${MCPBASH_SERVER_DIR}/.debug" ]; then
+		export MCPBASH_LOG_LEVEL="debug"
+		export _MCPBASH_DEBUG_VIA_FILE=1 # Flag for deferred log message
+	fi
+
 	# Providers directory (project-level custom providers)
 	# Unlike other content directories, this is NOT auto-created (providers are optional)
 	if [ -z "${MCPBASH_PROVIDERS_DIR:-}" ]; then
@@ -462,7 +470,12 @@ mcp-bash: Resolved paths:
   MCPBASH_PROVIDERS_DIR=${MCPBASH_PROVIDERS_DIR}
   MCPBASH_REGISTRY_DIR=${MCPBASH_REGISTRY_DIR}
 EOF
+		if [ "${_MCPBASH_DEBUG_VIA_FILE:-}" = "1" ]; then
+			printf '  (debug enabled via server.d/.debug file)\n' >&2
+		fi
 	fi
+	# Cleanup flag regardless of debug output path
+	unset _MCPBASH_DEBUG_VIA_FILE 2>/dev/null || true
 }
 
 mcp_runtime_cleanup() {

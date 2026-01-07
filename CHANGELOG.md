@@ -5,6 +5,15 @@ All notable changes to mcp-bash-framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.5] - Unreleased
+
+### Added
+- **Debug file detection**: Create `server.d/.debug` to enable `MCPBASH_LOG_LEVEL=debug` persistently per-project. Eliminates boilerplate debug detection in `server.d/env.sh`. Environment variable takes precedence if set. See [DEBUGGING.md](docs/DEBUGGING.md#debug-file-persistent-debug-mode).
+
+### Changed
+
+### Fixed
+
 ## [0.9.4] - 2026-01-07
 
 ### Added
