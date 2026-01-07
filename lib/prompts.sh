@@ -309,8 +309,17 @@ mcp_prompts_refresh_registry() {
 	if ! mcp_prompts_load_cache_if_empty; then
 		return 1
 	fi
-	if [ -n "${MCP_PROMPTS_REGISTRY_JSON}" ] && [ $((now - MCP_PROMPTS_LAST_SCAN)) -lt "${MCP_PROMPTS_TTL}" ]; then
+	local cache_age ttl="${MCP_PROMPTS_TTL}"
+	if [ -n "${MCP_PROMPTS_REGISTRY_JSON}" ] && [ $((now - MCP_PROMPTS_LAST_SCAN)) -lt "${ttl}" ]; then
+		cache_age=$((now - MCP_PROMPTS_LAST_SCAN))
+		mcp_logging_debug "${MCP_PROMPTS_LOGGER}" "Cache hit: prompts.json (age=${cache_age}s, ttl=${ttl}s)"
 		return 0
+	fi
+	if [ -n "${MCP_PROMPTS_REGISTRY_JSON}" ]; then
+		cache_age=$((now - MCP_PROMPTS_LAST_SCAN))
+		mcp_logging_debug "${MCP_PROMPTS_LOGGER}" "Cache stale: prompts.json (age=${cache_age}s, ttl=${ttl}s), will rescan"
+	else
+		mcp_logging_debug "${MCP_PROMPTS_LOGGER}" "Cache miss: prompts.json not loaded"
 	fi
 
 	local fastpath_snapshot

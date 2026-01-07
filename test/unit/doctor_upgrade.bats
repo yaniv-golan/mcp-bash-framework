@@ -10,7 +10,7 @@ load '../common/fixtures'
 EXIT_POLICY_REFUSAL="3"
 
 setup() {
-	command -v jq >/dev/null 2>&1 || skip "jq required"
+	[ -n "${TEST_JSON_TOOL_BIN:-}" ] || skip "jq/gojq required"
 
 	# Initialize SHA256 command
 	if command -v sha256sum >/dev/null 2>&1; then

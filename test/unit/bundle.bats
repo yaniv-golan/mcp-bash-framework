@@ -7,7 +7,7 @@ load '../../node_modules/bats-file/load'
 load '../common/fixtures'
 
 setup() {
-	command -v jq >/dev/null 2>&1 || skip "jq required"
+	[ -n "${TEST_JSON_TOOL_BIN:-}" ] || skip "jq/gojq required"
 	command -v zip >/dev/null 2>&1 || skip "zip required"
 	command -v unzip >/dev/null 2>&1 || skip "unzip required"
 

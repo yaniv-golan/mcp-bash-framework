@@ -64,6 +64,31 @@ Unit tests use [bats-core](https://bats-core.readthedocs.io/) with 219 tests acr
 - When you need sequential interactive calls without prebuilding request files, source `test/common/session.sh` and use `mcp_session_start`/`mcp_session_call`/`mcp_session_end`.
 - Limitations: skips notifications, overwrites EXIT traps (clears them on cleanup), no timeout, minimal error handling.
 
+### Registry Cache in Tests
+
+The MCP server caches discovered tools/resources/prompts for 5 seconds (TTL). When tests add components mid-run, subsequent test invocations may not see them.
+
+**Rule**: If your test creates tools/resources/prompts AFTER calling `test_run_mcp`, invalidate the cache before the next invocation:
+
+```bash
+# Create tool after initial test
+mkdir -p "${WORKSPACE}/tools/new-tool"
+# ... create tool.meta.json and tool.sh ...
+
+# IMPORTANT: Invalidate cache
+test_invalidate_registry_cache "${WORKSPACE}"
+
+# Now test_run_mcp will discover new-tool
+test_run_mcp "${WORKSPACE}" ...
+```
+
+**Symptoms of cache staleness**:
+- `-32603 "Tool execution failed"` when you expect a policy error
+- `tools/list` returns fewer tools than expected
+- Tool exists on disk but calls fail with "not found"
+
+**Debugging**: Use `MCPBASH_LOG_LEVEL=debug` to see cache hit/miss decisions in stderr.
+
 ## Examples Suite
 
 ```

@@ -451,9 +451,17 @@ mcp_resources_refresh_registry() {
 	if ! mcp_resources_load_cache_if_empty; then
 		return 1
 	fi
-	if [ -n "${MCP_RESOURCES_REGISTRY_JSON}" ] && [ $((now - MCP_RESOURCES_LAST_SCAN)) -lt "${MCP_RESOURCES_TTL}" ]; then
-		mcp_logging_debug "${MCP_RESOURCES_LOGGER}" "Refresh skipped due to ttl (last=${MCP_RESOURCES_LAST_SCAN})"
+	local cache_age ttl="${MCP_RESOURCES_TTL}"
+	if [ -n "${MCP_RESOURCES_REGISTRY_JSON}" ] && [ $((now - MCP_RESOURCES_LAST_SCAN)) -lt "${ttl}" ]; then
+		cache_age=$((now - MCP_RESOURCES_LAST_SCAN))
+		mcp_logging_debug "${MCP_RESOURCES_LOGGER}" "Cache hit: resources.json (age=${cache_age}s, ttl=${ttl}s)"
 		return 0
+	fi
+	if [ -n "${MCP_RESOURCES_REGISTRY_JSON}" ]; then
+		cache_age=$((now - MCP_RESOURCES_LAST_SCAN))
+		mcp_logging_debug "${MCP_RESOURCES_LOGGER}" "Cache stale: resources.json (age=${cache_age}s, ttl=${ttl}s), will rescan"
+	else
+		mcp_logging_debug "${MCP_RESOURCES_LOGGER}" "Cache miss: resources.json not loaded"
 	fi
 
 	local fastpath_snapshot

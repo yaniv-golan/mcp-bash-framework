@@ -25,7 +25,7 @@ META
 cat <<'SH' >"${WORKSPACE}/tools/echo/tool.sh"
 #!/usr/bin/env bash
 set -euo pipefail
-printf '%s' "$(jq -r '.msg // "ok"' <<<"${MCP_TOOL_ARGS_JSON:-"{}"}")"
+printf '%s' "$("${MCPBASH_JSON_TOOL_BIN}" -r '.msg // "ok"' <<<"${MCP_TOOL_ARGS_JSON:-"{}"}")"
 SH
 chmod +x "${WORKSPACE}/tools/echo/tool.sh"
 

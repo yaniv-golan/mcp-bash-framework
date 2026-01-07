@@ -7,8 +7,7 @@ load '../common/fixtures'
 load '../common/ndjson'
 
 setup() {
-	unset -f jq 2>/dev/null || true
-	command -v jq >/dev/null 2>&1 || skip "jq required"
+	[ -n "${TEST_JSON_TOOL_BIN:-}" ] || skip "jq/gojq required"
 
 	PROJECT_ROOT="${BATS_TEST_TMPDIR}/proj"
 	mkdir -p "${PROJECT_ROOT}/server.d" "${PROJECT_ROOT}/tools/hello"

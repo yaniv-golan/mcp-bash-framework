@@ -32,6 +32,11 @@ setup() {
 			return 0
 		}
 	fi
+	if ! command -v mcp_logging_debug >/dev/null 2>&1; then
+		mcp_logging_debug() {
+			return 0
+		}
+	fi
 
 	MCPBASH_TMP_ROOT="${BATS_TEST_TMPDIR}"
 	MCPBASH_STATE_DIR="${BATS_TEST_TMPDIR}/state"

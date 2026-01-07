@@ -7,7 +7,7 @@ load '../common/fixtures'
 load '../common/ndjson'
 
 setup() {
-	command -v jq >/dev/null 2>&1 || skip "jq required"
+	[ -n "${TEST_JSON_TOOL_BIN:-}" ] || skip "jq/gojq required"
 }
 
 @test "doctor_modes: doctor rejects --fix + --dry-run" {

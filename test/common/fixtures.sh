@@ -29,5 +29,6 @@ test_stage_example() {
 	# shellcheck disable=SC2034
 	MCP_TEST_WORKDIR="${TMP_WORKDIR}"
 	# Export MCPBASH_PROJECT_ROOT for the test
+	# shellcheck disable=SC2031  # Intentional: variable is set and used within this function scope
 	export MCPBASH_PROJECT_ROOT="${TMP_WORKDIR}"
 }

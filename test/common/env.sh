@@ -413,9 +413,44 @@ test_stage_workspace() {
 	mkdir -p "${dest}/server.d"
 }
 
+# Clear all registry caches in a workspace to force re-discovery.
+# Use this when tests add tools/resources/prompts mid-run, since the server caches
+# discovered components for TTL seconds (default 5s). Without invalidation,
+# subsequent test_run_mcp calls may not see newly created components.
+#
+# Example:
+#   # Create tool after initial test
+#   mkdir -p "${WORKSPACE}/tools/new-tool"
+#   # ... create files ...
+#   test_invalidate_registry_cache "${WORKSPACE}"
+#   # Now test_run_mcp will discover new-tool
+#   test_run_mcp "${WORKSPACE}" ...
+#
+# Symptoms of cache staleness:
+# - -32603 "Tool execution failed" when expecting a policy/validation error
+# - tools/list returns fewer tools than expected
+# - Tool exists on disk but calls fail with "not found"
+test_invalidate_registry_cache() {
+	local workspace="${1:-${TEST_TMPDIR:-}}"
+	if [ -z "${workspace}" ]; then
+		printf 'test_invalidate_registry_cache: no workspace specified\n' >&2
+		return 1
+	fi
+	rm -f "${workspace}/.registry/tools.json"
+	rm -f "${workspace}/.registry/resources.json"
+	rm -f "${workspace}/.registry/prompts.json"
+	rm -f "${workspace}/.registry/resource-templates.json"
+}
+
 # Run mcp-bash with newline-delimited JSON requests and capture the raw output.
 # Tests should call assert helpers afterwards to validate responses.
 # The workspace serves as both MCPBASH_HOME (framework) and MCPBASH_PROJECT_ROOT (project).
+# Note: All environment variables from the calling context are inherited (e.g., POLICY_*).
+#
+# IMPORTANT: Registry cache behavior
+# The server caches discovered tools/resources/prompts for TTL seconds (default 5s).
+# If your test creates components AFTER an earlier test_run_mcp call, you must call
+# test_invalidate_registry_cache before the next test_run_mcp to see the new components.
 test_run_mcp() {
 	local workspace="$1"
 	local requests_file="$2"
@@ -429,13 +464,21 @@ test_run_mcp() {
 
 	(
 		cd "${workspace}" || exit 1
-		MCPBASH_PROJECT_ROOT="${workspace}" \
-			MCPBASH_ALLOW_PROJECT_HOOKS="${MCPBASH_ALLOW_PROJECT_HOOKS:-}" \
-			MCPBASH_LOG_LEVEL="${MCPBASH_LOG_LEVEL:-info}" \
-			MCPBASH_DEBUG_PAYLOADS="${MCPBASH_DEBUG_PAYLOADS:-}" \
-			MCPBASH_REMOTE_TOKEN="${MCPBASH_REMOTE_TOKEN:-}" \
-			MCPBASH_REMOTE_TOKEN_KEY="${MCPBASH_REMOTE_TOKEN_KEY:-}" \
-			MCPBASH_REMOTE_TOKEN_FALLBACK_KEY="${MCPBASH_REMOTE_TOKEN_FALLBACK_KEY:-}" \
-			./bin/mcp-bash <"${requests_file}" >"${responses_file}" 2>"${stderr_file}"
+		# Export any POLICY_* vars inherited from calling context (shell vars aren't
+		# automatically exported to external commands like mcp-bash).
+		# Use indirect expansion ${!_var} to get the value of the variable named in _var.
+		for _var in "${!POLICY_@}"; do
+			export "${_var}=${!_var}"
+		done
+		unset _var
+		# Use export to ensure vars are available to mcp-bash while preserving inherited env
+		export MCPBASH_PROJECT_ROOT="${workspace}"
+		export MCPBASH_ALLOW_PROJECT_HOOKS="${MCPBASH_ALLOW_PROJECT_HOOKS:-}"
+		export MCPBASH_LOG_LEVEL="${MCPBASH_LOG_LEVEL:-info}"
+		export MCPBASH_DEBUG_PAYLOADS="${MCPBASH_DEBUG_PAYLOADS:-}"
+		export MCPBASH_REMOTE_TOKEN="${MCPBASH_REMOTE_TOKEN:-}"
+		export MCPBASH_REMOTE_TOKEN_KEY="${MCPBASH_REMOTE_TOKEN_KEY:-}"
+		export MCPBASH_REMOTE_TOKEN_FALLBACK_KEY="${MCPBASH_REMOTE_TOKEN_FALLBACK_KEY:-}"
+		./bin/mcp-bash <"${requests_file}" >"${responses_file}" 2>"${stderr_file}"
 	)
 }

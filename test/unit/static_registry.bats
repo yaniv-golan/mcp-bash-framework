@@ -7,7 +7,7 @@ load '../../node_modules/bats-file/load'
 load '../common/fixtures'
 
 setup() {
-	command -v jq >/dev/null 2>&1 || skip "jq required"
+	[ -n "${TEST_JSON_TOOL_BIN:-}" ] || skip "jq/gojq required"
 
 	# shellcheck source=lib/hash.sh
 	# shellcheck disable=SC1091

@@ -82,7 +82,7 @@ source "${MCP_SDK}/tool-sdk.sh"
 
 error_type=$(mcp_args_require '.error_type')
 message=$(mcp_args_require '.message')
-mcp_result_error "$(jq -n --arg t "$error_type" --arg m "$message" '{type: $t, message: $m}')"
+mcp_result_error "$("${MCPBASH_JSON_TOOL_BIN}" -n --arg t "$error_type" --arg m "$message" '{type: $t, message: $m}')"
 TOOL
 chmod +x "${PROJECT_ROOT}/tools/error-test/tool.sh"
 
@@ -112,7 +112,7 @@ count=$(mcp_args_require '.count')
 max_bytes=$(mcp_args_require '.max_bytes')
 
 # Generate array of items
-data=$(jq -n --argjson c "$count" '[range($c)] | map({id: ., name: "item-\(.)"})')
+data=$("${MCPBASH_JSON_TOOL_BIN}" -n --argjson c "$count" '[range($c)] | map({id: ., name: "item-\(.)"})')
 truncated=$(mcp_json_truncate "$data" "$max_bytes")
 
 mcp_result_success "$truncated"

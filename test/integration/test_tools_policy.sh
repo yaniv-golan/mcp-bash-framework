@@ -58,7 +58,9 @@ mcp_tools_policy_check() {
 	# Metadata-driven denial: block tools whose timeout exceeds 10s
 	if [ "${POLICY_MAX_TIMEOUT:-0}" != "0" ]; then
 		local timeout
-		timeout="$(printf '%s' "${metadata_json}" | jq -r '.timeoutSecs // 0')"
+		timeout="$(mcp_json_extract_optional "${metadata_json}" -r '.timeoutSecs // 0' 0)"
+		# Guard against empty/non-numeric values (fallback to 0)
+		case "${timeout}" in ''|*[!0-9]*) timeout=0 ;; esac
 		if [ "${timeout}" -gt "${POLICY_MAX_TIMEOUT}" ]; then
 			mcp_tools_error -32602 "Tool '${tool_name}' exceeds policy timeout" "{\"timeout\":${timeout}}"
 			return 1
@@ -130,6 +132,9 @@ cat <<'SH' >"${POLICY_ROOT}/tools/slow/tool.sh"
 printf '{"ok":true}'
 SH
 chmod +x "${POLICY_ROOT}/tools/slow/tool.sh"
+
+# Invalidate cache to force re-discovery (slow tool was created after earlier tests cached tools.json)
+test_invalidate_registry_cache "${POLICY_ROOT}"
 
 cat <<'REQ' >"${POLICY_ROOT}/requests-timeout.ndjson"
 {"jsonrpc":"2.0","id":"init-timeout","method":"initialize","params":{}}

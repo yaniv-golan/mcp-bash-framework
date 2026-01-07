@@ -477,9 +477,18 @@ mcp_tools_load_cache_if_empty() {
 
 mcp_tools_cache_fresh() {
 	local now="$1"
+	local cache_age ttl="${MCP_TOOLS_TTL}"
 
-	if [ -n "${MCP_TOOLS_REGISTRY_JSON}" ] && [ $((now - MCP_TOOLS_LAST_SCAN)) -lt "${MCP_TOOLS_TTL}" ]; then
+	if [ -n "${MCP_TOOLS_REGISTRY_JSON}" ] && [ $((now - MCP_TOOLS_LAST_SCAN)) -lt "${ttl}" ]; then
+		cache_age=$((now - MCP_TOOLS_LAST_SCAN))
+		mcp_logging_debug "${MCP_TOOLS_LOGGER}" "Cache hit: tools.json (age=${cache_age}s, ttl=${ttl}s)"
 		return 0
+	fi
+	if [ -n "${MCP_TOOLS_REGISTRY_JSON}" ]; then
+		cache_age=$((now - MCP_TOOLS_LAST_SCAN))
+		mcp_logging_debug "${MCP_TOOLS_LOGGER}" "Cache stale: tools.json (age=${cache_age}s, ttl=${ttl}s), will rescan"
+	else
+		mcp_logging_debug "${MCP_TOOLS_LOGGER}" "Cache miss: tools.json not loaded"
 	fi
 	return 1
 }
@@ -1330,7 +1339,7 @@ mcp_tools_call() {
 
 	local metadata
 	if ! metadata="$(mcp_tools_metadata_for_name "${name}")"; then
-		mcp_tools_error -32602 "Tool not found"
+		_mcp_tools_emit_error -32602 "Tool '${name}' not found" "null"
 		return 1
 	fi
 
@@ -1345,7 +1354,7 @@ mcp_tools_call() {
 	"" | "null") output_schema="null" ;;
 	esac
 	if [ -z "${tool_path}" ]; then
-		mcp_tools_error -32601 "Tool path unavailable"
+		_mcp_tools_emit_error -32601 "Tool '${name}' path unavailable" "null"
 		return 1
 	fi
 

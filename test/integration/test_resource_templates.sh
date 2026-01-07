@@ -67,6 +67,9 @@ cat >"${AUTO_ROOT}/resources/charlie.meta.json" <<'EOF'
 {"name":"charlie","uriTemplate":"file:///{charlie}"}
 EOF
 
+# Invalidate cache to force re-discovery (TTL=0 converts to 5s, cache would be considered fresh)
+test_invalidate_registry_cache "${AUTO_ROOT}"
+
 cat >"${AUTO_ROOT}/requests-2.ndjson" <<JSON
 {"jsonrpc":"2.0","id":"init-auto-2","method":"initialize","params":{}}
 {"jsonrpc":"2.0","method":"notifications/initialized"}
