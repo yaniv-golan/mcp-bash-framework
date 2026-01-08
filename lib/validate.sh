@@ -379,22 +379,49 @@ mcp_validate_resources() {
 						printf '✗ %s - invalid JSON\n' "${rel_meta}"
 						errors=$((errors + 1))
 					else
-						local r_name r_uri
+						local r_name r_uri r_uri_template
 						r_name="$("${MCPBASH_JSON_TOOL_BIN}" -r '.name // ""' "${meta_path}" 2>/dev/null || printf '')"
 						r_uri="$("${MCPBASH_JSON_TOOL_BIN}" -r '.uri // ""' "${meta_path}" 2>/dev/null || printf '')"
+						r_uri_template="$("${MCPBASH_JSON_TOOL_BIN}" -r '.uriTemplate // ""' "${meta_path}" 2>/dev/null || printf '')"
 						if [ -z "${r_name}" ]; then
 							printf '✗ %s - missing required "name"\n' "${rel_meta}"
 							errors=$((errors + 1))
 						fi
-						if [ -z "${r_uri}" ]; then
-							printf '✗ %s - missing required "uri"\n' "${rel_meta}"
+
+						# uri and uriTemplate are mutually exclusive per MCP spec
+						local uri_valid="false"
+						if [ -n "${r_uri}" ] && [ -n "${r_uri_template}" ]; then
+							printf '⚠ %s - uri and uriTemplate are mutually exclusive\n' "${rel_meta}"
+							warnings=$((warnings + 1))
+							uri_valid="true" # Allow validation to pass with warning
+						elif [ -z "${r_uri}" ] && [ -z "${r_uri_template}" ]; then
+							printf '✗ %s - missing required "uri" or "uriTemplate"\n' "${rel_meta}"
 							errors=$((errors + 1))
-						else
+						elif [ -n "${r_uri}" ]; then
 							case "${r_uri}" in
-							*://*) ;;
+							*://*) uri_valid="true" ;;
 							*)
 								printf '⚠ %s - uri does not look like scheme://...\n' "${rel_meta}"
 								warnings=$((warnings + 1))
+								uri_valid="true"
+								;;
+							esac
+						else
+							# Validate uriTemplate has at least one {variable}
+							case "${r_uri_template}" in
+							*"{"*"}"*)
+								case "${r_uri_template}" in
+								*://*) uri_valid="true" ;;
+								*)
+									printf '⚠ %s - uriTemplate does not look like scheme://...\n' "${rel_meta}"
+									warnings=$((warnings + 1))
+									uri_valid="true"
+									;;
+								esac
+								;;
+							*)
+								printf '✗ %s - uriTemplate must contain {variable} placeholder\n' "${rel_meta}"
+								errors=$((errors + 1))
 								;;
 							esac
 						fi
@@ -407,7 +434,7 @@ mcp_validate_resources() {
 							errors=$((errors + 1))
 						fi
 
-						if [ -n "${r_name}" ] && [ -n "${r_uri}" ] && [ "${icons_result}" = "ok" ]; then
+						if [ -n "${r_name}" ] && [ "${uri_valid}" = "true" ] && [ "${icons_result}" = "ok" ]; then
 							printf '✓ %s - valid\n' "${rel_meta}"
 						fi
 					fi

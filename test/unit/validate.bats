@@ -51,3 +51,83 @@ EOF
 
 	[ -x "${MCPBASH_TOOLS_DIR}/hello/tool.sh" ]
 }
+
+@test "validate: resource with uri is valid" {
+	local resources_dir="${BATS_TEST_TMPDIR}/resources"
+	mkdir -p "${resources_dir}/test-res"
+
+	cat >"${resources_dir}/test-res/test-res.meta.json" <<'EOF'
+{
+  "name": "test-resource",
+  "uri": "test://example/resource"
+}
+EOF
+
+	run mcp_validate_resources "${resources_dir}" "true" "false"
+	assert_success
+	assert_output --partial '✓ resources/test-res/test-res.meta.json - valid'
+}
+
+@test "validate: resource with uriTemplate is valid" {
+	local resources_dir="${BATS_TEST_TMPDIR}/resources"
+	mkdir -p "${resources_dir}/test-res"
+
+	cat >"${resources_dir}/test-res/test-res.meta.json" <<'EOF'
+{
+  "name": "test-template",
+  "uriTemplate": "test://example/{id}"
+}
+EOF
+
+	run mcp_validate_resources "${resources_dir}" "true" "false"
+	assert_success
+	assert_output --partial '✓ resources/test-res/test-res.meta.json - valid'
+}
+
+@test "validate: resource with both uri and uriTemplate warns" {
+	local resources_dir="${BATS_TEST_TMPDIR}/resources"
+	mkdir -p "${resources_dir}/test-res"
+
+	cat >"${resources_dir}/test-res/test-res.meta.json" <<'EOF'
+{
+  "name": "test-both",
+  "uri": "test://example/resource",
+  "uriTemplate": "test://example/{id}"
+}
+EOF
+
+	run mcp_validate_resources "${resources_dir}" "true" "false"
+	assert_success
+	assert_output --partial 'uri and uriTemplate are mutually exclusive'
+}
+
+@test "validate: resource with neither uri nor uriTemplate errors" {
+	local resources_dir="${BATS_TEST_TMPDIR}/resources"
+	mkdir -p "${resources_dir}/test-res"
+
+	cat >"${resources_dir}/test-res/test-res.meta.json" <<'EOF'
+{
+  "name": "test-missing"
+}
+EOF
+
+	run mcp_validate_resources "${resources_dir}" "true" "false"
+	assert_success
+	assert_output --partial 'missing required "uri" or "uriTemplate"'
+}
+
+@test "validate: uriTemplate without variable placeholder errors" {
+	local resources_dir="${BATS_TEST_TMPDIR}/resources"
+	mkdir -p "${resources_dir}/test-res"
+
+	cat >"${resources_dir}/test-res/test-res.meta.json" <<'EOF'
+{
+  "name": "test-bad-template",
+  "uriTemplate": "test://example/no-variable"
+}
+EOF
+
+	run mcp_validate_resources "${resources_dir}" "true" "false"
+	assert_success
+	assert_output --partial 'uriTemplate must contain {variable} placeholder'
+}
