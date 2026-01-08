@@ -130,7 +130,12 @@ Size guardrails: `mcp_core_guard_response_size` rejects oversized responses with
 ## Troubleshooting Quick Hits
 - **Unsupported protocol (`-32602`)**: Client requested an older MCP version. Update the client or request `2025-11-25`/`2025-06-18`/`2025-03-26`/`2024-11-05`.
 - **Invalid cursor (`-32602`)**: Drop the cursor to restart pagination; ensure clients do not cache cursors across registry refreshes.
-- **Tool timed out (`-32603`, message includes "timed out" or "killed")**: Reduce workload or raise `timeoutSecs` in `<tool>.meta.json`; defaults come from `MCPBASH_DEFAULT_TOOL_TIMEOUT`.
+- **Tool timed out (`-32603`, message includes "timed out")**: Three timeout variants exist:
+  - `"Tool timed out after Ns"` – Fixed timeout elapsed (progress-aware timeout disabled).
+  - `"Tool timed out after Ns (no progress reported)"` – Progress-aware timeout enabled, but tool didn't emit progress within the idle window.
+  - `"Tool exceeded maximum runtime of Ns"` – Progress-aware timeout enabled, tool emitted progress but hit the hard cap (`MCPBASH_MAX_TIMEOUT_SECS`).
+
+  Fix: Reduce workload, raise `timeoutSecs` in `<tool>.meta.json`, enable `progressExtendsTimeout` for long-running tools that emit progress, or adjust `MCPBASH_MAX_TIMEOUT_SECS` for the hard cap.
 - **Prompt render failed (`-32603`)**: Ensure the prompt file exists and is readable.
 - **Resource/provider failures (`-32603`, message includes provider detail such as "Unable to read resource")**: Confirm the provider is supported (`file`, `git`, `https`), URI is valid, and payload size is within `MCPBASH_MAX_RESOURCE_BYTES`.
 - **Minimal mode responses (`-32601`)**: Ensure `jq`/`gojq` is available or unset `MCPBASH_FORCE_MINIMAL` to enable tools/resources/prompts.

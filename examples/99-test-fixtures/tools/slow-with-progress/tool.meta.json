@@ -1,0 +1,16 @@
+{
+  "name": "slow-with-progress",
+  "description": "Test fixture: runs slowly but emits progress notifications",
+  "timeoutSecs": 5,
+  "progressExtendsTimeout": true,
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "duration": {
+        "type": "integer",
+        "description": "Duration in seconds",
+        "default": 10
+      }
+    }
+  }
+}

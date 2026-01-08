@@ -1,0 +1,16 @@
+{
+  "name": "slow-no-progress",
+  "description": "Test fixture: runs slowly without progress notifications (expected to timeout)",
+  "timeoutSecs": 5,
+  "progressExtendsTimeout": true,
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "duration": {
+        "type": "integer",
+        "description": "Duration in seconds",
+        "default": 10
+      }
+    }
+  }
+}

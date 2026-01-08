@@ -5,10 +5,11 @@ All notable changes to mcp-bash-framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.9.5] - Unreleased
+## [0.9.5] - 2025-01-08
 
 ### Added
 - **Debug file detection**: Create `server.d/.debug` to enable `MCPBASH_LOG_LEVEL=debug` persistently per-project. Eliminates boilerplate debug detection in `server.d/env.sh`. Environment variable takes precedence if set. See [DEBUGGING.md](docs/DEBUGGING.md#debug-file-persistent-debug-mode).
+- **Progress-aware timeout extension**: Long-running tools that emit progress can now extend their timeout dynamically instead of being killed after a fixed duration. Opt-in via `MCPBASH_PROGRESS_EXTENDS_TIMEOUT=true` (global) or `"progressExtendsTimeout": true` in `tool.meta.json` (per-tool). The watchdog resets its idle timer on each progress emission, with a hard cap via `MCPBASH_MAX_TIMEOUT_SECS` (default 600s) to prevent runaway processes. Three timeout variants are now distinguished in error messages: fixed timeout, idle timeout (no progress for N seconds), and max exceeded (hard cap reached). When a tool emits progress but times out with the feature disabled, a warning is logged suggesting enablement. See [BEST-PRACTICES.md](docs/BEST-PRACTICES.md) §4.3 and [ENV_REFERENCE.md](docs/ENV_REFERENCE.md).
 
 ### Changed
 

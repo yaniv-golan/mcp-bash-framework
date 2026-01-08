@@ -24,7 +24,7 @@ _MCP_TOOLS_ERROR_DATA=""
 # shellcheck disable=SC2034
 _MCP_TOOLS_RESULT=""
 MCP_TOOLS_TTL="${MCP_TOOLS_TTL:-5}"
-MCP_TOOLS_LAST_SCAN=""  # Empty means "use cache mtime if loading"; 0 means "force scan"
+MCP_TOOLS_LAST_SCAN="" # Empty means "use cache mtime if loading"; 0 means "force scan"
 MCP_TOOLS_LAST_NOTIFIED_HASH=""
 MCP_TOOLS_CHANGED=false
 MCP_TOOLS_MANUAL_ACTIVE=false
@@ -582,6 +582,24 @@ _mcp_tools_emit_error() {
 		msg_escaped="${msg_escaped//$'\n'/\\n}"
 		_MCP_TOOLS_RESULT="$(printf '{"_mcpToolError":true,"code":%s,"message":"%s","data":%s}' "${err_code}" "${msg_escaped}" "${err_data}")"
 	fi
+}
+
+# Format timeout error message based on MCPBASH_TIMEOUT_REASON
+# Returns message appropriate for the timeout type
+mcp_tools_format_timeout_error() {
+	local timeout="$1"
+	local max_timeout="${MCPBASH_MAX_TIMEOUT_SECS:-600}"
+	case "${MCPBASH_TIMEOUT_REASON:-}" in
+	idle)
+		printf 'Tool timed out after %ss (no progress reported)' "${timeout}"
+		;;
+	max_exceeded)
+		printf 'Tool exceeded maximum runtime of %ss' "${max_timeout}"
+		;;
+	*)
+		printf 'Tool timed out after %ss' "${timeout}"
+		;;
+	esac
 }
 
 mcp_tools_init() {
@@ -1343,9 +1361,10 @@ mcp_tools_call() {
 		return 1
 	fi
 
-	local tool_path metadata_timeout output_schema
-	tool_path="$(printf '%s' "${metadata}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.path // ""')"
-	metadata_timeout="$(printf '%s' "${metadata}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.timeoutSecs // "" | tostring')"
+	# Extract metadata fields in single jq pass (per json-handling rules)
+	local tool_path metadata_timeout output_schema progress_extends max_timeout_secs
+	read -r tool_path metadata_timeout progress_extends max_timeout_secs < <(printf '%s' "${metadata}" \
+		| "${MCPBASH_JSON_TOOL_BIN}" -r '[.path // "", .timeoutSecs // "", .progressExtendsTimeout // "", .maxTimeoutSecs // ""] | @tsv' 2>/dev/null || printf '%s\t%s\t%s\t%s\n' "" "" "" "")
 	output_schema="$(printf '%s' "${metadata}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.outputSchema // null')"
 	case "${metadata_timeout}" in
 	"" | "null") metadata_timeout="" ;;
@@ -1353,6 +1372,13 @@ mcp_tools_call() {
 	case "${output_schema}" in
 	"" | "null") output_schema="null" ;;
 	esac
+	# Set progress-aware timeout environment for worker subshell
+	if [ "${progress_extends}" = "true" ]; then
+		export MCPBASH_PROGRESS_EXTENDS_TIMEOUT=true
+	fi
+	if [ -n "${max_timeout_secs}" ] && [ "${max_timeout_secs}" != "null" ]; then
+		export MCPBASH_MAX_TIMEOUT_SECS="${max_timeout_secs}"
+	fi
 	if [ -z "${tool_path}" ]; then
 		_mcp_tools_emit_error -32601 "Tool '${name}' path unavailable" "null"
 		return 1
@@ -1908,9 +1934,16 @@ mcp_tools_call() {
 					'
 			)"
 		fi
-		mcp_tools_emit_github_annotation "${name}" "Tool timed out" "${trace_line}"
-		mcp_tools_append_failure_summary "${name}" "${exit_code}" "Tool timed out" "${stderr_tail}" "${trace_line}" "${arg_count}" "${arg_bytes}" "${meta_count}" "${MCP_ROOTS_COUNT:-0}" "true"
-		_mcp_tools_emit_error -32603 "Tool timed out" "${timeout_data}"
+		local timeout_msg
+		timeout_msg="$(mcp_tools_format_timeout_error "${effective_timeout}")"
+		mcp_tools_emit_github_annotation "${name}" "${timeout_msg}" "${trace_line}"
+		mcp_tools_append_failure_summary "${name}" "${exit_code}" "${timeout_msg}" "${stderr_tail}" "${trace_line}" "${arg_count}" "${arg_bytes}" "${meta_count}" "${MCP_ROOTS_COUNT:-0}" "true"
+		_mcp_tools_emit_error -32603 "${timeout_msg}" "${timeout_data}"
+		# Suggest enabling progress-aware timeout if tool emitted progress but feature was disabled
+		if [ "${MCPBASH_PROGRESS_EXTENDS_TIMEOUT:-false}" != "true" ] && [ -n "${MCP_PROGRESS_STREAM:-}" ] && [ -s "${MCP_PROGRESS_STREAM}" ]; then
+			mcp_logging_warning "${MCP_TOOLS_LOGGER}" \
+				"Tool '${name}' emitted progress but timed out. Consider enabling MCPBASH_PROGRESS_EXTENDS_TIMEOUT=true or adding progressExtendsTimeout:true to tool.meta.json"
+		fi
 		cleanup_tool_temp_files
 		return 1
 	fi

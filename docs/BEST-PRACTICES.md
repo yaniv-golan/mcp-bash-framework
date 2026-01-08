@@ -419,6 +419,25 @@ for i in $(seq 1 100); do
 done
 ```
 
+**Progress-aware timeout extension** – Long-running tools that emit progress can extend their timeout automatically. When enabled, the timeout resets each time progress is written, allowing legitimate operations to run longer while still catching truly stuck tools.
+
+Enable globally via environment:
+```bash
+export MCPBASH_PROGRESS_EXTENDS_TIMEOUT=true
+export MCPBASH_MAX_TIMEOUT_SECS=300  # Hard cap (default: 600s)
+```
+
+Or per-tool in `tool.meta.json`:
+```json
+{
+  "timeoutSecs": 30,
+  "progressExtendsTimeout": true,
+  "maxTimeoutSecs": 300
+}
+```
+
+**Important**: The client must provide a `progressToken` in the request for progress to be written. Emit progress every ~5 seconds to keep the timeout from triggering.
+
 #### Logging
 
 Use structured logging instead of `echo` to stderr:
