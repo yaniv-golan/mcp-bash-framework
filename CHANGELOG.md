@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`mcp_require` helper**: New function for conditional library sourcing with duplicate-load prevention. Simplifies optional dependency loading in tools and SDK code. See `lib/require.sh`.
 
 ### Changed
-- **Release workflow**: Release job now runs as part of CI workflow with `needs:` dependency on all test jobs. Releases are only created after lint, unit, integration, and compatibility tests pass. Previously, release and CI workflows ran in parallel, allowing releases even when tests failed.
+- **Release workflow**: Release job now runs as part of CI workflow with `needs:` dependency on core test jobs. Releases are created after lint, unit, integration (Ubuntu + macOS), and compatibility tests pass. Windows integration tests run in parallel but do not block releases (failures are reported as warnings with artifacts). Previously, all three OS integration tests were required, causing Windows slowness to delay releases.
 - **Internal refactoring**: Consolidated error response formatting in handlers and standardized error variable naming to `_ERROR_CODE`/`_ERROR_MESSAGE` for consistency across the codebase.
 
 ### Fixed

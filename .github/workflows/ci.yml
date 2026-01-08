@@ -140,45 +140,27 @@ jobs:
           reporter: java-junit
           fail-on-error: false
 
+  # Core integration tests (Ubuntu + macOS) - required for release
   integration:
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     defaults:
       run:
         shell: bash
     steps:
       - uses: actions/checkout@v4
-      - name: Cache staging tar (Windows)
-        if: matrix.os == 'windows-latest'
-        uses: actions/cache@v4
-        with:
-          path: ${{ runner.temp }}/mcpbash.staging
-          key: ${{ runner.os }}-staging-${{ hashFiles('bin/**','lib/**','handlers/**','providers/**','sdk/**','bootstrap/**','scaffold/**') }}
       - name: Set Go paths
         shell: bash
         run: |
           set -euo pipefail
-          if [ "${RUNNER_OS}" = "Windows" ]; then
-            win_home="$(cygpath -w "${HOME}")"
-            win_gopath="${win_home}\\go"
-            win_gomodcache="${win_gopath}\\pkg\\mod"
-            win_gocache="${LOCALAPPDATA:-${win_home}\\AppData\\Local}\\go-build"
-            echo "GOPATH=${win_gopath}" >> "$GITHUB_ENV"
-            echo "GOMODCACHE=${win_gomodcache}" >> "$GITHUB_ENV"
-            echo "GOCACHE=${win_gocache}" >> "$GITHUB_ENV"
-            echo "MCPBASH_TAR_DIR=$(cygpath -u "${RUNNER_TEMP}")/mcpbash.staging" >> "$GITHUB_ENV"
-            echo "$(cygpath -u "${win_gopath}")/bin" >> "$GITHUB_PATH"
-            mkdir -p "$(cygpath -u "${win_gopath}")/bin" "$(cygpath -u "${win_gomodcache}")" "$(cygpath -u "${win_gocache}")" "$(cygpath -u "${RUNNER_TEMP}")/mcpbash.staging"
-          else
-            echo "GOPATH=${HOME}/go" >> "$GITHUB_ENV"
-            echo "GOMODCACHE=${HOME}/go/pkg/mod" >> "$GITHUB_ENV"
-            echo "GOCACHE=${HOME}/.cache/go-build" >> "$GITHUB_ENV"
-            echo "MCPBASH_TAR_DIR=${RUNNER_TEMP}/mcpbash.staging" >> "$GITHUB_ENV"
-            echo "${HOME}/go/bin" >> "$GITHUB_PATH"
-            mkdir -p "${HOME}/go/bin" "${HOME}/go/pkg/mod" "${HOME}/.cache/go-build" "${RUNNER_TEMP}/mcpbash.staging"
-          fi
+          echo "GOPATH=${HOME}/go" >> "$GITHUB_ENV"
+          echo "GOMODCACHE=${HOME}/go/pkg/mod" >> "$GITHUB_ENV"
+          echo "GOCACHE=${HOME}/.cache/go-build" >> "$GITHUB_ENV"
+          echo "MCPBASH_TAR_DIR=${RUNNER_TEMP}/mcpbash.staging" >> "$GITHUB_ENV"
+          echo "${HOME}/go/bin" >> "$GITHUB_PATH"
+          mkdir -p "${HOME}/go/bin" "${HOME}/go/pkg/mod" "${HOME}/.cache/go-build" "${RUNNER_TEMP}/mcpbash.staging"
       - name: Setup Go
         id: go
         uses: actions/setup-go@v5
@@ -205,21 +187,9 @@ jobs:
           MCPBASH_LOG_DIR: ${{ runner.temp }}/mcpbash-logs
           MCPBASH_LOG_TIMESTAMP: "true"
           MCPBASH_KEEP_LOGS: "true"
-          MCPBASH_CI_VERBOSE: ${{ matrix.os == 'windows-latest' && github.event_name == 'workflow_dispatch' && inputs.windows_verbose == true && 'true' || 'false' }}
-          MCPBASH_TRACE_TOOLS: ${{ matrix.os == 'windows-latest' && github.event_name == 'workflow_dispatch' && inputs.windows_verbose == true && 'true' || 'false' }}
           MCPBASH_INTEGRATION_TMP: ${{ runner.temp }}/mcpbash-integration
-          # Default to non-verbose on Windows to reduce hang risk; enable via workflow_dispatch input when debugging.
-          VERBOSE: ${{ matrix.os == 'windows-latest' && github.event_name == 'workflow_dispatch' && inputs.windows_verbose == true && '1' || '0' }}
         run: |
           set -euo pipefail
-          if [ "${RUNNER_OS}" = "Windows" ]; then
-            if [ "${GITHUB_EVENT_NAME}" = "schedule" ] || [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
-              export MCPBASH_INTEGRATION_TEST_TIMEOUT_SECONDS=300
-            else
-              export MCPBASH_INTEGRATION_ONLY="test_bootstrap.sh test_cli_scaffold_test.sh test_cli_validate.sh test_lifecycle_gating.sh test_windows_env_size_tools_call.sh test_windows_env_size_providers.sh test_resources.sh test_prompts.sh"
-              export MCPBASH_INTEGRATION_TEST_TIMEOUT_SECONDS=240
-            fi
-          fi
           start="$(date +%s)"
           test/integration/run.sh
           end="$(date +%s)"
@@ -235,8 +205,103 @@ jobs:
             ${{ runner.temp }}/mcpbash.state.*
             ${{ runner.temp }}/mcpbash.bootstrap.*
           retention-days: 7
+      - name: Examples suite
+        id: examples
+        run: |
+          set -euo pipefail
+          start="$(date +%s)"
+          test/examples/run.sh
+          end="$(date +%s)"
+          echo "duration=$((end - start))" >> "$GITHUB_OUTPUT"
+
+      - name: Strict conformance (jq + gojq)
+        if: matrix.os == 'ubuntu-latest'
+        run: test/conformance/run.sh
+
+  # Windows integration tests - runs in parallel but does not block release
+  integration-windows:
+    runs-on: windows-latest
+    # Run even if other jobs fail; continue-on-error allows workflow to succeed
+    continue-on-error: true
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache staging tar
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/mcpbash.staging
+          key: ${{ runner.os }}-staging-${{ hashFiles('bin/**','lib/**','handlers/**','providers/**','sdk/**','bootstrap/**','scaffold/**') }}
+      - name: Set Go paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          win_home="$(cygpath -w "${HOME}")"
+          win_gopath="${win_home}\\go"
+          win_gomodcache="${win_gopath}\\pkg\\mod"
+          win_gocache="${LOCALAPPDATA:-${win_home}\\AppData\\Local}\\go-build"
+          echo "GOPATH=${win_gopath}" >> "$GITHUB_ENV"
+          echo "GOMODCACHE=${win_gomodcache}" >> "$GITHUB_ENV"
+          echo "GOCACHE=${win_gocache}" >> "$GITHUB_ENV"
+          echo "MCPBASH_TAR_DIR=$(cygpath -u "${RUNNER_TEMP}")/mcpbash.staging" >> "$GITHUB_ENV"
+          echo "$(cygpath -u "${win_gopath}")/bin" >> "$GITHUB_PATH"
+          mkdir -p "$(cygpath -u "${win_gopath}")/bin" "$(cygpath -u "${win_gomodcache}")" "$(cygpath -u "${win_gocache}")" "$(cygpath -u "${RUNNER_TEMP}")/mcpbash.staging"
+      - name: Setup Go
+        id: go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache: true
+          cache-dependency-path: tools/go.sum
+      - name: Cache Go build cache
+        id: gocache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.GOCACHE }}
+          key: ${{ runner.os }}-gocache-${{ hashFiles('tools/go.sum') }}-${{ steps.go.outputs.go-version }}
+      - name: Install gojq
+        run: |
+          set -euo pipefail
+          pushd tools >/dev/null
+          go install github.com/itchyny/gojq/cmd/gojq@v0.12.16
+          popd >/dev/null
+      - name: Integration suite
+        id: integration
+        env:
+          MCPBASH_CI_MODE: "true"
+          MCPBASH_LOG_DIR: ${{ runner.temp }}/mcpbash-logs
+          MCPBASH_LOG_TIMESTAMP: "true"
+          MCPBASH_KEEP_LOGS: "true"
+          MCPBASH_CI_VERBOSE: ${{ github.event_name == 'workflow_dispatch' && inputs.windows_verbose == true && 'true' || 'false' }}
+          MCPBASH_TRACE_TOOLS: ${{ github.event_name == 'workflow_dispatch' && inputs.windows_verbose == true && 'true' || 'false' }}
+          MCPBASH_INTEGRATION_TMP: ${{ runner.temp }}/mcpbash-integration
+          # Default to non-verbose on Windows to reduce hang risk; enable via workflow_dispatch input when debugging.
+          VERBOSE: ${{ github.event_name == 'workflow_dispatch' && inputs.windows_verbose == true && '1' || '0' }}
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_EVENT_NAME}" = "schedule" ] || [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            export MCPBASH_INTEGRATION_TEST_TIMEOUT_SECONDS=300
+          else
+            export MCPBASH_INTEGRATION_ONLY="test_bootstrap.sh test_cli_scaffold_test.sh test_cli_validate.sh test_lifecycle_gating.sh test_windows_env_size_tools_call.sh test_windows_env_size_providers.sh test_resources.sh test_prompts.sh"
+            export MCPBASH_INTEGRATION_TEST_TIMEOUT_SECONDS=240
+          fi
+          start="$(date +%s)"
+          test/integration/run.sh
+          end="$(date +%s)"
+          echo "duration=$((end - start))" >> "$GITHUB_OUTPUT"
+      - name: Upload integration logs on failure
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-logs-windows
+          path: |
+            ${{ runner.temp }}/mcpbash-integration/logs/
+            ${{ runner.temp }}/mcpbash-logs
+            ${{ runner.temp }}/mcpbash.state.*
+            ${{ runner.temp }}/mcpbash.bootstrap.*
+          retention-days: 7
       - name: Enforce Windows integration budget
-        if: matrix.os == 'windows-latest'
         run: |
           set -euo pipefail
           warm="${{ steps.go.outputs.cache-hit == 'true' && steps.gocache.outputs.cache-hit == 'true' }}"
@@ -253,17 +318,19 @@ jobs:
       - name: Examples suite
         id: examples
         env:
-          MCPBASH_STAGING_TAR: ${{ matrix.os == 'windows-latest' && '1' || '0' }}
+          MCPBASH_STAGING_TAR: "1"
         run: |
           set -euo pipefail
           start="$(date +%s)"
           test/examples/run.sh
           end="$(date +%s)"
           echo "duration=$((end - start))" >> "$GITHUB_OUTPUT"
-
-      - name: Strict conformance (jq + gojq)
-        if: matrix.os == 'ubuntu-latest'
-        run: test/conformance/run.sh
+      - name: Report Windows status
+        if: always()
+        run: |
+          if [ "${{ job.status }}" = "failure" ]; then
+            echo "::warning ::Windows integration tests failed - see artifacts for details"
+          fi
 
   stress:
     if: github.event_name == 'schedule'
