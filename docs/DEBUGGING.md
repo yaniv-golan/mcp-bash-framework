@@ -277,7 +277,7 @@ If raw stdio works but MCP Inspector/Cursor/Claude Desktop fails:
 
 Common issues:
 - Tool missing `name` or `description`
-- Resource missing `uri`
+- Resource missing `uri` or `uriTemplate` (one is required; they are mutually exclusive)
 - Invalid `inputSchema` (must have `type` or `properties`)
 
 Run `mcp-bash validate` to catch these before testing with clients.

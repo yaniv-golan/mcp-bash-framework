@@ -126,7 +126,7 @@ Entries describe resources and providers. Paths are relative to `MCPBASH_RESOURC
 }
 ```
 
-- Metadata that cannot be parsed (missing `uri`, unsupported `provider`, non-object `arguments`, unreadable `.meta.json`) is skipped and logged as a warning through the structured logging subsystem.
+- Metadata that cannot be parsed (missing `uri` or `uriTemplate`, unsupported `provider`, non-object `arguments`, unreadable `.meta.json`) is skipped and logged as a warning through the structured logging subsystem.
 - When no `provider` is specified, the scanner infers one from the URI scheme (`file://`, `git+https://`, `https://`); unrecognised schemes default to `file` and are rejected if the provider script is unavailable.
 - Discovery records `name`, `description`, `path`, `uri`, `mimeType`, and `provider`; argument/template schemas are not persisted today.
 - The `file` provider fails closed if no resource roots are configured; missing/non-existent roots are ignored, so ensure allowed roots exist before use.
