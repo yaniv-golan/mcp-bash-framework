@@ -10,9 +10,9 @@ MCP_RESOURCES_REGISTRY_PATH=""
 MCP_RESOURCES_TOTAL=0
 # Internal error handoff between library and handler (not user-configurable).
 # shellcheck disable=SC2034
-_MCP_RESOURCES_ERR_CODE=0
+_MCP_RESOURCES_ERROR_CODE=0
 # shellcheck disable=SC2034
-_MCP_RESOURCES_ERR_MESSAGE=""
+_MCP_RESOURCES_ERROR_MESSAGE=""
 # shellcheck disable=SC2034
 _MCP_RESOURCES_RESULT=""
 MCP_RESOURCES_TTL="${MCP_RESOURCES_TTL:-5}"
@@ -253,8 +253,8 @@ mcp_resources_poll_subscriptions() {
 			fi
 		else
 			local code message error_fingerprint
-			code="${_MCP_RESOURCES_ERR_CODE:--32603}"
-			message="${_MCP_RESOURCES_ERR_MESSAGE:-Unable to read resource}"
+			code="${_MCP_RESOURCES_ERROR_CODE:--32603}"
+			message="${_MCP_RESOURCES_ERROR_MESSAGE:-Unable to read resource}"
 			error_fingerprint="ERROR:${code}:$(mcp_resources_hash_payload "${message}")"
 			if [ "${error_fingerprint}" != "${fingerprint}" ]; then
 				mcp_resources_subscription_store "${subscription_id}" "${name}" "${uri}" "${error_fingerprint}"
@@ -283,8 +283,8 @@ mcp_resources_enforce_registry_limits() {
 }
 
 mcp_resources_error() {
-	_MCP_RESOURCES_ERR_CODE="$1"
-	_MCP_RESOURCES_ERR_MESSAGE="$2"
+	_MCP_RESOURCES_ERROR_CODE="$1"
+	_MCP_RESOURCES_ERROR_MESSAGE="$2"
 }
 
 mcp_resources_init() {
@@ -715,9 +715,9 @@ mcp_resources_list() {
 	local limit="$1"
 	local cursor="$2"
 	# shellcheck disable=SC2034
-	_MCP_RESOURCES_ERR_CODE=0
+	_MCP_RESOURCES_ERROR_CODE=0
 	# shellcheck disable=SC2034
-	_MCP_RESOURCES_ERR_MESSAGE=""
+	_MCP_RESOURCES_ERROR_MESSAGE=""
 
 	mcp_resources_refresh_registry || {
 		mcp_resources_error -32603 "Unable to load resources registry"
@@ -1431,9 +1431,9 @@ mcp_resources_templates_list() {
 	local limit="$1"
 	local cursor="$2"
 	# shellcheck disable=SC2034
-	_MCP_RESOURCES_ERR_CODE=0
+	_MCP_RESOURCES_ERROR_CODE=0
 	# shellcheck disable=SC2034
-	_MCP_RESOURCES_ERR_MESSAGE=""
+	_MCP_RESOURCES_ERROR_MESSAGE=""
 
 	mcp_resources_templates_refresh_registry || {
 		mcp_resources_error -32603 "Unable to load resource templates registry"
@@ -1692,9 +1692,9 @@ mcp_resources_read() {
 	# shellcheck disable=SC2034
 	_MCP_RESOURCES_RESULT=""
 	# shellcheck disable=SC2034
-	_MCP_RESOURCES_ERR_CODE=0
+	_MCP_RESOURCES_ERROR_CODE=0
 	# shellcheck disable=SC2034
-	_MCP_RESOURCES_ERR_MESSAGE=""
+	_MCP_RESOURCES_ERROR_MESSAGE=""
 	mcp_resources_refresh_registry || {
 		mcp_resources_error -32603 "Unable to load resources registry"
 		return 1

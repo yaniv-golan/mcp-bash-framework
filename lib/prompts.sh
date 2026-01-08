@@ -10,9 +10,9 @@ MCP_PROMPTS_REGISTRY_PATH=""
 MCP_PROMPTS_TOTAL=0
 # Internal error handoff between library and handler (not user-configurable).
 # shellcheck disable=SC2034
-_MCP_PROMPTS_ERR_CODE=0
+_MCP_PROMPTS_ERROR_CODE=0
 # shellcheck disable=SC2034
-_MCP_PROMPTS_ERR_MESSAGE=""
+_MCP_PROMPTS_ERROR_MESSAGE=""
 # shellcheck disable=SC2034
 _MCP_PROMPTS_RESULT=""
 MCP_PROMPTS_TTL="${MCP_PROMPTS_TTL:-5}"
@@ -140,8 +140,8 @@ mcp_prompts_enforce_registry_limits() {
 	local limit_or_size
 
 	if ! limit_or_size="$(mcp_registry_check_size "${json_payload}")"; then
-		_MCP_PROMPTS_ERR_CODE=-32603
-		_MCP_PROMPTS_ERR_MESSAGE="Prompts registry exceeds ${limit_or_size} byte cap"
+		_MCP_PROMPTS_ERROR_CODE=-32603
+		_MCP_PROMPTS_ERROR_MESSAGE="Prompts registry exceeds ${limit_or_size} byte cap"
 		return 1
 	fi
 	if [ "${total}" -gt 500 ]; then
@@ -151,8 +151,8 @@ mcp_prompts_enforce_registry_limits() {
 }
 
 mcp_prompts_error() {
-	_MCP_PROMPTS_ERR_CODE="$1"
-	_MCP_PROMPTS_ERR_MESSAGE="$2"
+	_MCP_PROMPTS_ERROR_CODE="$1"
+	_MCP_PROMPTS_ERROR_MESSAGE="$2"
 }
 
 mcp_prompts_init() {
@@ -509,9 +509,9 @@ mcp_prompts_list() {
 	local limit="$1"
 	local cursor="$2"
 	# shellcheck disable=SC2034
-	_MCP_PROMPTS_ERR_CODE=0
+	_MCP_PROMPTS_ERROR_CODE=0
 	# shellcheck disable=SC2034
-	_MCP_PROMPTS_ERR_MESSAGE=""
+	_MCP_PROMPTS_ERROR_MESSAGE=""
 
 	mcp_prompts_refresh_registry || {
 		mcp_prompts_error -32603 "Unable to load prompts registry"

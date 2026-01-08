@@ -31,13 +31,13 @@ mcp_handle_prompts() {
 		limit="$(mcp_json_extract_limit "${json_payload}")"
 		cursor="$(mcp_json_extract_cursor "${json_payload}")"
 		if ! list_json="$(mcp_prompts_list "${limit}" "${cursor}")"; then
-			local code="${_MCP_PROMPTS_ERR_CODE:--32603}"
+			local code="${_MCP_PROMPTS_ERROR_CODE:--32603}"
 			# Some lib paths initialise error code to 0; never emit code 0 over JSON-RPC.
 			case "${code}" in
 			'' | 0) code=-32603 ;;
 			esac
 			local message
-			message=$(mcp_prompts_quote "${_MCP_PROMPTS_ERR_MESSAGE:-Unable to list prompts}")
+			message=$(mcp_prompts_quote "${_MCP_PROMPTS_ERROR_MESSAGE:-Unable to list prompts}")
 			printf '{"jsonrpc":"2.0","id":%s,"error":{"code":%s,"message":%s}}' "${id}" "${code}" "${message}"
 			return 0
 		fi

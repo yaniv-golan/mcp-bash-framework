@@ -40,13 +40,13 @@ mcp_handle_resources() {
 		limit="$(mcp_json_extract_limit "${json_payload}")"
 		cursor="$(mcp_json_extract_cursor "${json_payload}")"
 		if ! list_json="$(mcp_resources_list "${limit}" "${cursor}")"; then
-			local code="${_MCP_RESOURCES_ERR_CODE:--32603}"
+			local code="${_MCP_RESOURCES_ERROR_CODE:--32603}"
 			# Some lib paths initialise error code to 0; never emit code 0 over JSON-RPC.
 			case "${code}" in
 			"" | "0") code="-32603" ;;
 			esac
 			local message
-			message=$(mcp_resources_quote "${_MCP_RESOURCES_ERR_MESSAGE:-Unable to list resources}")
+			message=$(mcp_resources_quote "${_MCP_RESOURCES_ERROR_MESSAGE:-Unable to list resources}")
 			printf '{"jsonrpc":"2.0","id":%s,"error":{"code":%s,"message":%s}}' "${id}" "${code}" "${message}"
 			return 0
 		fi
@@ -63,12 +63,12 @@ mcp_handle_resources() {
 			return 0
 		fi
 		if ! mcp_resources_read "${name}" "${uri}"; then
-			local code="${_MCP_RESOURCES_ERR_CODE:--32603}"
+			local code="${_MCP_RESOURCES_ERROR_CODE:--32603}"
 			case "${code}" in
 			"" | "0") code="-32603" ;;
 			esac
 			local message
-			message=$(mcp_resources_quote "${_MCP_RESOURCES_ERR_MESSAGE:-Unable to read resource}")
+			message=$(mcp_resources_quote "${_MCP_RESOURCES_ERROR_MESSAGE:-Unable to read resource}")
 			printf '{"jsonrpc":"2.0","id":%s,"error":{"code":%s,"message":%s}}' "${id}" "${code}" "${message}"
 			return 0
 		fi
@@ -91,13 +91,13 @@ mcp_handle_resources() {
 		fi
 		subscription_id="$(mcp_resources_generate_subscription_id)"
 		if ! mcp_resources_read "${name}" "${uri}"; then
-			mcp_logging_error "${logger}" "Initial read failed code=${_MCP_RESOURCES_ERR_CODE:-?} msg=${_MCP_RESOURCES_ERR_MESSAGE:-?}"
-			local code="${_MCP_RESOURCES_ERR_CODE:--32603}"
+			mcp_logging_error "${logger}" "Initial read failed code=${_MCP_RESOURCES_ERROR_CODE:-?} msg=${_MCP_RESOURCES_ERROR_MESSAGE:-?}"
+			local code="${_MCP_RESOURCES_ERROR_CODE:--32603}"
 			case "${code}" in
 			"" | "0") code="-32603" ;;
 			esac
 			local message
-			message=$(mcp_resources_quote "${_MCP_RESOURCES_ERR_MESSAGE:-Unable to read resource}")
+			message=$(mcp_resources_quote "${_MCP_RESOURCES_ERROR_MESSAGE:-Unable to read resource}")
 			printf '{"jsonrpc":"2.0","id":%s,"error":{"code":%s,"message":%s}}' "${id}" "${code}" "${message}"
 			return 0
 		fi
@@ -150,7 +150,7 @@ mcp_handle_resources() {
 		limit="$(mcp_json_extract_limit "${json_payload}")"
 		cursor="$(mcp_json_extract_cursor "${json_payload}")"
 		if ! list_json="$(mcp_resources_templates_list "${limit}" "${cursor}")"; then
-			local code="${_MCP_RESOURCES_ERR_CODE:--32603}"
+			local code="${_MCP_RESOURCES_ERROR_CODE:--32603}"
 			if [ "${code}" = "0" ]; then
 				if [ -n "${cursor}" ]; then
 					code="-32602"
@@ -159,8 +159,8 @@ mcp_handle_resources() {
 				fi
 			fi
 			local message
-			local err_text="${_MCP_RESOURCES_ERR_MESSAGE:-Unable to list resource templates}"
-			if [ "${code}" = "-32602" ] && [ -z "${_MCP_RESOURCES_ERR_MESSAGE:-}" ]; then
+			local err_text="${_MCP_RESOURCES_ERROR_MESSAGE:-Unable to list resource templates}"
+			if [ "${code}" = "-32602" ] && [ -z "${_MCP_RESOURCES_ERROR_MESSAGE:-}" ]; then
 				err_text="Invalid cursor"
 			fi
 			message=$(mcp_resources_quote "${err_text}")
