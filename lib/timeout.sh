@@ -16,8 +16,9 @@ elif stat -c %Y "${BASH_SOURCE[0]:-$0}" >/dev/null 2>&1; then
 else
 	# Neither stat flavor detected - will fall back to per-call attempts
 	# Log at debug level to help diagnose obscure platforms
-	[ "${MCPBASH_DEBUG:-}" = "true" ] \
-		&& printf '[timeout] warning: stat mtime detection failed, using fallback\n' >&2 || true
+	if [ "${MCPBASH_DEBUG:-}" = "true" ]; then
+		printf '[timeout] warning: stat mtime detection failed, using fallback\n' >&2
+	fi
 fi
 
 # Get current epoch time
@@ -149,8 +150,9 @@ with_timeout() {
 
 	# Check state file for timeout reason (single grep)
 	if [ -n "${watchdog_state}" ] && [ -f "${watchdog_state}" ]; then
-		local timeout_line
-		timeout_line=$(grep -oE 'timeout(:idle|:max_exceeded)?' "${watchdog_state}" 2>/dev/null | head -1)
+		# Note: local + assignment on one line prevents set -e exit on grep failure
+		# shellcheck disable=SC2155 # Intentional: we want local to mask grep exit code
+		local timeout_line=$(grep -oE 'timeout(:idle|:max_exceeded)?' "${watchdog_state}" 2>/dev/null | head -1)
 		if [ -n "${timeout_line}" ]; then
 			status=124
 			case "${timeout_line}" in
@@ -240,8 +242,9 @@ mcp_timeout_spawn_watchdog() {
 				# Progress detected - reset idle timer
 				last_activity_time="${file_mtime}"
 				# Debug logging (only when MCPBASH_DEBUG is set)
-				[ "${MCPBASH_DEBUG:-}" = "true" ] \
-					&& printf '[watchdog] timeout extended: progress at %s, idle reset\n' "${file_mtime}" >&2 || true
+				if [ "${MCPBASH_DEBUG:-}" = "true" ]; then
+					printf '[watchdog] timeout extended: progress at %s, idle reset\n' "${file_mtime}" >&2
+				fi
 			fi
 
 			# Check idle timeout (time since last progress)
