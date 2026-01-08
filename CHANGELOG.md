@@ -5,15 +5,21 @@ All notable changes to mcp-bash-framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.9.6] - Unreleased
+## [0.9.6] - 2026-01-08
 
 ### Added
+- **`mcp_require` helper**: New function for conditional library sourcing with duplicate-load prevention. Simplifies optional dependency loading in tools and SDK code. See `lib/require.sh`.
 
 ### Changed
 - **Release workflow**: Release job now runs as part of CI workflow with `needs:` dependency on all test jobs. Releases are only created after lint, unit, integration, and compatibility tests pass. Previously, release and CI workflows ran in parallel, allowing releases even when tests failed.
+- **Internal refactoring**: Consolidated error response formatting in handlers and standardized error variable naming to `_ERROR_CODE`/`_ERROR_MESSAGE` for consistency across the codebase.
 
 ### Fixed
 - **Malformed JSON in notifications/message**: Fixed edge case where `mcp_logging_emit()` could emit malformed JSON (`"logger":,"data":}`) when the internal quote function failed silently. Added defensive validation to ensure quoted strings are never empty.
+- **Validator missing uriTemplate support**: `mcp-bash validate` now accepts `uriTemplate` as a valid alternative to `uri` for resource templates, per MCP spec. Previously, resources with only `uriTemplate` (no `uri`) failed validation with "missing required uri". The validator now:
+  - Accepts either `uri` OR `uriTemplate` (not both required)
+  - Warns when both are present (mutually exclusive per spec)
+  - Validates that `uriTemplate` contains `{variable}` placeholders
 
 ## [0.9.5] - 2025-01-08
 
