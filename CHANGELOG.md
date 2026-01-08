@@ -5,6 +5,16 @@ All notable changes to mcp-bash-framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.6] - Unreleased
+
+### Added
+
+### Changed
+- **Release workflow**: Release job now runs as part of CI workflow with `needs:` dependency on all test jobs. Releases are only created after lint, unit, integration, and compatibility tests pass. Previously, release and CI workflows ran in parallel, allowing releases even when tests failed.
+
+### Fixed
+- **Malformed JSON in notifications/message**: Fixed edge case where `mcp_logging_emit()` could emit malformed JSON (`"logger":,"data":}`) when the internal quote function failed silently. Added defensive validation to ensure quoted strings are never empty.
+
 ## [0.9.5] - 2025-01-08
 
 ### Added

@@ -347,3 +347,73 @@ jobs:
           echo "$HOME/go/bin" >> "$GITHUB_PATH"
       - name: Compatibility suite
         run: test/compatibility/run.sh
+
+  release:
+    # Only run on version tags, after all tests pass
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [lint, unit, integration, compatibility]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate tag matches VERSION and rendered README
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          if [[ "${tag}" != v*.*.* ]]; then
+            echo "Unexpected tag format: ${tag}" >&2
+            exit 1
+          fi
+          file_version="$(tr -d '[:space:]' <VERSION)"
+          tag_version="${tag#v}"
+          if [ "${file_version}" != "${tag_version}" ]; then
+            echo "VERSION (${file_version}) does not match tag (${tag_version})" >&2
+            exit 1
+          fi
+          bash scripts/render-readme.sh --check --version "${tag_version}"
+
+      - name: Create tarball
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME}"
+          tarball="mcp-bash-${version}.tar.gz"
+          # Create a clean archive from the git tree (avoids "file changed as we read it").
+          git archive --format=tar --prefix=mcp-bash/ "${GITHUB_SHA}" | gzip -n >"${tarball}"
+          sha256sum "${tarball}" >SHA256SUMS
+          echo "TARBALL=${tarball}" >>"$GITHUB_ENV"
+
+      - name: Create GitHub release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref_name }}
+          release_name: ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+
+      - name: Upload tarball
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ${{ env.TARBALL }}
+          asset_name: ${{ env.TARBALL }}
+          asset_content_type: application/gzip
+
+      - name: Upload checksums
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: SHA256SUMS
+          asset_name: SHA256SUMS
+          asset_content_type: text/plain
