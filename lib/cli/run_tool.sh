@@ -8,15 +8,15 @@ if [[ -z "${BASH_VERSION:-}" ]]; then
 	exit 1
 fi
 
-# Ensure roots helpers are available for validation.
-if ! command -v mcp_roots_normalize_path >/dev/null 2>&1; then
-	# shellcheck source=../roots.sh disable=SC1090,SC1091
-	. "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/roots.sh"
+# Ensure require helper is available (for standalone sourcing).
+if ! command -v mcp_require >/dev/null 2>&1; then
+	# shellcheck disable=SC1090
+	. "${MCPBASH_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}/lib/require.sh"
 fi
-if ! command -v mcp_json_extract_file_required >/dev/null 2>&1; then
-	# shellcheck source=../json.sh disable=SC1090,SC1091
-	. "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/json.sh"
-fi
+
+# Ensure roots and JSON helpers are available for validation.
+mcp_require roots mcp_roots_normalize_path
+mcp_require json mcp_json_extract_file_required
 
 # Globals: usage() from bin, MCPBASH_PROJECT_ROOT, MCPBASH_JSON_TOOL[_BIN], MCPBASH_MODE and runtime globals set by initialize_runtime_paths.
 

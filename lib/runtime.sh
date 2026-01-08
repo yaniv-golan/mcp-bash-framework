@@ -62,11 +62,14 @@ mcp_runtime_json_escape() {
 	printf '%s' "${value}"
 }
 
-# Path normalization helpers (Bash 3.2+). Load if not already present.
-if ! command -v mcp_path_normalize >/dev/null 2>&1; then
-	# shellcheck source=lib/path.sh disable=SC1090,SC1091
-	. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/path.sh"
+# Ensure require helper is available (for standalone sourcing).
+if ! command -v mcp_require >/dev/null 2>&1; then
+	# shellcheck disable=SC1090
+	. "${MCPBASH_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/lib/require.sh"
 fi
+
+# Path normalization helpers (Bash 3.2+).
+mcp_require path mcp_path_normalize
 
 # Provide a no-op verbose check when logging.sh is not loaded (unit tests source runtime directly).
 if ! command -v mcp_logging_verbose_enabled >/dev/null 2>&1; then

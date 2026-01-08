@@ -5,10 +5,13 @@ set -euo pipefail
 
 MCP_COMPLETION_LOGGER="${MCP_COMPLETION_LOGGER:-mcp.completion}"
 
-if ! command -v mcp_env_run_curated >/dev/null 2>&1; then
-	# shellcheck source=lib/runtime.sh disable=SC1090,SC1091
-	. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/runtime.sh"
+# Ensure require helper is available (for standalone sourcing).
+if ! command -v mcp_require >/dev/null 2>&1; then
+	# shellcheck disable=SC1090
+	. "${MCPBASH_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/lib/require.sh"
 fi
+
+mcp_require runtime mcp_env_run_curated
 
 mcp_completion_suggestions="[]"
 mcp_completion_has_more=false

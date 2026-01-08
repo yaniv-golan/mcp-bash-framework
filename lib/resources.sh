@@ -36,30 +36,17 @@ MCP_RESOURCES_TEMPLATES_MANUAL_JSON="[]"
 MCP_RESOURCES_TEMPLATES_MANUAL_UPDATED=false
 MCP_RESOURCES_TEMPLATES_LOGGER="${MCP_RESOURCES_TEMPLATES_LOGGER:-mcp.resources.templates}"
 
-if ! command -v mcp_uri_file_uri_from_path >/dev/null 2>&1; then
+# Ensure require helper is available (for standalone sourcing).
+if ! command -v mcp_require >/dev/null 2>&1; then
 	# shellcheck disable=SC1090
-	. "${MCPBASH_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/lib/uri.sh"
+	. "${MCPBASH_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/lib/require.sh"
 fi
 
-if ! command -v mcp_registry_resolve_scan_root >/dev/null 2>&1; then
-	# shellcheck disable=SC1090
-	. "${MCPBASH_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/lib/registry.sh"
-fi
-
-if ! command -v mcp_paginate_decode >/dev/null 2>&1; then
-	# shellcheck disable=SC1090
-	. "${MCPBASH_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/lib/paginate.sh"
-fi
-
-if ! command -v mcp_resource_content_object_from_file >/dev/null 2>&1; then
-	# shellcheck disable=SC1090
-	. "${MCPBASH_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/lib/resource_content.sh"
-fi
-
-if ! command -v mcp_env_run_curated >/dev/null 2>&1; then
-	# shellcheck source=lib/runtime.sh disable=SC1090,SC1091
-	. "${MCPBASH_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/lib/runtime.sh"
-fi
+mcp_require uri mcp_uri_file_uri_from_path
+mcp_require registry mcp_registry_resolve_scan_root
+mcp_require paginate mcp_paginate_decode
+mcp_require resource_content mcp_resource_content_object_from_file
+mcp_require runtime mcp_env_run_curated
 
 mcp_resources_file_uri_from_path() {
 	mcp_uri_file_uri_from_path "$1"

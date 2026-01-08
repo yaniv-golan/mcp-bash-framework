@@ -33,24 +33,16 @@ MCP_TOOLS_MANUAL_DELIM=$'\036'
 MCP_TOOLS_LOGGER="${MCP_TOOLS_LOGGER:-mcp.tools}"
 : "${MCPBASH_TOOL_ENV_INHERIT_WARNED:=false}"
 
-if ! command -v mcp_registry_resolve_scan_root >/dev/null 2>&1; then
+# Ensure require helper is available (for standalone sourcing).
+if ! command -v mcp_require >/dev/null 2>&1; then
 	# shellcheck disable=SC1090
-	. "${MCPBASH_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/lib/registry.sh"
-fi
-if ! command -v mcp_json_icons_to_data_uris >/dev/null 2>&1; then
-	# shellcheck disable=SC1090
-	. "${MCPBASH_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/lib/json.sh"
+	. "${MCPBASH_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/lib/require.sh"
 fi
 
-if ! command -v mcp_uri_file_uri_from_path >/dev/null 2>&1; then
-	# shellcheck disable=SC1090
-	. "${MCPBASH_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/lib/uri.sh"
-fi
-
-if ! command -v mcp_resource_content_object_from_file >/dev/null 2>&1; then
-	# shellcheck disable=SC1090
-	. "${MCPBASH_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/lib/resource_content.sh"
-fi
+mcp_require registry mcp_registry_resolve_scan_root
+mcp_require json mcp_json_icons_to_data_uris
+mcp_require uri mcp_uri_file_uri_from_path
+mcp_require resource_content mcp_resource_content_object_from_file
 
 # Provide defaults if policy helpers were not sourced (older bootstraps).
 if ! declare -F mcp_tools_policy_check >/dev/null 2>&1; then

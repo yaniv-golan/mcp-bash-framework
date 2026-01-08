@@ -101,7 +101,7 @@ initialize_runtime_paths() {
 	script_dir="$(cd "$(dirname "${resolved}")" && pwd)"
 	MCPBASH_HOME="$(cd "${script_dir}/.." && pwd)"
 
-	local required_libs="runtime json hash ids lock io paginate logging auth uri policy tools_policy registry spec tools resources prompts completion timeout rpc core validate"
+	local required_libs="require runtime json hash ids lock io paginate logging auth uri policy tools_policy registry spec tools resources prompts completion timeout rpc core validate"
 	local lib
 
 	for lib in ${required_libs}; do
@@ -111,6 +111,8 @@ initialize_runtime_paths() {
 		fi
 	done
 
+	# shellcheck disable=SC1090
+	. "${MCPBASH_HOME}/lib/require.sh"
 	# shellcheck disable=SC1090
 	. "${MCPBASH_HOME}/lib/runtime.sh"
 	# shellcheck disable=SC1090

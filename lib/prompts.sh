@@ -24,15 +24,14 @@ MCP_PROMPTS_MANUAL_ACTIVE=false
 MCP_PROMPTS_MANUAL_BUFFER=""
 MCP_PROMPTS_MANUAL_DELIM=$'\036'
 
-if ! command -v mcp_registry_resolve_scan_root >/dev/null 2>&1; then
+# Ensure require helper is available (for standalone sourcing).
+if ! command -v mcp_require >/dev/null 2>&1; then
 	# shellcheck disable=SC1090
-	. "${MCPBASH_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/lib/registry.sh"
+	. "${MCPBASH_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/lib/require.sh"
 fi
 
-if ! command -v mcp_env_run_curated >/dev/null 2>&1; then
-	# shellcheck source=lib/runtime.sh disable=SC1090,SC1091
-	. "${MCPBASH_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/lib/runtime.sh"
-fi
+mcp_require registry mcp_registry_resolve_scan_root
+mcp_require runtime mcp_env_run_curated
 
 mcp_prompts_scan_root() {
 	mcp_registry_resolve_scan_root "${MCPBASH_PROMPTS_DIR}"

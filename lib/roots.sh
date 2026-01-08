@@ -5,10 +5,13 @@
 
 set -euo pipefail
 
-if ! command -v mcp_path_normalize >/dev/null 2>&1; then
-	# shellcheck source=lib/path.sh disable=SC1090,SC1091
-	. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/path.sh"
+# Ensure require helper is available (for standalone sourcing).
+if ! command -v mcp_require >/dev/null 2>&1; then
+	# shellcheck disable=SC1090
+	. "${MCPBASH_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/lib/require.sh"
 fi
+
+mcp_require path mcp_path_normalize
 
 MCP_ROOTS_LOGGER="${MCP_ROOTS_LOGGER:-mcp.roots}"
 
