@@ -103,6 +103,39 @@ EOF
 	[ -n "${MCP_RESOURCES_TEMPLATES_REGISTRY_HASH}" ]
 }
 
+@test "resource_templates: uriTemplate resources excluded from resources.json" {
+	# Regression test: resources with uriTemplate should NOT appear in resources.json
+	# They should only appear in resource-templates.json
+	reset_template_state
+	rm -rf "${MCPBASH_RESOURCES_DIR:?}/"*
+	mkdir -p "${MCPBASH_RESOURCES_DIR}"
+
+	# Static resource with uri (should appear in resources.json)
+	printf 'data' >"${MCPBASH_RESOURCES_DIR}/static.txt"
+	cat >"${MCPBASH_RESOURCES_DIR}/static.meta.json" <<EOF
+{"name":"static-resource","uri":"file://${MCPBASH_RESOURCES_DIR}/static.txt","description":"static file"}
+EOF
+
+	# Template resource with uriTemplate only (should NOT appear in resources.json)
+	cat >"${MCPBASH_RESOURCES_DIR}/template.meta.json" <<'EOF'
+{"name":"template-resource","uriTemplate":"file:///{path}","description":"template"}
+EOF
+
+	# Refresh resources registry (resources.json)
+	mcp_resources_refresh_registry || true
+
+	# Verify only static resource is in resources registry
+	res_count="$(printf '%s' "${MCP_RESOURCES_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.items | length')"
+	res_name="$(printf '%s' "${MCP_RESOURCES_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.items[0].name')"
+
+	assert_equal "1" "${res_count}"
+	assert_equal "static-resource" "${res_name}"
+
+	# Verify template resource is NOT in resources registry (should not have fabricated file:// uri)
+	template_in_resources="$(printf '%s' "${MCP_RESOURCES_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.items[] | select(.name=="template-resource") | .name' 2>/dev/null || echo "")"
+	assert_equal "" "${template_in_resources}"
+}
+
 @test "resource_templates: manual registrations override auto-discovery" {
 	reset_template_state
 	rm -rf "${MCPBASH_RESOURCES_DIR:?}/"*

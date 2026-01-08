@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Consistent Windows CI policy**: `bundle.yml` now uses `continue-on-error` for Windows matrix jobs, matching the main CI workflow policy. Windows failures are reported but don't block the workflow.
 - **CI workflow cleanup**: Removed unreachable Windows-specific code from Ubuntu-only jobs (`lint`, `unit`, `stress`). These jobs never run on Windows, so the conditional Windows path setup was dead code.
 
+### Fixed
+- **Bundle corrupted resources.json for parameterized resources**: `mcp_resources_scan()` now correctly skips resources with `uriTemplate` field. Previously, resources defining a `uriTemplate` (for parameterized access like `file:///{path}`) would get incorrectly added to `resources.json` with a fabricated `file://` URI based on the meta.json path, corrupting the registry. These resources now only appear in `resource-templates.json` as intended per MCP spec.
+
 ## [0.9.7] - 2026-01-08
 
 ### Changed

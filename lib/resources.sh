@@ -543,13 +543,19 @@ mcp_resources_scan() {
 
 			if [ -f "${meta_json}" ]; then
 				# Read each field individually to handle multi-line descriptions correctly
-				local meta_name meta_desc meta_uri meta_mime meta_provider meta_icons
+				local meta_name meta_desc meta_uri meta_uri_template meta_mime meta_provider meta_icons
 				meta_name="$("${MCPBASH_JSON_TOOL_BIN}" -r '.name // ""' "${meta_json}" 2>/dev/null | tr -d '\r' || true)"
 				meta_desc="$("${MCPBASH_JSON_TOOL_BIN}" -r '.description // ""' "${meta_json}" 2>/dev/null | tr -d '\r' || true)"
 				meta_uri="$("${MCPBASH_JSON_TOOL_BIN}" -r '.uri // ""' "${meta_json}" 2>/dev/null | tr -d '\r' || true)"
+				meta_uri_template="$("${MCPBASH_JSON_TOOL_BIN}" -r '.uriTemplate // ""' "${meta_json}" 2>/dev/null | tr -d '\r' || true)"
 				meta_mime="$("${MCPBASH_JSON_TOOL_BIN}" -r '.mimeType // "text/plain"' "${meta_json}" 2>/dev/null | tr -d '\r' || true)"
 				meta_provider="$("${MCPBASH_JSON_TOOL_BIN}" -r '.provider // ""' "${meta_json}" 2>/dev/null | tr -d '\r' || true)"
 				meta_icons="$("${MCPBASH_JSON_TOOL_BIN}" -c '.icons // null' "${meta_json}" 2>/dev/null || echo 'null')"
+
+				# Skip resources with uriTemplate - they belong in resource-templates.json only
+				if [ -n "${meta_uri_template}" ]; then
+					continue
+				fi
 
 				if [ -n "${meta_name}" ] || [ -n "${meta_desc}" ] || [ -n "${meta_uri}" ]; then
 					[ -n "${meta_name}" ] && name="${meta_name}"
