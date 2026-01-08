@@ -71,8 +71,11 @@ mcp_logging_emit() {
 			message="[${ts}] ${message}"
 		fi
 	fi
-	logger_json="$(mcp_logging_quote "${logger}")"
-	message_json="$(mcp_logging_quote "${message}")"
+	logger_json="$(mcp_logging_quote "${logger}")" || logger_json='""'
+	message_json="$(mcp_logging_quote "${message}")" || message_json='""'
+	# Defensive: ensure quoted strings are non-empty to avoid malformed JSON
+	[ -n "${logger_json}" ] || logger_json='""'
+	[ -n "${message_json}" ] || message_json='""'
 	rpc_send_line_direct "$(printf '{"jsonrpc":"2.0","method":"notifications/message","params":{"level":"%s","logger":%s,"data":%s}}' "${level}" "${logger_json}" "${message_json}")"
 }
 
