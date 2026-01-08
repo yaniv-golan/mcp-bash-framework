@@ -21,26 +21,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Set Go paths
-        shell: bash
         run: |
           set -euo pipefail
-          if [ "${RUNNER_OS}" = "Windows" ]; then
-            win_home="$(cygpath -w "${HOME}")"
-            win_gopath="${win_home}\\go"
-            win_gomodcache="${win_gopath}\\pkg\\mod"
-            win_gocache="${LOCALAPPDATA:-${win_home}\\AppData\\Local}\\go-build"
-            echo "GOPATH=${win_gopath}" >> "$GITHUB_ENV"
-            echo "GOMODCACHE=${win_gomodcache}" >> "$GITHUB_ENV"
-            echo "GOCACHE=${win_gocache}" >> "$GITHUB_ENV"
-            echo "$(cygpath -u "${win_gopath}")/bin" >> "$GITHUB_PATH"
-            mkdir -p "$(cygpath -u "${win_gopath}")/bin" "$(cygpath -u "${win_gomodcache}")" "$(cygpath -u "${win_gocache}")"
-          else
-            echo "GOPATH=${HOME}/go" >> "$GITHUB_ENV"
-            echo "GOMODCACHE=${HOME}/go/pkg/mod" >> "$GITHUB_ENV"
-            echo "GOCACHE=${HOME}/.cache/go-build" >> "$GITHUB_ENV"
-            echo "${HOME}/go/bin" >> "$GITHUB_PATH"
-            mkdir -p "${HOME}/go/bin" "${HOME}/go/pkg/mod" "${HOME}/.cache/go-build"
-          fi
+          echo "GOPATH=${HOME}/go" >> "$GITHUB_ENV"
+          echo "GOMODCACHE=${HOME}/go/pkg/mod" >> "$GITHUB_ENV"
+          echo "GOCACHE=${HOME}/.cache/go-build" >> "$GITHUB_ENV"
+          echo "${HOME}/go/bin" >> "$GITHUB_PATH"
+          mkdir -p "${HOME}/go/bin" "${HOME}/go/pkg/mod" "${HOME}/.cache/go-build"
       - name: Setup Go
         id: go
         uses: actions/setup-go@v5
@@ -77,26 +64,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Set Go paths
-        shell: bash
         run: |
           set -euo pipefail
-          if [ "${RUNNER_OS}" = "Windows" ]; then
-            win_home="$(cygpath -w "${HOME}")"
-            win_gopath="${win_home}\\go"
-            win_gomodcache="${win_gopath}\\pkg\\mod"
-            win_gocache="${LOCALAPPDATA:-${win_home}\\AppData\\Local}\\go-build"
-            echo "GOPATH=${win_gopath}" >> "$GITHUB_ENV"
-            echo "GOMODCACHE=${win_gomodcache}" >> "$GITHUB_ENV"
-            echo "GOCACHE=${win_gocache}" >> "$GITHUB_ENV"
-            echo "$(cygpath -u "${win_gopath}")/bin" >> "$GITHUB_PATH"
-            mkdir -p "$(cygpath -u "${win_gopath}")/bin" "$(cygpath -u "${win_gomodcache}")" "$(cygpath -u "${win_gocache}")"
-          else
-            echo "GOPATH=${HOME}/go" >> "$GITHUB_ENV"
-            echo "GOMODCACHE=${HOME}/go/pkg/mod" >> "$GITHUB_ENV"
-            echo "GOCACHE=${HOME}/.cache/go-build" >> "$GITHUB_ENV"
-            echo "${HOME}/go/bin" >> "$GITHUB_PATH"
-            mkdir -p "${HOME}/go/bin" "${HOME}/go/pkg/mod" "${HOME}/.cache/go-build"
-          fi
+          echo "GOPATH=${HOME}/go" >> "$GITHUB_ENV"
+          echo "GOMODCACHE=${HOME}/go/pkg/mod" >> "$GITHUB_ENV"
+          echo "GOCACHE=${HOME}/.cache/go-build" >> "$GITHUB_ENV"
+          echo "${HOME}/go/bin" >> "$GITHUB_PATH"
+          mkdir -p "${HOME}/go/bin" "${HOME}/go/pkg/mod" "${HOME}/.cache/go-build"
       - name: Setup Go
         id: go
         uses: actions/setup-go@v5
@@ -338,26 +312,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Set Go paths
-        shell: bash
         run: |
           set -euo pipefail
-          if [ "${RUNNER_OS}" = "Windows" ]; then
-            win_home="$(cygpath -w "${HOME}")"
-            win_gopath="${win_home}\\go"
-            win_gomodcache="${win_gopath}\\pkg\\mod"
-            win_gocache="${LOCALAPPDATA:-${win_home}\\AppData\\Local}\\go-build"
-            echo "GOPATH=${win_gopath}" >> "$GITHUB_ENV"
-            echo "GOMODCACHE=${win_gomodcache}" >> "$GITHUB_ENV"
-            echo "GOCACHE=${win_gocache}" >> "$GITHUB_ENV"
-            echo "$(cygpath -u "${win_gopath}")/bin" >> "$GITHUB_PATH"
-            mkdir -p "$(cygpath -u "${win_gopath}")/bin" "$(cygpath -u "${win_gomodcache}")" "$(cygpath -u "${win_gocache}")"
-          else
-            echo "GOPATH=${HOME}/go" >> "$GITHUB_ENV"
-            echo "GOMODCACHE=${HOME}/go/pkg/mod" >> "$GITHUB_ENV"
-            echo "GOCACHE=${HOME}/.cache/go-build" >> "$GITHUB_ENV"
-            echo "${HOME}/go/bin" >> "$GITHUB_PATH"
-            mkdir -p "${HOME}/go/bin" "${HOME}/go/pkg/mod" "${HOME}/.cache/go-build"
-          fi
+          echo "GOPATH=${HOME}/go" >> "$GITHUB_ENV"
+          echo "GOMODCACHE=${HOME}/go/pkg/mod" >> "$GITHUB_ENV"
+          echo "GOCACHE=${HOME}/.cache/go-build" >> "$GITHUB_ENV"
+          echo "${HOME}/go/bin" >> "$GITHUB_PATH"
+          mkdir -p "${HOME}/go/bin" "${HOME}/go/pkg/mod" "${HOME}/.cache/go-build"
       - name: Setup Go
         id: go
         uses: actions/setup-go@v5
@@ -415,10 +376,26 @@ jobs:
       - name: Compatibility suite
         run: test/compatibility/run.sh
 
+  # Fast bundle validation - ensures bundle command works on every push
+  bundle-sanity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+      - name: Validate bundle command
+        run: |
+          set -euo pipefail
+          export MCPBASH_HOME="${GITHUB_WORKSPACE}"
+          export PATH="${GITHUB_WORKSPACE}/bin:${PATH}"
+          mcp-bash bundle --help
+          cd examples/00-hello-tool
+          mcp-bash bundle --validate
+
   release:
     # Only run on version tags, after all tests pass
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [lint, unit, integration, compatibility]
+    needs: [lint, unit, integration, bundle-sanity, compatibility]
     runs-on: ubuntu-latest
     permissions:
       contents: write

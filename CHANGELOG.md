@@ -5,6 +5,18 @@ All notable changes to mcp-bash-framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.8] - 2026-01-08
+
+### Changed
+- **CI/CD improvements**: Bundle validation is now part of release gates via new `bundle-sanity` job that validates `mcp-bash bundle --help` and `mcp-bash bundle --validate` on every push. Prevents broken bundle functionality from reaching releases when non-bundle-path changes break bundle code. Full bundle creation tests remain in separate `bundle.yml` workflow for thorough path-triggered testing.
+- **Consistent Windows CI policy**: `bundle.yml` now uses `continue-on-error` for Windows matrix jobs, matching the main CI workflow policy. Windows failures are reported but don't block the workflow.
+- **CI workflow cleanup**: Removed unreachable Windows-specific code from Ubuntu-only jobs (`lint`, `unit`, `stress`). These jobs never run on Windows, so the conditional Windows path setup was dead code.
+
+## [0.9.7] - 2026-01-08
+
+### Changed
+- **Internal refactoring**: Minor internal improvements and bug fixes from v0.9.6.
+
 ## [0.9.6] - 2026-01-08
 
 ### Added
