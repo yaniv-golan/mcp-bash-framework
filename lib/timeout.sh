@@ -4,6 +4,11 @@
 
 set -euo pipefail
 
+# Install debug EXIT trap if MCPBASH_DEBUG=true (helps diagnose set -e exits)
+if declare -f mcp_runtime_install_debug_trap >/dev/null 2>&1; then
+	mcp_runtime_install_debug_trap
+fi
+
 # Cross-platform stat mtime detection (run once at load time)
 # Using array for robustness with the variable-as-command pattern
 # Note: Use ${BASH_SOURCE[0]} instead of /dev/null for Windows/MSYS2 compatibility

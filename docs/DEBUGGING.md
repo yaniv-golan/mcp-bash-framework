@@ -172,6 +172,9 @@ For manual control without the `debug` subcommand:
 | `MCPBASH_TRACE_TOOLS` | `false` | Enable `set -x` tracing for shell tools; traces go to per-invocation logs under `MCPBASH_STATE_DIR`. SDK helpers suppress xtrace around secret-bearing args/_meta payload expansions. |
 | `MCPBASH_TRACE_PS4` | `+ ${BASH_SOURCE[0]##*/}:${LINENO}: ` | Override PS4 used for traces (timestamps or custom format) |
 | `MCPBASH_TRACE_MAX_BYTES` | `1048576` | Max bytes to retain per trace log (truncated to tail when exceeded) |
+| `MCPBASH_DEBUG` | `false` | Enable debug EXIT trap that logs exit location and call stack on non-zero exits; helps diagnose `set -e` failures |
+| `MCPBASH_DEBUG_ALL_EXITS` | `false` | With `MCPBASH_DEBUG=true`, log all exits (not just failures) |
+| `MCPBASH_INTEGRATION_DEBUG_FAILED` | `false` | Re-run failed integration tests with `bash -x` tracing |
 | `MCPBASH_CI_MODE` | `false` | Opt-in CI defaults: safe `TMP_ROOT`, log dir, keep logs, timestamps; emits failure summaries and env snapshot; GH annotations when `GITHUB_ACTIONS=true` |
 | `MCPBASH_CI_VERBOSE` | `false` | With CI mode, start at debug log level instead of info |
 | `MCPBASH_LOG_DIR` | (unset) | Log directory; CI mode sets a default when unset |

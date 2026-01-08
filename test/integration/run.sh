@@ -224,6 +224,26 @@ run_quiet_test_to_log() {
 	bash "${SCRIPT_DIR}/${test_script}" >"${log_file}" 2>&1
 }
 
+# Re-run a failed test with bash -x tracing for debugging
+# Enabled by MCPBASH_INTEGRATION_DEBUG_FAILED=true
+run_debug_trace() {
+	local test_script="$1"
+	local trace_file="${LOG_DIR}/${test_script}.trace.log"
+
+	printf '  --- re-running with bash -x trace ---\n' >&2
+	# Run with xtrace, capture to separate file
+	# Use MCPBASH_DEBUG=true to enable debug EXIT trap as well
+	MCPBASH_DEBUG=true bash -x "${SCRIPT_DIR}/${test_script}" >"${trace_file}" 2>&1 || true
+	printf '  trace log: %s\n' "${trace_file}" >&2
+
+	# Show last 50 lines of trace (most relevant for debugging)
+	if [ -f "${trace_file}" ]; then
+		printf '  --- last 50 lines of trace ---\n' >&2
+		tail -50 "${trace_file}" >&2 || true
+		printf '  --- end of trace ---\n' >&2
+	fi
+}
+
 run_test() {
 	local test_script="$1"
 	local index="$2"
@@ -271,6 +291,12 @@ run_test() {
 		printf '  --- full log output ---\n' >&2
 		cat "${log_file}" >&2 || true
 		printf '  --- end of log ---\n' >&2
+
+		# Re-run with bash -x trace if debug mode is enabled
+		if [ "${MCPBASH_INTEGRATION_DEBUG_FAILED:-false}" = "true" ] && [ "${timed_out}" != true ]; then
+			run_debug_trace "${test_script}"
+		fi
+
 		failed=$((failed + 1))
 	fi
 }

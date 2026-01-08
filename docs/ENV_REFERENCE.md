@@ -48,6 +48,8 @@ Authoritative list of supported environment variables. Defaults shown are the sh
 | `MCPBASH_DEBUG_PAYLOADS` | (unset) | Write full message payloads to `${TMPDIR}/mcpbash.state.*`. |
 | `MCPBASH_DEBUG_ERRORS` | `false` | When `true`, include tool diagnostics (exit code, stderr tail, trace line) in outputSchema validation errors. |
 | `MCPBASH_DEBUG_LOG` | (unset) | Override the per-tool debug log path; when unset, tools get a per-invocation file under the log/state dir. |
+| `MCPBASH_DEBUG` | `false` | Enable debug EXIT trap that logs exit location and call stack on non-zero exits; helps diagnose `set -e` failures. |
+| `MCPBASH_DEBUG_ALL_EXITS` | `false` | With `MCPBASH_DEBUG=true`, log all exits (not just failures). |
 | `MCPBASH_PRESERVE_STATE` | (unset) | Preserve state dir after exit (useful with `MCPBASH_DEBUG_PAYLOADS`; includes per-request `stderr.*.log` worker captures). |
 | `MCPBASH_REMOTE_TOKEN` | (unset) | Shared secret for proxied deployments (minimum 32 characters). |
 | `MCPBASH_REMOTE_TOKEN_KEY` | `mcpbash/remoteToken` | JSON path for token lookup. |
@@ -88,5 +90,6 @@ Examples: `MCPBASH_STATE_DIR`, `MCPBASH_LOCK_ROOT`, `MCPBASH_TMP_ROOT`, `MCPBASH
 | Variable | Default | Notes |
 |----------|---------|-------|
 | `MCPBASH_RUN_TOOL_SOURCE_SERVER_ENV` | (unset) | When `true` or `1`, `mcp-bash run-tool` implicitly sources `server.d/env.sh` before tool execution (equivalent to `--with-server-env` flag). Useful in CI pipelines where all `run-tool` invocations should use server environment. |
+| `MCPBASH_INTEGRATION_DEBUG_FAILED` | `false` | Re-run failed integration tests with `bash -x` tracing. |
 
-Examples: `MCPBASH_BASE_TAR` / `MCPBASH_BASE_TAR_META` / `MCPBASH_BASE_TAR_KEY`, `MCPBASH_STAGING_TAR`, `MCPBASH_TEST_ROOT`, `MCPBASH_INTEGRATION_TMP`, `MCPBASH_RUN_SDK_TYPESCRIPT`, `MCPBASH_LOG_JSON_TOOL` (suite logging), integration runner controls (`MCPBASH_INTEGRATION_ONLY`, `MCPBASH_INTEGRATION_SKIP`, `MCPBASH_INTEGRATION_TEST_TIMEOUT_SECONDS`), installer overrides (`MCPBASH_INSTALL_REPO_URL`). Keep these scoped to testing or packaging workflows. 
+Examples: `MCPBASH_BASE_TAR` / `MCPBASH_BASE_TAR_META` / `MCPBASH_BASE_TAR_KEY`, `MCPBASH_STAGING_TAR`, `MCPBASH_TEST_ROOT`, `MCPBASH_INTEGRATION_TMP`, `MCPBASH_RUN_SDK_TYPESCRIPT`, `MCPBASH_LOG_JSON_TOOL` (suite logging), integration runner controls (`MCPBASH_INTEGRATION_ONLY`, `MCPBASH_INTEGRATION_SKIP`, `MCPBASH_INTEGRATION_TEST_TIMEOUT_SECONDS`, `MCPBASH_INTEGRATION_DEBUG_FAILED`), installer overrides (`MCPBASH_INSTALL_REPO_URL`). Keep these scoped to testing or packaging workflows. 

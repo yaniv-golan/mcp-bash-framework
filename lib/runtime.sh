@@ -1118,6 +1118,61 @@ mcp_runtime_titlecase() {
 	printf '%s' "${result}"
 }
 
+# Debug EXIT trap: logs exit location when MCPBASH_DEBUG=true
+# Helps diagnose unexpected script exits (especially from set -e)
+mcp_runtime_install_debug_trap() {
+	if [ "${MCPBASH_DEBUG:-false}" != "true" ]; then
+		return 0
+	fi
+	# Capture the caller's source file for context
+	local caller_file="${BASH_SOURCE[1]:-unknown}"
+	trap 'mcp_runtime_debug_exit_handler "$?" "$LINENO" "'"${caller_file}"'"' EXIT
+}
+
+mcp_runtime_debug_exit_handler() {
+	local exit_code="$1"
+	local line_no="$2"
+	local source_file="$3"
+	# Only log non-zero exits or when explicitly requested
+	if [ "${exit_code}" -ne 0 ] || [ "${MCPBASH_DEBUG_ALL_EXITS:-false}" = "true" ]; then
+		printf '[DEBUG] EXIT at %s:%s (status %s)\n' "${source_file}" "${line_no}" "${exit_code}" >&2
+		# Print call stack if available
+		if [ "${#FUNCNAME[@]}" -gt 1 ]; then
+			printf '[DEBUG] Call stack:\n' >&2
+			local i
+			for ((i = 1; i < ${#FUNCNAME[@]}; i++)); do
+				printf '[DEBUG]   %s() at %s:%s\n' "${FUNCNAME[$i]}" "${BASH_SOURCE[$i]:-unknown}" "${BASH_LINENO[$((i - 1))]}" >&2
+			done
+		fi
+	fi
+}
+
+# Run a command in a subshell with enhanced error context
+# Usage: mcp_runtime_subshell "context_name" command [args...]
+# On failure, logs context and exit code for easier debugging
+mcp_runtime_subshell() {
+	local context="$1"
+	shift
+
+	local status=0
+	(
+		# Install debug trap in subshell if available
+		if [ "${MCPBASH_DEBUG:-false}" = "true" ]; then
+			trap 'printf "[DEBUG] Subshell (%s) EXIT at line %s (status %s)\n" "'"${context}"'" "$LINENO" "$?" >&2' EXIT
+		fi
+		"$@"
+	) || status=$?
+
+	if [ "${status}" -ne 0 ]; then
+		if [ "${MCPBASH_DEBUG:-false}" = "true" ]; then
+			printf '[DEBUG] Subshell "%s" failed with status %s\n' "${context}" "${status}" >&2
+			printf '[DEBUG] Command was: %s\n' "$*" >&2
+		fi
+	fi
+
+	return "${status}"
+}
+
 mcp_runtime_detect_version() {
 	# Try to detect version from common sources
 	local version=""

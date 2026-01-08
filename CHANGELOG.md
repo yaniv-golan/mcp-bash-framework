@@ -10,10 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Debug file detection**: Create `server.d/.debug` to enable `MCPBASH_LOG_LEVEL=debug` persistently per-project. Eliminates boilerplate debug detection in `server.d/env.sh`. Environment variable takes precedence if set. See [DEBUGGING.md](docs/DEBUGGING.md#debug-file-persistent-debug-mode).
 - **Progress-aware timeout extension**: Long-running tools that emit progress can now extend their timeout dynamically instead of being killed after a fixed duration. Opt-in via `MCPBASH_PROGRESS_EXTENDS_TIMEOUT=true` (global) or `"progressExtendsTimeout": true` in `tool.meta.json` (per-tool). The watchdog resets its idle timer on each progress emission, with a hard cap via `MCPBASH_MAX_TIMEOUT_SECS` (default 600s) to prevent runaway processes. Three timeout variants are now distinguished in error messages: fixed timeout, idle timeout (no progress for N seconds), and max exceeded (hard cap reached). When a tool emits progress but times out with the feature disabled, a warning is logged suggesting enablement. See [BEST-PRACTICES.md](docs/BEST-PRACTICES.md) §4.3 and [ENV_REFERENCE.md](docs/ENV_REFERENCE.md).
+- **Debug EXIT trap**: New `MCPBASH_DEBUG=true` enables an EXIT trap that logs exit location and call stack on non-zero exits, helping diagnose `set -e` failures. Use `MCPBASH_DEBUG_ALL_EXITS=true` to log all exits (not just failures). Installed automatically in `lib/timeout.sh` when sourced.
+- **Integration test debug mode**: New `MCPBASH_INTEGRATION_DEBUG_FAILED=true` re-runs failed integration tests with `bash -x` tracing and outputs the last 50 lines of trace for easier debugging.
+- **Custom lint check**: `test/lint.sh` now warns about the dangerous `local var; var=$(cmd)` pattern that causes `set -e` to exit on command failure. The safe pattern is `local var=$(cmd)` which masks the exit code via the `local` builtin.
 
 ### Changed
 
 ### Fixed
+- **set -e exit in with_timeout**: Fixed a bug where `with_timeout` would exit prematurely when grep found no timeout marker in the watchdog state file. The pattern `local var; var=$(grep ...)` causes `set -e` to exit on grep's non-zero return code (no match). Fixed by combining declaration and assignment (`local var=$(grep ...)`), which masks the exit code via the `local` builtin.
 
 ## [0.9.4] - 2026-01-07
 
