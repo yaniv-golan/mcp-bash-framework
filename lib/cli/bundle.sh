@@ -14,7 +14,7 @@ cli_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "${cli_dir}/common.sh"
 
 # Required framework files to embed (from bin/mcp-bash line 99 + additional)
-BUNDLE_REQUIRED_LIBS="require runtime json hash ids lock io paginate logging auth uri policy tools_policy registry spec tools resources prompts completion timeout elicitation roots rpc core handler_helpers validate path resource_content resource_providers progress"
+BUNDLE_REQUIRED_LIBS="require runtime json hash ids lock io paginate logging auth uri policy tools_policy registry spec tools resources prompts completion timeout elicitation roots rpc core handler_helpers validate path resource_content resource_providers progress progress-passthrough"
 
 # gojq release version to bundle
 GOJQ_VERSION="0.12.16"

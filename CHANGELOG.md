@@ -5,6 +5,11 @@ All notable changes to mcp-bash-framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.10] - 2026-01-08
+
+### Fixed
+- **Bundle missing progress-passthrough.sh**: Added `progress-passthrough` to `BUNDLE_REQUIRED_LIBS` in bundle.sh. This library is sourced by `sdk/tool-sdk.sh` for `mcp_run_with_progress` functionality and was missing from bundles.
+
 ## [0.9.9] - 2026-01-08
 
 ### Fixed
