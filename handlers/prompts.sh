@@ -5,11 +5,6 @@
 
 set -euo pipefail
 
-mcp_prompts_quote() {
-	local text="$1"
-	mcp_json_quote_text "${text}"
-}
-
 mcp_handle_prompts() {
 	local method="$1"
 	local json_payload="$2"
@@ -20,8 +15,8 @@ mcp_handle_prompts() {
 
 	if mcp_runtime_is_minimal_mode; then
 		local message
-		message=$(mcp_prompts_quote "Prompts capability unavailable in minimal mode")
-		printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32601,"message":%s}}' "${id}" "${message}"
+		message=$(mcp_json_quote_text "Prompts capability unavailable in minimal mode")
+		mcp_handler_error_response "${id}" "-32601" "${message}"
 		return 0
 	fi
 
@@ -31,17 +26,14 @@ mcp_handle_prompts() {
 		limit="$(mcp_json_extract_limit "${json_payload}")"
 		cursor="$(mcp_json_extract_cursor "${json_payload}")"
 		if ! list_json="$(mcp_prompts_list "${limit}" "${cursor}")"; then
-			local code="${_MCP_PROMPTS_ERROR_CODE:--32603}"
-			# Some lib paths initialise error code to 0; never emit code 0 over JSON-RPC.
-			case "${code}" in
-			'' | 0) code=-32603 ;;
-			esac
+			local code
+			code="$(mcp_handler_normalize_error_code "${_MCP_PROMPTS_ERROR_CODE:-}")"
 			local message
-			message=$(mcp_prompts_quote "${_MCP_PROMPTS_ERROR_MESSAGE:-Unable to list prompts}")
-			printf '{"jsonrpc":"2.0","id":%s,"error":{"code":%s,"message":%s}}' "${id}" "${code}" "${message}"
+			message=$(mcp_json_quote_text "${_MCP_PROMPTS_ERROR_MESSAGE:-Unable to list prompts}")
+			mcp_handler_error_response "${id}" "${code}" "${message}"
 			return 0
 		fi
-		printf '{"jsonrpc":"2.0","id":%s,"result":%s}' "${id}" "${list_json}"
+		mcp_handler_success_response "${id}" "${list_json}"
 		if mcp_logging_is_enabled "debug"; then
 			mcp_logging_debug "${MCP_PROMPTS_LOGGER}" "List count=${MCP_PROMPTS_TOTAL}"
 		fi
@@ -51,8 +43,8 @@ mcp_handle_prompts() {
 		name="$(mcp_json_extract_prompt_name "${json_payload}")"
 		if [ -z "${name}" ]; then
 			local message
-			message=$(mcp_prompts_quote "Prompt name is required")
-			printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32602,"message":%s}}' "${id}" "${message}"
+			message=$(mcp_json_quote_text "Prompt name is required")
+			mcp_handler_error_response "${id}" "-32602" "${message}"
 			return 0
 		fi
 		args_json="$(mcp_json_extract_prompt_arguments "${json_payload}")"
@@ -61,33 +53,33 @@ mcp_handle_prompts() {
 		fi
 		mcp_prompts_refresh_registry || {
 			local message
-			message=$(mcp_prompts_quote "Unable to load prompts registry")
-			printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32603,"message":%s}}' "${id}" "${message}"
+			message=$(mcp_json_quote_text "Unable to load prompts registry")
+			mcp_handler_error_response "${id}" "-32603" "${message}"
 			return 0
 		}
 		if ! metadata="$(mcp_prompts_metadata_for_name "${name}")"; then
 			local message
-			message=$(mcp_prompts_quote "Prompt not found")
+			message=$(mcp_json_quote_text "Prompt not found")
 			# Unknown prompt name is an invalid-params condition, not a missing method.
-			printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32602,"message":%s}}' "${id}" "${message}"
+			mcp_handler_error_response "${id}" "-32602" "${message}"
 			return 0
 		fi
 		if ! mcp_prompts_render "${metadata}" "${args_json}"; then
 			local message
-			message=$(mcp_prompts_quote "Unable to render prompt")
-			printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32603,"message":%s}}' "${id}" "${message}"
+			message=$(mcp_json_quote_text "Unable to render prompt")
+			mcp_handler_error_response "${id}" "-32603" "${message}"
 			return 0
 		fi
 		rendered="${_MCP_PROMPTS_RESULT}"
 		if mcp_logging_is_enabled "debug"; then
 			mcp_logging_debug "${MCP_PROMPTS_LOGGER}" "Get name=${name}"
 		fi
-		printf '{"jsonrpc":"2.0","id":%s,"result":%s}' "${id}" "${rendered}"
+		mcp_handler_success_response "${id}" "${rendered}"
 		;;
 	*)
 		local message
-		message=$(mcp_prompts_quote "Unknown prompts method")
-		printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32601,"message":%s}}' "${id}" "${message}"
+		message=$(mcp_json_quote_text "Unknown prompts method")
+		mcp_handler_error_response "${id}" "-32601" "${message}"
 		;;
 	esac
 }

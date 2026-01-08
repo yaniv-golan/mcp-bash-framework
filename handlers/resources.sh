@@ -13,11 +13,6 @@ mcp_resources_generate_subscription_id() {
 	printf 'sub-%s-%04d%04d' "$(date +%s)" "$RANDOM" "$RANDOM"
 }
 
-mcp_resources_quote() {
-	local text="$1"
-	mcp_json_quote_text "${text}"
-}
-
 mcp_handle_resources() {
 	local method="$1"
 	local json_payload="$2"
@@ -29,8 +24,8 @@ mcp_handle_resources() {
 
 	if mcp_runtime_is_minimal_mode; then
 		local message
-		message=$(mcp_resources_quote "Resources capability unavailable in minimal mode")
-		printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32601,"message":%s}}' "${id}" "${message}"
+		message=$(mcp_json_quote_text "Resources capability unavailable in minimal mode")
+		mcp_handler_error_response "${id}" "-32601" "${message}"
 		return 0
 	fi
 
@@ -40,17 +35,14 @@ mcp_handle_resources() {
 		limit="$(mcp_json_extract_limit "${json_payload}")"
 		cursor="$(mcp_json_extract_cursor "${json_payload}")"
 		if ! list_json="$(mcp_resources_list "${limit}" "${cursor}")"; then
-			local code="${_MCP_RESOURCES_ERROR_CODE:--32603}"
-			# Some lib paths initialise error code to 0; never emit code 0 over JSON-RPC.
-			case "${code}" in
-			"" | "0") code="-32603" ;;
-			esac
+			local code
+			code="$(mcp_handler_normalize_error_code "${_MCP_RESOURCES_ERROR_CODE:-}")"
 			local message
-			message=$(mcp_resources_quote "${_MCP_RESOURCES_ERROR_MESSAGE:-Unable to list resources}")
-			printf '{"jsonrpc":"2.0","id":%s,"error":{"code":%s,"message":%s}}' "${id}" "${code}" "${message}"
+			message=$(mcp_json_quote_text "${_MCP_RESOURCES_ERROR_MESSAGE:-Unable to list resources}")
+			mcp_handler_error_response "${id}" "${code}" "${message}"
 			return 0
 		fi
-		printf '{"jsonrpc":"2.0","id":%s,"result":%s}' "${id}" "${list_json}"
+		mcp_handler_success_response "${id}" "${list_json}"
 		;;
 	resources/read)
 		local name uri result_json
@@ -58,22 +50,20 @@ mcp_handle_resources() {
 		uri="$(mcp_json_extract_resource_uri "${json_payload}")"
 		if [ -z "${name}" ] && [ -z "${uri}" ]; then
 			local message
-			message=$(mcp_resources_quote "Resource name or uri required")
-			printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32602,"message":%s}}' "${id}" "${message}"
+			message=$(mcp_json_quote_text "Resource name or uri required")
+			mcp_handler_error_response "${id}" "-32602" "${message}"
 			return 0
 		fi
 		if ! mcp_resources_read "${name}" "${uri}"; then
-			local code="${_MCP_RESOURCES_ERROR_CODE:--32603}"
-			case "${code}" in
-			"" | "0") code="-32603" ;;
-			esac
+			local code
+			code="$(mcp_handler_normalize_error_code "${_MCP_RESOURCES_ERROR_CODE:-}")"
 			local message
-			message=$(mcp_resources_quote "${_MCP_RESOURCES_ERROR_MESSAGE:-Unable to read resource}")
-			printf '{"jsonrpc":"2.0","id":%s,"error":{"code":%s,"message":%s}}' "${id}" "${code}" "${message}"
+			message=$(mcp_json_quote_text "${_MCP_RESOURCES_ERROR_MESSAGE:-Unable to read resource}")
+			mcp_handler_error_response "${id}" "${code}" "${message}"
 			return 0
 		fi
 		result_json="${_MCP_RESOURCES_RESULT}"
-		printf '{"jsonrpc":"2.0","id":%s,"result":%s}' "${id}" "${result_json}"
+		mcp_handler_success_response "${id}" "${result_json}"
 		;;
 	resources/subscribe)
 		local name uri subscription_id result_json
@@ -85,20 +75,18 @@ mcp_handle_resources() {
 		fi
 		if [ -z "${name}" ] && [ -z "${uri}" ]; then
 			local message
-			message=$(mcp_resources_quote "Resource name or uri required")
-			printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32602,"message":%s}}' "${id}" "${message}"
+			message=$(mcp_json_quote_text "Resource name or uri required")
+			mcp_handler_error_response "${id}" "-32602" "${message}"
 			return 0
 		fi
 		subscription_id="$(mcp_resources_generate_subscription_id)"
 		if ! mcp_resources_read "${name}" "${uri}"; then
 			mcp_logging_error "${logger}" "Initial read failed code=${_MCP_RESOURCES_ERROR_CODE:-?} msg=${_MCP_RESOURCES_ERROR_MESSAGE:-?}"
-			local code="${_MCP_RESOURCES_ERROR_CODE:--32603}"
-			case "${code}" in
-			"" | "0") code="-32603" ;;
-			esac
+			local code
+			code="$(mcp_handler_normalize_error_code "${_MCP_RESOURCES_ERROR_CODE:-}")"
 			local message
-			message=$(mcp_resources_quote "${_MCP_RESOURCES_ERROR_MESSAGE:-Unable to read resource}")
-			printf '{"jsonrpc":"2.0","id":%s,"error":{"code":%s,"message":%s}}' "${id}" "${code}" "${message}"
+			message=$(mcp_json_quote_text "${_MCP_RESOURCES_ERROR_MESSAGE:-Unable to read resource}")
+			mcp_handler_error_response "${id}" "${code}" "${message}"
 			return 0
 		fi
 		result_json="${_MCP_RESOURCES_RESULT}"
@@ -125,7 +113,7 @@ mcp_handle_resources() {
 		local response_payload response
 		# MCP 2025-11-25: resources/subscribe returns only {subscriptionId}.
 		response_payload="$("${MCPBASH_JSON_TOOL_BIN}" -n -c --arg sub "${subscription_id}" '{subscriptionId: $sub}')"
-		response="$(printf '{"jsonrpc":"2.0","id":%s,"result":%s}' "${id}" "${response_payload}")"
+		response="$(mcp_handler_success_response "${id}" "${response_payload}")"
 		mcp_logging_debug "${logger}" "Subscribe emitting response subscription=${subscription_id}"
 		rpc_send_line_direct "${response}"
 		if [ -n "${MCPBASH_STATE_DIR:-}" ]; then
@@ -138,12 +126,12 @@ mcp_handle_resources() {
 		subscription_id="$(mcp_json_extract_subscription_id "${json_payload}")"
 		if [ -z "${subscription_id}" ]; then
 			local message
-			message=$(mcp_resources_quote "subscriptionId required")
-			printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32602,"message":%s}}' "${id}" "${message}"
+			message=$(mcp_json_quote_text "subscriptionId required")
+			mcp_handler_error_response "${id}" "-32602" "${message}"
 			return 0
 		fi
 		rm -f "${MCPBASH_STATE_DIR}/resource_subscription.${subscription_id}"
-		printf '{"jsonrpc":"2.0","id":%s,"result":{}}' "${id}"
+		mcp_handler_success_response "${id}" "{}"
 		;;
 	resources/templates/list)
 		local limit cursor list_json
@@ -151,6 +139,7 @@ mcp_handle_resources() {
 		cursor="$(mcp_json_extract_cursor "${json_payload}")"
 		if ! list_json="$(mcp_resources_templates_list "${limit}" "${cursor}")"; then
 			local code="${_MCP_RESOURCES_ERROR_CODE:--32603}"
+			# Special case: code 0 with cursor means invalid cursor, otherwise internal error
 			if [ "${code}" = "0" ]; then
 				if [ -n "${cursor}" ]; then
 					code="-32602"
@@ -163,16 +152,16 @@ mcp_handle_resources() {
 			if [ "${code}" = "-32602" ] && [ -z "${_MCP_RESOURCES_ERROR_MESSAGE:-}" ]; then
 				err_text="Invalid cursor"
 			fi
-			message=$(mcp_resources_quote "${err_text}")
-			printf '{"jsonrpc":"2.0","id":%s,"error":{"code":%s,"message":%s}}' "${id}" "${code}" "${message}"
+			message=$(mcp_json_quote_text "${err_text}")
+			mcp_handler_error_response "${id}" "${code}" "${message}"
 			return 0
 		fi
-		printf '{"jsonrpc":"2.0","id":%s,"result":%s}' "${id}" "${list_json}"
+		mcp_handler_success_response "${id}" "${list_json}"
 		;;
 	*)
 		local message
-		message=$(mcp_resources_quote "Unknown resources method")
-		printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32601,"message":%s}}' "${id}" "${message}"
+		message=$(mcp_json_quote_text "Unknown resources method")
+		mcp_handler_error_response "${id}" "-32601" "${message}"
 		;;
 	esac
 }

@@ -5,11 +5,6 @@
 
 set -euo pipefail
 
-mcp_tools_quote() {
-	local text="$1"
-	mcp_json_quote_text "${text}"
-}
-
 mcp_tools_extract_call_fields() {
 	# Extract name, arguments (compact JSON), timeoutSecs, and _meta in a single jq/gojq pass.
 	# Uses "null" as placeholder for empty timeoutSecs to prevent bash read from collapsing tabs.
@@ -42,8 +37,8 @@ mcp_handle_tools() {
 
 	if mcp_runtime_is_minimal_mode; then
 		local message
-		message=$(mcp_tools_quote "Tools capability unavailable in minimal mode")
-		printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32601,"message":%s}}' "${id}" "${message}"
+		message=$(mcp_json_quote_text "Tools capability unavailable in minimal mode")
+		mcp_handler_error_response "${id}" "-32601" "${message}"
 		return 0
 	fi
 
@@ -54,21 +49,15 @@ mcp_handle_tools() {
 		cursor="$(mcp_json_extract_cursor "${json_payload}")"
 		local list_json
 		if ! list_json="$(mcp_tools_list "${limit}" "${cursor}")"; then
-			local code="${_MCP_TOOLS_ERROR_CODE:--32603}"
-			case "${code}" in
-			0 | "") code=-32603 ;;
-			esac
+			local code
+			code="$(mcp_handler_normalize_error_code "${_MCP_TOOLS_ERROR_CODE:-}")"
 			local message
-			message=$(mcp_tools_quote "${_MCP_TOOLS_ERROR_MESSAGE:-Unable to list tools}")
+			message=$(mcp_json_quote_text "${_MCP_TOOLS_ERROR_MESSAGE:-Unable to list tools}")
 			local data="${_MCP_TOOLS_ERROR_DATA:-}"
-			if [ -n "${data}" ]; then
-				printf '{"jsonrpc":"2.0","id":%s,"error":{"code":%s,"message":%s,"data":%s}}' "${id}" "${code}" "${message}" "${data}"
-			else
-				printf '{"jsonrpc":"2.0","id":%s,"error":{"code":%s,"message":%s}}' "${id}" "${code}" "${message}"
-			fi
+			mcp_handler_error_response "${id}" "${code}" "${message}" "${data}"
 			return 0
 		fi
-		printf '{"jsonrpc":"2.0","id":%s,"result":%s}' "${id}" "${list_json}"
+		mcp_handler_success_response "${id}" "${list_json}"
 		if mcp_logging_is_enabled "debug"; then
 			mcp_logging_debug "${MCP_TOOLS_LOGGER}" "List count=${MCP_TOOLS_TOTAL}"
 		fi
@@ -85,8 +74,8 @@ mcp_handle_tools() {
 
 		if [ -z "${name}" ]; then
 			local message
-			message=$(mcp_tools_quote "Tool name is required")
-			printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32602,"message":%s}}' "${id}" "${message}"
+			message=$(mcp_json_quote_text "Tool name is required")
+			mcp_handler_error_response "${id}" "-32602" "${message}"
 			return 0
 		fi
 		local result_json
@@ -105,26 +94,20 @@ mcp_handle_tools() {
 				fi
 			fi
 			# Normalize code
-			case "${code}" in
-			0 | "" | "null") code=-32603 ;;
-			esac
+			code="$(mcp_handler_normalize_error_code "${code}")"
 			local message
-			message=$(mcp_tools_quote "${message_raw}")
+			message=$(mcp_json_quote_text "${message_raw}")
 			mcp_logging_debug "${MCP_TOOLS_LOGGER}" "tools/call error code=${code} message=${message_raw} data=${data:-<unset>}" || true
-			if [ -n "${data}" ] && [ "${data}" != "null" ]; then
-				printf '{"jsonrpc":"2.0","id":%s,"error":{"code":%s,"message":%s,"data":%s}}' "${id}" "${code}" "${message}" "${data}"
-			else
-				printf '{"jsonrpc":"2.0","id":%s,"error":{"code":%s,"message":%s}}' "${id}" "${code}" "${message}"
-			fi
+			mcp_handler_error_response "${id}" "${code}" "${message}" "${data}"
 			return 0
 		fi
 		result_json="${_MCP_TOOLS_RESULT}"
-		printf '{"jsonrpc":"2.0","id":%s,"result":%s}' "${id}" "${result_json}"
+		mcp_handler_success_response "${id}" "${result_json}"
 		;;
 	*)
 		local message
-		message=$(mcp_tools_quote "Unknown tools method")
-		printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32601,"message":%s}}' "${id}" "${message}"
+		message=$(mcp_json_quote_text "Unknown tools method")
+		mcp_handler_error_response "${id}" "-32601" "${message}"
 		;;
 	esac
 }

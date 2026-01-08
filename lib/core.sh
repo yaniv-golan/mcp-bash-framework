@@ -45,6 +45,7 @@ mcp_core_run() {
 }
 
 mcp_core_require_handlers() {
+	. "${MCPBASH_HOME}/lib/handler_helpers.sh"
 	. "${MCPBASH_HOME}/handlers/lifecycle.sh"
 	. "${MCPBASH_HOME}/handlers/ping.sh"
 	. "${MCPBASH_HOME}/handlers/logging.sh"

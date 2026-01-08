@@ -5,11 +5,6 @@
 
 set -euo pipefail
 
-mcp_completion_quote() {
-	local text="$1"
-	mcp_json_quote_text "${text}"
-}
-
 mcp_handle_completion() {
 	local method="$1"
 	local json_payload="$2"
@@ -20,8 +15,8 @@ mcp_handle_completion() {
 
 	if mcp_runtime_is_minimal_mode; then
 		local message
-		message=$(mcp_completion_quote "Completion capability unavailable in minimal mode")
-		printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32601,"message":%s}}' "${id}" "${message}"
+		message=$(mcp_json_quote_text "Completion capability unavailable in minimal mode")
+		mcp_handler_error_response "${id}" "-32601" "${message}"
 		return 0
 	fi
 
@@ -33,8 +28,8 @@ mcp_handle_completion() {
 		ref_type="$(mcp_json_extract_completion_ref_type "${json_payload}")"
 		if [ -z "${ref_type}" ]; then
 			local message
-			message=$(mcp_completion_quote "Completion ref is required")
-			printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32602,"message":%s}}' "${id}" "${message}"
+			message=$(mcp_json_quote_text "Completion ref is required")
+			mcp_handler_error_response "${id}" "-32602" "${message}"
 			return 0
 		fi
 		case "${ref_type}" in
@@ -68,8 +63,8 @@ mcp_handle_completion() {
 		esac
 		if [ -z "${name}" ]; then
 			local message
-			message=$(mcp_completion_quote "Completion ref is invalid")
-			printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32602,"message":%s}}' "${id}" "${message}"
+			message=$(mcp_json_quote_text "Completion ref is invalid")
+			mcp_handler_error_response "${id}" "-32602" "${message}"
 			return 0
 		fi
 
@@ -77,8 +72,8 @@ mcp_handle_completion() {
 		arg_name="$(mcp_json_extract_completion_argument_name "${json_payload}")"
 		if [ -z "${arg_name}" ]; then
 			local message
-			message=$(mcp_completion_quote "Completion argument name is required")
-			printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32602,"message":%s}}' "${id}" "${message}"
+			message=$(mcp_json_quote_text "Completion argument name is required")
+			mcp_handler_error_response "${id}" "-32602" "${message}"
 			return 0
 		fi
 		mcp_completion_reset
@@ -99,8 +94,8 @@ mcp_handle_completion() {
 		query_value="$(mcp_json_extract_completion_query "${json_payload}")"
 		if ! args_hash="$(mcp_completion_args_hash "${args_json}")" || [ -z "${args_hash}" ]; then
 			local message
-			message=$(mcp_completion_quote "Completion requires JSON tooling")
-			printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32603,"message":%s}}' "${id}" "${message}"
+			message=$(mcp_json_quote_text "Completion requires JSON tooling")
+			mcp_handler_error_response "${id}" "-32603" "${message}"
 			return 0
 		fi
 		local cursor start_offset cursor_script_key
@@ -110,8 +105,8 @@ mcp_handle_completion() {
 		if [ -n "${cursor}" ]; then
 			if ! mcp_completion_decode_cursor "${cursor}" "${name}" "${args_hash}" "true"; then
 				local message
-				message=$(mcp_completion_quote "Invalid cursor")
-				printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32602,"message":%s}}' "${id}" "${message}"
+				message=$(mcp_json_quote_text "Invalid cursor")
+				mcp_handler_error_response "${id}" "-32602" "${message}"
 				return 0
 			fi
 			start_offset="${MCP_COMPLETION_CURSOR_OFFSET}"
@@ -119,20 +114,20 @@ mcp_handle_completion() {
 		fi
 		if ! mcp_completion_select_provider "${name}" "${args_json}"; then
 			local message
-			message=$(mcp_completion_quote "Completion not found")
-			printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32601,"message":%s}}' "${id}" "${message}"
+			message=$(mcp_json_quote_text "Completion not found")
+			mcp_handler_error_response "${id}" "-32601" "${message}"
 			return 0
 		fi
 		if [ -n "${cursor_script_key}" ] && [ -n "${MCP_COMPLETION_PROVIDER_SCRIPT_KEY}" ] && [ "${cursor_script_key}" != "${MCP_COMPLETION_PROVIDER_SCRIPT_KEY}" ]; then
 			local message
-			message=$(mcp_completion_quote "Cursor no longer valid")
-			printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32602,"message":%s}}' "${id}" "${message}"
+			message=$(mcp_json_quote_text "Cursor no longer valid")
+			mcp_handler_error_response "${id}" "-32602" "${message}"
 			return 0
 		fi
 		if ! mcp_completion_run_provider "${name}" "${args_json}" "${query_value}" "${limit}" "${start_offset}" "${args_hash}"; then
 			local message
-			message=$(mcp_completion_quote "${MCP_COMPLETION_PROVIDER_RESULT_ERROR:-Unable to complete request}")
-			printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32603,"message":%s}}' "${id}" "${message}"
+			message=$(mcp_json_quote_text "${MCP_COMPLETION_PROVIDER_RESULT_ERROR:-Unable to complete request}")
+			mcp_handler_error_response "${id}" "-32603" "${message}"
 			return 0
 		fi
 		mcp_completion_reset
@@ -165,12 +160,12 @@ mcp_handle_completion() {
 		fi
 		local result_json
 		result_json="$(mcp_completion_finalize)"
-		printf '{"jsonrpc":"2.0","id":%s,"result":%s}' "${id}" "${result_json}"
+		mcp_handler_success_response "${id}" "${result_json}"
 		;;
 	*)
 		local message
-		message=$(mcp_completion_quote "Unknown completion method")
-		printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32601,"message":%s}}' "${id}" "${message}"
+		message=$(mcp_json_quote_text "Unknown completion method")
+		mcp_handler_error_response "${id}" "-32601" "${message}"
 		;;
 	esac
 }
