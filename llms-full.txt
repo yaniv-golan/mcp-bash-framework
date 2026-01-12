@@ -96,7 +96,7 @@ Pure Bash MCP server framework. Bash≥3.2 + jq/gojq. Stdio transport only.
   - `mcp_fail_invalid_args "msg"` → `-32602` invalid params.
 - Progress & cancellation:
   - `mcp_progress <0-100> "msg" [total]` → progress notifications.
-  - `mcp_run_with_progress --pattern REGEX [--extract json|match1|ratio] -- cmd args` → forward subprocess progress to MCP (see BEST-PRACTICES.md §4.8).
+  - `mcp_run_with_progress --pattern REGEX [--extract json|match1|ratio] [--stderr-file FILE] -- cmd args` → forward subprocess progress to MCP (see BEST-PRACTICES.md §4.9).
   - `mcp_is_cancelled` → exit status 0 when cancelled (tools should check regularly in long loops).
 - Logging:
   - `mcp_log_debug|info|warn|error "logger" "msg_or_json"` → `notifications/message`.

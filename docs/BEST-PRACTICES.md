@@ -970,6 +970,7 @@ Options:
   --total N             Pre-computed total for percentage calculation
   --dry-run             Output JSON to stderr instead of emitting
   --quiet               Suppress debug logging of non-progress lines
+  --stderr-file FILE    Write non-progress stderr lines to file
 ```
 
 #### Extraction modes
@@ -1066,6 +1067,30 @@ mcp_run_with_progress -- script -q /dev/null some-cli --progress
 # Python scripts: use -u flag or environment variable
 PYTHONUNBUFFERED=1 mcp_run_with_progress -- python myscript.py
 ```
+
+#### Capturing non-progress stderr
+
+When you need to report CLI errors to the MCP client, use `--stderr-file` to capture non-progress stderr lines:
+
+```bash
+stderr_file=$(mktemp)
+trap 'rm -f "$stderr_file"' EXIT
+
+mcp_run_with_progress \
+    --pattern '^\{.*"progress"' \
+    --extract json \
+    --stderr-file "$stderr_file" \
+    -- my-cli --json >"$stdout_file"
+
+exit_code=$?
+
+if [[ $exit_code -ne 0 ]]; then
+    error_msg=$(cat "$stderr_file")
+    mcp_result_error "$("${MCPBASH_JSON_TOOL_BIN}" -n --arg msg "$error_msg" '{error: $msg}')"
+fi
+```
+
+**Note:** The caller is responsible for cleaning up the stderr file.
 
 #### Notes
 

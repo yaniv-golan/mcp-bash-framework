@@ -246,3 +246,123 @@ EOF
 	# Progress values will be percentages based on out_time_us / total_us
 	assert_output --partial '"progress":'
 }
+
+@test "progress_passthrough: --stderr-file captures non-progress lines" {
+	local stderr_out="${BATS_TEST_TMPDIR}/stderr"
+
+	# Create mock script
+	local mock_script="${BATS_TEST_TMPDIR}/mock.sh"
+	cat >"${mock_script}" <<'EOF'
+#!/usr/bin/env bash
+echo '{"type":"progress","progress":50,"message":"Working"}' >&2
+echo "Warning: something happened" >&2
+echo "Error: validation failed" >&2
+echo '{"result":"ok"}'
+EOF
+
+	# Use 'bash' to invoke (execute bits unreliable on Windows per windows-compatibility.mdc)
+	run mcp_run_with_progress \
+		--pattern '^\{.*"type".*"progress"' \
+		--extract json \
+		--stderr-file "$stderr_out" \
+		--dry-run \
+		--quiet \
+		-- bash "${mock_script}"
+
+	assert_success
+	assert [ -f "$stderr_out" ]
+
+	# Verify non-progress lines captured
+	run grep "Warning: something happened" "$stderr_out"
+	assert_success
+	run grep "Error: validation failed" "$stderr_out"
+	assert_success
+
+	# Verify progress lines NOT captured (they go to mcp_progress)
+	run grep "progress" "$stderr_out"
+	assert_failure
+}
+
+@test "progress_passthrough: --stderr-file creates empty file when no non-progress output" {
+	local stderr_out="${BATS_TEST_TMPDIR}/stderr"
+
+	# Mock CLI with only progress output
+	local mock_script="${BATS_TEST_TMPDIR}/mock.sh"
+	cat >"${mock_script}" <<'EOF'
+#!/usr/bin/env bash
+echo '{"type":"progress","progress":100,"message":"Done"}' >&2
+echo '{"result":"ok"}'
+EOF
+
+	run mcp_run_with_progress \
+		--pattern '^\{.*"type".*"progress"' \
+		--extract json \
+		--stderr-file "$stderr_out" \
+		--dry-run \
+		--quiet \
+		-- bash "${mock_script}"
+
+	assert_success
+	# File should exist but be empty
+	assert [ -f "$stderr_out" ]
+	assert [ ! -s "$stderr_out" ]
+}
+
+@test "progress_passthrough: --stderr-file works with --quiet" {
+	local stderr_out="${BATS_TEST_TMPDIR}/stderr"
+
+	run mcp_run_with_progress \
+		--pattern '^\{.*"progress"' \
+		--extract json \
+		--stderr-file "$stderr_out" \
+		--quiet \
+		--dry-run \
+		-- bash -c 'echo "Error message" >&2; echo "{}"'
+
+	assert_success
+	run grep "Error message" "$stderr_out"
+	assert_success
+}
+
+@test "progress_passthrough: --stderr-file handles interleaved progress and errors" {
+	local stderr_out="${BATS_TEST_TMPDIR}/stderr"
+
+	local mock_script="${BATS_TEST_TMPDIR}/mock.sh"
+	cat >"${mock_script}" <<'EOF'
+#!/usr/bin/env bash
+echo '{"type":"progress","progress":25,"message":"Step 1"}' >&2
+echo "Info: processing batch 1" >&2
+echo '{"type":"progress","progress":50,"message":"Step 2"}' >&2
+echo "Warning: slow response" >&2
+echo '{"type":"progress","progress":100,"message":"Done"}' >&2
+echo '{"result":"ok"}'
+EOF
+
+	run mcp_run_with_progress \
+		--pattern '^\{.*"type".*"progress"' \
+		--extract json \
+		--stderr-file "$stderr_out" \
+		--dry-run \
+		--quiet \
+		-- bash "${mock_script}"
+
+	assert_success
+
+	# Check both lines captured
+	run grep "Info: processing batch 1" "$stderr_out"
+	assert_success
+	run grep "Warning: slow response" "$stderr_out"
+	assert_success
+}
+
+@test "progress_passthrough: --stderr-file warns on unwritable path" {
+	run mcp_run_with_progress \
+		--pattern '^\{.*"progress"' \
+		--stderr-file "/nonexistent/path/file" \
+		--dry-run \
+		--quiet \
+		-- bash -c 'echo "{}" >&2; echo "ok"'
+
+	# Should succeed despite warning (doesn't break progress forwarding)
+	assert_success
+}

@@ -5,6 +5,11 @@ All notable changes to mcp-bash-framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.11] - 2026-01-12
+
+### Added
+- **`--stderr-file` option for `mcp_run_with_progress`**: New option to capture non-progress stderr lines to a file while still forwarding progress notifications to MCP. Enables MCP tools to report detailed CLI error messages when using progress forwarding. See BEST-PRACTICES.md §4.9 "Capturing non-progress stderr".
+
 ## [0.9.10] - 2026-01-08
 
 ### Fixed

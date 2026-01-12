@@ -4,6 +4,7 @@
 #
 # Usage:
 #   mcp_run_with_progress --pattern 'REGEX' [OPTIONS] -- command args...
+#   Options: --stderr-file FILE (capture non-progress stderr to file)
 #
 # See docs/internal/plan-progress-passthrough-2026-01-06.md for design rationale.
 
@@ -13,6 +14,7 @@ set -euo pipefail
 mcp_run_with_progress() {
 	local pattern="" extract="json" interval="0.2" stdout_file="" dry_run=false
 	local progress_file="" total="" quiet=false
+	local stderr_output_file=""
 
 	while [[ $# -gt 0 ]]; do
 		case "$1" in
@@ -47,6 +49,12 @@ mcp_run_with_progress() {
 		--quiet)
 			quiet=true
 			shift
+			;;
+		--stderr-file)
+			# Note: Only captures from progress source; when using --progress-file,
+			# subprocess stderr goes to debug logs, not this file
+			stderr_output_file="$2"
+			shift 2
 			;;
 		--)
 			shift
@@ -131,6 +139,13 @@ mcp_run_with_progress() {
 		source_file="$stderr_file"
 	fi
 
+	# Create/truncate stderr output file if specified (warn but don't fail on error)
+	if [[ -n "$stderr_output_file" ]]; then
+		if ! : >"$stderr_output_file" 2>/dev/null; then
+			mcp_log_warn "mcp_run_with_progress" "cannot write to stderr-file: $stderr_output_file"
+		fi
+	fi
+
 	# Run command with stderr redirected to temp file (not FIFO for Windows compat)
 	# Note: stderr_file always gets subprocess stderr (for logging even with --progress-file)
 	"$@" >"${stdout_tmp}" 2>"${stderr_file}" &
@@ -151,7 +166,7 @@ mcp_run_with_progress() {
 		: "${current_size:=0}"
 
 		if [[ "$current_size" -gt "$last_size" ]]; then
-			__mcp_progress_process_lines "${source_file}" "$last_size" "$pattern" "$extract" "$dry_run" "$total" "$quiet"
+			__mcp_progress_process_lines "${source_file}" "$last_size" "$pattern" "$extract" "$dry_run" "$total" "$quiet" "$stderr_output_file"
 			last_size=$current_size
 		fi
 
@@ -177,7 +192,7 @@ mcp_run_with_progress() {
 	current_size=$(wc -c <"${source_file}" 2>/dev/null | tr -d '[:space:]')
 	: "${current_size:=0}"
 	if [[ "$current_size" -gt "$last_size" ]]; then
-		__mcp_progress_process_lines "${source_file}" "$last_size" "$pattern" "$extract" "$dry_run" "$total" "$quiet"
+		__mcp_progress_process_lines "${source_file}" "$last_size" "$pattern" "$extract" "$dry_run" "$total" "$quiet" "$stderr_output_file"
 	fi
 
 	# Final stderr passthrough when using --progress-file
@@ -204,7 +219,8 @@ mcp_run_with_progress() {
 # Double underscore prefix per SDK conventions
 # Uses process substitution to avoid subshell variable isolation
 __mcp_progress_process_lines() {
-	local source_file="$1" start_byte="$2" pattern="$3" extract="$4" dry_run="$5" total="$6" quiet="$7"
+	local source_file="$1" start_byte="$2" pattern="$3" extract="$4"
+	local dry_run="$5" total="$6" quiet="$7" stderr_output_file="$8"
 
 	# Read new bytes using process substitution (avoids subshell)
 	# Timeout of 10s handles slow CLIs while preventing indefinite blocking
@@ -266,8 +282,15 @@ __mcp_progress_process_lines() {
 					mcp_progress "$pct" "$msg"
 				fi
 			fi
-		elif [[ "$quiet" != "true" ]]; then
-			mcp_log_debug "mcp_run_with_progress" "subprocess output: $line"
+		else
+			# Non-progress line: write to file and/or log
+			if [[ -n "$stderr_output_file" ]]; then
+				# Fail silently on write errors to avoid breaking progress forwarding
+				printf '%s\n' "$line" >>"$stderr_output_file" 2>/dev/null || true
+			fi
+			if [[ "$quiet" != "true" ]]; then
+				mcp_log_debug "mcp_run_with_progress" "subprocess output: $line"
+			fi
 		fi
 	done < <(tail -c +$((start_byte + 1)) -- "$source_file" 2>/dev/null)
 }
