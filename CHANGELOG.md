@@ -5,6 +5,11 @@ All notable changes to mcp-bash-framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.12] - 2026-01-12
+
+### Fixed
+- **Incorrect JSON-RPC error code for tool errors**: Changed "Tool path unavailable" and "Tool executable missing" errors from `-32601` (Method not found) to `-32602` (Invalid params) per JSON-RPC 2.0 and MCP specifications. The `-32601` code is reserved for when the RPC method itself doesn't exist; tool-related errors are parameter validation failures and should use `-32602`. This aligns with the existing "Tool not found" error which correctly uses `-32602`.
+
 ## [0.9.11] - 2026-01-12
 
 ### Added

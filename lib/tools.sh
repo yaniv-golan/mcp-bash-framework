@@ -1372,7 +1372,7 @@ mcp_tools_call() {
 		export MCPBASH_MAX_TIMEOUT_SECS="${max_timeout_secs}"
 	fi
 	if [ -z "${tool_path}" ]; then
-		_mcp_tools_emit_error -32601 "Tool '${name}' path unavailable" "null"
+		_mcp_tools_emit_error -32602 "Tool '${name}' path unavailable" "null"
 		return 1
 	fi
 
@@ -1411,7 +1411,7 @@ mcp_tools_call() {
 	# On Windows (Git Bash/MSYS), -x test is unreliable. Check for shebang or .sh extension as fallback.
 	if [ ! -x "${absolute_path}" ]; then
 		if [[ ! "${absolute_path}" =~ \.(sh|bash)$ ]] && ! head -n1 "${absolute_path}" 2>/dev/null | grep -q '^#!'; then
-			mcp_tools_error -32601 "Tool executable missing"
+			mcp_tools_error -32602 "Tool executable missing"
 			return 1
 		fi
 		# Fallback: invoke via shell if not marked executable but looks runnable
