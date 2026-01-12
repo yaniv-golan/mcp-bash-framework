@@ -57,6 +57,7 @@ This guide distils hands-on recommendations for designing, building, and operati
 | `mcp_json_truncate` | Truncate large arrays for context limits | `mcp_json_truncate "$arr" 10000` |
 | `mcp_is_valid_json` | Validate single JSON value | `if mcp_is_valid_json "$val"; then ...` |
 | `mcp_byte_length` | UTF-8 safe byte length | `len=$(mcp_byte_length "$str")` |
+| `mcp_extract_cli_error` | Extract error from CLI stdout JSON or stderr | `msg=$(mcp_extract_cli_error "$stdout" "$stderr" "$exit_code")` |
 | `mcp_run_with_progress` | Forward subprocess progress to MCP | `mcp_run_with_progress --pattern '([0-9]+)%' --extract match1 -- wget ...` |
 
 ### External command patterns
@@ -773,7 +774,40 @@ else
 fi
 ```
 
-**Why not a framework helper?** This pattern requires Bash 4.3+ namerefs for a clean API. Since mcp-bash supports Bash 3.2+, we document the pattern instead.
+**Handling CLIs with structured JSON errors:**
+
+Some CLIs output structured error responses to stdout when using `--json` flags, rather than using stderr. Use `mcp_extract_cli_error` to handle both patterns:
+
+```bash
+# Execute with capture
+"${cmd[@]}" >"$_stdout_file" 2>"$_stderr_file"
+_exit_code=$?
+_stdout=$(cat "$_stdout_file")
+_stderr=$(cat "$_stderr_file")
+
+if [ "$_exit_code" -eq 0 ]; then
+    mcp_result_success "$_stdout"
+else
+    # Extract error from JSON stdout or fall back to stderr
+    _error_msg=$(mcp_extract_cli_error "$_stdout" "$_stderr" "$_exit_code")
+    mcp_result_error "$(printf '%s' "$_error_msg" | "${MCPBASH_JSON_TOOL_BIN}" -Rsc --argjson c "$_exit_code" \
+        '{type: "cli_error", message: ., exitCode: $c}')"
+fi
+```
+
+The helper checks these patterns in order:
+
+| Pattern | Extraction | Example CLIs |
+|---------|------------|--------------|
+| `{"error": {"message": "..."}}` | `.error.message` | REST API wrappers |
+| `{"error": "..."}` | `.error` | npm, yarn |
+| `{"success": false, "message": "..."}` | `.message` | Custom CLIs |
+| `{"errors": [{"message": "..."}]}` | `.errors[0].message` | GraphQL CLIs |
+| Traditional stderr | Raw stderr | Most Unix tools |
+
+**Extraction priority:** The helper uses first-match ordering. If a response contains both `.error.message` and a top-level `.error` string, `.error.message` wins.
+
+**Why this matters:** LLMs use the `message` field to understand failures and self-correct. Empty messages lead to generic "Tool failed" errors that don't help the LLM retry intelligently.
 
 ### 4.5 Common Bash Pitfalls
 

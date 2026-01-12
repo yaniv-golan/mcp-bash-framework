@@ -1013,6 +1013,61 @@ mcp_is_valid_json() {
 	return 1
 }
 
+# mcp_extract_cli_error <stdout> <stderr> <exit_code>
+# Extract error message from CLI output, preferring structured JSON
+#
+# Arguments:
+#   stdout    - CLI stdout (may contain JSON error)
+#   stderr    - CLI stderr (traditional error output)
+#   exit_code - CLI exit code
+#
+# Output: Error message string to stdout
+# Returns: 0 always
+#
+# Extraction priority:
+#   1. stdout JSON .error.message
+#   2. stdout JSON .error (if string)
+#   3. stdout JSON .message (when .success==false or .ok==false or .status=="error")
+#   4. stdout JSON .errors[0].message (GraphQL pattern)
+#   5. stderr (traditional)
+#   6. Generic "CLI exited with code N"
+mcp_extract_cli_error() {
+	local stdout="$1"
+	local stderr="$2"
+	local exit_code="$3"
+
+	# Try structured JSON extraction if we have JSON tooling
+	if [ "${MCPBASH_MODE:-full}" != "minimal" ] && [ -n "${MCPBASH_JSON_TOOL_BIN:-}" ]; then
+		if mcp_is_valid_json "$stdout"; then
+			local extracted
+			# Note: first() available in jq 1.5+ and all gojq versions
+			# Use | values to skip null results (ensures fallthrough)
+			extracted=$(printf '%s' "$stdout" | "${MCPBASH_JSON_TOOL_BIN}" -r '
+				first(
+					(select(.error | type == "object") | .error.message | values),
+					(select(.error | type == "string") | .error),
+					(select(.success == false or .ok == false or .status == "error") | .message | values),
+					((.errors // [])[0].message | values)
+				) // empty
+			' 2>/dev/null) || true
+
+			if [ -n "$extracted" ]; then
+				printf '%s' "$extracted"
+				return 0
+			fi
+		fi
+	fi
+
+	# Fall back to stderr
+	if [ -n "$stderr" ]; then
+		printf '%s' "$stderr"
+		return 0
+	fi
+
+	# Final fallback
+	printf 'CLI exited with code %s' "$exit_code"
+}
+
 # mcp_byte_length <string>
 # Get byte length of string (UTF-8 safe)
 #
