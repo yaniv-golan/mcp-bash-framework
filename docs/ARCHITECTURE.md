@@ -16,6 +16,7 @@ _Figure: High-level dataflow—MCP client sends JSON-RPC over stdio to mcp-bash 
 │  ├─ core.sh
 │  ├─ completion.sh
 │  ├─ elicitation.sh
+│  ├─ handler_helpers.sh
 │  ├─ hash.sh
 │  ├─ json.sh
 │  ├─ lock.sh
@@ -25,9 +26,11 @@ _Figure: High-level dataflow—MCP client sends JSON-RPC over stdio to mcp-bash 
 │  ├─ path.sh
 │  ├─ policy.sh
 │  ├─ progress.sh
+│  ├─ progress-passthrough.sh
 │  ├─ logging.sh
 │  ├─ runtime.sh
 │  ├─ registry.sh
+│  ├─ require.sh
 │  ├─ resource_content.sh
 │  ├─ resource_providers.sh
 │  ├─ resources.sh

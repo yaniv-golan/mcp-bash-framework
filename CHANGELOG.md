@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **`--stderr-file` option for `mcp_run_with_progress`**: New option to capture non-progress stderr lines to a file while still forwarding progress notifications to MCP. Enables MCP tools to report detailed CLI error messages when using progress forwarding. See BEST-PRACTICES.md §4.9 "Capturing non-progress stderr".
 
+### Documentation
+- **SECURITY.md**: Added production deployment checklist, critical `policy.sh` security warning, known security limitations section (rate limiting, TOCTOU, input validation, debug logging, env inheritance), and gateway requirements for remote access.
+
 ## [0.9.10] - 2026-01-08
 
 ### Fixed
