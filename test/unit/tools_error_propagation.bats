@@ -91,7 +91,7 @@ setup() {
 	[[ "${result_message}" == *"nonexistent"* ]] || [[ "${result_message}" == *"not found"* ]]
 }
 
-@test "tools_error_propagation: tool path unavailable sets _MCP_TOOLS_RESULT with -32601" {
+@test "tools_error_propagation: tool path unavailable sets _MCP_TOOLS_RESULT with -32602" {
 	# Create registry with tool that has empty path
 	MCP_TOOLS_REGISTRY_PATH="${MCPBASH_REGISTRY_DIR}/tools.json"
 	printf '{"hash":"pathless","total":1,"items":[{"name":"pathless","path":"","inputSchema":{}}]}' >"${MCP_TOOLS_REGISTRY_PATH}"
@@ -112,7 +112,7 @@ setup() {
 	}
 
 	# Verify _MCP_TOOLS_ERROR_CODE is set
-	assert_equal "-32601" "${_MCP_TOOLS_ERROR_CODE}"
+	assert_equal "-32602" "${_MCP_TOOLS_ERROR_CODE}"
 
 	# CRITICAL: Verify _MCP_TOOLS_RESULT is set with error JSON
 	[ -n "${_MCP_TOOLS_RESULT}" ] || {
@@ -123,5 +123,5 @@ setup() {
 	# Verify result contains proper error structure
 	local result_code
 	result_code="$(printf '%s' "${_MCP_TOOLS_RESULT}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.code')"
-	assert_equal "-32601" "${result_code}"
+	assert_equal "-32602" "${result_code}"
 }
