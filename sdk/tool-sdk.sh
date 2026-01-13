@@ -525,11 +525,9 @@ mcp_with_retry() {
 	local delay="${base_delay}"
 
 	while true; do
-		# Run command and capture exit code
-		set +e
-		"$@"
-		local exit_code=$?
-		set -e
+		# errexit-safe: capture exit code without toggling shell state
+		local exit_code=0
+		"$@" && exit_code=0 || exit_code=$?
 
 		# Success
 		if [[ ${exit_code} -eq 0 ]]; then

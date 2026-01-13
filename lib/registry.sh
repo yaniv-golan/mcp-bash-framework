@@ -885,12 +885,11 @@ mcp_registry_register_execute() {
 	local script_status=0
 
 	# Execute in the current shell so manual registration buffers are retained.
-	set +e
+	# errexit-safe: capture exit code without toggling shell state
 	# shellcheck disable=SC1090
 	# shellcheck disable=SC1091
 	if exec 3<"${script_path}"; then
-		cat <&3 >"${tmp_script}" 2>/dev/null
-		script_status=$?
+		cat <&3 >"${tmp_script}" 2>/dev/null && script_status=0 || script_status=$?
 		exec 3<&-
 	else
 		script_status=1
@@ -907,11 +906,9 @@ mcp_registry_register_execute() {
 			printf '%s\n' "Manual registration script changed during execution; refusing to run." >"${script_output_file}"
 		else
 			# shellcheck disable=SC1090
-			. "${tmp_script}" >"${script_output_file}" 2>&1
-			script_status=$?
+			. "${tmp_script}" >"${script_output_file}" 2>&1 && script_status=0 || script_status=$?
 		fi
 	fi
-	set -e
 	rm -f "${tmp_script}" 2>/dev/null || true
 
 	local script_output

@@ -676,9 +676,9 @@ mcp_tools_validate_output_schema() {
 	# Write schema to temp file to avoid shell quoting issues with --argjson
 	# Run validation using jq -s pattern (avoid --slurpfile for Windows/gojq compatibility)
 	# If tool output is already a CallToolResult (has content array), extract structuredContent for validation
-	local validation_result
+	# errexit-safe: capture exit code without toggling shell state
+	local validation_result=""
 	local validation_status=0
-	set +e
 	validation_result="$(printf '%s\n%s' "${output_schema}" "${structured_json}" | "${MCPBASH_JSON_TOOL_BIN}" -s '
 		.[0] as $s |
 		.[1] as $raw |
@@ -715,9 +715,7 @@ mcp_tools_validate_output_schema() {
 		elif $required_ok and $types_ok then true
 		else false
 		end
-	' 2>/dev/null)"
-	validation_status=$?
-	set -e
+	' 2>/dev/null)" && validation_status=0 || validation_status=$?
 
 	if [ "${validation_status}" -ne 0 ]; then
 		local data_json
@@ -1820,8 +1818,7 @@ mcp_tools_call() {
 		return 1
 	fi
 
-	set +e
-
+	# NOTE: errexit toggling removed - code below uses explicit error checks and || true patterns
 	local limit="${MCPBASH_MAX_TOOL_OUTPUT_SIZE:-10485760}"
 	case "${limit}" in
 	'' | *[!0-9]*) limit=10485760 ;;
@@ -2056,8 +2053,6 @@ mcp_tools_call() {
 		cleanup_tool_temp_files
 		return 1
 	fi
-
-	set -e
 
 	if ! mcp_tools_validate_output_schema "${stdout_content}" "${output_schema}" "${has_json_tool}" "${name}" "${exit_code}" "${stderr_tail}" "${trace_line}" "${trace_available}"; then
 		cleanup_tool_temp_files

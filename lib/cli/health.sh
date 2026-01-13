@@ -239,11 +239,9 @@ mcp_cli_health() {
 		mcp_cli_health_normalize_timeout "${timeout_secs}"
 	)"
 
+	# errexit-safe: capture exit code without toggling shell state
 	local rc=0 probe_rc=0
-	set +e
-	with_timeout "${timeout_secs}" -- mcp_cli_health_probe
-	probe_rc=$?
-	set -e
+	with_timeout "${timeout_secs}" -- mcp_cli_health_probe && probe_rc=0 || probe_rc=$?
 
 	case "${probe_rc}" in
 	0) rc=0 ;;

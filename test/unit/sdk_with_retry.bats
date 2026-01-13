@@ -79,3 +79,25 @@ setup() {
 	run mcp_with_retry 3 "abc" -- echo test
 	assert_failure
 }
+
+# errexit state preservation tests
+@test "sdk_with_retry: preserves caller errexit=off state" {
+	set +e
+	mcp_with_retry 2 0.1 -- false
+	# Verify errexit is still off
+	[[ $- != *e* ]] || fail "errexit was unexpectedly enabled"
+}
+
+@test "sdk_with_retry: preserves caller errexit=on state" {
+	set -e
+	mcp_with_retry 2 0.1 -- true
+	[[ $- == *e* ]] || fail "errexit was unexpectedly disabled"
+	set +e  # Reset for test framework
+}
+
+@test "sdk_with_retry: does not cause script exit when caller has errexit disabled" {
+	set +e
+	mcp_with_retry 2 0.1 -- false
+	false  # This MUST NOT exit the script
+	# If we reach here, the test passes
+}

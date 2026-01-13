@@ -5,6 +5,14 @@ All notable changes to mcp-bash-framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.13] - 2026-01-13
+
+### Added
+- **Bundle libs sync test**: New CI test (`test/unit/bundle_libs_sync.bats`) that verifies `BUNDLE_REQUIRED_LIBS` includes all libraries sourced by `bin/mcp-bash`. Prevents broken releases with missing bundled libraries (e.g., 0.9.9, 0.9.10).
+
+### Fixed
+- **errexit (set -e) state leak in functions**: Fixed a bug where `mcp_with_retry` and several internal functions would modify the caller's errexit shell state. Functions using `set +e; cmd; rc=$?; set -e` patterns would leave errexit enabled even if the caller had it disabled, causing unexpected script termination. Replaced with errexit-safe `cmd && rc=0 || rc=$?` pattern. Affected functions: `mcp_with_retry` (SDK), `mcp_tools_validate_output_schema`, `mcp_tools_call`, `mcp_registry_register_execute`, `mcp_cli_health`.
+
 ## [0.9.12] - 2026-01-13
 
 ### Added
