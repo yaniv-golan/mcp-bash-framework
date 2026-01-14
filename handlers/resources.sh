@@ -5,6 +5,15 @@
 
 set -euo pipefail
 
+# Sanitize a string for safe debug log output (escape newlines/carriage returns
+# to prevent log injection attacks via malicious resource names/URIs).
+_mcp_resources_sanitize_for_log() {
+	local value="$1"
+	value="${value//$'\n'/\\n}"
+	value="${value//$'\r'/\\r}"
+	printf '%s' "${value}"
+}
+
 mcp_resources_generate_subscription_id() {
 	if command -v uuidgen >/dev/null 2>&1; then
 		printf '%s' "sub-$(uuidgen 2>/dev/null | tr '[:upper:]' '[:lower:]')"
@@ -71,7 +80,11 @@ mcp_handle_resources() {
 		uri="$(mcp_json_extract_resource_uri "${json_payload}")"
 		mcp_logging_debug "${logger}" "Subscribe request name=${name:-<none>} uri=${uri:-<none>}"
 		if [ -n "${MCPBASH_STATE_DIR:-}" ]; then
-			printf '%s %s\n' "subscribe-start" "${name:-<none>}:${uri:-<none>}" >>"${MCPBASH_STATE_DIR}/resources.debug.log"
+			# Sanitize name/uri to prevent log injection via newlines
+			local safe_name safe_uri
+			safe_name="$(_mcp_resources_sanitize_for_log "${name:-<none>}")"
+			safe_uri="$(_mcp_resources_sanitize_for_log "${uri:-<none>}")"
+			printf '%s %s\n' "subscribe-start" "${safe_name}:${safe_uri}" >>"${MCPBASH_STATE_DIR}/resources.debug.log"
 		fi
 		if [ -z "${name}" ] && [ -z "${uri}" ]; then
 			local message
