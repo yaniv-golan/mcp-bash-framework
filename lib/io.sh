@@ -209,6 +209,7 @@ mcp_io_debug_redact_payload() {
 		return 0
 	fi
 
+	# Primary path: use jq for thorough, correct redaction
 	if [ "${MCPBASH_JSON_TOOL:-none}" != "none" ] && [ -n "${MCPBASH_JSON_TOOL_BIN:-}" ] && command -v "${MCPBASH_JSON_TOOL_BIN}" >/dev/null 2>&1; then
 		local redacted=""
 		local jq_filter
@@ -221,29 +222,21 @@ mcp_io_debug_redact_payload() {
 		fi
 	fi
 
-	local redacted_sed
-	redacted_sed="$(printf '%s' "${payload}" | sed -E '
-		s|"mcpbash/remoteToken"[[:space:]]*:[[:space:]]*"[^"]*"|"mcpbash/remoteToken":"**redacted**"|g;
-		s|"remoteToken"[[:space:]]*:[[:space:]]*"[^"]*"|"remoteToken":"**redacted**"|g;
-		s|"authorization"[[:space:]]*:[[:space:]]*"[^"]*"|"authorization":"**redacted**"|g;
-		s|"Authorization"[[:space:]]*:[[:space:]]*"[^"]*"|"Authorization":"**redacted**"|g;
-		s|"cookie"[[:space:]]*:[[:space:]]*"[^"]*"|"cookie":"**redacted**"|g;
-		s|"Cookie"[[:space:]]*:[[:space:]]*"[^"]*"|"Cookie":"**redacted**"|g;
-		s|"token"[[:space:]]*:[[:space:]]*"[^"]*"|"token":"**redacted**"|g;
-		s|"access_token"[[:space:]]*:[[:space:]]*"[^"]*"|"access_token":"**redacted**"|g;
-		s|"refresh_token"[[:space:]]*:[[:space:]]*"[^"]*"|"refresh_token":"**redacted**"|g;
-		s|"id_token"[[:space:]]*:[[:space:]]*"[^"]*"|"id_token":"**redacted**"|g;
-		s|"apiKey"[[:space:]]*:[[:space:]]*"[^"]*"|"apiKey":"**redacted**"|g;
-		s|"api_key"[[:space:]]*:[[:space:]]*"[^"]*"|"api_key":"**redacted**"|g;
-		s|"client_secret"[[:space:]]*:[[:space:]]*"[^"]*"|"client_secret":"**redacted**"|g;
-		s|"secret"[[:space:]]*:[[:space:]]*"[^"]*"|"secret":"**redacted**"|g;
-		s|"password"[[:space:]]*:[[:space:]]*"[^"]*"|"password":"**redacted**"|g;
-		s|"passphrase"[[:space:]]*:[[:space:]]*"[^"]*"|"passphrase":"**redacted**"|g;
-		s|"privateKey"[[:space:]]*:[[:space:]]*"[^"]*"|"privateKey":"**redacted**"|g;
-		s|"private_key"[[:space:]]*:[[:space:]]*"[^"]*"|"private_key":"**redacted**"|g;
-		s|"session"[[:space:]]*:[[:space:]]*"[^"]*"|"session":"**redacted**"|g;
-	' 2>/dev/null)" || redacted_sed="${payload}"
-	printf '%s' "${redacted_sed}"
+	# Fallback: no jq available or jq failed. Instead of attempting fragile
+	# regex-based redaction that may leak secrets (e.g., on escaped quotes),
+	# emit a fingerprint for log correlation without exposing payload content.
+	# This follows fail-closed security: if we can't redact correctly, we
+	# redact everything.
+	local hash=""
+	local bytes="${#payload}"
+	if command -v sha256sum >/dev/null 2>&1; then
+		hash="$(printf '%s' "${payload}" | sha256sum 2>/dev/null | cut -c1-16)" || hash="error"
+	elif command -v shasum >/dev/null 2>&1; then
+		hash="$(printf '%s' "${payload}" | shasum -a 256 2>/dev/null | cut -c1-16)" || hash="error"
+	else
+		hash="unavailable"
+	fi
+	printf '[payload hash=%s bytes=%d - install jq for full debug output]' "${hash}" "${bytes}"
 }
 
 mcp_io_debug_log() {

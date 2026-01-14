@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **Incomplete JSON escaping in minimal mode**: `mcp_json_escape_string()` fallback (used when jq/gojq unavailable) now properly escapes all control characters including `\b` (backspace), `\f` (form feed), and other 0x00-0x1F characters via `\u00XX` encoding. Previously only escaped `\n`, `\r`, `\t`, `\\`, and `\"`, which could produce invalid JSON.
+- **Potential secret leakage in debug payload redaction**: When jq is unavailable, `mcp_io_debug_redact_payload()` now emits a secure fingerprint (`[payload hash=... bytes=...]`) instead of attempting fragile regex-based redaction. The previous sed fallback could leak partial secrets when values contained escaped quotes (e.g., `"pass\"word"`). Follows fail-closed security: if we can't redact correctly, we redact everything.
 
 ## [0.9.13] - 2026-01-13
 
