@@ -75,12 +75,9 @@ mcp_json_escape_string() {
 		return 0
 	fi
 
-	local escaped="${value//\\/\\\\}"
-	escaped="${escaped//\"/\\\"}"
-	escaped="${escaped//$'\n'/\\n}"
-	escaped="${escaped//$'\r'/\\r}"
-	escaped="${escaped//$'\t'/\\t}"
-	printf '"%s"' "${escaped}"
+	# Fallback: use mcp_json_quote_text which properly escapes all control
+	# characters (\b, \f, \n, \r, \t, and 0x00-0x1F as \u00XX).
+	mcp_json_quote_text "${value}"
 }
 
 mcp_json_log_payload_bytes() {

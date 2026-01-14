@@ -5,6 +5,11 @@ All notable changes to mcp-bash-framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.14] - Unreleased
+
+### Fixed
+- **Incomplete JSON escaping in minimal mode**: `mcp_json_escape_string()` fallback (used when jq/gojq unavailable) now properly escapes all control characters including `\b` (backspace), `\f` (form feed), and other 0x00-0x1F characters via `\u00XX` encoding. Previously only escaped `\n`, `\r`, `\t`, `\\`, and `\"`, which could produce invalid JSON.
+
 ## [0.9.13] - 2026-01-13
 
 ### Added
