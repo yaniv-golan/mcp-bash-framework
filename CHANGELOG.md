@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Potential secret leakage in debug payload redaction**: When jq is unavailable, `mcp_io_debug_redact_payload()` now emits a secure fingerprint (`[payload hash=... bytes=...]`) instead of attempting fragile regex-based redaction. The previous sed fallback could leak partial secrets when values contained escaped quotes (e.g., `"pass\"word"`). Follows fail-closed security: if we can't redact correctly, we redact everything.
 - **Log injection in resources debug log**: Resource names and URIs are now sanitized before writing to `resources.debug.log`, escaping newlines and carriage returns to prevent injection of fake log entries via malicious resource names.
 
+### Documentation
+- **Minimal mode limitations**: Documented known limitations in `docs/MINIMAL-MODE.md` including unicode escape sequences (`\uXXXX`) not being decoded (passed through as literals) and debug payload logging emitting fingerprints instead of full content.
+
 ## [0.9.13] - 2026-01-13
 
 ### Added
