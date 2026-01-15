@@ -197,6 +197,7 @@ Pure Bash MCP server framework. Bash≥3.2 + jq/gojq. Stdio transport only.
 - `https` provider (`providers/https.sh`):
   - Handles `https://` URIs with timeout/size guardrails and host allow/deny lists.
   - Redirects and insecure protocols are disabled.
+  - For tool authors: use `mcp_download_safe` SDK helper (SSRF-safe, retries, JSON output) instead of calling provider directly.
 - `git` provider (`providers/git.sh`):
   - Handles git-backed resources when `MCPBASH_ENABLE_GIT_PROVIDER=true`.
   - Uses shallow clones with time and size limits.

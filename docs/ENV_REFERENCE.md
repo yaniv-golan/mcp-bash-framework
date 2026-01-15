@@ -59,6 +59,7 @@ Authoritative list of supported environment variables. Defaults shown are the sh
 | `MCPBASH_HTTPS_ALLOW_ALL` | `false` | Explicitly allow all public HTTPS hosts (unsafe; prefer `MCPBASH_HTTPS_ALLOW_HOSTS`). |
 | `MCPBASH_HTTPS_TIMEOUT` | `15` (cap ≤60s) | HTTPS provider timeout. |
 | `MCPBASH_HTTPS_MAX_BYTES` | `10485760` (cap ≤20MB) | HTTPS payload size guard. |
+| `MCPBASH_HTTPS_USER_AGENT` | (unset) | Custom User-Agent for HTTPS provider requests. SDK helper `mcp_download_safe` sets `mcpbash/<version> (tool-sdk)` by default. |
 | `MCPBASH_ENABLE_GIT_PROVIDER` | `false` | Enable Git resource provider (`git+https://` URIs). |
 | `MCPBASH_GIT_ALLOW_HOSTS` / `MCPBASH_GIT_DENY_HOSTS` | (unset) | Allow/deny lists; private/loopback always blocked. Allow list (or `MCPBASH_GIT_ALLOW_ALL=true`) is required when the git provider is enabled. |
 | `MCPBASH_GIT_ALLOW_ALL` | `false` | Explicitly allow all git hosts (unsafe; prefer `MCPBASH_GIT_ALLOW_HOSTS`). |
