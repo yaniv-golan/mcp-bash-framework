@@ -52,6 +52,8 @@ This guide distils hands-on recommendations for designing, building, and operati
 | `mcp_is_cancelled` | Check cancellation | `if mcp_is_cancelled; then exit 1; fi` |
 | `mcp_log_info` | Structured logging | `mcp_log_info "tool" "message"` |
 | `mcp_with_retry` | Retry with exponential backoff | `mcp_with_retry 3 1.0 -- curl -sf "$url"` |
+| `mcp_download_safe` | SSRF-safe HTTPS download | `mcp_download_safe --url "$url" --allow "api.example.com"` |
+| `mcp_download_safe_or_fail` | SSRF-safe download (fails on error) | `path=$(mcp_download_safe_or_fail --url "$url" --out "$tmp" --allow "x.com")` |
 | `mcp_result_success` | Emit success CallToolResult envelope | `mcp_result_success "$json_data"` |
 | `mcp_result_error` | Emit error CallToolResult envelope | `mcp_result_error '{"type":"not_found"}'` |
 | `mcp_json_truncate` | Truncate large arrays for context limits | `mcp_json_truncate "$arr" 10000` |
@@ -448,6 +450,84 @@ mcp_log_debug "mytool" "Starting operation"
 mcp_log_info "mytool" "Processing ${count} items"
 mcp_log_warn "mytool" "Deprecated option used"
 mcp_log_error "mytool" "Failed to connect"
+```
+
+#### Secure downloads (mcp_download_safe)
+
+**`mcp_download_safe`** – Download content from HTTPS URLs with SSRF protection:
+
+```bash
+# Basic usage with explicit allowlist
+result=$(mcp_download_safe --url "https://api.example.com/data" --out "/tmp/data.json" --allow "api.example.com")
+if [[ $(echo "$result" | jq -r '.success') == "true" ]]; then
+  cat /tmp/data.json  # Process downloaded file
+else
+  error=$(echo "$result" | jq -r '.error.message')
+  mcp_log_error "mytool" "Download failed: ${error}"
+fi
+
+# Using environment variable for allowlist (useful for CI/operator config)
+export MCPBASH_HTTPS_ALLOW_HOSTS="api.example.com,cdn.example.com"
+result=$(mcp_download_safe --url "$url" --out "/tmp/data.json")
+
+# Custom timeout and max size
+result=$(mcp_download_safe --url "$url" --out "/tmp/data.json" --allow "example.com" \
+  --timeout 30 --max-bytes 5242880)
+
+# Custom User-Agent
+result=$(mcp_download_safe --url "$url" --out "/tmp/data.json" --allow "example.com" \
+  --user-agent "my-tool/1.0")
+```
+
+**Return format** – Always returns JSON with exit code 0 (safe for `set -e`):
+
+```json
+// Success:
+{"success":true,"bytes":<size>,"path":"<output_path>"}
+
+// Error:
+{"success":false,"error":{"type":"<error_type>","message":"<message>"}}
+```
+
+**Error types** (in `.error.type`):
+- `invalid_url` – URL is empty or not https://
+- `invalid_params` – Invalid/missing parameters (e.g., missing --out, non-numeric --timeout)
+- `host_blocked` – Host is private, obfuscated, or not in allowlist
+- `provider_unavailable` – HTTPS provider not found or curl missing
+- `network_error` – Connection failed (retries exhausted)
+- `size_exceeded` – Response exceeds --max-bytes limit
+- `write_error` – Could not write to output path
+- `provider_error` – Provider script failed unexpectedly
+- `redirect` – URL returned 3xx redirect (location in `.error.location`)
+
+**Security features**:
+- SSRF protection: Blocks private IPs (127.x, 10.x, 192.168.x, etc.) and DNS rebinding
+- Deny-by-default: Requires explicit host allowlist
+- Obfuscated IP detection: Rejects integer/hex IP literals
+- No redirects: Prevents redirect-based SSRF attacks
+- Automatic retry: Exponential backoff for transient failures
+
+**Simple usage with `mcp_download_safe_or_fail`:**
+
+For tools that should fail on download error (most cases):
+
+```bash
+# Downloads or fails tool with -32602
+path=$(mcp_download_safe_or_fail --url "https://api.example.com/data" \
+  --out "/tmp/data.json" --allow "api.example.com")
+process_file "$path"
+```
+
+**Handling redirects:**
+
+URLs that redirect return a `redirect` error with the target location:
+
+```bash
+result=$(mcp_download_safe --url "$url" --out "$tmp" --allow "example.com")
+if [[ $(echo "$result" | jq -r '.error.type') == "redirect" ]]; then
+  target=$(echo "$result" | jq -r '.error.location')
+  mcp_log_info "mytool" "Hint: use ${target} instead"
+fi
 ```
 
 #### Elicitation (interactive prompts)

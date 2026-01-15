@@ -292,51 +292,104 @@ EOF
 	if [ "${max_bytes}" -gt "${max_bytes_ceil}" ]; then
 		max_bytes="${max_bytes_ceil}"
 	fi
+	local user_agent="${MCPBASH_HTTPS_USER_AGENT:-}"
 
-	local tmp_file
+	local tmp_file header_file
 	tmp_file="$(mktemp "${TMPDIR:-/tmp}/mcp-https.XXXXXX")"
+	header_file="$(mktemp "${TMPDIR:-/tmp}/mcp-https-hdr.XXXXXX")"
 	# NOTE: EXIT traps run after function locals go out of scope. Capture the
-	# temp path via a global so set -u doesn't trip on an unbound local.
+	# temp paths via globals so set -u doesn't trip on unbound locals.
 	MCPBASH_HTTPS_TMP_FILE="${tmp_file}"
-	trap 'rm -f -- "${MCPBASH_HTTPS_TMP_FILE:-}"' EXIT
+	MCPBASH_HTTPS_HDR_FILE="${header_file}"
+	trap 'rm -f -- "${MCPBASH_HTTPS_TMP_FILE:-}" "${MCPBASH_HTTPS_HDR_FILE:-}"' EXIT
 
 	if command -v curl >/dev/null 2>&1; then
+		# Build optional curl arguments (e.g., User-Agent)
+		local -a curl_opts=()
+		if [ -n "${user_agent}" ]; then
+			curl_opts+=(-A "${user_agent}")
+		fi
+
 		# DNS rebinding defense: if we resolved IPs, pin the connection to the
 		# vetted IP(s) via --resolve so curl does not re-resolve during fetch.
 		# If multiple IPs exist, try them in order (all were checked as public).
 		local curl_rc=0
 		local tried_any="false"
 		if [ "${#resolved_ip_list[@]}" -gt 0 ]; then
-			local ip
+			local ip http_code location
 			for ip in "${resolved_ip_list[@]}"; do
 				tried_any="true"
-				if curl -fsS --max-time "${timeout_secs}" --connect-timeout "${timeout_secs}" --max-filesize "${max_bytes}" --proto '=https' --proto-redir '=https' --max-redirs 0 --resolve "${host}:${port}:${ip}" -o "${tmp_file}" "${uri}"; then
-					curl_rc=0
-					break
+				# Capture HTTP code and headers in single request (with all security flags)
+				# NOTE: Remove -f flag to get HTTP status codes instead of curl failing on 4xx/5xx
+				# NOTE: ${curl_opts[@]+"${curl_opts[@]}"} safely handles empty arrays with set -u
+				# CRITICAL: Do NOT use 2>&1 - stderr must stay separate to avoid corrupting http_code
+				http_code=$(curl -w '%{http_code}' -D "${header_file}" -o "${tmp_file}" \
+					-sS ${curl_opts[@]+"${curl_opts[@]}"} \
+					--max-time "${timeout_secs}" --connect-timeout "${timeout_secs}" \
+					--max-filesize "${max_bytes}" \
+					--proto '=https' --proto-redir '=https' --max-redirs 0 \
+					--resolve "${host}:${port}:${ip}" \
+					"${uri}") && curl_rc=0 || curl_rc=$?
+
+				# Check curl exit code FIRST (before examining http_code)
+				if [[ $curl_rc -ne 0 ]]; then
+					[[ $curl_rc -eq 63 ]] && return 6 # Size exceeded
+					continue # Try next IP
 				fi
-				curl_rc=$?
-				case "${curl_rc}" in
-				63)
-					printf 'Payload exceeds %s bytes\n' "${max_bytes}" >&2
-					return 6
-					;; # CURLE_FILESIZE_EXCEEDED
-				esac
+
+				# Handle http_code "000" - curl succeeded but no HTTP response (rare edge case)
+				if [[ "${http_code}" == "000" ]]; then
+					curl_rc=1 # Force non-zero so we don't accidentally succeed
+					continue # Try next IP
+				fi
+
+				# Check for redirect status (3xx) - exit code 7
+				# NOTE: Multi-IP redirect behavior is "first redirect wins"
+				if [[ "${http_code}" =~ ^3[0-9][0-9]$ ]]; then
+					location=$(grep -i '^location:' "${header_file}" | sed 's/^[^:]*: *//' | tr -d '\r\n')
+					printf 'redirect:%s\n' "${location}" >&2
+					return 7
+				fi
+
+				# Check for HTTP errors (4xx/5xx)
+				# NOTE: All HTTP errors return exit 5 (network_error). 404 is permanent but
+				# will still be retried - this is a known v1 limitation.
+				if [[ "${http_code}" =~ ^[45][0-9][0-9]$ ]]; then
+					printf 'HTTP error: %s\n' "${http_code}" >&2
+					return 5
+				fi
+
+				# Success (2xx) - break out of IP loop
+				break
 			done
 			if [ "${curl_rc}" -ne 0 ]; then
 				return 5
 			fi
 		fi
 		if [ "${tried_any}" != "true" ]; then
-			if ! curl -fsS --max-time "${timeout_secs}" --connect-timeout "${timeout_secs}" --max-filesize "${max_bytes}" --proto '=https' --proto-redir '=https' --max-redirs 0 -o "${tmp_file}" "${uri}"; then
-				case "$?" in
-				63)
-					printf 'Payload exceeds %s bytes\n' "${max_bytes}" >&2
-					return 6
-					;; # CURLE_FILESIZE_EXCEEDED
-				*)
-					return 5
-					;;
-				esac
+			local http_code location
+			http_code=$(curl -w '%{http_code}' -D "${header_file}" -o "${tmp_file}" \
+				-sS ${curl_opts[@]+"${curl_opts[@]}"} \
+				--max-time "${timeout_secs}" --connect-timeout "${timeout_secs}" \
+				--max-filesize "${max_bytes}" \
+				--proto '=https' --proto-redir '=https' --max-redirs 0 \
+				"${uri}") && curl_rc=0 || curl_rc=$?
+
+			if [[ $curl_rc -ne 0 ]]; then
+				[[ $curl_rc -eq 63 ]] && return 6 # Size exceeded
+				return 5
+			fi
+			if [[ "${http_code}" == "000" ]]; then
+				return 5
+			fi
+			if [[ "${http_code}" =~ ^3[0-9][0-9]$ ]]; then
+				location=$(grep -i '^location:' "${header_file}" | sed 's/^[^:]*: *//' | tr -d '\r\n')
+				printf 'redirect:%s\n' "${location}" >&2
+				return 7
+			fi
+			if [[ "${http_code}" =~ ^[45][0-9][0-9]$ ]]; then
+				printf 'HTTP error: %s\n' "${http_code}" >&2
+				return 5
 			fi
 		fi
 	else

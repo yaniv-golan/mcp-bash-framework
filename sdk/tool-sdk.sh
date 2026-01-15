@@ -1411,3 +1411,359 @@ mcp_json_truncate() {
 		'{result: null, truncated: false, error: {type: "output_too_large", message: $msg}}'
 	return 0
 }
+
+# Safe download helper ---------------------------------------------------------
+#
+# mcp_download_safe --url <url> --out <path> [--allow <host>]... [options]
+#
+# Ergonomic wrapper for secure HTTP(S) downloads. Delegates to the HTTPS provider
+# (providers/https.sh) for security enforcement while providing tool-author-friendly API.
+#
+# Security features (inherited from HTTPS provider):
+# - SSRF protection (private IP blocking)
+# - DNS rebinding defense (--resolve pinning)
+# - Obfuscated IP literal rejection
+# - Allow/deny list enforcement
+# - HTTPS only, no redirects
+#
+# Returns JSON to stdout: {"success":true,"bytes":<n>,"path":"<path>"} or
+# {"success":false,"error":{"type":"<type>","message":"<msg>"}}
+# Always returns exit code 0 for set -e safety.
+
+mcp_download_safe() {
+	local url="" out="" max_bytes="" timeout="" user_agent="" retry=1 retry_delay="1.0"
+	local -a allow_hosts=()
+	local -a deny_hosts=()
+
+	# Parse arguments - reject unknown flags for security
+	while [[ $# -gt 0 ]]; do
+		case "$1" in
+		--url)
+			url="$2"
+			shift 2
+			;;
+		--out)
+			out="$2"
+			shift 2
+			;;
+		--allow)
+			allow_hosts+=("$2")
+			shift 2
+			;;
+		--deny)
+			deny_hosts+=("$2")
+			shift 2
+			;;
+		--max-bytes)
+			max_bytes="$2"
+			shift 2
+			;;
+		--timeout)
+			timeout="$2"
+			shift 2
+			;;
+		--user-agent)
+			user_agent="$2"
+			shift 2
+			;;
+		--retry)
+			retry="$2"
+			shift 2
+			;;
+		--retry-delay)
+			retry_delay="$2"
+			shift 2
+			;;
+		-*)
+			# SECURITY: Reject unknown flags to prevent typos like --alow silently passing
+			local escaped_msg
+			escaped_msg=$(__mcp_sdk_json_escape "Unknown option: $1")
+			printf '{"success":false,"error":{"type":"invalid_params","message":%s}}' "$escaped_msg"
+			return 0
+			;;
+		*)
+			# Reject positional arguments
+			local escaped_msg
+			escaped_msg=$(__mcp_sdk_json_escape "Unexpected argument: $1")
+			printf '{"success":false,"error":{"type":"invalid_params","message":%s}}' "$escaped_msg"
+			return 0
+			;;
+		esac
+	done
+
+	# Validate required params
+	if [[ -z "$url" ]]; then
+		printf '{"success":false,"error":{"type":"invalid_url","message":"--url is required"}}'
+		return 0
+	fi
+	if [[ -z "$out" ]]; then
+		printf '{"success":false,"error":{"type":"invalid_params","message":"--out is required"}}'
+		return 0
+	fi
+
+	# Validate URL scheme
+	if [[ "$url" != https://* ]]; then
+		printf '{"success":false,"error":{"type":"invalid_url","message":"URL must use https://"}}'
+		return 0
+	fi
+
+	# Validate numeric parameters
+	if [[ -n "$max_bytes" ]] && ! [[ "$max_bytes" =~ ^[0-9]+$ ]]; then
+		printf '{"success":false,"error":{"type":"invalid_params","message":"--max-bytes must be a positive integer"}}'
+		return 0
+	fi
+	if [[ -n "$timeout" ]]; then
+		if ! [[ "$timeout" =~ ^[0-9]+$ ]]; then
+			printf '{"success":false,"error":{"type":"invalid_params","message":"--timeout must be a positive integer"}}'
+			return 0
+		fi
+		if [[ "$timeout" -gt 60 ]]; then
+			printf '{"success":false,"error":{"type":"invalid_params","message":"--timeout cannot exceed 60 seconds"}}'
+			return 0
+		fi
+	fi
+	if ! [[ "$retry" =~ ^[0-9]+$ ]] || [[ "$retry" -lt 1 ]]; then
+		printf '{"success":false,"error":{"type":"invalid_params","message":"--retry must be a positive integer"}}'
+		return 0
+	fi
+	# Accept formats: 1, 1.0, 0.5, .5
+	if ! [[ "$retry_delay" =~ ^[0-9]*\.?[0-9]+$ ]]; then
+		printf '{"success":false,"error":{"type":"invalid_params","message":"--retry-delay must be a number (e.g., 0.5, 1, 2.0)"}}'
+		return 0
+	fi
+
+	# Locate provider
+	local provider=""
+	if [[ -n "${MCPBASH_HOME:-}" ]] && [[ -f "${MCPBASH_HOME}/providers/https.sh" ]]; then
+		provider="${MCPBASH_HOME}/providers/https.sh"
+	else
+		local sdk_dir
+		sdk_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+		if [[ -f "${sdk_dir}/../providers/https.sh" ]]; then
+			provider="${sdk_dir}/../providers/https.sh"
+		fi
+	fi
+
+	if [[ -z "$provider" ]] || [[ ! -f "$provider" ]]; then
+		printf '{"success":false,"error":{"type":"provider_unavailable","message":"HTTPS provider not found"}}'
+		return 0
+	fi
+
+	# Pre-check for curl (provider exit code 4 means both "policy blocked" and "curl missing",
+	# so we check here to return the correct error type)
+	if ! command -v curl >/dev/null 2>&1; then
+		printf '{"success":false,"error":{"type":"provider_unavailable","message":"curl is required for HTTPS provider"}}'
+		return 0
+	fi
+
+	# Build allow/deny lists for provider (comma-separated)
+	local allow_list="" deny_list=""
+	if [[ ${#allow_hosts[@]} -gt 0 ]]; then
+		allow_list=$(
+			IFS=,
+			echo "${allow_hosts[*]}"
+		)
+	fi
+	if [[ ${#deny_hosts[@]} -gt 0 ]]; then
+		deny_list=$(
+			IFS=,
+			echo "${deny_hosts[*]}"
+		)
+	fi
+
+	# Set default User-Agent if not specified
+	if [[ -z "$user_agent" ]]; then
+		local version="unknown"
+		if [[ -n "${MCPBASH_HOME:-}" ]] && [[ -f "${MCPBASH_HOME}/VERSION" ]]; then
+			version=$(<"${MCPBASH_HOME}/VERSION")
+			version="${version%%$'\n'*}" # Strip newlines
+		fi
+		user_agent="mcpbash/${version} (tool-sdk)"
+	fi
+
+	# Prepare environment for provider
+	local -a env_vars=()
+	[[ -n "$allow_list" ]] && env_vars+=(MCPBASH_HTTPS_ALLOW_HOSTS="$allow_list")
+	[[ -n "$deny_list" ]] && env_vars+=(MCPBASH_HTTPS_DENY_HOSTS="$deny_list")
+	[[ -n "$max_bytes" ]] && env_vars+=(MCPBASH_HTTPS_MAX_BYTES="$max_bytes")
+	[[ -n "$timeout" ]] && env_vars+=(MCPBASH_HTTPS_TIMEOUT="$timeout")
+	env_vars+=(MCPBASH_HTTPS_USER_AGENT="$user_agent")
+
+	# Create temp files for download and stderr capture
+	local tmp_out tmp_err
+	tmp_out=$(mktemp "${TMPDIR:-/tmp}/mcp-dl.XXXXXX") || {
+		printf '{"success":false,"error":{"type":"write_error","message":"Could not create temp file"}}'
+		return 0
+	}
+	tmp_err=$(mktemp "${TMPDIR:-/tmp}/mcp-dl-err.XXXXXX") || {
+		rm -f "$tmp_out"
+		printf '{"success":false,"error":{"type":"write_error","message":"Could not create temp file"}}'
+		return 0
+	}
+	trap 'rm -f -- "${tmp_out:-}" "${tmp_err:-}"' RETURN
+
+	# Execute with optional retry (exponential backoff + jitter, consistent with mcp_with_retry)
+	local attempt=1 rc=0 delay="$retry_delay"
+
+	while [[ $attempt -le $retry ]]; do
+		rc=0
+		if [[ ${#env_vars[@]} -gt 0 ]]; then
+			env "${env_vars[@]}" bash "$provider" "$url" >"$tmp_out" 2>"$tmp_err" || rc=$?
+		else
+			bash "$provider" "$url" >"$tmp_out" 2>"$tmp_err" || rc=$?
+		fi
+
+		[[ $rc -eq 0 ]] && break
+
+		# Don't retry permanent failures:
+		#   4 = policy rejection (host blocked - won't change)
+		#   6 = size exceeded (server response too large - won't shrink)
+		#   7 = redirect (deterministic behavior - same URL will always redirect)
+		[[ $rc -eq 4 || $rc -eq 6 || $rc -eq 7 ]] && break
+
+		attempt=$((attempt + 1))
+		if [[ $attempt -le $retry ]]; then
+			# Add jitter (0-50% of delay) consistent with mcp_with_retry
+			local jitter sleep_time
+			jitter=$(awk "BEGIN {srand(); print $delay * rand() * 0.5}")
+			sleep_time=$(awk "BEGIN {print $delay + $jitter}")
+			sleep "$sleep_time"
+			delay=$(awk "BEGIN {print $delay * 2}")
+		fi
+	done
+
+	# CRITICAL: Read first line from $tmp_err file BEFORE sanitization truncates it
+	# The sanitized stderr is for error messages; redirect location needs raw first line
+	local stderr_first_line=""
+	if [[ -s "$tmp_err" ]]; then
+		stderr_first_line=$(head -n 1 "$tmp_err")
+	fi
+
+	# Capture stderr for error messages (truncate to 200 chars, sanitize control chars)
+	local stderr_raw=""
+	if [[ -s "$tmp_err" ]]; then
+		# Replace newlines/tabs/CRs with spaces, strip control chars
+		stderr_raw=$(head -c 200 "$tmp_err" | tr '\n\t\r' '   ' | sed 's/[[:cntrl:]]//g')
+	fi
+
+	# Translate exit codes to error types
+	case $rc in
+	0)
+		# Success - move to final destination
+		if mv "$tmp_out" "$out" 2>/dev/null; then
+			local bytes escaped_path
+			bytes=$(wc -c <"$out" | tr -d ' ')
+			# SECURITY: JSON-escape the path to prevent injection
+			escaped_path=$(__mcp_sdk_json_escape "$out")
+			printf '{"success":true,"bytes":%s,"path":%s}' "$bytes" "$escaped_path"
+		else
+			printf '{"success":false,"error":{"type":"write_error","message":"Could not write to output path"}}'
+		fi
+		;;
+	4)
+		printf '{"success":false,"error":{"type":"host_blocked","message":"Host blocked by policy"}}'
+		;;
+	5)
+		if [[ -n "$stderr_raw" ]]; then
+			local escaped_msg
+			escaped_msg=$(__mcp_sdk_json_escape "Network request failed: ${stderr_raw}")
+			printf '{"success":false,"error":{"type":"network_error","message":%s}}' "$escaped_msg"
+		else
+			printf '{"success":false,"error":{"type":"network_error","message":"Network request failed"}}'
+		fi
+		;;
+	6)
+		printf '{"success":false,"error":{"type":"size_exceeded","message":"Response exceeds max-bytes limit"}}'
+		;;
+	7)
+		# Redirect detected - parse location from FIRST LINE of stderr (before sanitization)
+		local location=""
+		if [[ "$stderr_first_line" == redirect:* ]]; then
+			location="${stderr_first_line#redirect:}"
+			# CRITICAL: Strip trailing newline and CR (head -n 1 preserves the \n)
+			# Two-pass stripping handles both Unix (\n) and Windows (\r\n) line endings:
+			# - After first strip: "https://...\r" (if server sent \r\n)
+			# - After second strip: "https://..." (clean)
+			location="${location%$'\n'}"
+			location="${location%$'\r'}"
+		fi
+		if [[ -n "$location" ]]; then
+			local escaped_loc
+			escaped_loc=$(__mcp_sdk_json_escape "$location")
+			printf '{"success":false,"error":{"type":"redirect","location":%s,"message":"URL redirects - use canonical URL or add target to allowlist"}}' "$escaped_loc"
+		else
+			printf '{"success":false,"error":{"type":"redirect","message":"URL redirects but location unavailable"}}'
+		fi
+		;;
+	1 | 2 | 126 | 127)
+		# Provider script errors (syntax, not found, not executable)
+		if [[ -n "$stderr_raw" ]]; then
+			local escaped_msg
+			escaped_msg=$(__mcp_sdk_json_escape "Provider failed (exit ${rc}): ${stderr_raw}")
+			printf '{"success":false,"error":{"type":"provider_error","message":%s}}' "$escaped_msg"
+		else
+			printf '{"success":false,"error":{"type":"provider_error","message":"Provider failed with exit code %s"}}' "$rc"
+		fi
+		;;
+	*)
+		# Unexpected exit codes
+		if [[ -n "$stderr_raw" ]]; then
+			local escaped_msg
+			escaped_msg=$(__mcp_sdk_json_escape "Unexpected error (exit ${rc}): ${stderr_raw}")
+			printf '{"success":false,"error":{"type":"provider_error","message":%s}}' "$escaped_msg"
+		else
+			printf '{"success":false,"error":{"type":"provider_error","message":"Unexpected error with exit code %s"}}' "$rc"
+		fi
+		;;
+	esac
+
+	return 0
+}
+
+# Fail-fast download wrapper -----------------------------------------------------
+#
+# mcp_download_safe_or_fail --url <url> --out <path> [--allow <host>]... [options]
+#
+# Downloads file or fails the tool with -32602 (InvalidParams).
+# Returns the output path on success.
+#
+# Use mcp_download_safe directly if you need custom error handling.
+
+mcp_download_safe_or_fail() {
+	local result
+	result=$(mcp_download_safe "$@")
+
+	# Handle minimal mode (no jq available)
+	if [[ "${MCPBASH_MODE:-full}" = "minimal" ]] || [[ -z "${MCPBASH_JSON_TOOL_BIN:-}" ]]; then
+		# Best-effort pattern matching - anchor to start of JSON for robustness
+		# (avoids false positive if path/message somehow contained '"success":true')
+		if [[ "$result" == '{"success":true,'* ]]; then
+			# Extract path with sed (fragile but best-effort for minimal mode)
+			# KNOWN LIMITATION: This pattern fails if path contains escaped quotes (e.g., /tmp/foo\"bar)
+			# This is rare and acceptable for minimal mode; use full mode for edge cases.
+			printf '%s' "${result}" | sed -n 's/.*"path":"\([^"]*\)".*/\1/p'
+			return 0
+		fi
+		mcp_fail_invalid_args "Download failed (minimal mode - cannot parse error details)"
+	fi
+
+	# Full mode: parse with jq (single call for efficiency)
+	# Uses @tsv (tab-separated values) format which is safer than trying to parse JSON in bash
+	# CRITICAL: Sanitize tabs AND newlines in BOTH error message AND path to prevent TSV parsing issues
+	# - Tabs would break IFS=$'\t' read (tabs are our field delimiter!)
+	# - Newlines would cause read to only get first line
+	local parsed
+	parsed=$(printf '%s' "$result" | "${MCPBASH_JSON_TOOL_BIN}" -r '
+		[.success // false, .error.type // "unknown", ((.error.message // "Download failed") | gsub("[\t\n]"; " ")), ((.path // "") | gsub("[\t\n]"; " "))] | @tsv
+	')
+
+	local success err_type err_msg path
+	IFS=$'\t' read -r success err_type err_msg path <<<"$parsed"
+
+	if [[ "$success" != "true" ]]; then
+		mcp_fail_invalid_args "Download failed (${err_type}): ${err_msg}"
+	fi
+
+	# Return the path using printf (not echo) to handle paths with -n, -e, or backslashes
+	printf '%s' "$path"
+}

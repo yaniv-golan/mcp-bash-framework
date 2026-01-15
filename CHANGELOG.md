@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.9.14] - Unreleased
 
+### Added
+- **`mcp_download_safe` SDK helper**: New function for SSRF-safe HTTPS downloads in tools. Wraps the HTTPS provider with ergonomic API: named flags (`--url`, `--out`, `--allow`), automatic retries with exponential backoff, structured JSON responses (`{"success":true,"bytes":N,"path":"..."}` or `{"success":false,"error":{...}}`), and `set -e` safe (always returns 0). See BEST-PRACTICES.md "Secure downloads" section.
+- **`mcp_download_safe_or_fail` SDK helper**: Fail-fast wrapper for `mcp_download_safe` that returns the output path on success or fails the tool with `-32602` on error. Simplifies common "download or die" pattern: `path=$(mcp_download_safe_or_fail --url "$url" --out "$tmp" --allow "example.com")`.
+- **Redirect detection in HTTPS provider**: URLs that return 3xx redirects now produce a `redirect` error type with the target location in `.error.location`. This helps users identify canonical URLs without silently failing. Redirects are not retried (deterministic behavior).
+- **`MCPBASH_HTTPS_USER_AGENT` env var**: Custom User-Agent for HTTPS provider requests. The `mcp_download_safe` SDK helper sets `mcpbash/<version> (tool-sdk)` by default; override via `--user-agent` flag or this env var.
+
 ### Fixed
 - **Incomplete JSON escaping in minimal mode**: `mcp_json_escape_string()` fallback (used when jq/gojq unavailable) now properly escapes all control characters including `\b` (backspace), `\f` (form feed), and other 0x00-0x1F characters via `\u00XX` encoding. Previously only escaped `\n`, `\r`, `\t`, `\\`, and `\"`, which could produce invalid JSON.
 - **Potential secret leakage in debug payload redaction**: When jq is unavailable, `mcp_io_debug_redact_payload()` now emits a secure fingerprint (`[payload hash=... bytes=...]`) instead of attempting fragile regex-based redaction. The previous sed fallback could leak partial secrets when values contained escaped quotes (e.g., `"pass\"word"`). Follows fail-closed security: if we can't redact correctly, we redact everything.
