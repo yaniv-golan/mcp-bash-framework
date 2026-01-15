@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 - **Minimal mode limitations**: Documented known limitations in `docs/MINIMAL-MODE.md` including unicode escape sequences (`\uXXXX`) not being decoded (passed through as literals) and debug payload logging emitting fingerprints instead of full content.
+- **MCPB code signing**: Added optional code signing workflow to `docs/MCPB.md` using the official MCPB CLI (`@anthropic-ai/mcpb`) for production distribution. Documents `mcpb sign`, `mcpb verify`, and related commands.
 
 ## [0.9.13] - 2026-01-13
 

@@ -227,6 +227,54 @@ Recommended specifications:
 
    See [DEBUGGING.md](DEBUGGING.md) for comprehensive debugging guidance including MCP Inspector integration, log analysis, and troubleshooting flowcharts.
 
+## Code Signing (Optional)
+
+For production distribution, you can sign bundles using the official MCPB CLI to establish trust with end users.
+
+### Install the MCPB CLI
+
+```bash
+npm install -g @anthropic-ai/mcpb
+```
+
+### Sign Your Bundle
+
+```bash
+# Create bundle first
+mcp-bash bundle --output ./dist
+
+# Sign with a self-signed certificate (for testing/development)
+mcpb sign ./dist/my-server-1.0.0.mcpb --self-signed
+
+# Sign with a production certificate
+mcpb sign ./dist/my-server-1.0.0.mcpb \
+  --cert cert.pem \
+  --key key.pem \
+  --intermediate intermediate-ca.pem
+```
+
+### Verify a Signed Bundle
+
+```bash
+mcpb verify my-server-1.0.0.mcpb
+```
+
+This displays:
+- Signature validity status
+- Certificate subject and issuer
+- Certificate validity dates
+- Warning if self-signed
+
+### Additional MCPB CLI Commands
+
+```bash
+mcpb info my-server-1.0.0.mcpb    # Display bundle information
+mcpb unsign my-server-1.0.0.mcpb  # Remove signature (for re-signing)
+mcpb validate manifest.json       # Validate manifest against schema
+```
+
+For full documentation, see [MCPB CLI Documentation](https://github.com/modelcontextprotocol/mcpb/blob/main/CLI.md).
+
 ## Publishing to MCP Registry
 
 To list your server in the official MCP Registry:
@@ -294,5 +342,6 @@ If tools rely on environment variables from your shell profile, ensure login she
 ## See Also
 
 - [MCPB Specification](https://github.com/modelcontextprotocol/mcpb)
+- [MCPB CLI Documentation](https://github.com/modelcontextprotocol/mcpb/blob/main/CLI.md) - Official CLI for signing and verification
 - [MANIFEST.md](https://github.com/modelcontextprotocol/mcpb/blob/main/MANIFEST.md)
 - [MCP Registry](https://registry.modelcontextprotocol.io/)
