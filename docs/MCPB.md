@@ -170,6 +170,100 @@ The generated `manifest.json` follows MCPB specification v0.3:
 
 **Note:** The `*_generated` flags indicate that tools/prompts are discovered dynamically at runtime. Clients should query `tools/list` and `prompts/list` to discover available capabilities.
 
+## User Configuration
+
+Bundles can declare user-configurable options that implementing apps (Claude Desktop, etc.) collect via UI and pass to servers at runtime.
+
+### Defining User Configuration
+
+Create a `user-config.json` file in your project root:
+
+```json
+{
+  "api_key": {
+    "type": "string",
+    "title": "API Key",
+    "description": "Your API key for authentication",
+    "sensitive": true,
+    "required": true
+  },
+  "allowed_dirs": {
+    "type": "directory",
+    "title": "Allowed Directories",
+    "description": "Directories the server can access",
+    "multiple": true
+  },
+  "max_results": {
+    "type": "number",
+    "title": "Max Results",
+    "min": 1,
+    "max": 100,
+    "default": 10
+  }
+}
+```
+
+### Configuration Options in mcpb.conf
+
+```bash
+# User Configuration
+MCPB_USER_CONFIG_FILE="user-config.json"      # Path to user config schema
+MCPB_USER_CONFIG_ENV_MAP="api_key=MY_API_KEY" # Map config to env vars
+MCPB_USER_CONFIG_ARGS_MAP="allowed_dirs"      # Map config to command args
+```
+
+Alternatively, embed in `server.d/server.meta.json`:
+
+```json
+{
+  "name": "my-server",
+  "user_config": {
+    "api_key": { "type": "string", "title": "API Key", "sensitive": true }
+  },
+  "user_config_env_map": { "api_key": "MY_API_KEY" },
+  "user_config_args_map": ["allowed_dirs"]
+}
+```
+
+### Field Types
+
+| Type | Properties | Description |
+|------|------------|-------------|
+| `string` | `sensitive`, `default` | Text input; `sensitive` masks input |
+| `number` | `min`, `max`, `default` | Numeric input with bounds |
+| `boolean` | `default` | Toggle/checkbox |
+| `directory` | `multiple`, `default` | Directory picker |
+| `file` | `multiple`, `default` | File picker |
+
+### Variable Substitution
+
+The manifest supports these variables in env/args:
+- `${user_config.KEY}` - User-provided config value
+- `${__dirname}` - Bundle installation directory
+- `${HOME}` - User's home directory
+- `${DOCUMENTS}` - User's Documents folder
+- `${DESKTOP}` - User's Desktop folder
+- `${pathSeparator}` - Platform path separator (`:` or `;`)
+
+### Generated Manifest Example
+
+```json
+{
+  "user_config": {
+    "api_key": { "type": "string", "title": "API Key", "sensitive": true }
+  },
+  "server": {
+    "mcp_config": {
+      "command": "${__dirname}/server/run-server.sh",
+      "args": ["${user_config.allowed_dirs}"],
+      "env": {
+        "MY_API_KEY": "${user_config.api_key}"
+      }
+    }
+  }
+}
+```
+
 ## Platform Compatibility
 
 Bundles are compatible with:

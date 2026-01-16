@@ -13,6 +13,15 @@
     "type": "git",
     "url": "__REPOSITORY_URL__"
   },
+  "_comment_user_config": "Uncomment and customize if your tools need user configuration",
+  "_user_config_example": {
+    "api_key": {
+      "type": "string",
+      "title": "API Key",
+      "sensitive": true,
+      "required": true
+    }
+  },
   "server": {
     "type": "binary",
     "entry_point": "server/run-server.sh",

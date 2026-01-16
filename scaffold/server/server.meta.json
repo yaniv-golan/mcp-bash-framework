@@ -2,5 +2,10 @@
   "name": "__NAME__",
   "title": "__TITLE__",
   "version": "0.1.0",
-  "description": "Description of your MCP server"
+  "description": "Description of your MCP server",
+  "_comment": "Optional: Add user_config for user-configurable settings",
+  "_user_config_example": {
+    "api_key": { "type": "string", "title": "API Key", "sensitive": true }
+  },
+  "_user_config_env_map_example": { "api_key": "MY_API_KEY" }
 }

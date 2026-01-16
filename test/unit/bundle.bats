@@ -350,3 +350,685 @@ EOF
 	# Should find literal "data*test" directory, not glob expand
 	assert_file_exist "${EXTRACT_DIR}/server/data*test/file.txt"
 }
+
+# user_config tests
+
+@test "bundle: generates manifest with user_config from file" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	cat > "${PROJECT_ROOT}/user-config.json" << 'EOF'
+{
+  "api_key": {
+    "type": "string",
+    "title": "API Key",
+    "description": "Your API key for authentication",
+    "sensitive": true,
+    "required": true
+  }
+}
+EOF
+	cat > "${PROJECT_ROOT}/mcpb.conf" << 'EOF'
+MCPB_NAME="test-server"
+MCPB_VERSION="1.0.0"
+MCPB_USER_CONFIG_FILE="user-config.json"
+EOF
+	run bash -c "cd '${PROJECT_ROOT}' && '${MCPBASH_HOME}/bin/mcp-bash' bundle --output '${OUTPUT_DIR}'"
+	[ "$status" -eq 0 ]
+	unzip -q "${OUTPUT_DIR}/test-server-1.0.0.mcpb" -d "${EXTRACT_DIR}"
+	run jq -e '.user_config.api_key.sensitive == true' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+}
+
+@test "bundle: generates manifest with user_config from server.meta.json" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	cat > "${PROJECT_ROOT}/server.d/server.meta.json" << 'EOF'
+{
+  "name": "test",
+  "version": "1.0.0",
+  "description": "test",
+  "user_config": {
+    "debug": {
+      "type": "boolean",
+      "title": "Enable Debug Mode",
+      "default": false
+    }
+  }
+}
+EOF
+	run bash -c "cd '${PROJECT_ROOT}' && '${MCPBASH_HOME}/bin/mcp-bash' bundle --output '${OUTPUT_DIR}'"
+	[ "$status" -eq 0 ]
+	unzip -q "${OUTPUT_DIR}/test-1.0.0.mcpb" -d "${EXTRACT_DIR}"
+	run jq -e '.user_config.debug.type == "boolean"' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+}
+
+@test "bundle: validates user_config field types" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	cat > "${PROJECT_ROOT}/user-config.json" << 'EOF'
+{
+  "bad_field": {
+    "type": "invalid_type",
+    "title": "Bad Field"
+  }
+}
+EOF
+	cat > "${PROJECT_ROOT}/mcpb.conf" << 'EOF'
+MCPB_NAME="test-server"
+MCPB_VERSION="1.0.0"
+MCPB_USER_CONFIG_FILE="user-config.json"
+EOF
+	run bash -c "cd '${PROJECT_ROOT}' && '${MCPBASH_HOME}/bin/mcp-bash' bundle --validate"
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"invalid type"* ]]
+}
+
+@test "bundle: validates user_config required fields (type and title)" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	cat > "${PROJECT_ROOT}/user-config.json" << 'EOF'
+{
+  "missing_type": {
+    "title": "Missing Type"
+  }
+}
+EOF
+	cat > "${PROJECT_ROOT}/mcpb.conf" << 'EOF'
+MCPB_NAME="test-server"
+MCPB_VERSION="1.0.0"
+MCPB_USER_CONFIG_FILE="user-config.json"
+EOF
+	run bash -c "cd '${PROJECT_ROOT}' && '${MCPBASH_HOME}/bin/mcp-bash' bundle --validate"
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"must have \"type\" and \"title\""* ]]
+}
+
+@test "bundle: validates env_map references existing keys" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	cat > "${PROJECT_ROOT}/user-config.json" << 'EOF'
+{
+  "api_key": {
+    "type": "string",
+    "title": "API Key"
+  }
+}
+EOF
+	cat > "${PROJECT_ROOT}/mcpb.conf" << 'EOF'
+MCPB_NAME="test-server"
+MCPB_VERSION="1.0.0"
+MCPB_USER_CONFIG_FILE="user-config.json"
+MCPB_USER_CONFIG_ENV_MAP="nonexistent_key=MY_VAR"
+EOF
+	run bash -c "cd '${PROJECT_ROOT}' && '${MCPBASH_HOME}/bin/mcp-bash' bundle --validate"
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"nonexistent_key"*"not defined"* ]]
+}
+
+@test "bundle: applies env_map in manifest" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	cat > "${PROJECT_ROOT}/user-config.json" << 'EOF'
+{
+  "api_key": {
+    "type": "string",
+    "title": "API Key",
+    "sensitive": true
+  }
+}
+EOF
+	cat > "${PROJECT_ROOT}/mcpb.conf" << 'EOF'
+MCPB_NAME="test-server"
+MCPB_VERSION="1.0.0"
+MCPB_USER_CONFIG_FILE="user-config.json"
+MCPB_USER_CONFIG_ENV_MAP="api_key=MY_API_KEY"
+EOF
+	run bash -c "cd '${PROJECT_ROOT}' && '${MCPBASH_HOME}/bin/mcp-bash' bundle --output '${OUTPUT_DIR}'"
+	[ "$status" -eq 0 ]
+	unzip -q "${OUTPUT_DIR}/test-server-1.0.0.mcpb" -d "${EXTRACT_DIR}"
+	run jq -e '.server.mcp_config.env.MY_API_KEY == "${user_config.api_key}"' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+}
+
+@test "bundle: MCPB_USER_CONFIG_FILE missing file is error" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	cat > "${PROJECT_ROOT}/mcpb.conf" << 'EOF'
+MCPB_NAME="test-server"
+MCPB_VERSION="1.0.0"
+MCPB_USER_CONFIG_FILE="nonexistent.json"
+EOF
+	run bash -c "cd '${PROJECT_ROOT}' && '${MCPBASH_HOME}/bin/mcp-bash' bundle --validate"
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"not found"* ]]
+}
+
+@test "bundle: empty user_config object is valid" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	cat > "${PROJECT_ROOT}/user-config.json" << 'EOF'
+{}
+EOF
+	cat > "${PROJECT_ROOT}/mcpb.conf" << 'EOF'
+MCPB_NAME="test-server"
+MCPB_VERSION="1.0.0"
+MCPB_USER_CONFIG_FILE="user-config.json"
+EOF
+	run bash -c "cd '${PROJECT_ROOT}' && '${MCPBASH_HOME}/bin/mcp-bash' bundle --validate"
+	[ "$status" -eq 0 ]
+}
+
+@test "bundle: validates sensitive only for string type" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	cat > "${PROJECT_ROOT}/user-config.json" << 'EOF'
+{
+  "bad_sensitive": {
+    "type": "number",
+    "title": "Bad Sensitive",
+    "sensitive": true
+  }
+}
+EOF
+	cat > "${PROJECT_ROOT}/mcpb.conf" << 'EOF'
+MCPB_NAME="test-server"
+MCPB_VERSION="1.0.0"
+MCPB_USER_CONFIG_FILE="user-config.json"
+EOF
+	run bash -c "cd '${PROJECT_ROOT}' && '${MCPBASH_HOME}/bin/mcp-bash' bundle --validate"
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"sensitive"*"only valid for string"* ]]
+}
+
+@test "bundle: validates min/max only for number type" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	cat > "${PROJECT_ROOT}/user-config.json" << 'EOF'
+{
+  "bad_minmax": {
+    "type": "string",
+    "title": "Bad MinMax",
+    "min": 0
+  }
+}
+EOF
+	cat > "${PROJECT_ROOT}/mcpb.conf" << 'EOF'
+MCPB_NAME="test-server"
+MCPB_VERSION="1.0.0"
+MCPB_USER_CONFIG_FILE="user-config.json"
+EOF
+	run bash -c "cd '${PROJECT_ROOT}' && '${MCPBASH_HOME}/bin/mcp-bash' bundle --validate"
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"min"*"only valid for number"* ]]
+}
+
+@test "bundle: validates min <= max" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	cat > "${PROJECT_ROOT}/user-config.json" << 'EOF'
+{
+  "bad_range": {
+    "type": "number",
+    "title": "Bad Range",
+    "min": 100,
+    "max": 50
+  }
+}
+EOF
+	cat > "${PROJECT_ROOT}/mcpb.conf" << 'EOF'
+MCPB_NAME="test-server"
+MCPB_VERSION="1.0.0"
+MCPB_USER_CONFIG_FILE="user-config.json"
+EOF
+	run bash -c "cd '${PROJECT_ROOT}' && '${MCPBASH_HOME}/bin/mcp-bash' bundle --validate"
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"min"*"<="*"max"* ]]
+}
+
+@test "bundle: validates default type matches field type" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	cat > "${PROJECT_ROOT}/user-config.json" << 'EOF'
+{
+  "bad_default": {
+    "type": "number",
+    "title": "Bad Default",
+    "default": "not a number"
+  }
+}
+EOF
+	cat > "${PROJECT_ROOT}/mcpb.conf" << 'EOF'
+MCPB_NAME="test-server"
+MCPB_VERSION="1.0.0"
+MCPB_USER_CONFIG_FILE="user-config.json"
+EOF
+	run bash -c "cd '${PROJECT_ROOT}' && '${MCPBASH_HOME}/bin/mcp-bash' bundle --validate"
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"default must be number"* ]]
+}
+
+@test "bundle: validates default in min/max range" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	cat > "${PROJECT_ROOT}/user-config.json" << 'EOF'
+{
+  "out_of_range": {
+    "type": "number",
+    "title": "Out of Range",
+    "min": 10,
+    "max": 100,
+    "default": 5
+  }
+}
+EOF
+	cat > "${PROJECT_ROOT}/mcpb.conf" << 'EOF'
+MCPB_NAME="test-server"
+MCPB_VERSION="1.0.0"
+MCPB_USER_CONFIG_FILE="user-config.json"
+EOF
+	run bash -c "cd '${PROJECT_ROOT}' && '${MCPBASH_HOME}/bin/mcp-bash' bundle --validate"
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"default"*">="*"min"* ]]
+}
+
+@test "bundle: validates multiple only for directory/file types" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	cat > "${PROJECT_ROOT}/user-config.json" << 'EOF'
+{
+  "bad_multiple": {
+    "type": "string",
+    "title": "Bad Multiple",
+    "multiple": true
+  }
+}
+EOF
+	cat > "${PROJECT_ROOT}/mcpb.conf" << 'EOF'
+MCPB_NAME="test-server"
+MCPB_VERSION="1.0.0"
+MCPB_USER_CONFIG_FILE="user-config.json"
+EOF
+	run bash -c "cd '${PROJECT_ROOT}' && '${MCPBASH_HOME}/bin/mcp-bash' bundle --validate"
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"multiple"*"only valid for directory/file"* ]]
+}
+
+@test "bundle: validates env var name is POSIX identifier" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	cat > "${PROJECT_ROOT}/user-config.json" << 'EOF'
+{
+  "api_key": {
+    "type": "string",
+    "title": "API Key"
+  }
+}
+EOF
+	cat > "${PROJECT_ROOT}/mcpb.conf" << 'EOF'
+MCPB_NAME="test-server"
+MCPB_VERSION="1.0.0"
+MCPB_USER_CONFIG_FILE="user-config.json"
+MCPB_USER_CONFIG_ENV_MAP="api_key=123-invalid"
+EOF
+	run bash -c "cd '${PROJECT_ROOT}' && '${MCPBASH_HOME}/bin/mcp-bash' bundle --validate"
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"not a valid POSIX identifier"* ]]
+}
+
+@test "bundle: detects duplicate env var names" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	cat > "${PROJECT_ROOT}/user-config.json" << 'EOF'
+{
+  "api_key": {
+    "type": "string",
+    "title": "API Key"
+  },
+  "secret_key": {
+    "type": "string",
+    "title": "Secret Key"
+  }
+}
+EOF
+	cat > "${PROJECT_ROOT}/mcpb.conf" << 'EOF'
+MCPB_NAME="test-server"
+MCPB_VERSION="1.0.0"
+MCPB_USER_CONFIG_FILE="user-config.json"
+MCPB_USER_CONFIG_ENV_MAP="api_key=SAME_VAR,secret_key=SAME_VAR"
+EOF
+	run bash -c "cd '${PROJECT_ROOT}' && '${MCPBASH_HOME}/bin/mcp-bash' bundle --validate"
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"duplicate env var name"* ]]
+}
+
+@test "bundle: args_map generates correct manifest" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	cat > "${PROJECT_ROOT}/user-config.json" << 'EOF'
+{
+  "allowed_dirs": {
+    "type": "directory",
+    "title": "Allowed Directories",
+    "multiple": true
+  }
+}
+EOF
+	cat > "${PROJECT_ROOT}/mcpb.conf" << 'EOF'
+MCPB_NAME="test-server"
+MCPB_VERSION="1.0.0"
+MCPB_USER_CONFIG_FILE="user-config.json"
+MCPB_USER_CONFIG_ARGS_MAP="allowed_dirs"
+EOF
+	run bash -c "cd '${PROJECT_ROOT}' && '${MCPBASH_HOME}/bin/mcp-bash' bundle --output '${OUTPUT_DIR}'"
+	[ "$status" -eq 0 ]
+	unzip -q "${OUTPUT_DIR}/test-server-1.0.0.mcpb" -d "${EXTRACT_DIR}"
+	run jq -e '.server.mcp_config.args | index("${user_config.allowed_dirs}") != null' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+}
+
+@test "bundle: validates args_map references existing user_config keys" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	cat > "${PROJECT_ROOT}/user-config.json" << 'EOF'
+{
+  "api_key": {
+    "type": "string",
+    "title": "API Key"
+  }
+}
+EOF
+	cat > "${PROJECT_ROOT}/mcpb.conf" << 'EOF'
+MCPB_NAME="test-server"
+MCPB_VERSION="1.0.0"
+MCPB_USER_CONFIG_FILE="user-config.json"
+MCPB_USER_CONFIG_ARGS_MAP="nonexistent_key"
+EOF
+	run bash -c "cd '${PROJECT_ROOT}' && '${MCPBASH_HOME}/bin/mcp-bash' bundle --validate"
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"nonexistent_key"*"not defined"* ]]
+}
+
+@test "bundle: args_map from server.meta.json (JSON array form)" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	cat > "${PROJECT_ROOT}/server.d/server.meta.json" << 'EOF'
+{
+  "name": "test",
+  "version": "1.0.0",
+  "description": "test",
+  "user_config": {
+    "input_files": {
+      "type": "file",
+      "title": "Input Files",
+      "multiple": true
+    }
+  },
+  "user_config_args_map": ["input_files"]
+}
+EOF
+	run bash -c "cd '${PROJECT_ROOT}' && '${MCPBASH_HOME}/bin/mcp-bash' bundle --output '${OUTPUT_DIR}'"
+	[ "$status" -eq 0 ]
+	unzip -q "${OUTPUT_DIR}/test-1.0.0.mcpb" -d "${EXTRACT_DIR}"
+	run jq -e '.server.mcp_config.args | index("${user_config.input_files}") != null' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+}
+
+@test "bundle: mixed sources - user_config from file, env_map from server.meta.json" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	cat > "${PROJECT_ROOT}/server.d/server.meta.json" << 'EOF'
+{
+  "name": "test",
+  "description": "test",
+  "user_config_env_map": {
+    "api_key": "MY_API_KEY"
+  }
+}
+EOF
+	cat > "${PROJECT_ROOT}/user-config.json" << 'EOF'
+{
+  "api_key": {
+    "type": "string",
+    "title": "API Key",
+    "sensitive": true
+  }
+}
+EOF
+	cat > "${PROJECT_ROOT}/mcpb.conf" << 'EOF'
+MCPB_NAME="test-server"
+MCPB_VERSION="1.0.0"
+MCPB_USER_CONFIG_FILE="user-config.json"
+EOF
+	run bash -c "cd '${PROJECT_ROOT}' && '${MCPBASH_HOME}/bin/mcp-bash' bundle --output '${OUTPUT_DIR}'"
+	[ "$status" -eq 0 ]
+	unzip -q "${OUTPUT_DIR}/test-server-1.0.0.mcpb" -d "${EXTRACT_DIR}"
+	run jq -e '.user_config.api_key.sensitive == true' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+	run jq -e '.server.mcp_config.env.MY_API_KEY == "${user_config.api_key}"' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+}
+
+@test "bundle: file type with multiple:true generates correct manifest" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	cat > "${PROJECT_ROOT}/user-config.json" << 'EOF'
+{
+  "input_files": {
+    "type": "file",
+    "title": "Input Files",
+    "description": "Files to process",
+    "multiple": true
+  }
+}
+EOF
+	cat > "${PROJECT_ROOT}/mcpb.conf" << 'EOF'
+MCPB_NAME="test-server"
+MCPB_VERSION="1.0.0"
+MCPB_USER_CONFIG_FILE="user-config.json"
+MCPB_USER_CONFIG_ARGS_MAP="input_files"
+EOF
+	run bash -c "cd '${PROJECT_ROOT}' && '${MCPBASH_HOME}/bin/mcp-bash' bundle --output '${OUTPUT_DIR}'"
+	[ "$status" -eq 0 ]
+	unzip -q "${OUTPUT_DIR}/test-server-1.0.0.mcpb" -d "${EXTRACT_DIR}"
+	run jq -e '.user_config.input_files.type == "file" and .user_config.input_files.multiple == true' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+}
+
+@test "bundle: warns on MCPBASH namespace collision" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	cat > "${PROJECT_ROOT}/user-config.json" << 'EOF'
+{
+  "debug": {
+    "type": "boolean",
+    "title": "Debug Mode"
+  }
+}
+EOF
+	cat > "${PROJECT_ROOT}/mcpb.conf" << 'EOF'
+MCPB_NAME="test-server"
+MCPB_VERSION="1.0.0"
+MCPB_USER_CONFIG_FILE="user-config.json"
+MCPB_USER_CONFIG_ENV_MAP="debug=MCPBASH_DEBUG"
+EOF
+	run bash -c "cd '${PROJECT_ROOT}' && '${MCPBASH_HOME}/bin/mcp-bash' bundle --validate 2>&1"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"collides with reserved MCPBASH namespace"* ]]
+}
+
+@test "bundle: server.meta.json without args_map (TSV edge case)" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	cat > "${PROJECT_ROOT}/server.d/server.meta.json" << 'EOF'
+{
+  "name": "test",
+  "version": "1.0.0",
+  "description": "test",
+  "user_config": {
+    "api_key": {
+      "type": "string",
+      "title": "API Key"
+    }
+  },
+  "user_config_env_map": {
+    "api_key": "MY_API_KEY"
+  }
+}
+EOF
+	run bash -c "cd '${PROJECT_ROOT}' && '${MCPBASH_HOME}/bin/mcp-bash' bundle --output '${OUTPUT_DIR}'"
+	[ "$status" -eq 0 ]
+	unzip -q "${OUTPUT_DIR}/test-1.0.0.mcpb" -d "${EXTRACT_DIR}"
+	run jq -e '.user_config.api_key.type == "string"' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+	run jq -e '.server.mcp_config.env.MY_API_KEY == "${user_config.api_key}"' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+}
+
+@test "bundle: accepts min/max without default" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	cat > "${PROJECT_ROOT}/user-config.json" << 'EOF'
+{
+  "count": {
+    "type": "number",
+    "title": "Count",
+    "min": 1,
+    "max": 100
+  }
+}
+EOF
+	cat > "${PROJECT_ROOT}/mcpb.conf" << 'EOF'
+MCPB_NAME="test-server"
+MCPB_VERSION="1.0.0"
+MCPB_USER_CONFIG_FILE="user-config.json"
+EOF
+	run bash -c "cd '${PROJECT_ROOT}' && '${MCPBASH_HOME}/bin/mcp-bash' bundle --validate"
+	[ "$status" -eq 0 ]
+}
+
+@test "bundle: validates boolean default must be boolean" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	cat > "${PROJECT_ROOT}/user-config.json" << 'EOF'
+{
+  "debug": {
+    "type": "boolean",
+    "title": "Debug Mode",
+    "default": "true"
+  }
+}
+EOF
+	cat > "${PROJECT_ROOT}/mcpb.conf" << 'EOF'
+MCPB_NAME="test-server"
+MCPB_VERSION="1.0.0"
+MCPB_USER_CONFIG_FILE="user-config.json"
+EOF
+	run bash -c "cd '${PROJECT_ROOT}' && '${MCPBASH_HOME}/bin/mcp-bash' bundle --validate"
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"default must be boolean"* ]]
+}
+
+@test "bundle: preserves variable substitution in defaults" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	cat > "${PROJECT_ROOT}/user-config.json" << 'EOF'
+{
+  "workspace": {
+    "type": "directory",
+    "title": "Workspace",
+    "default": "${HOME}/workspace"
+  }
+}
+EOF
+	cat > "${PROJECT_ROOT}/mcpb.conf" << 'EOF'
+MCPB_NAME="test-server"
+MCPB_VERSION="1.0.0"
+MCPB_USER_CONFIG_FILE="user-config.json"
+EOF
+	run bash -c "cd '${PROJECT_ROOT}' && '${MCPBASH_HOME}/bin/mcp-bash' bundle --output '${OUTPUT_DIR}'"
+	[ "$status" -eq 0 ]
+	unzip -q "${OUTPUT_DIR}/test-server-1.0.0.mcpb" -d "${EXTRACT_DIR}"
+	# Verify variable substitution is preserved (not expanded)
+	run jq -e '.user_config.workspace.default == "${HOME}/workspace"' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+}
+
+@test "bundle: validates config key cannot contain comma" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	cat > "${PROJECT_ROOT}/user-config.json" << 'EOF'
+{
+  "bad,key": {
+    "type": "string",
+    "title": "Bad Key"
+  }
+}
+EOF
+	cat > "${PROJECT_ROOT}/mcpb.conf" << 'EOF'
+MCPB_NAME="test-server"
+MCPB_VERSION="1.0.0"
+MCPB_USER_CONFIG_FILE="user-config.json"
+EOF
+	run bash -c "cd '${PROJECT_ROOT}' && '${MCPBASH_HOME}/bin/mcp-bash' bundle --validate"
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"cannot contain"*","* ]]
+}
+
+@test "bundle: validates config key cannot contain equals sign" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	cat > "${PROJECT_ROOT}/user-config.json" << 'EOF'
+{
+  "bad=key": {
+    "type": "string",
+    "title": "Bad Key"
+  }
+}
+EOF
+	cat > "${PROJECT_ROOT}/mcpb.conf" << 'EOF'
+MCPB_NAME="test-server"
+MCPB_VERSION="1.0.0"
+MCPB_USER_CONFIG_FILE="user-config.json"
+EOF
+	run bash -c "cd '${PROJECT_ROOT}' && '${MCPBASH_HOME}/bin/mcp-bash' bundle --validate"
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"cannot contain"*"="* ]]
+}
+
+@test "bundle: env_map with comma is parsed as multiple entries" {
+	# Commas are used as entry delimiters in env_map, so "api_key=BAD,VAR"
+	# becomes two entries: "api_key=BAD" and "VAR". The "VAR" entry fails
+	# validation because it's not a valid config key reference.
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	cat > "${PROJECT_ROOT}/user-config.json" << 'EOF'
+{
+  "api_key": {
+    "type": "string",
+    "title": "API Key"
+  }
+}
+EOF
+	cat > "${PROJECT_ROOT}/mcpb.conf" << 'EOF'
+MCPB_NAME="test-server"
+MCPB_VERSION="1.0.0"
+MCPB_USER_CONFIG_FILE="user-config.json"
+MCPB_USER_CONFIG_ENV_MAP="api_key=BAD,VAR"
+EOF
+	run bash -c "cd '${PROJECT_ROOT}' && '${MCPBASH_HOME}/bin/mcp-bash' bundle --validate"
+	[ "$status" -ne 0 ]
+	# "VAR" is parsed as a config key reference, which doesn't exist
+	[[ "$output" == *"VAR"*"not defined"* ]]
+}
+
+@test "bundle: MCPB_USER_CONFIG_FILE takes priority over server.meta.json user_config" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	# Put user_config in server.meta.json (should be ignored)
+	cat > "${PROJECT_ROOT}/server.d/server.meta.json" << 'EOF'
+{
+  "name": "test",
+  "version": "1.0.0",
+  "description": "test",
+  "user_config": {
+    "meta_key": {
+      "type": "string",
+      "title": "From Meta"
+    }
+  }
+}
+EOF
+	# Put different user_config in external file (should take priority)
+	cat > "${PROJECT_ROOT}/user-config.json" << 'EOF'
+{
+  "file_key": {
+    "type": "string",
+    "title": "From File"
+  }
+}
+EOF
+	cat > "${PROJECT_ROOT}/mcpb.conf" << 'EOF'
+MCPB_NAME="test-server"
+MCPB_VERSION="1.0.0"
+MCPB_USER_CONFIG_FILE="user-config.json"
+EOF
+	run bash -c "cd '${PROJECT_ROOT}' && '${MCPBASH_HOME}/bin/mcp-bash' bundle --output '${OUTPUT_DIR}'"
+	[ "$status" -eq 0 ]
+	unzip -q "${OUTPUT_DIR}/test-server-1.0.0.mcpb" -d "${EXTRACT_DIR}"
+	# Should have file_key, not meta_key
+	run jq -e '.user_config.file_key.title == "From File"' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+	run jq -e '.user_config | has("meta_key") | not' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+}

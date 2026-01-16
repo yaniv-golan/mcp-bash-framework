@@ -18,3 +18,9 @@ MCPB_REPOSITORY="https://github.com/you/hello-tool-example"
 # Additional directories to include in bundle (space-separated)
 # Default: tools, resources, prompts, completions, server.d, lib, providers
 # MCPB_INCLUDE=".registry data/templates"
+
+# User Configuration (optional)
+# Define user-configurable settings that implementing apps collect via UI
+# MCPB_USER_CONFIG_FILE="user-config.json"
+# MCPB_USER_CONFIG_ENV_MAP="api_key=MY_API_KEY"
+# MCPB_USER_CONFIG_ARGS_MAP="allowed_dirs"

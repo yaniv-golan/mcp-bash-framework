@@ -259,6 +259,27 @@ mcp_bundle_validate_project() {
 		fi
 	fi
 
+	# Validate user_config schema if present
+	if [[ -n "${RESOLVED_USER_CONFIG:-}" ]]; then
+		if ! mcp_bundle_validate_user_config "${RESOLVED_USER_CONFIG}"; then
+			errors=$((errors + 1))
+		fi
+	fi
+
+	# Validate env_map references existing user_config keys
+	if [[ -n "${RESOLVED_USER_CONFIG_ENV_MAP:-}" ]]; then
+		if ! mcp_bundle_validate_env_map "${RESOLVED_USER_CONFIG:-}" "${RESOLVED_USER_CONFIG_ENV_MAP}"; then
+			errors=$((errors + 1))
+		fi
+	fi
+
+	# Validate args_map references existing user_config keys
+	if [[ -n "${RESOLVED_USER_CONFIG_ARGS_MAP:-}" ]]; then
+		if ! mcp_bundle_validate_args_map "${RESOLVED_USER_CONFIG:-}" "${RESOLVED_USER_CONFIG_ARGS_MAP}"; then
+			errors=$((errors + 1))
+		fi
+	fi
+
 	return "${errors}"
 }
 
@@ -290,6 +311,258 @@ mcp_bundle_load_config() {
 		# shellcheck disable=SC1090
 		. "${config_file}"
 	fi
+
+	# Load user_config (must happen before validation)
+	if ! mcp_bundle_load_user_config "${project_root}"; then
+		return 1
+	fi
+}
+
+# Load user_config from various sources
+# Sets: RESOLVED_USER_CONFIG (JSON string), RESOLVED_USER_CONFIG_ENV_MAP (string), RESOLVED_USER_CONFIG_ARGS_MAP (string)
+# Called from: mcp_bundle_load_config() - must happen before validation
+mcp_bundle_load_user_config() {
+	local project_root="$1"
+	RESOLVED_USER_CONFIG=""
+	RESOLVED_USER_CONFIG_ENV_MAP=""
+	RESOLVED_USER_CONFIG_ARGS_MAP=""
+
+	# JSON tool required for user_config parsing
+	if [[ "${MCPBASH_JSON_TOOL:-none}" == "none" ]]; then
+		# Warn if user_config is explicitly configured but JSON tool unavailable
+		if [[ -n "${MCPB_USER_CONFIG_FILE:-}" ]]; then
+			printf '  \342\232\240 MCPB_USER_CONFIG_FILE set but no JSON tool available (install jq or gojq)\n' >&2
+		fi
+		# Skip user_config entirely - no JSON tool available
+		# This is not an error; bundles without user_config still work
+		return 0
+	fi
+
+	# Priority 1: External file via MCPB_USER_CONFIG_FILE
+	if [[ -n "${MCPB_USER_CONFIG_FILE:-}" ]]; then
+		local config_path="${MCPB_USER_CONFIG_FILE}"
+		# Resolve relative path
+		if [[ "${config_path#/}" = "${config_path}" ]]; then
+			config_path="${project_root}/${config_path}"
+		fi
+		if [[ -f "${config_path}" ]]; then
+			RESOLVED_USER_CONFIG=$(cat "${config_path}")
+		else
+			# User explicitly set this file - missing is an error, not warning
+			printf '  \342\234\227 MCPB_USER_CONFIG_FILE not found: %s\n' "${MCPB_USER_CONFIG_FILE}" >&2
+			return 1
+		fi
+	fi
+
+	# Priority 2: server.meta.json for user_config (if not already set), env_map, and args_map
+	# IMPORTANT: env_map/args_map are read unconditionally because they can come from
+	# server.meta.json even when user_config comes from external file (mixed sources)
+	# Consolidated into single jq call per json-handling.mdc rules
+	local meta_result meta_config meta_env_map meta_args_map
+	meta_result=$("${MCPBASH_JSON_TOOL_BIN}" -r '
+		[
+			(.user_config // {} | tojson),
+			(.user_config_env_map // {} | to_entries | map("\(.key)=\(.value)") | join(",")),
+			(.user_config_args_map // [] | join(","))
+		] | @tsv
+	' "${project_root}/server.d/server.meta.json" 2>/dev/null || true)
+	if [[ -n "${meta_result}" ]]; then
+		# Parse TSV: first field is user_config JSON, second is env_map string, third is args_map string
+		# Use $'\t' variable instead of literal TAB character to prevent editors
+		# from converting tabs to spaces when modifying this file
+		local tab=$'\t'
+		meta_config="${meta_result%%"${tab}"*}"
+		local remainder="${meta_result#*"${tab}"}"
+		meta_env_map="${remainder%%"${tab}"*}"
+		meta_args_map="${remainder#*"${tab}"}"
+		# Only use meta user_config if not already set via external file
+		if [[ -z "${RESOLVED_USER_CONFIG}" && -n "${meta_config}" && "${meta_config}" != "{}" && "${meta_config}" != "null" ]]; then
+			RESOLVED_USER_CONFIG="${meta_config}"
+		fi
+		# Only use meta env_map if not set via mcpb.conf
+		if [[ -z "${MCPB_USER_CONFIG_ENV_MAP:-}" && -n "${meta_env_map}" ]]; then
+			RESOLVED_USER_CONFIG_ENV_MAP="${meta_env_map}"
+		fi
+		# Only use meta args_map if not set via mcpb.conf
+		if [[ -z "${MCPB_USER_CONFIG_ARGS_MAP:-}" && -n "${meta_args_map}" ]]; then
+			RESOLVED_USER_CONFIG_ARGS_MAP="${meta_args_map}"
+		fi
+	fi
+
+	# Override env mapping from mcpb.conf if set (takes priority)
+	if [[ -n "${MCPB_USER_CONFIG_ENV_MAP:-}" ]]; then
+		RESOLVED_USER_CONFIG_ENV_MAP="${MCPB_USER_CONFIG_ENV_MAP}"
+	fi
+
+	# Override args mapping from mcpb.conf if set (takes priority)
+	if [[ -n "${MCPB_USER_CONFIG_ARGS_MAP:-}" ]]; then
+		RESOLVED_USER_CONFIG_ARGS_MAP="${MCPB_USER_CONFIG_ARGS_MAP}"
+	fi
+
+	export RESOLVED_USER_CONFIG RESOLVED_USER_CONFIG_ENV_MAP RESOLVED_USER_CONFIG_ARGS_MAP
+}
+
+# Validate user_config schema - consolidated into single jq call for efficiency
+mcp_bundle_validate_user_config() {
+	local config_json="$1"
+
+	if [[ -z "${config_json}" || "${config_json}" == "null" ]]; then
+		return 0 # No user_config is valid
+	fi
+
+	# Single-pass validation with detailed error reporting
+	# Reports all errors found, not just the first one
+	local validation_result
+	validation_result=$("${MCPBASH_JSON_TOOL_BIN}" -r '
+		# First check that user_config is an object
+		if (type != "object") then
+			"user_config must be an object, got \(type)"
+		else
+		def validate_field($key; $val):
+			# Check config key constraints
+			if ($key | contains("=")) then
+				"field key \"\($key)\" cannot contain \"=\" (reserved for env_map delimiter)"
+			elif ($key | contains(",")) then
+				"field key \"\($key)\" cannot contain \",\" (reserved for env_map entry delimiter)"
+			# Check required fields
+			elif (($val | has("type") | not) or ($val | has("title") | not)) then
+				"field \"\($key)\" must have \"type\" and \"title\""
+			elif ($val.type | IN("string", "number", "boolean", "directory", "file") | not) then
+				"field \"\($key)\" has invalid type \"\($val.type)\" (must be string, number, boolean, directory, or file)"
+			# Type-specific property validation
+			elif ($val.sensitive == true and $val.type != "string") then
+				"field \"\($key)\": \"sensitive\" is only valid for string type"
+			elif ($val.multiple == true and ($val.type | IN("directory", "file") | not)) then
+				"field \"\($key)\": \"multiple\" is only valid for directory/file types"
+			elif (($val.min != null or $val.max != null) and $val.type != "number") then
+				"field \"\($key)\": \"min\"/\"max\" are only valid for number type"
+			elif ($val.min != null and $val.max != null and $val.min > $val.max) then
+				"field \"\($key)\": \"min\" (\($val.min)) must be <= \"max\" (\($val.max))"
+			# Default value type checking
+			elif ($val.default != null) then
+				if ($val.type == "string" and ($val.default | type) != "string") then
+					"field \"\($key)\": default must be string"
+				elif ($val.type == "number" and ($val.default | type) != "number") then
+					"field \"\($key)\": default must be number"
+				elif ($val.type == "number" and $val.min != null and ($val.default | type) == "number" and $val.default < $val.min) then
+					"field \"\($key)\": default (\($val.default)) must be >= min (\($val.min))"
+				elif ($val.type == "number" and $val.max != null and ($val.default | type) == "number" and $val.default > $val.max) then
+					"field \"\($key)\": default (\($val.default)) must be <= max (\($val.max))"
+				elif ($val.type == "boolean" and ($val.default | type) != "boolean") then
+					"field \"\($key)\": default must be boolean"
+				elif ($val.type == "directory" and ($val.default | type) != "string") then
+					"field \"\($key)\": default must be string (path)"
+				elif ($val.type == "file" and ($val.default | type) != "string") then
+					"field \"\($key)\": default must be string (path)"
+				else null end
+			else null end;
+
+		to_entries | map(validate_field(.key; .value)) | map(select(. != null)) | if length > 0 then join("\n") else "ok" end
+		end
+	' <<<"${config_json}" 2>&1)
+
+	if [[ "${validation_result}" != "ok" ]]; then
+		# Report all errors found
+		while IFS= read -r err; do
+			printf '  \342\234\227 %s\n' "${err}" >&2
+		done <<<"${validation_result}"
+		return 1
+	fi
+
+	return 0
+}
+
+# Validate env_map references only keys defined in user_config
+mcp_bundle_validate_env_map() {
+	local config_json="$1"
+	local env_map="$2"
+
+	if [[ -z "${env_map}" ]]; then
+		return 0 # No env_map is valid
+	fi
+
+	if [[ -z "${config_json}" || "${config_json}" == "null" ]]; then
+		# env_map set but no user_config - all references are invalid
+		local first_key
+		first_key=$(printf '%s' "${env_map}" | cut -d',' -f1 | cut -d'=' -f1)
+		printf '  \342\234\227 env_map key "%s" is not defined in user_config\n' "${first_key}" >&2
+		return 1
+	fi
+
+	# Get list of valid keys from user_config
+	local valid_keys
+	valid_keys=$("${MCPBASH_JSON_TOOL_BIN}" -r 'keys | join(",")' <<<"${config_json}")
+
+	# Check each env_map entry (use safer parsing than IFS splitting)
+	local entry config_key env_var_name
+	local seen_env_vars=""
+	while IFS= read -r entry; do
+		[[ -z "${entry}" ]] && continue
+		config_key="${entry%%=*}"
+		env_var_name="${entry#*=}"
+		# Validate config key exists in user_config
+		if [[ ",${valid_keys}," != *",${config_key},"* ]]; then
+			printf '  \342\234\227 env_map key "%s" is not defined in user_config\n' "${config_key}" >&2
+			return 1
+		fi
+		# Validate env var name doesn't contain comma (would break parsing)
+		if [[ "${env_var_name}" == *","* ]]; then
+			printf '  \342\234\227 env var name "%s" cannot contain comma\n' "${env_var_name}" >&2
+			return 1
+		fi
+		# Validate env var name is valid POSIX identifier (letter/underscore, then alphanumeric/underscore)
+		if [[ ! "${env_var_name}" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
+			printf '  \342\234\227 env var name "%s" is not a valid POSIX identifier\n' "${env_var_name}" >&2
+			return 1
+		fi
+		# Check for duplicate env var names
+		if [[ ",${seen_env_vars}," == *",${env_var_name},"* ]]; then
+			printf '  \342\234\227 duplicate env var name "%s"\n' "${env_var_name}" >&2
+			return 1
+		fi
+		seen_env_vars="${seen_env_vars},${env_var_name}"
+		# Warn (but don't fail) if env var collides with reserved MCPBASH variables
+		if [[ "${env_var_name}" == MCPBASH_* ]]; then
+			printf '  \342\232\240 env var "%s" collides with reserved MCPBASH namespace\n' "${env_var_name}" >&2
+		fi
+	done < <(printf '%s' "${env_map}" | tr ',' '\n' | grep -v '^$')
+
+	return 0
+}
+
+# Validate args_map references only keys defined in user_config
+mcp_bundle_validate_args_map() {
+	local config_json="$1"
+	local args_map="$2"
+
+	if [[ -z "${args_map}" ]]; then
+		return 0 # No args_map is valid
+	fi
+
+	if [[ -z "${config_json}" || "${config_json}" == "null" ]]; then
+		# args_map set but no user_config - all references are invalid
+		local first_key
+		first_key=$(printf '%s' "${args_map}" | cut -d',' -f1)
+		printf '  \342\234\227 args_map key "%s" is not defined in user_config\n' "${first_key}" >&2
+		return 1
+	fi
+
+	# Get list of valid keys from user_config
+	local valid_keys
+	valid_keys=$("${MCPBASH_JSON_TOOL_BIN}" -r 'keys | join(",")' <<<"${config_json}")
+
+	# Check each args_map entry
+	local config_key
+	while IFS= read -r config_key; do
+		[[ -z "${config_key}" ]] && continue
+		# Validate config key exists in user_config
+		if [[ ",${valid_keys}," != *",${config_key},"* ]]; then
+			printf '  \342\234\227 args_map key "%s" is not defined in user_config\n' "${config_key}" >&2
+			return 1
+		fi
+	done < <(printf '%s' "${args_map}" | tr ',' '\n' | grep -v '^$')
+
+	return 0
 }
 
 mcp_bundle_resolve_metadata() {
@@ -647,6 +920,11 @@ mcp_bundle_generate_manifest() {
 	if [ "${MCPBASH_JSON_TOOL:-none}" != "none" ]; then
 		# Build manifest with proper JSON escaping per MCPB v0.3 spec
 		local manifest
+		# Handle user_config as null or JSON object
+		local user_config_arg="null"
+		if [[ -n "${RESOLVED_USER_CONFIG:-}" && "${RESOLVED_USER_CONFIG}" != "{}" ]]; then
+			user_config_arg="${RESOLVED_USER_CONFIG}"
+		fi
 		manifest="$(
 			"${MCPBASH_JSON_TOOL_BIN}" -n \
 				--arg name "${RESOLVED_NAME}" \
@@ -663,6 +941,9 @@ mcp_bundle_generate_manifest() {
 				--argjson tools_generated "${has_tools}" \
 				--argjson prompts_generated "${has_prompts}" \
 				--argjson static_registry "${has_static}" \
+				--argjson user_config "${user_config_arg}" \
+				--arg env_map "${RESOLVED_USER_CONFIG_ENV_MAP:-}" \
+				--arg args_map "${RESOLVED_USER_CONFIG_ARGS_MAP:-}" \
 				'{
 				manifest_version: "0.3",
 				name: $name,
@@ -678,17 +959,18 @@ mcp_bundle_generate_manifest() {
 			| if $repository_url != "" then . + {repository: {type: "git", url: $repository_url}} else . end
 			| if $tools_generated then . + {tools_generated: true} else . end
 			| if $prompts_generated then . + {prompts_generated: true} else . end
+			| if $user_config != null then . + {user_config: $user_config} else . end
 			| . + {
 				server: {
 					type: "binary",
 					entry_point: "server/run-server.sh",
 					mcp_config: {
 						command: "${__dirname}/server/run-server.sh",
-						args: [],
+						args: ([] + (if $args_map != "" then ($args_map | split(",") | map(select(. != "")) | map("${user_config.\(.)}")) else [] end)),
 						env: ({
 							MCPBASH_PROJECT_ROOT: "${__dirname}/server",
 							MCPBASH_TOOL_ALLOWLIST: "*"
-						} + (if $static_registry then {MCPBASH_STATIC_REGISTRY: "1"} else {} end))
+						} + (if $static_registry then {MCPBASH_STATIC_REGISTRY: "1"} else {} end) + (if $env_map != "" then ($env_map | split(",") | map(select(. != "")) | map(split("=")) | map({key: .[1], value: ("${user_config." + .[0] + "}")}) | from_entries) else {} end))
 					}
 				},
 				compatibility: {
@@ -865,7 +1147,13 @@ mcp_cli_bundle() {
 	# Find project root
 	mcp_scaffold_require_project_root
 
-	# Validate project
+	# Load config first (includes user_config - must happen before validation)
+	if ! mcp_bundle_load_config "${MCPBASH_PROJECT_ROOT}"; then
+		printf '\n\342\234\227 Bundle configuration failed.\n' >&2
+		exit 1
+	fi
+
+	# Validate project (now has access to user_config)
 	printf 'Validating project...\n'
 	if ! mcp_bundle_validate_project "${MCPBASH_PROJECT_ROOT}" "${verbose}"; then
 		printf '\n\342\234\227 Bundle validation failed.\n' >&2
@@ -873,8 +1161,7 @@ mcp_cli_bundle() {
 	fi
 	printf '  \342\234\223 Validated project structure\n'
 
-	# Load config and resolve metadata
-	mcp_bundle_load_config "${MCPBASH_PROJECT_ROOT}"
+	# Resolve metadata
 	mcp_bundle_resolve_metadata "${MCPBASH_PROJECT_ROOT}" "${name_override}" "${version_override}"
 
 	# Warn if author is missing (required by MCPB spec)
