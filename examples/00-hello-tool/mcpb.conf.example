@@ -19,6 +19,19 @@ MCPB_REPOSITORY="https://github.com/you/hello-tool-example"
 # Default: tools, resources, prompts, completions, server.d, lib, providers
 # MCPB_INCLUDE=".registry data/templates"
 
+# Optional Metadata (recommended for registry/marketplace listing)
+# MCPB_LICENSE="MIT"
+# MCPB_KEYWORDS="cli automation bash"
+# MCPB_HOMEPAGE="https://example.com/my-tool"
+# MCPB_DOCUMENTATION="https://docs.example.com/my-tool"
+# MCPB_SUPPORT="https://github.com/you/repo/issues"
+# MCPB_PRIVACY_POLICIES="https://example.com/privacy"
+
+# Compatibility constraints (optional)
+# MCPB_COMPAT_CLAUDE_DESKTOP=">=1.0.0"
+# MCPB_RUNTIME_PYTHON=">=3.8"
+# MCPB_RUNTIME_NODE=">=18"
+
 # User Configuration (optional)
 # Define user-configurable settings that implementing apps collect via UI
 # MCPB_USER_CONFIG_FILE="user-config.json"

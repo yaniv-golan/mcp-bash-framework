@@ -305,6 +305,17 @@ mcp_bundle_load_config() {
 	MCPB_REPOSITORY=""
 	MCPB_INCLUDE=""
 	MCPB_STATIC=""
+	# Optional metadata fields (MCPB spec 0.3)
+	MCPB_LICENSE=""
+	MCPB_KEYWORDS=""
+	MCPB_HOMEPAGE=""
+	MCPB_DOCUMENTATION=""
+	MCPB_SUPPORT=""
+	MCPB_PRIVACY_POLICIES=""
+	# Compatibility constraints
+	MCPB_COMPAT_CLAUDE_DESKTOP=""
+	MCPB_RUNTIME_PYTHON=""
+	MCPB_RUNTIME_NODE=""
 
 	if [ -f "${config_file}" ]; then
 		# Source config file (simple KEY=VALUE format)
@@ -680,9 +691,29 @@ mcp_bundle_resolve_metadata() {
 		fi
 	fi
 
+	# Optional metadata fields - simple passthrough from mcpb.conf
+	RESOLVED_LICENSE="${MCPB_LICENSE:-}"
+	RESOLVED_HOMEPAGE="${MCPB_HOMEPAGE:-}"
+	RESOLVED_DOCUMENTATION="${MCPB_DOCUMENTATION:-}"
+	RESOLVED_SUPPORT="${MCPB_SUPPORT:-}"
+
+	# Keywords - space-separated in config, will be converted to JSON array
+	RESOLVED_KEYWORDS="${MCPB_KEYWORDS:-}"
+
+	# Privacy policies - space-separated URLs in config, will be converted to JSON array
+	RESOLVED_PRIVACY_POLICIES="${MCPB_PRIVACY_POLICIES:-}"
+
+	# Compatibility constraints
+	RESOLVED_COMPAT_CLAUDE_DESKTOP="${MCPB_COMPAT_CLAUDE_DESKTOP:-}"
+	RESOLVED_RUNTIME_PYTHON="${MCPB_RUNTIME_PYTHON:-}"
+	RESOLVED_RUNTIME_NODE="${MCPB_RUNTIME_NODE:-}"
+
 	export RESOLVED_NAME RESOLVED_VERSION RESOLVED_TITLE RESOLVED_DESCRIPTION
 	export RESOLVED_AUTHOR_NAME RESOLVED_AUTHOR_EMAIL RESOLVED_AUTHOR_URL RESOLVED_REPOSITORY
 	export RESOLVED_LONG_DESCRIPTION
+	export RESOLVED_LICENSE RESOLVED_HOMEPAGE RESOLVED_DOCUMENTATION RESOLVED_SUPPORT
+	export RESOLVED_KEYWORDS RESOLVED_PRIVACY_POLICIES
+	export RESOLVED_COMPAT_CLAUDE_DESKTOP RESOLVED_RUNTIME_PYTHON RESOLVED_RUNTIME_NODE
 }
 
 mcp_bundle_copy_project() {
@@ -937,6 +968,15 @@ mcp_bundle_generate_manifest() {
 				--arg author_url "${RESOLVED_AUTHOR_URL:-}" \
 				--arg repository_url "${RESOLVED_REPOSITORY:-}" \
 				--arg icon "${BUNDLED_ICON:-}" \
+				--arg license "${RESOLVED_LICENSE:-}" \
+				--arg keywords "${RESOLVED_KEYWORDS:-}" \
+				--arg homepage "${RESOLVED_HOMEPAGE:-}" \
+				--arg documentation "${RESOLVED_DOCUMENTATION:-}" \
+				--arg support "${RESOLVED_SUPPORT:-}" \
+				--arg privacy_policies "${RESOLVED_PRIVACY_POLICIES:-}" \
+				--arg compat_claude_desktop "${RESOLVED_COMPAT_CLAUDE_DESKTOP:-}" \
+				--arg runtime_python "${RESOLVED_RUNTIME_PYTHON:-}" \
+				--arg runtime_node "${RESOLVED_RUNTIME_NODE:-}" \
 				--argjson platforms "${platforms_json}" \
 				--argjson tools_generated "${has_tools}" \
 				--argjson prompts_generated "${has_prompts}" \
@@ -953,6 +993,12 @@ mcp_bundle_generate_manifest() {
 			}
 			| if $long_description != "" then . + {long_description: $long_description} else . end
 			| if $icon != "" then . + {icon: $icon} else . end
+			| if $license != "" then . + {license: $license} else . end
+			| if $keywords != "" then . + {keywords: ($keywords | split(" ") | map(select(. != "")))} else . end
+			| if $homepage != "" then . + {homepage: $homepage} else . end
+			| if $documentation != "" then . + {documentation: $documentation} else . end
+			| if $support != "" then . + {support: $support} else . end
+			| if $privacy_policies != "" then . + {privacy_policies: ($privacy_policies | split(" ") | map(select(. != "")))} else . end
 			| if $author_name != "" then . + {author: {name: $author_name}} else . end
 			| if $author_email != "" then .author.email = $author_email else . end
 			| if $author_url != "" then .author.url = $author_url else . end
@@ -973,9 +1019,13 @@ mcp_bundle_generate_manifest() {
 						} + (if $static_registry then {MCPBASH_STATIC_REGISTRY: "1"} else {} end) + (if $env_map != "" then ($env_map | split(",") | map(select(. != "")) | map(split("=")) | map({key: .[1], value: ("${user_config." + .[0] + "}")}) | from_entries) else {} end))
 					}
 				},
-				compatibility: {
+				compatibility: ({
 					platforms: $platforms
-				}
+				} + (if $compat_claude_desktop != "" then {claude_desktop: $compat_claude_desktop} else {} end)
+				  + (if ($runtime_python != "" or $runtime_node != "") then {runtimes: (
+				      (if $runtime_python != "" then {python: $runtime_python} else {} end) +
+				      (if $runtime_node != "" then {node: $runtime_node} else {} end)
+				    )} else {} end))
 			}'
 		)"
 		printf '%s\n' "${manifest}" >"${output}"

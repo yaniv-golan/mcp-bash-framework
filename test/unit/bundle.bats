@@ -1032,3 +1032,185 @@ EOF
 	run jq -e '.user_config | has("meta_key") | not' "${EXTRACT_DIR}/manifest.json"
 	[ "$status" -eq 0 ]
 }
+
+# ============================================================================
+# MCPB Manifest Spec 0.3 - Optional Metadata Fields
+# ============================================================================
+
+@test "bundle: includes license from mcpb.conf" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	cat > "${PROJECT_ROOT}/mcpb.conf" << 'EOF'
+MCPB_NAME="test-server"
+MCPB_VERSION="1.0.0"
+MCPB_LICENSE="MIT"
+EOF
+	run bash -c "cd '${PROJECT_ROOT}' && '${MCPBASH_HOME}/bin/mcp-bash' bundle --output '${OUTPUT_DIR}'"
+	[ "$status" -eq 0 ]
+	unzip -q "${OUTPUT_DIR}/test-server-1.0.0.mcpb" -d "${EXTRACT_DIR}"
+	run jq -e '.license == "MIT"' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+}
+
+@test "bundle: includes keywords array from mcpb.conf" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	cat > "${PROJECT_ROOT}/mcpb.conf" << 'EOF'
+MCPB_NAME="test-server"
+MCPB_VERSION="1.0.0"
+MCPB_KEYWORDS="cli automation bash mcp"
+EOF
+	run bash -c "cd '${PROJECT_ROOT}' && '${MCPBASH_HOME}/bin/mcp-bash' bundle --output '${OUTPUT_DIR}'"
+	[ "$status" -eq 0 ]
+	unzip -q "${OUTPUT_DIR}/test-server-1.0.0.mcpb" -d "${EXTRACT_DIR}"
+	run jq -e '.keywords == ["cli", "automation", "bash", "mcp"]' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+}
+
+@test "bundle: includes homepage URL from mcpb.conf" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	cat > "${PROJECT_ROOT}/mcpb.conf" << 'EOF'
+MCPB_NAME="test-server"
+MCPB_VERSION="1.0.0"
+MCPB_HOMEPAGE="https://example.com/my-tool"
+EOF
+	run bash -c "cd '${PROJECT_ROOT}' && '${MCPBASH_HOME}/bin/mcp-bash' bundle --output '${OUTPUT_DIR}'"
+	[ "$status" -eq 0 ]
+	unzip -q "${OUTPUT_DIR}/test-server-1.0.0.mcpb" -d "${EXTRACT_DIR}"
+	run jq -e '.homepage == "https://example.com/my-tool"' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+}
+
+@test "bundle: includes documentation URL from mcpb.conf" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	cat > "${PROJECT_ROOT}/mcpb.conf" << 'EOF'
+MCPB_NAME="test-server"
+MCPB_VERSION="1.0.0"
+MCPB_DOCUMENTATION="https://docs.example.com/my-tool"
+EOF
+	run bash -c "cd '${PROJECT_ROOT}' && '${MCPBASH_HOME}/bin/mcp-bash' bundle --output '${OUTPUT_DIR}'"
+	[ "$status" -eq 0 ]
+	unzip -q "${OUTPUT_DIR}/test-server-1.0.0.mcpb" -d "${EXTRACT_DIR}"
+	run jq -e '.documentation == "https://docs.example.com/my-tool"' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+}
+
+@test "bundle: includes support URL from mcpb.conf" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	cat > "${PROJECT_ROOT}/mcpb.conf" << 'EOF'
+MCPB_NAME="test-server"
+MCPB_VERSION="1.0.0"
+MCPB_SUPPORT="https://github.com/user/repo/issues"
+EOF
+	run bash -c "cd '${PROJECT_ROOT}' && '${MCPBASH_HOME}/bin/mcp-bash' bundle --output '${OUTPUT_DIR}'"
+	[ "$status" -eq 0 ]
+	unzip -q "${OUTPUT_DIR}/test-server-1.0.0.mcpb" -d "${EXTRACT_DIR}"
+	run jq -e '.support == "https://github.com/user/repo/issues"' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+}
+
+@test "bundle: includes privacy_policies array from mcpb.conf" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	cat > "${PROJECT_ROOT}/mcpb.conf" << 'EOF'
+MCPB_NAME="test-server"
+MCPB_VERSION="1.0.0"
+MCPB_PRIVACY_POLICIES="https://example.com/privacy https://example.com/gdpr"
+EOF
+	run bash -c "cd '${PROJECT_ROOT}' && '${MCPBASH_HOME}/bin/mcp-bash' bundle --output '${OUTPUT_DIR}'"
+	[ "$status" -eq 0 ]
+	unzip -q "${OUTPUT_DIR}/test-server-1.0.0.mcpb" -d "${EXTRACT_DIR}"
+	run jq -e '.privacy_policies == ["https://example.com/privacy", "https://example.com/gdpr"]' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+}
+
+@test "bundle: includes compatibility.claude_desktop from mcpb.conf" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	cat > "${PROJECT_ROOT}/mcpb.conf" << 'EOF'
+MCPB_NAME="test-server"
+MCPB_VERSION="1.0.0"
+MCPB_COMPAT_CLAUDE_DESKTOP=">=1.0.0"
+EOF
+	run bash -c "cd '${PROJECT_ROOT}' && '${MCPBASH_HOME}/bin/mcp-bash' bundle --output '${OUTPUT_DIR}'"
+	[ "$status" -eq 0 ]
+	unzip -q "${OUTPUT_DIR}/test-server-1.0.0.mcpb" -d "${EXTRACT_DIR}"
+	run jq -e '.compatibility.claude_desktop == ">=1.0.0"' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+	# platforms should still be present
+	run jq -e '.compatibility.platforms | length > 0' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+}
+
+@test "bundle: includes compatibility.runtimes from mcpb.conf" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	cat > "${PROJECT_ROOT}/mcpb.conf" << 'EOF'
+MCPB_NAME="test-server"
+MCPB_VERSION="1.0.0"
+MCPB_RUNTIME_PYTHON=">=3.8"
+MCPB_RUNTIME_NODE=">=18"
+EOF
+	run bash -c "cd '${PROJECT_ROOT}' && '${MCPBASH_HOME}/bin/mcp-bash' bundle --output '${OUTPUT_DIR}'"
+	[ "$status" -eq 0 ]
+	unzip -q "${OUTPUT_DIR}/test-server-1.0.0.mcpb" -d "${EXTRACT_DIR}"
+	run jq -e '.compatibility.runtimes.python == ">=3.8"' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+	run jq -e '.compatibility.runtimes.node == ">=18"' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+}
+
+@test "bundle: omits empty optional metadata fields" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	cat > "${PROJECT_ROOT}/mcpb.conf" << 'EOF'
+MCPB_NAME="test-server"
+MCPB_VERSION="1.0.0"
+EOF
+	run bash -c "cd '${PROJECT_ROOT}' && '${MCPBASH_HOME}/bin/mcp-bash' bundle --output '${OUTPUT_DIR}'"
+	[ "$status" -eq 0 ]
+	unzip -q "${OUTPUT_DIR}/test-server-1.0.0.mcpb" -d "${EXTRACT_DIR}"
+	# Should not have empty fields
+	run jq -e 'has("license") | not' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+	run jq -e 'has("keywords") | not' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+	run jq -e 'has("homepage") | not' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+	run jq -e 'has("privacy_policies") | not' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+	run jq -e '.compatibility | has("claude_desktop") | not' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+	run jq -e '.compatibility | has("runtimes") | not' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+}
+
+@test "bundle: includes all optional metadata fields together" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	cat > "${PROJECT_ROOT}/mcpb.conf" << 'EOF'
+MCPB_NAME="full-metadata-server"
+MCPB_VERSION="2.0.0"
+MCPB_LICENSE="Apache-2.0"
+MCPB_KEYWORDS="full featured server"
+MCPB_HOMEPAGE="https://example.com"
+MCPB_DOCUMENTATION="https://docs.example.com"
+MCPB_SUPPORT="https://support.example.com"
+MCPB_PRIVACY_POLICIES="https://example.com/privacy"
+MCPB_COMPAT_CLAUDE_DESKTOP=">=1.5.0"
+MCPB_RUNTIME_PYTHON=">=3.10"
+EOF
+	run bash -c "cd '${PROJECT_ROOT}' && '${MCPBASH_HOME}/bin/mcp-bash' bundle --output '${OUTPUT_DIR}'"
+	[ "$status" -eq 0 ]
+	unzip -q "${OUTPUT_DIR}/full-metadata-server-2.0.0.mcpb" -d "${EXTRACT_DIR}"
+	# Verify all fields
+	run jq -e '.license == "Apache-2.0"' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+	run jq -e '.keywords == ["full", "featured", "server"]' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+	run jq -e '.homepage == "https://example.com"' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+	run jq -e '.documentation == "https://docs.example.com"' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+	run jq -e '.support == "https://support.example.com"' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+	run jq -e '.privacy_policies == ["https://example.com/privacy"]' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+	run jq -e '.compatibility.claude_desktop == ">=1.5.0"' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+	run jq -e '.compatibility.runtimes.python == ">=3.10"' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+}

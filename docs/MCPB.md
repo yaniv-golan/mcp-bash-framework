@@ -139,6 +139,12 @@ The generated `manifest.json` follows MCPB specification v0.3:
     "type": "git",
     "url": "https://github.com/you/my-server"
   },
+  "license": "MIT",
+  "keywords": ["cli", "automation", "mcp"],
+  "homepage": "https://example.com/my-server",
+  "documentation": "https://docs.example.com/my-server",
+  "support": "https://github.com/you/my-server/issues",
+  "privacy_policies": ["https://example.com/privacy"],
   "tools_generated": true,
   "prompts_generated": true,
   "server": {
@@ -154,7 +160,12 @@ The generated `manifest.json` follows MCPB specification v0.3:
     }
   },
   "compatibility": {
-    "platforms": ["darwin", "linux", "win32"]
+    "platforms": ["darwin", "linux", "win32"],
+    "claude_desktop": ">=1.0.0",
+    "runtimes": {
+      "python": ">=3.8",
+      "node": ">=18"
+    }
   }
 }
 ```
@@ -163,8 +174,16 @@ The generated `manifest.json` follows MCPB specification v0.3:
 
 **Optional fields:**
 - `long_description` - markdown content for extension stores (via `long_description_file`)
+- `license` - SPDX license identifier (e.g., "MIT", "Apache-2.0")
+- `keywords` - array of search terms for discoverability
+- `homepage` - project landing page URL
+- `documentation` - documentation URL
+- `support` - support/issue tracker URL
+- `privacy_policies` - array of privacy policy URLs
 - `tools_generated` - automatically set to `true` when `tools/` directory has content
 - `prompts_generated` - automatically set to `true` when `prompts/` directory has content
+- `compatibility.claude_desktop` - minimum Claude Desktop version (semver constraint)
+- `compatibility.runtimes` - runtime version constraints (`python`, `node`)
 
 **Note:** The `author` field is required by the MCPB spec. If not provided via `mcpb.conf` or `server.meta.json`, the bundler falls back to git config.
 
@@ -237,13 +256,14 @@ Alternatively, embed in `server.d/server.meta.json`:
 
 ### Variable Substitution
 
-The manifest supports these variables in env/args:
+The manifest supports these variables in env/args and user_config defaults:
 - `${user_config.KEY}` - User-provided config value
 - `${__dirname}` - Bundle installation directory
 - `${HOME}` - User's home directory
 - `${DOCUMENTS}` - User's Documents folder
 - `${DESKTOP}` - User's Desktop folder
-- `${pathSeparator}` - Platform path separator (`:` or `;`)
+- `${DOWNLOADS}` - User's Downloads folder
+- `${pathSeparator}` or `${/}` - Platform path separator (`:` or `;`)
 
 ### Generated Manifest Example
 
