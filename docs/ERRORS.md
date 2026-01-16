@@ -61,15 +61,35 @@ Use the SDK helpers to return the appropriate error type:
 
 ```bash
 # Tool Execution Error (LLM can self-correct)
-# Use mcp_result_error which sets isError=true and exits non-zero.
+# Use mcp_error for convenience with consistent schema:
+mcp_error "validation_error" "Date must be in the future" \
+  --hint "Use a date after today" \
+  --data '{"received": "2020-01-01"}'
+
+# Or use mcp_result_error directly with a JSON object:
 mcp_result_error "$(mcp_json_obj \
-  error "Date must be in the future" \
+  type "validation_error" \
+  message "Date must be in the future" \
   received "2020-01-01"
 )"
 
 # For missing/malformed required parameters, use protocol error instead:
 mcp_fail_invalid_args "date parameter is required"
 ```
+
+**Recommended error types** for consistency:
+
+| Type | Use case |
+|------|----------|
+| `not_found` | Entity doesn't exist |
+| `validation_error` | Input fails validation |
+| `invalid_json` | JSON parsing failed |
+| `permission_denied` | Access not allowed |
+| `file_error` | File system operation failed |
+| `network_error` | Network request failed |
+| `timeout` | Operation timed out |
+| `cli_error` | External command failed |
+| `internal_error` | Unexpected/fallback error |
 
 #### Structured response envelope helpers
 

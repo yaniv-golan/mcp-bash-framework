@@ -1232,6 +1232,92 @@ mcp_result_error() {
 	return 0
 }
 
+# mcp_error - Convenience wrapper for tool execution errors
+# Usage: mcp_error <type> <message> [--hint <hint>] [--data <json>]
+# Always returns 0. Errors expressed via isError flag in response.
+#
+# Note: --data must be valid JSON. In minimal mode, invalid JSON will corrupt output.
+# Caller is responsible for ensuring --data contains valid JSON.
+# Note: Flags (--hint, --data) must include a value. Missing values cause undefined behavior.
+mcp_error() {
+	local error_type="${1:-internal_error}"
+	local message="${2:-Unknown error}"
+	# Guard: shift 2 fails if <2 args; fallback shifts remaining
+	shift 2 || shift $#
+
+	local hint=""
+	local data=""
+
+	# Parse optional flags
+	while [[ $# -gt 0 ]]; do
+		case "$1" in
+		--hint)
+			hint="$2"
+			shift 2
+			;;
+		--data)
+			data="$2"
+			shift 2
+			;;
+		*)
+			# Silently ignore unknown flags for forward compatibility
+			shift
+			;;
+		esac
+	done
+
+	# Build error JSON
+	local error_json
+	if [ "${MCPBASH_MODE:-full}" != "minimal" ] && [ -n "${MCPBASH_JSON_TOOL_BIN:-}" ]; then
+		# Full mode: use jq for proper JSON construction
+		# Validate --data if provided (--argjson fails with non-zero exit on invalid JSON)
+		local data_json="null"
+		if [[ -n "$data" ]]; then
+			if data_json=$(printf '%s' "$data" | "${MCPBASH_JSON_TOOL_BIN}" -c '.' 2>/dev/null); then
+				: # valid JSON, data_json now holds normalized form
+			else
+				# Invalid JSON - wrap raw value for debugging
+				data_json=$("${MCPBASH_JSON_TOOL_BIN}" -n -c --arg raw "$data" '{"_invalid_json": $raw}')
+			fi
+		fi
+		error_json=$("${MCPBASH_JSON_TOOL_BIN}" -n -c \
+			--arg type "$error_type" \
+			--arg message "$message" \
+			--arg hint "$hint" \
+			--argjson data "$data_json" \
+			'{type: $type, message: $message} +
+       (if $hint != "" then {hint: $hint} else {} end) +
+       (if $data != null then {data: $data} else {} end)')
+	else
+		# Minimal mode: manual JSON construction
+		# __mcp_sdk_json_escape returns quoted strings like "value"
+		local escaped_type escaped_message escaped_hint
+		escaped_type=$(__mcp_sdk_json_escape "$error_type")
+		escaped_message=$(__mcp_sdk_json_escape "$message")
+		error_json="{\"type\":${escaped_type},\"message\":${escaped_message}"
+		if [[ -n "$hint" ]]; then
+			escaped_hint=$(__mcp_sdk_json_escape "$hint")
+			error_json="${error_json},\"hint\":${escaped_hint}"
+		fi
+		if [[ -n "$data" ]]; then
+			# In minimal mode, trust data is valid JSON - caller responsibility
+			error_json="${error_json},\"data\":${data}"
+		fi
+		error_json="${error_json}}"
+	fi
+
+	# Log all errors at debug level for observability
+	mcp_log_debug "mcp_error" "type=${error_type}: ${message}"
+
+	# Log at warn level if hint provided (actionable error)
+	if [[ -n "$hint" ]]; then
+		mcp_log_warn "mcp_error" "type=${error_type} hint: ${message}"
+	fi
+
+	# Delegate to existing helper
+	mcp_result_error "$error_json"
+}
+
 # mcp_json_truncate <json> [max_bytes]
 # Truncate JSON arrays while preserving valid structure
 #

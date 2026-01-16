@@ -29,12 +29,9 @@ fi
 # The LLM can self-correct by choosing a path within allowed roots
 if ! mcp_roots_contains "${path}"; then
 	roots_list="$(mcp_roots_list 2>/dev/null | head -3 | tr '\n' ', ' | sed 's/,$//')"
-	mcp_result_error "$(
-		mcp_json_obj \
-			error "Path is outside allowed roots" \
-			path "${path}" \
-			hint "Try a path within: ${roots_list:-<no roots configured>}"
-	)"
+	mcp_error "permission_denied" "Path is outside allowed roots" \
+		--hint "Try a path within: ${roots_list:-<no roots configured>}" \
+		--data "$(mcp_json_obj path "${path}")"
 fi
 
 # Resolve to absolute path for reading and messaging
@@ -51,12 +48,9 @@ fi
 # File not found → Tool Execution Error
 # The LLM can self-correct by choosing a different file
 if [[ ! -f "${full_path}" ]]; then
-	mcp_result_error "$(
-		mcp_json_obj \
-			error "File not found" \
-			path "${path}" \
-			hint "Check the path exists and is a regular file"
-	)"
+	mcp_error "not_found" "File not found" \
+		--hint "Check the path exists and is a regular file" \
+		--data "$(mcp_json_obj path "${path}")"
 fi
 
 content="$(cat "${full_path}")"

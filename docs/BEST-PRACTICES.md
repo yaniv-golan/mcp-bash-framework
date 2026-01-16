@@ -56,6 +56,7 @@ This guide distils hands-on recommendations for designing, building, and operati
 | `mcp_download_safe_or_fail` | SSRF-safe download (fails on error) | `path=$(mcp_download_safe_or_fail --url "$url" --out "$tmp" --allow "x.com")` |
 | `mcp_result_success` | Emit success CallToolResult envelope | `mcp_result_success "$json_data"` |
 | `mcp_result_error` | Emit error CallToolResult envelope | `mcp_result_error '{"type":"not_found"}'` |
+| `mcp_error` | Convenience error helper with hints | `mcp_error "not_found" "User missing" --hint "Check ID"` |
 | `mcp_json_truncate` | Truncate large arrays for context limits | `mcp_json_truncate "$arr" 10000` |
 | `mcp_is_valid_json` | Validate single JSON value | `if mcp_is_valid_json "$val"; then ...` |
 | `mcp_byte_length` | UTF-8 safe byte length | `len=$(mcp_byte_length "$str")` |
@@ -999,6 +1000,55 @@ The helper produces:
 }
 ```
 
+#### Convenience error helper
+
+Use `mcp_error` to simplify error construction with consistent schema:
+
+```bash
+#!/usr/bin/env bash
+source "${MCP_SDK:?}/tool-sdk.sh"
+
+# Simple error
+mcp_error "not_found" "User not found"
+
+# With LLM-actionable hint
+mcp_error "validation_error" "Count must be positive" \
+  --hint "Try count=10 for a reasonable default"
+
+# With structured data for context
+mcp_error "validation_error" "Value out of range" \
+  --hint "Adjust value to be within bounds" \
+  --data '{"received": -5, "min": 1, "max": 100}'
+```
+
+The helper builds a normalized error object and delegates to `mcp_result_error`:
+```json
+{
+  "type": "validation_error",
+  "message": "Value out of range",
+  "hint": "Adjust value to be within bounds",
+  "data": {"received": -5, "min": 1, "max": 100}
+}
+```
+
+**Recommended error types** (conventions, not enforced):
+
+| Type | Use case |
+|------|----------|
+| `not_found` | Entity doesn't exist |
+| `validation_error` | Input fails validation |
+| `invalid_json` | JSON parsing failed |
+| `permission_denied` | Access not allowed |
+| `file_error` | File system operation failed |
+| `network_error` | Network request failed |
+| `timeout` | Operation timed out |
+| `cli_error` | External command failed |
+| `internal_error` | Unexpected/fallback error |
+
+**When to use `mcp_error` vs `mcp_fail`:**
+- Use `mcp_error` for tool execution errors the LLM can potentially recover from (bad input values, missing resources)
+- Use `mcp_fail` for protocol errors that indicate structural problems (missing required parameters, internal server errors)
+
 #### Truncating large results
 
 Use `mcp_json_truncate` to safely truncate large arrays before returning them:
@@ -1486,6 +1536,7 @@ flowchart TD
 ## Doc changelog
 | Date | Version | Notes |
 | --- | --- | --- |
+| 2026-01-16 | v1.7 | Added `mcp_error` convenience helper for tool execution errors with consistent schema, optional hints, and structured data. Updated SDK quick reference table. Added "Convenience error helper" section to §4.7. Updated ERRORS.md with recommended error types. |
 | 2026-01-07 | v1.6 | Added §4.2 "LLM-friendly tool metadata" covering rich descriptions, parameter documentation, and domain model resources. Created companion doc [LLM-CONTEXT.md](LLM-CONTEXT.md) with comprehensive patterns. Renumbered subsequent sections (§4.3-§4.9). Updated scaffold template with description guidance. |
 | 2026-01-06 | v1.5 | Added §4.9 "Progress passthrough from subprocesses" covering `mcp_run_with_progress` helper for forwarding CLI progress to MCP. Includes common patterns for NDJSON, percentage, counter, and ffmpeg-style CLIs. Updated SDK quick reference table. |
 | 2026-01-04 | v1.4 | Added §4.7 "Building CallToolResult responses" covering `mcp_result_success`, `mcp_result_error`, `mcp_json_truncate`, `mcp_is_valid_json`, and `mcp_byte_length` helpers. Updated SDK quick reference table. Added "Capturing stdout and stderr separately" pattern to §4.3. |

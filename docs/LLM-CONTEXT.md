@@ -322,8 +322,9 @@ uri="$(mcp_args_require '.uri')"
 
 # Delegate to provider
 content=$("${MCPBASH_PROJECT_ROOT}/providers/myapp.sh" "${uri}") || {
-  mcp_result_error "$(mcp_json_obj error "Failed to read resource" uri "${uri}")"
-  exit 0
+  mcp_error "not_found" "Failed to read resource" \
+    --hint "Check the URI is valid" \
+    --data "$(mcp_json_obj uri "${uri}")"
 }
 
 mcp_result_success "$(mcp_json_obj content "${content}" uri "${uri}")"
