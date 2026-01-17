@@ -145,9 +145,10 @@ mcp_path_normalize() {
 	# On Windows/MSYS, canonicalize paths through Windows format and back to Unix format.
 	# This resolves: (1) MSYS virtual paths like /tmp -> /c/Users/.../Temp,
 	# (2) 8.3 short names like RUNNER~1 -> runneradmin, ensuring consistent path comparison.
+	# The -l flag expands 8.3 short names to long names.
 	if [[ "${OSTYPE:-}" == msys* || "${OSTYPE:-}" == cygwin* ]] && command -v cygpath >/dev/null 2>&1; then
 		local win_path unix_path
-		win_path="$(cygpath -w "${normalized}" 2>/dev/null || true)"
+		win_path="$(cygpath -w -l "${normalized}" 2>/dev/null || true)"
 		if [ -n "${win_path}" ]; then
 			unix_path="$(cygpath -u "${win_path}" 2>/dev/null || true)"
 			[ -n "${unix_path}" ] && normalized="${unix_path}"
