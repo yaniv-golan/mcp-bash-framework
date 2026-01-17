@@ -293,12 +293,23 @@ jobs:
         id: examples
         env:
           MCPBASH_STAGING_TAR: "1"
+          MCPBASH_EXAMPLES_WORKDIR: ${{ runner.temp }}/mcpbash-examples
         run: |
           set -euo pipefail
           start="$(date +%s)"
           test/examples/run.sh
           end="$(date +%s)"
           echo "duration=$((end - start))" >> "$GITHUB_OUTPUT"
+      - name: Upload examples artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: examples-debug-windows
+          path: |
+            ${{ runner.temp }}/mcpbash-examples/
+            ${{ runner.temp }}/mcpbash-logs/
+            ${{ runner.temp }}/mcpbash.state.*
+          retention-days: 7
       - name: Report Windows status
         if: always()
         run: |
