@@ -380,12 +380,8 @@ mcp_tools_collect_embedded_resources() {
 	while IFS=$'\t' read -r path mime uri || [ -n "${path}" ]; do
 		[ -n "${path}" ] || continue
 		((embed_attempts++)) || true
-		# Debug: trace each embed attempt
-		if [ "${MCPBASH_LOG_LEVEL:-}" = "debug" ]; then
-			printf '[TRACE] embed attempt: path=%s mime=%s uri=%s\n' "${path}" "${mime}" "${uri}" >&2
-		fi
 		local content_obj
-		content_obj="$(mcp_tools_embed_resource_from_path "${path}" "${mime}" "${uri}" || true)"
+		content_obj="$(mcp_tools_embed_resource_from_path "${path}" "${mime}" "${uri}" 2>/dev/null || true)"
 		if [ -n "${content_obj}" ]; then
 			content_obj="$(
 				printf '%s' "${content_obj}" | "${MCPBASH_JSON_TOOL_BIN}" -c '{type:"resource",resource:.}' 2>/dev/null || true
@@ -393,14 +389,8 @@ mcp_tools_collect_embedded_resources() {
 			if [ -n "${content_obj}" ]; then
 				contents+=("${content_obj}")
 				((embed_added++)) || true
-				if [ "${MCPBASH_LOG_LEVEL:-}" = "debug" ]; then
-					printf '[TRACE] embed success: path=%s\n' "${path}" >&2
-				fi
 			fi
 		else
-			if [ "${MCPBASH_LOG_LEVEL:-}" = "debug" ]; then
-				printf '[TRACE] embed failed: path=%s\n' "${path}" >&2
-			fi
 			if declare -F mcp_logging_debug >/dev/null 2>&1; then
 				mcp_logging_debug "${MCP_TOOLS_LOGGER}" "Embedded resource skipped for path=${path}"
 			fi
@@ -2139,12 +2129,7 @@ mcp_tools_call() {
 
 	local embedded_resources=""
 	if [ -s "${tool_resources_file}" ]; then
-		# Debug: trace resource collection (stderr preserved for diagnostics)
-		if [ "${MCPBASH_LOG_LEVEL:-}" = "debug" ]; then
-			printf '[TRACE] collecting embedded resources from: %s\n' "${tool_resources_file}" >&2
-			printf '[TRACE] resources file content: %s\n' "$(cat "${tool_resources_file}" 2>/dev/null || echo "(empty)")" >&2
-		fi
-		embedded_resources="$(mcp_tools_collect_embedded_resources "${tool_resources_file}" || true)"
+		embedded_resources="$(mcp_tools_collect_embedded_resources "${tool_resources_file}" 2>/dev/null || true)"
 	fi
 	if [ -n "${embedded_resources}" ]; then
 		result_json="$(

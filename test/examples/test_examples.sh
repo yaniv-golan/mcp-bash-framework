@@ -83,11 +83,6 @@ JSON
 	export MCPBASH_TMP_ROOT="${tmp_base}"
 	unset MCPBASH_LOCK_ROOT
 
-	# Enable debug logging for 06-embedded-resources to diagnose path issues
-	if [ "${example_id}" = "06-embedded-resources" ]; then
-		export MCPBASH_LOG_LEVEL="debug"
-	fi
-
 	test_run_mcp "${workdir}" "${workdir}/requests.ndjson" "${workdir}/responses.ndjson"
 	local stderr_file="${workdir}/responses.ndjson.stderr"
 	if [ -f "${stderr_file}" ]; then

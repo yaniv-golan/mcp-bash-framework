@@ -142,6 +142,14 @@ mcp_path_normalize() {
 		normalized="${drive_upper}${normalized:1}"
 	fi
 
+	# On Windows/MSYS, expand 8.3 short names to long names (e.g., RUNNER~1 -> runneradmin).
+	# This ensures consistent path comparison when roots use long names but tool paths use short names.
+	if [[ "${OSTYPE:-}" == msys* || "${OSTYPE:-}" == cygwin* ]] && command -v cygpath >/dev/null 2>&1; then
+		local long_path
+		long_path="$(cygpath -l "${normalized}" 2>/dev/null || true)"
+		[ -n "${long_path}" ] && normalized="${long_path}"
+	fi
+
 	if [ "${MCP_PATH_DEBUG:-0}" = "1" ]; then
 		printf 'mcp_path_normalize: %s -> %s\n' "${raw}" "${resolver}" >&2
 	fi

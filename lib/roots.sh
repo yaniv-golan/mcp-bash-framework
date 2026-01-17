@@ -515,16 +515,6 @@ mcp_roots_contains_path() {
 	local canonical
 	canonical="$(mcp_roots_normalize_path "${path}")"
 
-	# Debug: stderr output for Windows diagnostics (bypasses MCP logging)
-	if [ "${MCPBASH_LOG_LEVEL:-}" = "debug" ]; then
-		local roots_debug=""
-		local r
-		for r in "${MCPBASH_ROOTS_PATHS[@]:-}"; do
-			roots_debug="${roots_debug}[${r}] "
-		done
-		printf '[TRACE] contains_path: input=%s canonical=%s roots=%s\n' "${path}" "${canonical}" "${roots_debug}" >&2
-	fi
-
 	# SECURITY: do NOT use glob/pattern matching for containment checks.
 	# Paths may legally contain glob metacharacters like []?* which would turn a
 	# prefix check into a wildcard match and allow root bypasses (e.g., root[1]
@@ -547,10 +537,6 @@ mcp_roots_contains_path() {
 			return 0
 		fi
 	done
-	# Debug: trace when containment check fails
-	if [ "${MCPBASH_LOG_LEVEL:-}" = "debug" ]; then
-		printf '[TRACE] contains_path FAILED: canonical=%s not in any root\n' "${canonical}" >&2
-	fi
 	return 1
 }
 
