@@ -2130,7 +2130,8 @@ mcp_tools_call() {
 
 	local embedded_resources=""
 	if [ -s "${tool_resources_file}" ]; then
-		embedded_resources="$(mcp_tools_collect_embedded_resources "${tool_resources_file}" 2>/dev/null || true)"
+		# Temporarily removed 2>/dev/null for Windows path debugging
+		embedded_resources="$(mcp_tools_collect_embedded_resources "${tool_resources_file}" || true)"
 	fi
 	if [ -n "${embedded_resources}" ]; then
 		result_json="$(
