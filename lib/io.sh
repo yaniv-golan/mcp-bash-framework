@@ -177,7 +177,7 @@ def redact_string:
 def walk(f):
   . as $in
   | if type == "object" then
-      reduce ($in | keys_unsorted[]) as $k
+      reduce ($in | keys[]) as $k
         ({}; . + { ($k): ($in[$k] | walk(f)) })
       | f
     elif type == "array" then
@@ -188,7 +188,7 @@ def walk(f):
 
 walk(
   if type == "object" then
-    reduce (keys_unsorted[]) as $k (.;
+    reduce (keys[]) as $k (.;
       if is_sensitive_key($k) then
         .[$k] = "**redacted**"
       else
