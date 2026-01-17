@@ -78,6 +78,7 @@ mcp_git_load_policy() {
 
 mcp_git_normalize_path() {
 	local target="$1"
+	local normalized=""
 	# Security requirement: to prevent symlink-based escapes, canonicalization must
 	# resolve symlinks (physical path). If we cannot do that reliably, fail closed.
 	#
@@ -85,14 +86,27 @@ mcp_git_normalize_path() {
 	# the host lacks realpath/readlink -f. We intentionally do NOT accept that
 	# mode here.
 	if command -v realpath >/dev/null 2>&1; then
-		realpath "${target}" 2>/dev/null && return 0
+		normalized="$(realpath "${target}" 2>/dev/null || true)"
 	fi
-	if command -v readlink >/dev/null 2>&1; then
+	if [ -z "${normalized}" ] && command -v readlink >/dev/null 2>&1; then
 		if readlink -f / >/dev/null 2>&1; then
-			readlink -f "${target}" 2>/dev/null && return 0
+			normalized="$(readlink -f "${target}" 2>/dev/null || true)"
 		fi
 	fi
-	return 1
+	if [ -z "${normalized}" ]; then
+		return 1
+	fi
+	# On Windows/MSYS, canonicalize via cygpath to expand 8.3 short names (e.g., RUNNER~1 -> runneradmin)
+	# and resolve MSYS virtual paths (e.g., /tmp -> /c/Users/.../Temp). The -l flag expands short names.
+	if [[ "${OSTYPE:-}" == msys* || "${OSTYPE:-}" == cygwin* ]] && command -v cygpath >/dev/null 2>&1; then
+		local win_path unix_path
+		win_path="$(cygpath -w -l "${normalized}" 2>/dev/null || true)"
+		if [ -n "${win_path}" ]; then
+			unix_path="$(cygpath -u "${win_path}" 2>/dev/null || true)"
+			[ -n "${unix_path}" ] && normalized="${unix_path}"
+		fi
+	fi
+	printf '%s' "${normalized}"
 }
 
 mcp_git_available_kb() {

@@ -2129,19 +2129,8 @@ mcp_tools_call() {
 	)"
 
 	local embedded_resources=""
-	# Debug: write to persistent file (worker stderr is deleted on cleanup)
-	local debug_file="${MCPBASH_STATE_DIR:-/tmp}/embed-debug.log"
-	{
-		printf '[DEBUG] tool_resources_file=%s\n' "${tool_resources_file}"
-		printf '[DEBUG] file exists=%s size=%s\n' "$([ -f "${tool_resources_file}" ] && echo yes || echo no)" "$(wc -c <"${tool_resources_file}" 2>/dev/null || echo 0)"
-	} >>"${debug_file}" 2>&1
 	if [ -s "${tool_resources_file}" ]; then
-		printf '[DEBUG] resources file content: %s\n' "$(cat "${tool_resources_file}" 2>/dev/null || echo "(read error)")" >>"${debug_file}" 2>&1
-		# Temporarily removed 2>/dev/null for Windows path debugging
-		embedded_resources="$(mcp_tools_collect_embedded_resources "${tool_resources_file}" || true)"
-		printf '[DEBUG] embedded_resources result: %s\n' "${embedded_resources:-empty}" >>"${debug_file}" 2>&1
-	else
-		printf '[DEBUG] resources file empty or missing\n' >>"${debug_file}" 2>&1
+		embedded_resources="$(mcp_tools_collect_embedded_resources "${tool_resources_file}" 2>/dev/null || true)"
 	fi
 	if [ -n "${embedded_resources}" ]; then
 		result_json="$(

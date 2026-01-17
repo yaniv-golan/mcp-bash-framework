@@ -136,15 +136,6 @@ JSON
 			($content | map(select(.type=="resource") | .resource.mimeType) | first) == "text/plain" and
 			($content | map(select(.type=="resource") | .resource.text) | first) == "Embedded report"
 		' "${workdir}/responses.ndjson" >/dev/null 2>&1; then
-			printf '\n=== 06-embedded-resources DEBUG ===\n' >&2
-			printf 'MCPBASH_PROJECT_ROOT=%s\n' "${MCPBASH_PROJECT_ROOT:-unset}" >&2
-			printf 'embed-call response:\n' >&2
-			jq -s 'def by_id(id): first(.[] | select(.id == id)); by_id("embed-call")' "${workdir}/responses.ndjson" 2>&1 | head -50 >&2
-			printf 'Server stderr (last 30 lines):\n' >&2
-			tail -30 "${workdir}/responses.ndjson.stderr" 2>/dev/null >&2 || printf '(no stderr)\n' >&2
-			printf 'embed-debug.log:\n' >&2
-			cat "${workdir}/.mcp-bash/embed-debug.log" 2>&1 >&2 || printf '(no debug log)\n' >&2
-			printf '=== END DEBUG ===\n' >&2
 			return 1
 		fi
 	fi

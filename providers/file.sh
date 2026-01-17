@@ -31,14 +31,27 @@ fi
 
 normalize_path() {
 	local target="$1"
+	local normalized=""
 	if command -v realpath >/dev/null 2>&1; then
-		realpath "${target}"
-		return
+		normalized="$(realpath "${target}" 2>/dev/null || true)"
 	fi
-	(
-		cd "$(dirname "${target}")" 2>/dev/null || exit 1
-		printf '%s/%s\n' "$(pwd -P)" "$(basename "${target}")"
-	)
+	if [ -z "${normalized}" ]; then
+		normalized="$(
+			cd "$(dirname "${target}")" 2>/dev/null || exit 1
+			printf '%s/%s\n' "$(pwd -P)" "$(basename "${target}")"
+		)"
+	fi
+	# On Windows/MSYS, canonicalize via cygpath to expand 8.3 short names (e.g., RUNNER~1 -> runneradmin)
+	# and resolve MSYS virtual paths (e.g., /tmp -> /c/Users/.../Temp). The -l flag expands short names.
+	if [[ "${OSTYPE:-}" == msys* || "${OSTYPE:-}" == cygwin* ]] && command -v cygpath >/dev/null 2>&1; then
+		local win_path unix_path
+		win_path="$(cygpath -w -l "${normalized}" 2>/dev/null || true)"
+		if [ -n "${win_path}" ]; then
+			unix_path="$(cygpath -u "${win_path}" 2>/dev/null || true)"
+			[ -n "${unix_path}" ] && normalized="${unix_path}"
+		fi
+	fi
+	printf '%s' "${normalized}"
 }
 
 path="$(normalize_path "${path}" 2>/dev/null || true)"
