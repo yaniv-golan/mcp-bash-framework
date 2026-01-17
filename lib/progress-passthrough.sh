@@ -162,7 +162,8 @@ mcp_run_with_progress() {
 		fi
 
 		# Robust whitespace stripping (wc output varies by platform)
-		current_size=$(wc -c <"${source_file}" 2>/dev/null | tr -d '[:space:]')
+		# Guard against file not existing yet (race condition on fast processes)
+		current_size=$([[ -f "${source_file}" ]] && wc -c <"${source_file}" 2>/dev/null | tr -d '[:space:]' || echo 0)
 		: "${current_size:=0}"
 
 		if [[ "$current_size" -gt "$last_size" ]]; then
@@ -173,7 +174,7 @@ mcp_run_with_progress() {
 		# When using --progress-file, also process stderr for logging
 		if [[ -n "$progress_file" && "$quiet" != "true" ]]; then
 			local current_stderr_size
-			current_stderr_size=$(wc -c <"${stderr_file}" 2>/dev/null | tr -d '[:space:]')
+			current_stderr_size=$([[ -f "${stderr_file}" ]] && wc -c <"${stderr_file}" 2>/dev/null | tr -d '[:space:]' || echo 0)
 			: "${current_stderr_size:=0}"
 			if [[ "$current_stderr_size" -gt "$last_stderr_size" ]]; then
 				__mcp_progress_log_stderr "${stderr_file}" "$last_stderr_size"
@@ -189,7 +190,8 @@ mcp_run_with_progress() {
 	pid="" # Clear pid so cleanup trap doesn't try to kill again
 
 	# Process any final lines after process exit
-	current_size=$(wc -c <"${source_file}" 2>/dev/null | tr -d '[:space:]')
+	# Guard against file not existing (should not happen here, but be safe)
+	current_size=$([[ -f "${source_file}" ]] && wc -c <"${source_file}" 2>/dev/null | tr -d '[:space:]' || echo 0)
 	: "${current_size:=0}"
 	if [[ "$current_size" -gt "$last_size" ]]; then
 		__mcp_progress_process_lines "${source_file}" "$last_size" "$pattern" "$extract" "$dry_run" "$total" "$quiet" "$stderr_output_file"
@@ -198,7 +200,7 @@ mcp_run_with_progress() {
 	# Final stderr passthrough when using --progress-file
 	if [[ -n "$progress_file" && "$quiet" != "true" ]]; then
 		local final_stderr_size
-		final_stderr_size=$(wc -c <"${stderr_file}" 2>/dev/null | tr -d '[:space:]')
+		final_stderr_size=$([[ -f "${stderr_file}" ]] && wc -c <"${stderr_file}" 2>/dev/null | tr -d '[:space:]' || echo 0)
 		: "${final_stderr_size:=0}"
 		if [[ "$final_stderr_size" -gt "$last_stderr_size" ]]; then
 			__mcp_progress_log_stderr "${stderr_file}" "$last_stderr_size"
