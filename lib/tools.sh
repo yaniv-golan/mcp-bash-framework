@@ -2129,9 +2129,14 @@ mcp_tools_call() {
 	)"
 
 	local embedded_resources=""
+	# Debug: check resources file status
+	printf '[DEBUG] tool_resources_file=%s exists=%s size=%s\n' "${tool_resources_file}" "$([ -f "${tool_resources_file}" ] && echo yes || echo no)" "$(wc -c <"${tool_resources_file}" 2>/dev/null || echo 0)" >&2
 	if [ -s "${tool_resources_file}" ]; then
+		printf '[DEBUG] resources file content: %s\n' "$(cat "${tool_resources_file}" 2>/dev/null || echo "(read error)")" >&2
 		# Temporarily removed 2>/dev/null for Windows path debugging
 		embedded_resources="$(mcp_tools_collect_embedded_resources "${tool_resources_file}" || true)"
+	else
+		printf '[DEBUG] resources file empty or missing\n' >&2
 	fi
 	if [ -n "${embedded_resources}" ]; then
 		result_json="$(
