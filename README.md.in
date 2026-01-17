@@ -642,18 +642,17 @@ See [docs/WINDOWS.md](docs/WINDOWS.md) for full guidance and workarounds.
 
 Tools can attach files directly to the MCP response as `type:"resource"` content parts; binary files are auto-base64-encoded into the `blob` field, text stays in `text`.
 
-Write paths to `MCP_TOOL_RESOURCES_FILE` (TSV: `path<TAB>mime<TAB>uri` or JSON array of `{path,mimeType,uri}`) during tool execution:
+Use `mcp_result_text_with_resource` to embed files with your tool result:
 
 ```bash
 payload_path="${MCPBASH_PROJECT_ROOT}/resources/report.txt"
 printf 'Report content' >"${payload_path}"
-if [ -n "${MCP_TOOL_RESOURCES_FILE:-}" ]; then
-	printf '%s\ttext/plain\n' "${payload_path}" >>"${MCP_TOOL_RESOURCES_FILE}"
-fi
-printf 'See embedded report for details'
+mcp_result_text_with_resource \
+  "$(mcp_json_obj message "See embedded report")" \
+  --path "${payload_path}" --mime text/plain
 ```
 
-See the dedicated example at `examples/06-embedded-resources/`.
+See the dedicated example at `examples/06-embedded-resources/` and [BEST-PRACTICES.md](docs/BEST-PRACTICES.md#embedding-resources-in-tool-responses) for full documentation.
 
 ## Built with mcp-bash
 

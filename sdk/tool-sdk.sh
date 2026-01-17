@@ -1318,6 +1318,147 @@ mcp_error() {
 	mcp_result_error "$error_json"
 }
 
+# Lazy-load resource content helpers (lib/resource_content.sh)
+# Called only when MIME auto-detection is needed
+# Uses function-existence pattern (like __mcp_sdk_load_progress_passthrough at line 33)
+__mcp_sdk_load_resource_helpers() {
+	# Check if already loaded via function existence (consistent with existing SDK pattern)
+	if declare -F mcp_resource_detect_mime >/dev/null 2>&1; then
+		return 0
+	fi
+	local script_dir lib_path
+	script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+	lib_path="${script_dir}/../lib/resource_content.sh"
+	if [[ -f "$lib_path" ]]; then
+		# shellcheck source=lib/resource_content.sh disable=SC1091
+		. "$lib_path"
+	fi
+	return 0 # Best-effort; MIME detection may still fail if file doesn't exist
+}
+
+# mcp_result_text_with_resource <text_or_json> [--path <file>] [--mime <type>] [--uri <uri>]
+# Combine text output with optional embedded resources in a single call.
+#
+# Arguments:
+#   $1       - Text content or JSON object (passed to mcp_result_success)
+#   --path   - File path to embed as resource (repeatable)
+#   --mime   - MIME type for preceding --path (auto-detect if omitted)
+#   --uri    - Custom URI for preceding --path (auto-generate if omitted)
+#
+# Output: CallToolResult JSON to stdout
+# Returns: 0 always (errors are logged, not thrown)
+#
+# Resources are written to MCP_TOOL_RESOURCES_FILE as a single JSON array.
+# WARNING: This helper OVERWRITES MCP_TOOL_RESOURCES_FILE (does not append).
+mcp_result_text_with_resource() {
+	local data="${1:-}"
+	shift || true
+
+	# Parse flags using parallel arrays (avoids delimiter issues with | in paths/URIs)
+	local -a res_paths=() res_mimes=() res_uris=()
+	local current_path="" current_mime="" current_uri=""
+
+	local have_pending_path=false
+
+	while [[ $# -gt 0 ]]; do
+		case "$1" in
+		--path)
+			# Save pending resource if any (even empty paths, to emit debug log in loop)
+			if [[ "$have_pending_path" == true ]]; then
+				res_paths+=("$current_path")
+				res_mimes+=("$current_mime")
+				res_uris+=("$current_uri")
+			fi
+			current_path="${2:-}"
+			current_mime=""
+			current_uri=""
+			have_pending_path=true
+			shift 2 || shift $#
+			;;
+		--mime)
+			current_mime="${2:-}"
+			shift 2 || shift $#
+			;;
+		--uri)
+			current_uri="${2:-}"
+			shift 2 || shift $#
+			;;
+		*)
+			# Log warning for unknown flags (helps catch typos)
+			mcp_log_debug "sdk" "mcp_result_text_with_resource: unknown flag ignored: $1"
+			shift
+			;;
+		esac
+	done
+
+	# Don't forget last pending path (even empty, to emit debug log in loop)
+	if [[ "$have_pending_path" == true ]]; then
+		res_paths+=("$current_path")
+		res_mimes+=("$current_mime")
+		res_uris+=("$current_uri")
+	fi
+
+	# Write resources to MCP_TOOL_RESOURCES_FILE as single JSON array
+	# CRITICAL: Framework expects a single JSON document, NOT JSONL (one object per line)
+	if [[ ${#res_paths[@]} -gt 0 ]]; then
+		if [[ -z "${MCP_TOOL_RESOURCES_FILE:-}" ]]; then
+			mcp_log_warn "sdk" "mcp_result_text_with_resource: MCP_TOOL_RESOURCES_FILE not set, resources will not be embedded"
+		else
+			# Build JSON array in memory, then write once
+			local json_array="["
+			local sep=""
+			local i path mime uri uri_json
+
+			for ((i = 0; i < ${#res_paths[@]}; i++)); do
+				path="${res_paths[$i]:-}"
+				mime="${res_mimes[$i]:-}"
+				uri="${res_uris[$i]:-}"
+
+				# Skip empty paths (e.g., from --path "")
+				if [[ -z "$path" ]]; then
+					mcp_log_debug "sdk" "mcp_result_text_with_resource: empty path, skipping"
+					continue
+				fi
+
+				# Validate: must be regular file AND readable (not directory, not broken symlink)
+				if [[ ! -f "$path" ]] || [[ ! -r "$path" ]]; then
+					mcp_log_warn "sdk" "mcp_result_text_with_resource: not a readable file, skipping path=${path}"
+					continue
+				fi
+
+				# Auto-detect MIME if not provided (lazy-load resource helpers)
+				if [[ -z "$mime" ]]; then
+					__mcp_sdk_load_resource_helpers
+					# Use declare -F (not command -v) to check for shell functions
+					if declare -F mcp_resource_detect_mime >/dev/null 2>&1; then
+						mime="$(mcp_resource_detect_mime "$path" "application/octet-stream")"
+					else
+						mime="application/octet-stream"
+						mcp_log_debug "sdk" "mcp_result_text_with_resource: MIME auto-detect unavailable, using ${mime}"
+					fi
+				fi
+
+				# Build JSON object for this resource
+				uri_json="null"
+				[[ -n "$uri" ]] && uri_json="$(__mcp_sdk_json_escape "$uri")"
+
+				json_array+="${sep}{\"path\":$(__mcp_sdk_json_escape "$path"),\"mimeType\":$(__mcp_sdk_json_escape "$mime"),\"uri\":${uri_json}}"
+				sep=","
+			done
+
+			json_array+="]"
+
+			# OVERWRITE (not append) - ensures consistent format
+			# If tool mixes direct TSV writes + helper, the helper wins
+			# This avoids format mixing (TSV then JSON) which breaks parsing
+			printf '%s' "$json_array" >"${MCP_TOOL_RESOURCES_FILE}"
+		fi
+	fi
+
+	# Delegate to mcp_result_success
+	mcp_result_success "$data"
+}
+
 # mcp_json_truncate <json> [max_bytes]
 # Truncate JSON arrays while preserving valid structure
 #

@@ -1,8 +1,8 @@
 # 06-embedded-resources
 
-**What you’ll learn**
+**What you'll learn**
 - Attach file content to a tool result via `type:"resource"` content
-- TSV vs JSON formats for `MCP_TOOL_RESOURCES_FILE`
+- Use `mcp_result_text_with_resource` helper for clean resource embedding
 - Binary files are auto-base64-encoded (`blob`); text stays in `text`
 
 **Prereqs**

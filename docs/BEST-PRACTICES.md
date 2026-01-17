@@ -57,6 +57,7 @@ This guide distils hands-on recommendations for designing, building, and operati
 | `mcp_result_success` | Emit success CallToolResult envelope | `mcp_result_success "$json_data"` |
 | `mcp_result_error` | Emit error CallToolResult envelope | `mcp_result_error '{"type":"not_found"}'` |
 | `mcp_error` | Convenience error helper with hints | `mcp_error "not_found" "User missing" --hint "Check ID"` |
+| `mcp_result_text_with_resource` | Combined text + embedded resources | `mcp_result_text_with_resource "$json" --path /tmp/out.txt` |
 | `mcp_json_truncate` | Truncate large arrays for context limits | `mcp_json_truncate "$arr" 10000` |
 | `mcp_is_valid_json` | Validate single JSON value | `if mcp_is_valid_json "$val"; then ...` |
 | `mcp_byte_length` | UTF-8 safe byte length | `len=$(mcp_byte_length "$str")` |
@@ -376,16 +377,20 @@ mcp_emit_text "Hello, ${name}!"
 
 Add file content to the `result.content` array so clients receive both text and attached files:
 
-- Write to `MCP_TOOL_RESOURCES_FILE` while the tool runs. TSV format: `path<TAB>mimeType<TAB>uri` (mime/uri optional). Example:
-	```bash
-	payload_path="${MCPBASH_PROJECT_ROOT}/resources/report.txt"
-	printf 'Report content' >"${payload_path}"
-	if [ -n "${MCP_TOOL_RESOURCES_FILE:-}" ]; then
-		printf '%s\ttext/plain\n' "${payload_path}" >>"${MCP_TOOL_RESOURCES_FILE}"
-	fi
-	mcp_result_success "$(mcp_json_obj message "See embedded report")"
-	```
-- JSON format is also accepted: `[{"path":"/tmp/result.png","mimeType":"image/png","uri":"file:///tmp/result.png"}]` (a single object or string path works too).
+**Preferred: Use `mcp_result_text_with_resource`**
+```bash
+payload_path="${MCPBASH_PROJECT_ROOT}/resources/report.txt"
+printf 'Report content' >"${payload_path}"
+mcp_result_text_with_resource \
+  "$(mcp_json_obj message "See embedded report")" \
+  --path "${payload_path}" --mime text/plain
+```
+
+See [Embedding resources in tool responses](#embedding-resources-in-tool-responses) for full documentation.
+
+**Manual approach** (for advanced cases):
+- Write to `MCP_TOOL_RESOURCES_FILE` directly. TSV format: `path<TAB>mimeType<TAB>uri` (mime/uri optional).
+- JSON format is also accepted: `[{"path":"/tmp/result.png","mimeType":"image/png","uri":"file:///tmp/result.png"}]`
 - Binary files are base64-encoded into the `blob` field; text stays in `text`.
 - Keep paths inside allowed roots; invalid/unreadable entries are skipped (debug logs will mention the skip).
 
@@ -1117,6 +1122,29 @@ fi
 | Large arrays that may exceed context | `mcp_json_truncate` + `mcp_result_success` |
 
 The result helpers are recommended for new tools as they provide consistent response shapes that clients can rely on.
+
+#### Embedding resources in tool responses
+
+Use `mcp_result_text_with_resource` to return text/structured data with optional embedded resources:
+
+```bash
+# Text with single resource
+mcp_result_text_with_resource "Report ready" --path /tmp/report.pdf --mime application/pdf
+
+# Multiple resources
+mcp_result_text_with_resource '{"status":"complete"}' \
+  --path /tmp/data.csv --mime text/csv \
+  --path /tmp/chart.png --mime image/png
+
+# MIME auto-detection (requires `file` command)
+mcp_result_text_with_resource '{"done":true}' --path /tmp/output.txt
+```
+
+Resources are embedded in the `content[]` array alongside the text. MIME type is auto-detected if `--mime` is omitted (requires `file` command; falls back to `application/octet-stream`).
+
+**Note:** Resources require `MCP_TOOL_RESOURCES_FILE` to be set (automatic in tool context). Outside tool context, resources are logged as warnings and skipped.
+
+**Warning:** This helper **overwrites** `MCP_TOOL_RESOURCES_FILE`. Do not mix with direct file writes; the helper will replace any existing content.
 
 ### 4.9 Progress passthrough from subprocesses
 

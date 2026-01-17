@@ -7,8 +7,6 @@ report_path="${MCPBASH_PROJECT_ROOT}/resources/report.txt"
 mkdir -p "$(dirname "${report_path}")"
 printf 'Embedded report' >"${report_path}"
 
-if [ -n "${MCP_TOOL_RESOURCES_FILE:-}" ]; then
-	printf '%s\ttext/plain\n' "${report_path}" >>"${MCP_TOOL_RESOURCES_FILE}"
-fi
-
-mcp_result_success "$(mcp_json_obj message "See embedded report for details")"
+mcp_result_text_with_resource \
+	"$(mcp_json_obj message "See embedded report for details")" \
+	--path "${report_path}" --mime text/plain

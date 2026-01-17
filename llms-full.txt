@@ -32,10 +32,12 @@ Pure Bash MCP server framework. Bash≥3.2 + jq/gojq. Stdio transport only.
 
 ## EMBEDDED RESOURCES (type:"resource")
 
-- Add file content to tool results by writing to `MCP_TOOL_RESOURCES_FILE` during execution.
-- Accepted formats:
-  - TSV: `path<TAB>mimeType<TAB>uri` (mime/uri optional).
-  - JSON: array/object/string paths, e.g. `[{"path":"/tmp/result.png","mimeType":"image/png"}]`.
+- **Preferred**: Use `mcp_result_text_with_resource` helper:
+  ```bash
+  mcp_result_text_with_resource '{"status":"done"}' --path /tmp/file.txt --mime text/plain
+  # Multiple: --path /file1 --mime text/plain --path /file2 --mime image/png
+  ```
+- **Manual**: Write to `MCP_TOOL_RESOURCES_FILE` (TSV `path<TAB>mime<TAB>uri` or JSON array).
 - The framework appends `{type:"resource", resource:{uri,mimeType,text|blob}}` to `result.content`.
 - Binary files are auto-base64-encoded to `blob`; text stays in `text`.
 - Paths must be readable and inside allowed roots; invalid entries are skipped (debug logs will note skips).
