@@ -515,14 +515,14 @@ mcp_roots_contains_path() {
 	local canonical
 	canonical="$(mcp_roots_normalize_path "${path}")"
 
-	# Debug: log containment check inputs
-	if mcp_logging_is_enabled "debug"; then
+	# Debug: stderr output for Windows diagnostics (bypasses MCP logging)
+	if [ "${MCPBASH_LOG_LEVEL:-}" = "debug" ]; then
 		local roots_debug=""
 		local r
 		for r in "${MCPBASH_ROOTS_PATHS[@]:-}"; do
 			roots_debug="${roots_debug}[${r}] "
 		done
-		mcp_logging_debug "${MCP_ROOTS_LOGGER}" "contains_path: input=${path} canonical=${canonical} roots=${roots_debug}"
+		printf '[TRACE] contains_path: input=%s canonical=%s roots=%s\n' "${path}" "${canonical}" "${roots_debug}" >&2
 	fi
 
 	# SECURITY: do NOT use glob/pattern matching for containment checks.
@@ -547,6 +547,10 @@ mcp_roots_contains_path() {
 			return 0
 		fi
 	done
+	# Debug: trace when containment check fails
+	if [ "${MCPBASH_LOG_LEVEL:-}" = "debug" ]; then
+		printf '[TRACE] contains_path FAILED: canonical=%s not in any root\n' "${canonical}" >&2
+	fi
 	return 1
 }
 
