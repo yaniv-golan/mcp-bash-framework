@@ -309,6 +309,7 @@ mcp_runtime_init_paths() {
 
 	# Normalize PROJECT_ROOT (strip trailing slash, fix drive letter case on Windows)
 	MCPBASH_PROJECT_ROOT="$(mcp_path_normalize --physical "${MCPBASH_PROJECT_ROOT%/}")"
+	export MCPBASH_PROJECT_ROOT
 
 	# Export framework version for tool diagnostics
 	if [[ -f "${MCPBASH_HOME}/VERSION" ]]; then
