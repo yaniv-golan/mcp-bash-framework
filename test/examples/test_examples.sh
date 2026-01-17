@@ -136,6 +136,11 @@ JSON
 			($content | map(select(.type=="resource") | .resource.mimeType) | first) == "text/plain" and
 			($content | map(select(.type=="resource") | .resource.text) | first) == "Embedded report"
 		' "${workdir}/responses.ndjson" >/dev/null 2>&1; then
+			# Debug: show embed-call response on failure
+			printf '[06-embedded-resources] embed-call response:\n' >&2
+			jq -s 'def by_id(id): first(.[] | select(.id == id)); by_id("embed-call")' "${workdir}/responses.ndjson" 2>&1 | head -20 >&2 || true
+			printf '[06-embedded-resources] Server stderr (last 10 lines):\n' >&2
+			tail -10 "${workdir}/responses.ndjson.stderr" 2>&1 >&2 || true
 			return 1
 		fi
 	fi
