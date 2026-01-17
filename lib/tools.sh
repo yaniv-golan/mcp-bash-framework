@@ -298,8 +298,22 @@ mcp_tools_embed_resource_from_path() {
 		return 1
 	fi
 	if declare -F mcp_roots_contains_path >/dev/null 2>&1; then
+		# Debug: log containment check details
+		if mcp_logging_is_enabled "debug"; then
+			local roots_debug=""
+			local r
+			for r in "${MCPBASH_ROOTS_PATHS[@]:-}"; do
+				roots_debug="${roots_debug}[${r}] "
+			done
+			mcp_logging_debug "${MCP_TOOLS_LOGGER}" "Containment check: path=${abs} roots=${roots_debug}"
+		fi
 		if ! mcp_roots_contains_path "${abs}"; then
-			mcp_logging_warning "${MCP_TOOLS_LOGGER}" "Embedded resource skipped (outside allowed roots): ${abs}"
+			local roots_list=""
+			local r
+			for r in "${MCPBASH_ROOTS_PATHS[@]:-}"; do
+				roots_list="${roots_list}[${r}] "
+			done
+			mcp_logging_warning "${MCP_TOOLS_LOGGER}" "Embedded resource skipped (outside allowed roots): path=${abs} roots=${roots_list}"
 			return 1
 		fi
 	fi
