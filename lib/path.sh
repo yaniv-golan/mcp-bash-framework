@@ -142,12 +142,16 @@ mcp_path_normalize() {
 		normalized="${drive_upper}${normalized:1}"
 	fi
 
-	# On Windows/MSYS, expand 8.3 short names to long names (e.g., RUNNER~1 -> runneradmin).
-	# This ensures consistent path comparison when roots use long names but tool paths use short names.
+	# On Windows/MSYS, canonicalize paths through Windows format and back to Unix format.
+	# This resolves: (1) MSYS virtual paths like /tmp -> /c/Users/.../Temp,
+	# (2) 8.3 short names like RUNNER~1 -> runneradmin, ensuring consistent path comparison.
 	if [[ "${OSTYPE:-}" == msys* || "${OSTYPE:-}" == cygwin* ]] && command -v cygpath >/dev/null 2>&1; then
-		local long_path
-		long_path="$(cygpath -l "${normalized}" 2>/dev/null || true)"
-		[ -n "${long_path}" ] && normalized="${long_path}"
+		local win_path unix_path
+		win_path="$(cygpath -w "${normalized}" 2>/dev/null || true)"
+		if [ -n "${win_path}" ]; then
+			unix_path="$(cygpath -u "${win_path}" 2>/dev/null || true)"
+			[ -n "${unix_path}" ] && normalized="${unix_path}"
+		fi
 	fi
 
 	if [ "${MCP_PATH_DEBUG:-0}" = "1" ]; then
