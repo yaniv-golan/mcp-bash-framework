@@ -142,6 +142,8 @@ JSON
 			jq -s 'def by_id(id): first(.[] | select(.id == id)); by_id("embed-call")' "${workdir}/responses.ndjson" 2>&1 | head -50 >&2
 			printf 'Server stderr (last 30 lines):\n' >&2
 			tail -30 "${workdir}/responses.ndjson.stderr" 2>/dev/null >&2 || printf '(no stderr)\n' >&2
+			printf 'embed-debug.log:\n' >&2
+			cat "${workdir}/.mcp-bash/embed-debug.log" 2>&1 >&2 || printf '(no debug log)\n' >&2
 			printf '=== END DEBUG ===\n' >&2
 			return 1
 		fi
