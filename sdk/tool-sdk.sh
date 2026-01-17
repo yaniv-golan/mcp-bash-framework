@@ -1459,6 +1459,247 @@ mcp_result_text_with_resource() {
 	mcp_result_success "$data"
 }
 
+# ============================================================================
+# Configuration Helpers
+# ============================================================================
+
+# Private helper: check if string is valid JSON
+# Used by mcp_config_load
+__mcp_config_is_json() {
+	local str="$1"
+	local json_tool="${MCPBASH_JSON_TOOL_BIN:-}"
+	if [[ -n "$json_tool" ]]; then
+		printf '%s' "$str" | "$json_tool" -e . >/dev/null 2>&1
+	else
+		# Basic check: starts with { or [
+		[[ "$str" =~ ^[[:space:]]*[\{\[] ]]
+	fi
+}
+
+# Private helper: merge two JSON objects (shallow)
+# Used by mcp_config_load
+__mcp_config_merge() {
+	local base="$1" overlay="$2"
+	local json_tool="${MCPBASH_JSON_TOOL_BIN:-}"
+	if [[ -n "$json_tool" ]]; then
+		"$json_tool" -n --argjson base "$base" --argjson overlay "$overlay" \
+			'$base + $overlay' 2>/dev/null || printf '%s' "$base"
+	else
+		# Fallback: overlay wins entirely (no jq available for merge)
+		printf '%s' "$overlay"
+	fi
+}
+
+# Private helper: read and validate JSON file
+# Used by mcp_config_load
+__mcp_config_read_file() {
+	local path="$1"
+	if [[ -f "$path" ]] && [[ -r "$path" ]]; then
+		local content
+		content=$(<"$path")
+		if __mcp_config_is_json "$content"; then
+			printf '%s' "$content"
+			return 0
+		else
+			mcp_log_warn "config" "Invalid JSON in file: $path"
+			return 1
+		fi
+	fi
+	return 1
+}
+
+# mcp_config_load [--env VAR] [--file PATH] [--example PATH] [--defaults JSON]
+# Load and merge configuration from multiple sources.
+#
+# Precedence (highest to lowest):
+#   1. Env var (JSON string or path to file)
+#   2. --file config file
+#   3. --example config file
+#   4. --defaults inline JSON
+#
+# Result: Sets MCP_CONFIG_JSON env var with merged config
+# Returns: 0 if config available, 1 if no sources and empty defaults
+mcp_config_load() {
+	local env_var="" config_file="" example_file="" defaults="{}"
+
+	# Parse arguments
+	while [[ $# -gt 0 ]]; do
+		case "$1" in
+		--env)
+			env_var="${2:-}"
+			shift 2 || shift $#
+			;;
+		--file)
+			config_file="${2:-}"
+			shift 2 || shift $#
+			;;
+		--example)
+			example_file="${2:-}"
+			shift 2 || shift $#
+			;;
+		--defaults)
+			defaults="${2:-}"
+			shift 2 || shift $#
+			;;
+		*) shift ;;
+		esac
+	done
+
+	# Validate --defaults JSON
+	if [[ "$defaults" != "{}" ]] && ! __mcp_config_is_json "$defaults"; then
+		mcp_log_warn "config" "Invalid JSON in --defaults, using {}"
+		defaults="{}"
+	fi
+
+	local merged="$defaults"
+	local sources_loaded=0
+
+	# 1. Load example file (lowest priority)
+	if [[ -n "$example_file" ]]; then
+		local example_json
+		if example_json=$(__mcp_config_read_file "$example_file"); then
+			merged=$(__mcp_config_merge "$merged" "$example_json")
+			((++sources_loaded))
+			mcp_log_debug "config" "Loaded example config: $example_file"
+		fi
+	fi
+
+	# 2. Load config file
+	if [[ -n "$config_file" ]]; then
+		local file_json
+		if file_json=$(__mcp_config_read_file "$config_file"); then
+			merged=$(__mcp_config_merge "$merged" "$file_json")
+			((++sources_loaded))
+			mcp_log_debug "config" "Loaded config file: $config_file"
+		fi
+	fi
+
+	# 3. Load from env var (highest priority)
+	if [[ -n "$env_var" ]]; then
+		local env_value="${!env_var:-}"
+		if [[ -n "$env_value" ]]; then
+			if __mcp_config_is_json "$env_value"; then
+				# Env var contains JSON directly
+				merged=$(__mcp_config_merge "$merged" "$env_value")
+				((++sources_loaded))
+				mcp_log_debug "config" "Loaded config from env var: $env_var (JSON)"
+			elif [[ -f "$env_value" ]]; then
+				# Env var contains path to file
+				local env_file_json
+				if env_file_json=$(__mcp_config_read_file "$env_value"); then
+					merged=$(__mcp_config_merge "$merged" "$env_file_json")
+					((++sources_loaded))
+					mcp_log_debug "config" "Loaded config from env var: $env_var (file: $env_value)"
+				fi
+			else
+				mcp_log_warn "config" "Env var $env_var is neither valid JSON nor a file path"
+			fi
+		fi
+	fi
+
+	# Export merged config
+	export MCP_CONFIG_JSON="$merged"
+
+	# Return success if at least one source loaded (or defaults exist)
+	if [[ $sources_loaded -gt 0 ]] || [[ "$defaults" != "{}" ]]; then
+		return 0
+	else
+		mcp_log_warn "config" "No configuration sources loaded"
+		return 1
+	fi
+}
+
+# mcp_config_get <jq_path> [--default VALUE]
+# Get a value from loaded configuration.
+#
+# Arguments:
+#   jq_path   - jq path expression (e.g., '.timeout', '.api.endpoint')
+#   --default - Default value if path not found
+#
+# Output: Value at path (stdout)
+# Returns: 0 on success, 1 if path missing without default
+mcp_config_get() {
+	local path="${1:-}"
+	shift || true
+	local default_value=""
+	local has_default=false
+
+	while [[ $# -gt 0 ]]; do
+		case "$1" in
+		--default)
+			default_value="${2:-}"
+			has_default=true
+			shift 2 || shift $#
+			;;
+		*) shift ;;
+		esac
+	done
+
+	if [[ -z "$path" ]]; then
+		mcp_log_warn "config" "mcp_config_get: path required"
+		return 1
+	fi
+
+	local config="${MCP_CONFIG_JSON:-{}}"
+	local json_tool="${MCPBASH_JSON_TOOL_BIN:-}"
+	local result
+
+	if [[ -n "$json_tool" ]]; then
+		# Use jq for path extraction
+		# Note: We use a sentinel string for missing keys, not empty string
+		# Empty string "" is a valid config value and should be returned
+		# Sentinel collision risk: if a config value is literally "__MCP_CONFIG_NULL__"
+		# it will be treated as missing. This is extremely unlikely in practice.
+		# IMPORTANT: Cannot use // operator because it treats false as falsy.
+		# Instead, explicitly check for null (missing key) vs false (actual value).
+		result=$("$json_tool" -r "($path) as \$v | if \$v == null then \"__MCP_CONFIG_NULL__\" else \$v end" <<<"$config" 2>/dev/null)
+
+		if [[ "$result" == "__MCP_CONFIG_NULL__" ]]; then
+			if [[ "$has_default" == true ]]; then
+				printf '%s' "$default_value"
+				return 0
+			else
+				return 1
+			fi
+		fi
+
+		printf '%s' "$result"
+		return 0
+	else
+		# Minimal mode: basic top-level key extraction
+		# Only supports simple paths like '.key' (not nested)
+		# NOTE: BASH_REMATCH usage is safe here because we only access [1] after
+		# successful regex match that guarantees the capture group exists.
+		# See bash-conventions.mdc for general BASH_REMATCH guidance.
+		if [[ "$path" =~ ^\.([a-zA-Z_][a-zA-Z0-9_]*)$ ]]; then
+			local key="${BASH_REMATCH[1]}"
+			# Extract value using pattern matching
+			# Limitation: does not handle escaped quotes in values
+			if [[ "$config" =~ \"$key\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+				# Note: [^\"]* allows empty strings (test #21)
+				printf '%s' "${BASH_REMATCH[1]}"
+				return 0
+			elif [[ "$config" =~ \"$key\"[[:space:]]*:[[:space:]]*(-?[0-9]+\.?[0-9]*) ]]; then
+				# Supports: integers, floats, negative numbers
+				printf '%s' "${BASH_REMATCH[1]}"
+				return 0
+			elif [[ "$config" =~ \"$key\"[[:space:]]*:[[:space:]]*(true|false) ]]; then
+				printf '%s' "${BASH_REMATCH[1]}"
+				return 0
+			fi
+		fi
+
+		# Path not found or too complex for minimal mode
+		if [[ "$has_default" == true ]]; then
+			printf '%s' "$default_value"
+			return 0
+		fi
+
+		mcp_log_debug "config" "mcp_config_get: path not found (minimal mode): $path"
+		return 1
+	fi
+}
+
 # mcp_json_truncate <json> [max_bytes]
 # Truncate JSON arrays while preserving valid structure
 #

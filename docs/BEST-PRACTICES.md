@@ -63,6 +63,8 @@ This guide distils hands-on recommendations for designing, building, and operati
 | `mcp_byte_length` | UTF-8 safe byte length | `len=$(mcp_byte_length "$str")` |
 | `mcp_extract_cli_error` | Extract error from CLI stdout JSON or stderr | `msg=$(mcp_extract_cli_error "$stdout" "$stderr" "$exit_code")` |
 | `mcp_run_with_progress` | Forward subprocess progress to MCP | `mcp_run_with_progress --pattern '([0-9]+)%' --extract match1 -- wget ...` |
+| `mcp_config_load` | Load configuration from env/file/defaults | `mcp_config_load --env MY_CONFIG --file ./config.json --defaults '{}'` |
+| `mcp_config_get` | Get value from loaded configuration | `timeout=$(mcp_config_get '.timeout' --default 30)` |
 
 ### External command patterns
 | Pattern | Purpose | Example |
@@ -535,6 +537,71 @@ if [[ $(echo "$result" | jq -r '.error.type') == "redirect" ]]; then
   mcp_log_info "mytool" "Hint: use ${target} instead"
 fi
 ```
+
+#### Configuration loading
+
+**`mcp_config_load`** – Load and merge configuration from multiple sources:
+
+```bash
+# Load config with precedence: env var > file > example > defaults
+mcp_config_load \
+  --env MY_TOOL_CONFIG \
+  --file "${MCPBASH_PROJECT_ROOT}/config.json" \
+  --example "${MCPBASH_PROJECT_ROOT}/config.example.json" \
+  --defaults '{"timeout": 30, "retries": 3}'
+```
+
+**Precedence (highest to lowest):**
+1. Env var (`--env`) – Can contain JSON directly or path to a config file
+2. Config file (`--file`)
+3. Example file (`--example`)
+4. Inline defaults (`--defaults`)
+
+**Behavior:**
+- Shallow merge: later sources override earlier at top level
+- Missing files are silently skipped (not errors)
+- Invalid JSON logs warning and skips that source
+- Result stored in `MCP_CONFIG_JSON` env var
+
+**`mcp_config_get`** – Get values from loaded configuration:
+
+```bash
+# Get required value (fails if missing)
+api_key=$(mcp_config_get '.api.key') || mcp_fail_invalid_args "Missing config: api.key"
+
+# Get optional value with default
+timeout=$(mcp_config_get '.timeout' --default 30)
+
+# Get nested value (requires jq; minimal mode only supports top-level keys)
+endpoint=$(mcp_config_get '.api.endpoint' --default 'https://api.example.com')
+```
+
+**Complete example:**
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+source "${MCP_SDK:?}/tool-sdk.sh"
+
+# Load configuration
+mcp_config_load \
+  --env MY_TOOL_CONFIG \
+  --file "${MCPBASH_PROJECT_ROOT}/config.json" \
+  --defaults '{"timeout": 30, "retries": 3}'
+
+# Get values
+api_key=$(mcp_config_get '.api_key') || mcp_fail_invalid_args "Missing api_key in config"
+timeout=$(mcp_config_get '.timeout' --default 30)
+retries=$(mcp_config_get '.retries' --default 3)
+
+# Use configuration
+mcp_log_info "mytool" "Using timeout=${timeout}, retries=${retries}"
+```
+
+**Minimal mode notes:**
+- Without jq: merge uses last-source-wins (not shallow merge)
+- `mcp_config_get`: Only top-level simple keys supported (`.key`)
+- Nested paths (`.api.endpoint`) return default or fail in minimal mode
 
 #### Elicitation (interactive prompts)
 

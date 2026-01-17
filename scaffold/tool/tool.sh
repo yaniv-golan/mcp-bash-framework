@@ -19,6 +19,9 @@ name="$(mcp_args_get '.name' --default 'World')"
 # Embed a file in the tool result (type:"resource"):
 # mcp_result_text_with_resource '{"status":"done"}' --path /path/to/file --mime text/plain
 # Multiple files: --path /file1 --mime text/plain --path /file2 --mime image/png
+# Load configuration (precedence: env > file > example > defaults):
+# mcp_config_load --env MY_TOOL_CONFIG --file ./config.json --defaults '{"timeout":30}'
+# timeout=$(mcp_config_get '.timeout' --default 30)
 
 # Your tool logic here
 # Example progress/logging (uncomment if needed)
