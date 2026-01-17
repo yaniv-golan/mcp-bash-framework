@@ -381,7 +381,8 @@ mcp_tools_collect_embedded_resources() {
 		[ -n "${path}" ] || continue
 		((embed_attempts++)) || true
 		local content_obj
-		content_obj="$(mcp_tools_embed_resource_from_path "${path}" "${mime}" "${uri}" 2>/dev/null || true)"
+		# Temporarily removed 2>/dev/null for Windows path debugging
+		content_obj="$(mcp_tools_embed_resource_from_path "${path}" "${mime}" "${uri}" || true)"
 		if [ -n "${content_obj}" ]; then
 			content_obj="$(
 				printf '%s' "${content_obj}" | "${MCPBASH_JSON_TOOL_BIN}" -c '{type:"resource",resource:.}' 2>/dev/null || true
