@@ -1374,10 +1374,13 @@ mcp_tools_call() {
 		return 1
 	fi
 
-	# Extract metadata fields in single jq pass (per json-handling rules)
+	# Extract metadata fields using separate jq calls to avoid @tsv escaping issues
+	# (consistency with handlers/tools.sh fix for escaped quotes)
 	local tool_path metadata_timeout output_schema progress_extends max_timeout_secs
-	read -r tool_path metadata_timeout progress_extends max_timeout_secs < <(printf '%s' "${metadata}" \
-		| "${MCPBASH_JSON_TOOL_BIN}" -r '[.path // "", .timeoutSecs // "", .progressExtendsTimeout // "", .maxTimeoutSecs // ""] | @tsv' 2>/dev/null || printf '%s\t%s\t%s\t%s\n' "" "" "" "")
+	tool_path="$(printf '%s' "${metadata}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.path // ""' 2>/dev/null)" || tool_path=""
+	metadata_timeout="$(printf '%s' "${metadata}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.timeoutSecs // ""' 2>/dev/null)" || metadata_timeout=""
+	progress_extends="$(printf '%s' "${metadata}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.progressExtendsTimeout // ""' 2>/dev/null)" || progress_extends=""
+	max_timeout_secs="$(printf '%s' "${metadata}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.maxTimeoutSecs // ""' 2>/dev/null)" || max_timeout_secs=""
 	output_schema="$(printf '%s' "${metadata}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.outputSchema // null')"
 	case "${metadata_timeout}" in
 	"" | "null") metadata_timeout="" ;;

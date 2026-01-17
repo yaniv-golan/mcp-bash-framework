@@ -257,8 +257,15 @@ mcp_args_get() {
 	local payload
 	payload="$(mcp_args_raw)"
 	local rc=0
+	local result=""
 	if command -v "${MCPBASH_JSON_TOOL_BIN:-}" >/dev/null 2>&1; then
-		printf '%s' "${payload}" | "${MCPBASH_JSON_TOOL_BIN}" -rc "${filter}" 2>/dev/null || rc=$?
+		result="$(printf '%s' "${payload}" | "${MCPBASH_JSON_TOOL_BIN}" -rc "${filter}" 2>/dev/null)" || rc=$?
+		if [ "${rc}" -ne 0 ]; then
+			# Log parse error for debugging (stderr goes to server log, not tool output)
+			__mcp_sdk_warn "mcp_args_get: jq error (rc=${rc}) filter=${filter} payload_len=${#payload}"
+			result=""
+		fi
+		printf '%s' "${result}"
 	else
 		__mcp_sdk_warn "mcp_args_get: JSON tooling unavailable; use mcp_args_raw instead"
 		printf ''

@@ -246,3 +246,42 @@ build_payload() {
 	value="$(printf '%s' "${args_json}" | jq -r '.value // "MISSING"' 2>/dev/null || echo "PARSE_ERROR")"
 	assert_equal "${value}" "end"
 }
+
+# ==============================================================================
+# Test: JSON validation (Phase 3.1) - validates args before tool execution
+# This tests the defense-in-depth validation added in handlers/tools.sh
+# ==============================================================================
+@test "JSON validation: invalid args_json is detected by jq -e" {
+	# Test the validation logic used in handlers/tools.sh line ~103
+	# This ensures the jq -e . check correctly identifies invalid JSON
+
+	# Valid JSON should pass validation
+	local valid_json='{"command":"test","filter":"value"}'
+	if ! printf '%s' "${valid_json}" | jq -e . >/dev/null 2>&1; then
+		fail "Valid JSON should pass jq -e validation"
+	fi
+
+	# Invalid JSON (truncated) should fail validation
+	local invalid_json='{"command":"test","filter":'
+	if printf '%s' "${invalid_json}" | jq -e . >/dev/null 2>&1; then
+		fail "Truncated JSON should fail jq -e validation"
+	fi
+
+	# Invalid JSON (corrupted escape) should fail validation
+	local corrupted_json='{"command":"test","filter":"bad\\"quote"}'
+	if printf '%s' "${corrupted_json}" | jq -e . >/dev/null 2>&1; then
+		fail "Corrupted JSON with bad escape should fail jq -e validation"
+	fi
+
+	# Empty string should fail validation
+	local empty_json=''
+	if printf '%s' "${empty_json}" | jq -e . >/dev/null 2>&1; then
+		fail "Empty string should fail jq -e validation"
+	fi
+
+	# The fallback "{}" should pass validation (safe default)
+	local fallback_json='{}'
+	if ! printf '%s' "${fallback_json}" | jq -e . >/dev/null 2>&1; then
+		fail "Fallback {} should pass jq -e validation"
+	fi
+}
