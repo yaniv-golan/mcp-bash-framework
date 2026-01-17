@@ -143,6 +143,8 @@ mcp_roots_add_default_project_root() {
 	if ! abs="$(mcp_roots_canonicalize_checked "${MCPBASH_PROJECT_ROOT}" "project root" 1)"; then
 		return 1
 	fi
+	# Debug: trace root path for Windows diagnostics
+	printf '[DEBUG] add_default_project_root: raw=%s normalized=%s\n' "${MCPBASH_PROJECT_ROOT}" "${abs}" >&2
 	mcp_roots_append_unique "${abs}" ""
 }
 
@@ -514,6 +516,14 @@ mcp_roots_contains_path() {
 	local path="$1"
 	local canonical
 	canonical="$(mcp_roots_normalize_path "${path}")"
+
+	# Debug: trace containment check for Windows diagnostics
+	local roots_debug=""
+	local r
+	for r in "${MCPBASH_ROOTS_PATHS[@]:-}"; do
+		roots_debug="${roots_debug}[${r}] "
+	done
+	printf '[DEBUG] contains_path: input=%s canonical=%s roots=%s\n' "${path}" "${canonical}" "${roots_debug}" >&2
 
 	# SECURITY: do NOT use glob/pattern matching for containment checks.
 	# Paths may legally contain glob metacharacters like []?* which would turn a
