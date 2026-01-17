@@ -268,7 +268,15 @@ mcp_tools_normalize_local_path() {
 		return 1
 	fi
 	local abs="${raw}"
-	if [[ "${abs}" != /* ]]; then
+	# Check if path is absolute: Unix (/) or Windows (D:/ or D:\)
+	local is_absolute=false
+	if [[ "${abs}" == /* ]]; then
+		is_absolute=true
+	elif [[ "${abs}" =~ ^[A-Za-z]:[\\/] ]]; then
+		# Windows absolute path like D:/... or D:\...
+		is_absolute=true
+	fi
+	if [[ "${is_absolute}" != true ]]; then
 		if [ -n "${MCPBASH_PROJECT_ROOT:-}" ]; then
 			abs="${MCPBASH_PROJECT_ROOT%/}/${abs}"
 		else
