@@ -1401,6 +1401,10 @@ mcp_result_text_with_resource() {
 	# Write resources to MCP_TOOL_RESOURCES_FILE as single JSON array
 	# CRITICAL: Framework expects a single JSON document, NOT JSONL (one object per line)
 	if [[ ${#res_paths[@]} -gt 0 ]]; then
+		# Debug: trace resource writing
+		if [[ "${MCPBASH_LOG_LEVEL:-}" == "debug" ]]; then
+			printf '[TRACE] mcp_result_text_with_resource: %d paths, MCP_TOOL_RESOURCES_FILE=%s\n' "${#res_paths[@]}" "${MCP_TOOL_RESOURCES_FILE:-unset}" >&2
+		fi
 		if [[ -z "${MCP_TOOL_RESOURCES_FILE:-}" ]]; then
 			mcp_log_warn "sdk" "mcp_result_text_with_resource: MCP_TOOL_RESOURCES_FILE not set, resources will not be embedded"
 		else
@@ -1452,6 +1456,10 @@ mcp_result_text_with_resource() {
 			# If tool mixes direct TSV writes + helper, the helper wins
 			# This avoids format mixing (TSV then JSON) which breaks parsing
 			printf '%s' "$json_array" >"${MCP_TOOL_RESOURCES_FILE}"
+			# Debug: trace after writing
+			if [[ "${MCPBASH_LOG_LEVEL:-}" == "debug" ]]; then
+				printf '[TRACE] wrote to MCP_TOOL_RESOURCES_FILE: %s\n' "$json_array" >&2
+			fi
 		fi
 	fi
 
