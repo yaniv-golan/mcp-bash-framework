@@ -1,0 +1,32 @@
+{
+  "name": "fetch-api-data",
+  "description": "Fetch data from an external API using secure SSRF-protected downloads. Demonstrates mcp_config_load, mcp_download_safe, and mcp_error with --hint for LLM-friendly error messages.\n\nExamples:\n- fetch-api-data --url 'https://httpbin.org/get'\n- fetch-api-data --url 'https://api.example.com/data'\n\nErrors include hints to help LLMs self-correct (e.g., suggest allowed hosts, handle redirects).",
+  "inputSchema": {
+    "type": "object",
+    "required": ["url"],
+    "properties": {
+      "url": {
+        "type": "string",
+        "description": "The HTTPS URL to fetch. Must be in the configured allowlist."
+      }
+    }
+  },
+  "outputSchema": {
+    "type": "object",
+    "required": ["success"],
+    "properties": {
+      "success": {
+        "type": "boolean",
+        "description": "Whether the fetch succeeded"
+      },
+      "result": {
+        "type": "object",
+        "description": "On success: contains bytes (download size) and preview (first 500 chars)"
+      },
+      "error": {
+        "type": "object",
+        "description": "On failure: contains type, message, and hint for LLM self-correction"
+      }
+    }
+  }
+}

@@ -41,7 +41,7 @@ Key points:
 
 ## SDK & Scaffolding
 
-- [Tool SDK](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/sdk/tool-sdk.sh): Shared helpers for argument parsing (`mcp_args_get`), output (`mcp_emit_json`, `mcp_emit_text`), JSON construction (`mcp_json_escape`, `mcp_json_obj`, `mcp_json_arr`), progress (`mcp_progress`, `mcp_run_with_progress`), cancellation (`mcp_is_cancelled`), logging (`mcp_log_info`, `mcp_log_warn`), configuration loading (`mcp_config_load`, `mcp_config_get`), and embedded resources (`mcp_result_text_with_resource`).
+- [Tool SDK](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/sdk/tool-sdk.sh): Shared helpers for argument parsing (`mcp_args_get`), output (`mcp_emit_json`, `mcp_emit_text`), JSON construction (`mcp_json_escape`, `mcp_json_obj`, `mcp_json_arr`), progress (`mcp_progress`, `mcp_run_with_progress`), cancellation (`mcp_is_cancelled`), logging (`mcp_log_info`, `mcp_log_warn`), configuration loading (`mcp_config_load`, `mcp_config_get`), error handling (`mcp_error` with `--hint` and `--data` flags for LLM-friendly errors), secure downloads (`mcp_download_safe`, `mcp_download_safe_or_fail` for SSRF-safe HTTPS fetching with retries), and embedded resources (`mcp_result_text_with_resource`).
 - [Scaffold Templates](https://github.com/yaniv-golan/mcp-bash-framework/tree/main/scaffold): Templates for generating compliant tools, resources, and prompts via `mcp-bash scaffold <type> <name>`; create a full server skeleton via `mcp-bash new <name>`.
 
 ## Configuration & Operations
@@ -55,6 +55,7 @@ Key points:
 
 ## Optional
 
+- [MCPB Bundles](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/docs/MCPB.md): Create distributable `.mcpb` packages for one-click installation. Supports user configuration (`MCPB_USER_CONFIG_FILE`, env/args mapping), metadata fields (`MCPB_LICENSE`, `MCPB_KEYWORDS`, `MCPB_HOMEPAGE`, etc.), and compatibility constraints (`MCPB_COMPAT_CLAUDE_DESKTOP`, runtime requirements).
 - [Security Policy](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/docs/SECURITY.md): Input validation, execution safety, and threat model.
 - [Windows Support](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/docs/WINDOWS.md): Running on Git Bash/WSL, path normalization, and known limitations.
 - [Remote Connectivity](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/docs/REMOTE.md): Exposing mcp-bash over HTTP/SSE via external gateways.

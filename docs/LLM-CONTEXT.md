@@ -364,6 +364,55 @@ Include actionable context in discovery output:
 }
 ```
 
+## Error Messages for LLM Self-Correction
+
+When tools fail, error messages should help LLMs understand what went wrong and how to fix it. Use the `mcp_error` helper with `--hint` to provide actionable guidance:
+
+### Basic Error (Less Helpful)
+
+```bash
+mcp_error "validation_error" "Invalid date format"
+```
+
+The LLM knows something is wrong but must guess the correct format.
+
+### Error with Hint (More Helpful)
+
+```bash
+mcp_error "validation_error" "Invalid date format" \
+  --hint "Use ISO 8601 format: YYYY-MM-DD (e.g., 2025-01-15)" \
+  --data "$(mcp_json_obj received "$date_input")"
+```
+
+The `--hint` flag provides explicit guidance the LLM can act on immediately.
+
+### Hint Writing Guidelines
+
+1. **Be specific**: "Use YYYY-MM-DD format" not "Use correct format"
+2. **Include examples**: Show exactly what a valid input looks like
+3. **Suggest alternatives**: If one approach failed, mention another
+4. **Reference related tools**: "Use 'list-search' to find valid list IDs first"
+
+### Error Response Structure
+
+The `mcp_error` helper produces consistent JSON:
+
+```json
+{
+  "success": false,
+  "error": {
+    "type": "validation_error",
+    "message": "Invalid date format",
+    "hint": "Use ISO 8601 format: YYYY-MM-DD (e.g., 2025-01-15)",
+    "received": "01/15/2025"
+  }
+}
+```
+
+The `hint` field is specifically designed for LLM consumption—keep it concise and actionable.
+
+See [ERRORS.md](ERRORS.md) for the full list of recommended error types and when to use Protocol Errors vs Tool Execution Errors.
+
 ## Anti-Patterns
 
 ### 1. Duplicate Information Across Tools
@@ -419,7 +468,8 @@ Use this checklist when documenting MCP tools for LLM consumption:
 ### Output
 - [ ] Output schema documented
 - [ ] Workflow hints included where helpful
-- [ ] Error messages are actionable ("try X instead")
+- [ ] Error messages use `mcp_error` with `--hint` for actionable guidance
+- [ ] Hints include examples of valid inputs or alternative approaches
 
 ## Further Reading
 

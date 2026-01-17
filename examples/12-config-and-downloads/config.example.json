@@ -1,0 +1,5 @@
+{
+  "timeout": 30,
+  "max_bytes": 1048576,
+  "allowed_hosts": ["httpbin.org", "api.github.com"]
+}

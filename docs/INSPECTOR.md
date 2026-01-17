@@ -2,6 +2,11 @@
 
 This guide is a practical set of recipes for testing `mcp-bash` servers with **MCP Inspector** and for debugging failures that come from **strict client validation** (schema/shape mismatches).
 
+## Prerequisites
+
+- **Node.js 22.7.5+** required by MCP Inspector
+- `npx` available in PATH (or install Inspector globally)
+
 ## Recommended approach
 
 - **Prefer raw stdio transcripts** (NDJSON in, NDJSON out) for correctness testing.

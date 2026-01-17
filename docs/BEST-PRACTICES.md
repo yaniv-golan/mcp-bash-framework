@@ -52,19 +52,21 @@ This guide distils hands-on recommendations for designing, building, and operati
 | `mcp_is_cancelled` | Check cancellation | `if mcp_is_cancelled; then exit 1; fi` |
 | `mcp_log_info` | Structured logging | `mcp_log_info "tool" "message"` |
 | `mcp_with_retry` | Retry with exponential backoff | `mcp_with_retry 3 1.0 -- curl -sf "$url"` |
-| `mcp_download_safe` | SSRF-safe HTTPS download | `mcp_download_safe --url "$url" --allow "api.example.com"` |
-| `mcp_download_safe_or_fail` | SSRF-safe download (fails on error) | `path=$(mcp_download_safe_or_fail --url "$url" --out "$tmp" --allow "x.com")` |
+| `mcp_download_safe` ★ | SSRF-safe HTTPS download | `mcp_download_safe --url "$url" --allow "api.example.com"` |
+| `mcp_download_safe_or_fail` ★ | SSRF-safe download (fails on error) | `path=$(mcp_download_safe_or_fail --url "$url" --out "$tmp" --allow "x.com")` |
 | `mcp_result_success` | Emit success CallToolResult envelope | `mcp_result_success "$json_data"` |
 | `mcp_result_error` | Emit error CallToolResult envelope | `mcp_result_error '{"type":"not_found"}'` |
-| `mcp_error` | Convenience error helper with hints | `mcp_error "not_found" "User missing" --hint "Check ID"` |
-| `mcp_result_text_with_resource` | Combined text + embedded resources | `mcp_result_text_with_resource "$json" --path /tmp/out.txt` |
+| `mcp_error` ★ | Convenience error helper with hints | `mcp_error "not_found" "User missing" --hint "Check ID"` |
+| `mcp_result_text_with_resource` ★ | Combined text + embedded resources | `mcp_result_text_with_resource "$json" --path /tmp/out.txt` |
 | `mcp_json_truncate` | Truncate large arrays for context limits | `mcp_json_truncate "$arr" 10000` |
 | `mcp_is_valid_json` | Validate single JSON value | `if mcp_is_valid_json "$val"; then ...` |
 | `mcp_byte_length` | UTF-8 safe byte length | `len=$(mcp_byte_length "$str")` |
 | `mcp_extract_cli_error` | Extract error from CLI stdout JSON or stderr | `msg=$(mcp_extract_cli_error "$stdout" "$stderr" "$exit_code")` |
 | `mcp_run_with_progress` | Forward subprocess progress to MCP | `mcp_run_with_progress --pattern '([0-9]+)%' --extract match1 -- wget ...` |
-| `mcp_config_load` | Load configuration from env/file/defaults | `mcp_config_load --env MY_CONFIG --file ./config.json --defaults '{}'` |
-| `mcp_config_get` | Get value from loaded configuration | `timeout=$(mcp_config_get '.timeout' --default 30)` |
+| `mcp_config_load` ★ | Load configuration from env/file/defaults | `mcp_config_load --env MY_CONFIG --file ./config.json --defaults '{}'` |
+| `mcp_config_get` ★ | Get value from loaded configuration | `timeout=$(mcp_config_get '.timeout' --default 30)` |
+
+> ★ = New in v0.10.0
 
 ### External command patterns
 | Pattern | Purpose | Example |
@@ -461,6 +463,8 @@ mcp_log_error "mytool" "Failed to connect"
 ```
 
 #### Secure downloads (mcp_download_safe)
+
+> **When to use:** Use `mcp_download_safe` whenever your tool needs to fetch content from external URLs. It handles SSRF protection, automatic retries with exponential backoff, and returns structured JSON responses. For most cases, prefer `mcp_download_safe_or_fail` which fails the tool on error. Only use raw `curl` when you need features not supported by the helper (e.g., POST requests, custom headers beyond User-Agent).
 
 **`mcp_download_safe`** – Download content from HTTPS URLs with SSRF protection:
 

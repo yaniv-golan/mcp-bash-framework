@@ -87,6 +87,7 @@ mcp_fail_invalid_args "date parameter is required"
 | `permission_denied` | Access not allowed |
 | `file_error` | File system operation failed |
 | `network_error` | Network request failed |
+| `redirect` | URL redirected to a different location (see `.error.location` for target); returned by HTTPS provider on 3xx responses |
 | `timeout` | Operation timed out |
 | `cli_error` | External command failed |
 | `internal_error` | Unexpected/fallback error |

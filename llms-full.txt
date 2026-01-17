@@ -111,6 +111,14 @@ Pure Bash MCP server framework. Bash≥3.2 + jq/gojq. Stdio transport only.
   - `mcp_elicit_string "msg" ["fieldname"]`.
   - `mcp_elicit_confirm "msg"`.
   - `mcp_elicit_choice "msg" "opt1" "opt2" ...`.
+- Configuration loading helpers:
+  - `mcp_config_load --env VAR --file path --example path --defaults '{...}'` → load config with precedence (env var → file → example → defaults).
+  - `mcp_config_get '.key' --default value` → extract value from loaded config by jq path.
+- Error helpers:
+  - `mcp_error "type" "message" [--hint "guidance"] [--data '{...}']` → convenience wrapper for tool execution errors with consistent schema; `--hint` provides LLM-friendly actionable guidance.
+- Secure download helpers:
+  - `mcp_download_safe --url URL --out PATH [--allow hosts] [--timeout N] [--max-bytes N] [--retries N]` → SSRF-safe HTTPS download with automatic retries, exponential backoff, and structured JSON output (`{success:true, bytes:N, path:...}` or `{success:false, error:{...}}`). Always returns 0 (safe with `set -e`).
+  - `mcp_download_safe_or_fail --url URL --out PATH [...]` → fail-fast wrapper that returns the output path on success or fails the tool with `-32602` on error.
 - JSON tooling:
   - Framework detects `gojq` or `jq` and exports `MCPBASH_JSON_TOOL` and `MCPBASH_JSON_TOOL_BIN` for tools.
   - Tools can optionally call `${MCPBASH_JSON_TOOL_BIN}` directly; always prefer `-c` for compact JSON and `-r` for raw values.
@@ -277,6 +285,19 @@ Pure Bash MCP server framework. Bash≥3.2 + jq/gojq. Stdio transport only.
   - `UNICODE=1` → use emoji status markers.
   - `MCPBASH_LOG_JSON_TOOL=log` → log JSON tooling detection during tests.
   - `MCPBASH_UNIT_TEST_TIMEOUT_SECONDS=120` → per-test timeout for `./test/unit/run.sh`.
+
+## MCPB BUNDLES
+
+- Create distributable `.mcpb` packages: `mcp-bash bundle [--output DIR] [--platform darwin|linux|win32|all]`.
+- Bundle configuration via `mcpb.conf` in project root:
+  - Server metadata: `MCPB_NAME`, `MCPB_VERSION`, `MCPB_DESCRIPTION`, `MCPB_AUTHOR_NAME`, `MCPB_AUTHOR_EMAIL`.
+  - Registry metadata: `MCPB_LICENSE` (SPDX identifier), `MCPB_KEYWORDS` (space-separated), `MCPB_HOMEPAGE`, `MCPB_DOCUMENTATION`, `MCPB_SUPPORT`, `MCPB_PRIVACY_POLICIES`.
+  - Compatibility constraints: `MCPB_COMPAT_CLAUDE_DESKTOP` (semver), `MCPB_RUNTIME_PYTHON`, `MCPB_RUNTIME_NODE`.
+  - User configuration: `MCPB_USER_CONFIG_FILE` (schema JSON path), `MCPB_USER_CONFIG_ENV_MAP` (e.g., `api_key=MY_API_KEY`), `MCPB_USER_CONFIG_ARGS_MAP` (fields to pass as args).
+- User config field types: `string` (with `sensitive`, `default`), `number` (with `min`, `max`, `default`), `boolean`, `directory`, `file` (with `multiple`, `default`).
+- Variable substitution in manifest: `${user_config.KEY}`, `${__dirname}`, `${HOME}`, `${DOCUMENTS}`, `${DESKTOP}`, `${DOWNLOADS}`, `${/}` (path separator).
+- Static registry mode (default for bundles): Pre-generates `.registry/*.json` for faster cold start; set `MCPB_STATIC=false` to opt out.
+- See `docs/MCPB.md` for full documentation.
 
 ## CONVENTIONS
 
