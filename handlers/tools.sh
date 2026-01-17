@@ -6,25 +6,20 @@
 set -euo pipefail
 
 mcp_tools_extract_call_fields() {
-	# Extract name, arguments (compact JSON), timeoutSecs, and _meta in a single jq/gojq pass.
-	# Uses "null" as placeholder for empty timeoutSecs to prevent bash read from collapsing tabs.
+	# Extract name, arguments (compact JSON), timeoutSecs, and _meta.
+	# Uses separate jq calls to avoid @tsv double-escaping backslashes which
+	# corrupts JSON containing escaped quotes (e.g., Status in ["New", "Intro"]).
+	# See: docs/internal/PLAN-silent-args-parsing-failures.md
 	local json_payload="$1"
-	local extraction
-	if extraction="$(
-		{ printf '%s' "${json_payload}" | "${MCPBASH_JSON_TOOL_BIN}" -r '
-			[
-				(.params.name // ""),
-				((.params.arguments // {}) | tojson),
-				((.params.timeoutSecs // null) | tostring),
-				((.params._meta // {}) | tojson)
-			] | @tsv
-		'; } 2>/dev/null
-	)"; then
-		printf '%s' "${extraction}"
-	else
-		# Fallback: empty fields so caller can apply defaults/validation.
-		printf '\tnull\tnull\t{}'
-	fi
+	local name args_json timeout_override meta_json
+
+	name="$(printf '%s' "${json_payload}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.params.name // ""' 2>/dev/null)" || name=""
+	args_json="$(printf '%s' "${json_payload}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.params.arguments // {}' 2>/dev/null)" || args_json="{}"
+	timeout_override="$(printf '%s' "${json_payload}" | "${MCPBASH_JSON_TOOL_BIN}" -r '(.params.timeoutSecs // null) | tostring' 2>/dev/null)" || timeout_override="null"
+	meta_json="$(printf '%s' "${json_payload}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.params._meta // {}' 2>/dev/null)" || meta_json="{}"
+
+	# Output tab-separated (no @tsv escaping - direct printf)
+	printf '%s\t%s\t%s\t%s' "${name}" "${args_json}" "${timeout_override}" "${meta_json}"
 }
 
 mcp_handle_tools() {

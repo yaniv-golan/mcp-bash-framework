@@ -1476,10 +1476,10 @@ mcp_tools_call() {
 		fi
 	fi
 
+	# Allow 0 to force file-based passing (bypasses @tsv corruption bug)
 	local env_limit="${MCPBASH_ENV_PAYLOAD_THRESHOLD:-65536}"
 	case "${env_limit}" in
 	'' | *[!0-9]*) env_limit=65536 ;;
-	0) env_limit=65536 ;;
 	esac
 
 	# Roots environment (server + CLI both source roots.sh; guard keeps minimal stubs happy)
