@@ -1707,13 +1707,80 @@ mcp_config_get() {
 	fi
 }
 
-# mcp_json_truncate <json> [max_bytes]
+# __mcp_json_truncate_at_path <json> <max_bytes> <jq_path>
+# Internal helper: truncate array at specified jq path
+# Precondition: array_path has been validated by caller (format check + exists + is array)
+__mcp_json_truncate_at_path() {
+	local json="$1"
+	local max_bytes="$2"
+	local array_path="$3"
+
+	local total
+	total=$(printf '%s' "$json" | "${MCPBASH_JSON_TOOL_BIN}" -r "${array_path} | length")
+
+	# Early exit: empty array - nothing to truncate
+	if [[ "$total" -eq 0 ]]; then
+		printf '%s' "$json" | "${MCPBASH_JSON_TOOL_BIN}" -c \
+			'{result: ., truncated: false, kept: 0, total: 0}'
+		return 0
+	fi
+
+	# Early exit: check if entire result fits without truncation
+	local full_size
+	full_size=$(printf '%s' "$json" | wc -c | tr -d ' ')
+	if [[ "$full_size" -le "$max_bytes" ]]; then
+		printf '%s' "$json" | "${MCPBASH_JSON_TOOL_BIN}" -c \
+			--argjson t "$total" \
+			'{result: ., truncated: false, kept: $t, total: $t}'
+		return 0
+	fi
+
+	# Pre-check: can we fit with empty array at path?
+	local empty_size empty_json
+	empty_json=$(printf '%s' "$json" | "${MCPBASH_JSON_TOOL_BIN}" -c "${array_path} = []")
+	empty_size=$(printf '%s' "$empty_json" | wc -c | tr -d ' ')
+
+	if [[ "$empty_size" -gt "$max_bytes" ]]; then
+		"${MCPBASH_JSON_TOOL_BIN}" -n -c \
+			--arg msg "Response too large ($empty_size bytes) even with empty array at $array_path" \
+			'{result: null, truncated: false, error: {type: "output_too_large", message: $msg}}'
+		return 0
+	fi
+
+	# Binary search for max elements that fit
+	local low=1 high=$total mid best_count=0
+
+	while [[ "$low" -le "$high" ]]; do
+		mid=$(((low + high) / 2))
+		local test_json test_size
+		test_json=$(printf '%s' "$json" | "${MCPBASH_JSON_TOOL_BIN}" -c "${array_path} = ${array_path}[:$mid]")
+		test_size=$(printf '%s' "$test_json" | wc -c | tr -d ' ')
+
+		if [[ "$test_size" -le "$max_bytes" ]]; then
+			best_count=$mid
+			low=$((mid + 1))
+		else
+			high=$((mid - 1))
+		fi
+	done
+
+	# Output truncated result
+	# Note: \$k and \$t are escaped to become jq variables (passed via --argjson)
+	printf '%s' "$json" | "${MCPBASH_JSON_TOOL_BIN}" -c \
+		--argjson k "$best_count" \
+		--argjson t "$total" \
+		"${array_path} = ${array_path}[:\$k] | {result: ., truncated: true, kept: \$k, total: \$t}"
+}
+
+# mcp_json_truncate <json> [max_bytes] [--array-path <jq_path>]
 # Truncate JSON arrays while preserving valid structure
 #
 # Arguments:
-#   json      - JSON data to potentially truncate
-#   max_bytes - Maximum size of the result payload (default: MCPBASH_MAX_TOOL_OUTPUT_SIZE or 10MB)
-#               NOTE: This bounds the compact serialized size of .result, not the wrapper object
+#   json        - JSON data to potentially truncate
+#   max_bytes   - Maximum size of the result payload (default: MCPBASH_MAX_TOOL_OUTPUT_SIZE or 10MB)
+#                 NOTE: This bounds the compact serialized size of .result, not the wrapper object
+#   --array-path - jq path to array to truncate (e.g., ".data", ".response.items")
+#                  If not provided, falls back to heuristics (top-level array, then .results)
 #
 # Output: {result: <data>, truncated: bool, kept?: int, total?: int, error?: object}
 # Returns: 0 always (errors expressed via .error field for set -e safety)
@@ -1721,10 +1788,41 @@ mcp_config_get() {
 # Performance note: Binary search runs O(log n) jq invocations. For very large
 # arrays (10k+ elements), consider pre-filtering or pagination at the source.
 mcp_json_truncate() {
-	local json="$1"
+	local json=""
+	local max_bytes=""
+	local array_path=""
+	local positional_idx=0
+
+	# Parse positional and named arguments
+	# Supports: json max_bytes --array-path .data
+	#           json --array-path .data max_bytes
+	#           --array-path .data json max_bytes
+	while [[ $# -gt 0 ]]; do
+		case "$1" in
+		--array-path)
+			# Validate value is present and not another flag
+			if [[ -z "${2:-}" || "${2:-}" == --* ]]; then
+				"${MCPBASH_JSON_TOOL_BIN}" -n -c \
+					'{result: null, truncated: false, error: {type: "invalid_path_syntax", message: "--array-path requires a value"}}'
+				return 0
+			fi
+			array_path="$2"
+			shift 2
+			;;
+		*)
+			# Positional args by index: json (0), max_bytes (1)
+			case $positional_idx in
+			0) json="$1" ;;
+			1) max_bytes="$1" ;;
+			esac
+			((positional_idx++))
+			shift
+			;;
+		esac
+	done
+
 	# Sanitize max_bytes to avoid set -e hazards from non-numeric input
-	local max_bytes
-	max_bytes=$(__mcp_sdk_uint_or_default "${2:-}" "${MCPBASH_MAX_TOOL_OUTPUT_SIZE:-10485760}")
+	max_bytes=$(__mcp_sdk_uint_or_default "${max_bytes:-}" "${MCPBASH_MAX_TOOL_OUTPUT_SIZE:-10485760}")
 
 	# Minimal mode: no truncation capability
 	if [ "${MCPBASH_MODE:-full}" = "minimal" ] || [ -z "${MCPBASH_JSON_TOOL_BIN:-}" ]; then
@@ -1778,14 +1876,63 @@ mcp_json_truncate() {
 	# substitution strips trailing newlines from jq output, so this is accurate
 	size=$(printf '%s' "$compact" | wc -c | tr -d ' ')
 
-	# Small enough - return as-is
-	if [ "$size" -le "$max_bytes" ]; then
-		printf '%s' "$compact" | "${MCPBASH_JSON_TOOL_BIN}" -n -c '{result: input, truncated: false}'
+	# Use compact version for all subsequent operations
+	json="$compact"
+
+	# If --array-path specified, use it exclusively (validate path even if data fits)
+	if [[ -n "$array_path" ]]; then
+		# SECURITY: Validate path format before interpolating into jq
+		# Allows: .key, .key.nested, .key_name, .key123
+		# Rejects: empty, missing dot, index notation, trailing dot, injection attempts
+		if [[ ! "$array_path" =~ ^\.[a-zA-Z_][a-zA-Z0-9_]*(\.[a-zA-Z_][a-zA-Z0-9_]*)*$ ]]; then
+			"${MCPBASH_JSON_TOOL_BIN}" -n -c \
+				--arg path "$array_path" \
+				'{result: null, truncated: false, error: {type: "invalid_path_syntax", message: ("Invalid path syntax: " + $path + " (must be .key or .key.nested format)")}}'
+			return 0
+		fi
+
+		# Validate path exists and is an array
+		# Note: Using string interpolation is safe here because we validated the format above
+		local path_check
+		path_check=$(printf '%s' "$json" | "${MCPBASH_JSON_TOOL_BIN}" -r \
+			"if ${array_path} == null then \"missing\"
+			 elif (${array_path} | type) != \"array\" then \"not_array\"
+			 else \"ok\"
+			 end" 2>/dev/null) || path_check="invalid_path"
+
+		case "$path_check" in
+		missing)
+			"${MCPBASH_JSON_TOOL_BIN}" -n -c \
+				--arg path "$array_path" \
+				'{result: null, truncated: false, error: {type: "path_not_found", message: ("Path not found: " + $path)}}'
+			return 0
+			;;
+		not_array)
+			"${MCPBASH_JSON_TOOL_BIN}" -n -c \
+				--arg path "$array_path" \
+				'{result: null, truncated: false, error: {type: "invalid_array_path", message: ("Path is not an array: " + $path)}}'
+			return 0
+			;;
+		invalid_path)
+			"${MCPBASH_JSON_TOOL_BIN}" -n -c \
+				--arg path "$array_path" \
+				'{result: null, truncated: false, error: {type: "invalid_path", message: ("Invalid path or malformed JSON: " + $path)}}'
+			return 0
+			;;
+		esac
+
+		# Path is valid array - proceed with truncation using helper
+		__mcp_json_truncate_at_path "$json" "$max_bytes" "$array_path"
 		return 0
 	fi
 
-	# Use compact version for all subsequent operations
-	json="$compact"
+	# No --array-path provided - use heuristics
+
+	# Small enough - return as-is (only for heuristic case)
+	if [ "$size" -le "$max_bytes" ]; then
+		printf '%s' "$json" | "${MCPBASH_JSON_TOOL_BIN}" -n -c '{result: input, truncated: false}'
+		return 0
+	fi
 
 	# Check if it's an array
 	local json_type
@@ -1835,47 +1982,12 @@ mcp_json_truncate() {
 		return 0
 	fi
 
-	# Check if it's an object with .results array (common API pattern)
+	# Check if it's an object with .results array (common API pattern - backward compatibility)
 	local has_results
 	has_results=$(printf '%s' "$json" | "${MCPBASH_JSON_TOOL_BIN}" -r 'if .results and (.results | type) == "array" then "yes" else "no" end')
 
 	if [ "$has_results" = "yes" ]; then
-		local total low high mid best_count
-		total=$(printf '%s' "$json" | "${MCPBASH_JSON_TOOL_BIN}" '.results | length')
-
-		# Pre-check: can we fit even with empty .results?
-		# If not, the non-.results fields are too large and we can't truncate safely
-		local empty_size empty_results
-		empty_results=$(printf '%s' "$json" | "${MCPBASH_JSON_TOOL_BIN}" -c '.results = []')
-		empty_size=$(printf '%s' "$empty_results" | wc -c | tr -d ' ')
-		if [ "$empty_size" -gt "$max_bytes" ]; then
-			"${MCPBASH_JSON_TOOL_BIN}" -n -c \
-				--arg msg "Response too large ($size bytes) even with empty results array" \
-				'{result: null, truncated: false, error: {type: "output_too_large", message: $msg}}'
-			return 0
-		fi
-
-		low=1
-		high=$total
-		best_count=0
-
-		while [ "$low" -le "$high" ]; do
-			mid=$(((low + high) / 2))
-			local test_size test_json
-			test_json=$(printf '%s' "$json" | "${MCPBASH_JSON_TOOL_BIN}" -c ".results = .results[:$mid]")
-			test_size=$(printf '%s' "$test_json" | wc -c | tr -d ' ')
-			if [ "$test_size" -le "$max_bytes" ]; then
-				best_count=$mid
-				low=$((mid + 1))
-			else
-				high=$((mid - 1))
-			fi
-		done
-
-		printf '%s' "$json" | "${MCPBASH_JSON_TOOL_BIN}" -c --argjson k "$best_count" --argjson t "$total" '
-            .results = .results[:$k] |
-            {result: ., truncated: true, kept: $k, total: $t}
-        '
+		__mcp_json_truncate_at_path "$json" "$max_bytes" ".results"
 		return 0
 	fi
 

@@ -387,3 +387,193 @@ jq_check() {
 	val=$(__mcp_sdk_uint_or_default "  42  " "0")
 	assert_equal "42" "$val"
 }
+
+# ============================================================================
+# mcp_json_truncate --array-path tests
+# ============================================================================
+
+@test "sdk_result_helpers: mcp_json_truncate --array-path truncates specified path" {
+	data='{"data": [1,2,3,4,5], "meta": "preserved"}'
+	result=$(mcp_json_truncate "$data" 50 --array-path ".data")
+	jq_check "$result" '.result.meta == "preserved"'
+	jq_check "$result" '.result.data | type == "array"'
+}
+
+@test "sdk_result_helpers: mcp_json_truncate --array-path with .items" {
+	data='{"items": [1,2,3], "count": 3}'
+	result=$(mcp_json_truncate "$data" 50 --array-path ".items")
+	jq_check "$result" '.result.count == 3'
+	jq_check "$result" '.result.items | type == "array"'
+}
+
+@test "sdk_result_helpers: mcp_json_truncate --array-path nested path" {
+	data='{"response": {"hits": [1,2,3]}, "meta": "x"}'
+	result=$(mcp_json_truncate "$data" 60 --array-path ".response.hits")
+	jq_check "$result" '.result.response.hits | type == "array"'
+	jq_check "$result" '.result.meta == "x"'
+}
+
+@test "sdk_result_helpers: mcp_json_truncate --array-path path not found" {
+	data='{"data": [1,2,3]}'
+	result=$(mcp_json_truncate "$data" 1000 --array-path ".missing")
+	jq_check "$result" '.error.type == "path_not_found"'
+}
+
+@test "sdk_result_helpers: mcp_json_truncate --array-path path is string" {
+	data='{"name": "test", "data": [1,2,3]}'
+	result=$(mcp_json_truncate "$data" 1000 --array-path ".name")
+	jq_check "$result" '.error.type == "invalid_array_path"'
+}
+
+@test "sdk_result_helpers: mcp_json_truncate --array-path path is number" {
+	data='{"count": 42, "data": [1,2,3]}'
+	result=$(mcp_json_truncate "$data" 1000 --array-path ".count")
+	jq_check "$result" '.error.type == "invalid_array_path"'
+}
+
+@test "sdk_result_helpers: mcp_json_truncate --array-path with empty array" {
+	data='{"data": [], "meta": "x"}'
+	result=$(mcp_json_truncate "$data" 1000 --array-path ".data")
+	jq_check "$result" '.truncated == false'
+	jq_check "$result" '.kept == 0'
+	jq_check "$result" '.total == 0'
+}
+
+@test "sdk_result_helpers: mcp_json_truncate --array-path base object too large" {
+	huge_meta=$(printf 'x%.0s' {1..1000})
+	data='{"data": [1,2,3], "meta": "'"$huge_meta"'"}'
+	result=$(mcp_json_truncate "$data" 100 --array-path ".data")
+	jq_check "$result" '.error.type == "output_too_large"'
+}
+
+@test "sdk_result_helpers: mcp_json_truncate without --array-path uses .results heuristic" {
+	data='{"results": [1,2,3,4,5], "meta": "preserved"}'
+	result=$(mcp_json_truncate "$data" 50)
+	jq_check "$result" '.result.meta == "preserved"'
+	jq_check "$result" '.result.results | type == "array"'
+}
+
+@test "sdk_result_helpers: mcp_json_truncate without --array-path uses top-level array" {
+	result=$(mcp_json_truncate '[1,2,3,4,5]' 20)
+	jq_check "$result" '.result | type == "array"'
+}
+
+@test "sdk_result_helpers: mcp_json_truncate without --array-path no heuristic for .data" {
+	huge=$(printf 'x%.0s' {1..1000})
+	data='{"data": [1,2,3], "huge": "'"$huge"'"}'
+	result=$(mcp_json_truncate "$data" 100)
+	jq_check "$result" '.error.type == "output_too_large"'
+}
+
+@test "sdk_result_helpers: mcp_json_truncate --array-path empty path" {
+	data='{"data": [1,2,3]}'
+	result=$(mcp_json_truncate "$data" 1000 --array-path "")
+	jq_check "$result" '.error.type == "invalid_path_syntax"'
+}
+
+@test "sdk_result_helpers: mcp_json_truncate --array-path missing leading dot" {
+	data='{"data": [1,2,3]}'
+	result=$(mcp_json_truncate "$data" 1000 --array-path "data")
+	jq_check "$result" '.error.type == "invalid_path_syntax"'
+}
+
+@test "sdk_result_helpers: mcp_json_truncate --array-path index notation rejected" {
+	data='{"data": [[1,2,3]]}'
+	result=$(mcp_json_truncate "$data" 1000 --array-path ".data[0]")
+	jq_check "$result" '.error.type == "invalid_path_syntax"'
+}
+
+@test "sdk_result_helpers: mcp_json_truncate --array-path all elements fit" {
+	data='{"data": [1,2,3]}'
+	result=$(mcp_json_truncate "$data" 1000 --array-path ".data")
+	jq_check "$result" '.truncated == false'
+	kept=$(jq_get "$result" '.kept')
+	total=$(jq_get "$result" '.total')
+	assert_equal "$kept" "$total"
+}
+
+@test "sdk_result_helpers: mcp_json_truncate --array-path injection attempt rejected" {
+	data='{"data": [1,2,3]}'
+	result=$(mcp_json_truncate "$data" 1000 --array-path ".data; .")
+	jq_check "$result" '.error.type == "invalid_path_syntax"'
+}
+
+@test "sdk_result_helpers: mcp_json_truncate --array-path hyphenated key rejected" {
+	data='{"data-items": [1,2,3]}'
+	result=$(mcp_json_truncate "$data" 1000 --array-path ".data-items")
+	jq_check "$result" '.error.type == "invalid_path_syntax"'
+}
+
+@test "sdk_result_helpers: mcp_json_truncate --array-path single element exceeds max" {
+	large='{"data": [{"id": 1, "pad": "this is way too long for the limit"}]}'
+	result=$(mcp_json_truncate "$large" 50 --array-path ".data")
+	jq_check "$result" '.truncated == true'
+	kept=$(jq_get "$result" '.kept')
+	assert_equal "0" "$kept"
+	total=$(jq_get "$result" '.total')
+	assert_equal "1" "$total"
+}
+
+@test "sdk_result_helpers: mcp_json_truncate --array-path flag without value" {
+	data='{"data": [1,2,3]}'
+	result=$(mcp_json_truncate "$data" 1000 --array-path)
+	jq_check "$result" '.error.type == "invalid_path_syntax"'
+}
+
+@test "sdk_result_helpers: mcp_json_truncate --array-path whitespace rejected" {
+	data='{"data": [1,2,3]}'
+	result=$(mcp_json_truncate "$data" 1000 --array-path ".data items")
+	jq_check "$result" '.error.type == "invalid_path_syntax"'
+}
+
+@test "sdk_result_helpers: mcp_json_truncate --array-path deeply nested path" {
+	data='{"a": {"b": {"c": {"d": {"e": {"f": [1,2,3]}}}}}}'
+	result=$(mcp_json_truncate "$data" 1000 --array-path ".a.b.c.d.e.f")
+	jq_check "$result" '.result.a.b.c.d.e.f | type == "array"'
+}
+
+@test "sdk_result_helpers: mcp_json_truncate --array-path mixed case key" {
+	data='{"DataItems": [1,2,3]}'
+	result=$(mcp_json_truncate "$data" 1000 --array-path ".DataItems")
+	jq_check "$result" '.result.DataItems | type == "array"'
+}
+
+@test "sdk_result_helpers: mcp_json_truncate --array-path underscore prefix key" {
+	data='{"_data": [1,2,3]}'
+	result=$(mcp_json_truncate "$data" 1000 --array-path "._data")
+	jq_check "$result" '.result._data | type == "array"'
+}
+
+@test "sdk_result_helpers: mcp_json_truncate arg order json max_bytes --array-path" {
+	data='{"data": [1,2,3]}'
+	result=$(mcp_json_truncate "$data" 1000 --array-path ".data")
+	jq_check "$result" '.result.data | type == "array"'
+}
+
+@test "sdk_result_helpers: mcp_json_truncate arg order json --array-path max_bytes" {
+	data='{"data": [1,2,3]}'
+	result=$(mcp_json_truncate "$data" --array-path ".data" 1000)
+	jq_check "$result" '.result.data | type == "array"'
+}
+
+@test "sdk_result_helpers: mcp_json_truncate arg order --array-path json max_bytes" {
+	data='{"data": [1,2,3]}'
+	result=$(mcp_json_truncate --array-path ".data" "$data" 1000)
+	jq_check "$result" '.result.data | type == "array"'
+}
+
+@test "sdk_result_helpers: mcp_json_truncate --array-path first fits second doesnt" {
+	data='{"data": [{"id":1},{"id":2,"pad":"'"$(printf 'x%.0s' {1..100})"'"}]}'
+	result=$(mcp_json_truncate "$data" 50 --array-path ".data")
+	jq_check "$result" '.truncated == true'
+	kept=$(jq_get "$result" '.kept')
+	assert_equal "1" "$kept"
+	total=$(jq_get "$result" '.total')
+	assert_equal "2" "$total"
+}
+
+@test "sdk_result_helpers: mcp_json_truncate --array-path unicode key rejected" {
+	data='{"données": [1,2,3]}'
+	result=$(mcp_json_truncate "$data" 1000 --array-path ".données")
+	jq_check "$result" '.error.type == "invalid_path_syntax"'
+}

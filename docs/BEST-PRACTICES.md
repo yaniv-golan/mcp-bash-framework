@@ -58,7 +58,7 @@ This guide distils hands-on recommendations for designing, building, and operati
 | `mcp_result_error` | Emit error CallToolResult envelope | `mcp_result_error '{"type":"not_found"}'` |
 | `mcp_error` ★ | Convenience error helper with hints | `mcp_error "not_found" "User missing" --hint "Check ID"` |
 | `mcp_result_text_with_resource` ★ | Combined text + embedded resources | `mcp_result_text_with_resource "$json" --path /tmp/out.txt` |
-| `mcp_json_truncate` | Truncate large arrays for context limits | `mcp_json_truncate "$arr" 10000` |
+| `mcp_json_truncate` | Truncate large arrays for context limits | `mcp_json_truncate "$arr" 10000 --array-path ".data"` |
 | `mcp_is_valid_json` | Validate single JSON value | `if mcp_is_valid_json "$val"; then ...` |
 | `mcp_byte_length` | UTF-8 safe byte length | `len=$(mcp_byte_length "$str")` |
 | `mcp_extract_cli_error` | Extract error from CLI stdout JSON or stderr | `msg=$(mcp_extract_cli_error "$stdout" "$stderr" "$exit_code")` |
@@ -1142,25 +1142,48 @@ truncated=$(mcp_json_truncate "$items" 102400)
 mcp_result_success "$truncated"
 ```
 
-For arrays, the helper returns:
+**Specifying the array path:** When your API returns arrays in a non-standard field, use `--array-path` to specify which array to truncate:
+
+```bash
+# Stripe-style API with .data array
+result=$(mcp_json_truncate "$response" "$max_bytes" --array-path ".data")
+
+# Elasticsearch-style with nested hits
+result=$(mcp_json_truncate "$response" "$max_bytes" --array-path ".hits.hits")
+
+# Jira-style with .issues array
+result=$(mcp_json_truncate "$response" "$max_bytes" --array-path ".issues")
+```
+
+Without `--array-path`, the function falls back to heuristics:
+1. Top-level arrays (truncated directly)
+2. Objects with `.results` array (backward compatibility)
+
+For other structures (`.data`, `.items`, etc.), explicitly specify the path.
+
+**Return format:** The helper wraps results in a metadata envelope:
+
 ```json
 {
-  "items": [...kept items...],
+  "result": {...original structure with truncated array...},
   "truncated": true,
   "kept": 50,
   "total": 1000
 }
 ```
 
-For objects with a `.results` array (common pagination pattern):
-```json
-{
-  "results": [...kept items...],
-  "truncated": true,
-  "kept": 50,
-  "total": 1000
-}
-```
+When truncation isn't needed (`truncated: false`), `kept` equals `total`.
+
+**Error handling:** Invalid paths return structured errors instead of crashing:
+
+| Error Type | Cause |
+|------------|-------|
+| `path_not_found` | `--array-path` points to missing key |
+| `invalid_array_path` | Path exists but is not an array |
+| `invalid_path_syntax` | Malformed path (must be `.key` or `.key.nested`) |
+| `output_too_large` | Even empty array exceeds max_bytes |
+
+**Path syntax:** Only simple dot-notation paths are supported (`.data`, `.response.items`). Index notation (`.data[0]`), hyphenated keys (`.data-items`), and special characters require jq bracket syntax which is not supported for security reasons.
 
 #### Validation helpers
 

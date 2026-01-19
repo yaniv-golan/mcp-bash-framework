@@ -91,6 +91,10 @@ mcp_fail_invalid_args "date parameter is required"
 | `timeout` | Operation timed out |
 | `cli_error` | External command failed |
 | `internal_error` | Unexpected/fallback error |
+| `path_not_found` | `--array-path` points to missing key (truncation) |
+| `invalid_array_path` | Path exists but is not an array (truncation) |
+| `invalid_path_syntax` | Malformed jq path (truncation) |
+| `output_too_large` | Response too large even with empty array (truncation) |
 
 #### Structured response envelope helpers
 
