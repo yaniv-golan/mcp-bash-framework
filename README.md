@@ -20,6 +20,7 @@ Edit README.md.in and run: bash scripts/render-readme.sh
 - [MCP Spec Coverage](#mcp-spec-coverage)
 - [Why Bash?](#why-bash)
 - [Quick Start](#quick-start)
+- [Security Model (60 seconds)](#security-model-60-seconds)
 - [Configure Your MCP Client](#configure-your-mcp-client)
 - [MCPB Bundles](#mcpb-bundles)
 - [Project Structure](#project-structure)
@@ -195,6 +196,30 @@ Still stuck? Run `mcp-bash doctor` (or `mcp-bash doctor --json`) and include out
 
 </details>
 
+### 1.6 Uninstall (if needed)
+
+To completely remove mcp-bash from your system:
+
+```bash
+# 1. Remove the framework installation
+rm -rf ~/.local/share/mcp-bash
+
+# 2. Remove the symlink
+rm -f ~/.local/bin/mcp-bash
+
+# 3. Remove any generated wrapper scripts (in each project)
+rm -f /path/to/your/project/*.sh  # e.g., my-server.sh, my-server-env.sh
+
+# 4. (Optional) Remove PATH addition from your shell config
+#    Edit ~/.bashrc or ~/.zshrc and remove the line:
+#    export PATH="$HOME/.local/bin:$PATH"
+```
+
+**Notes:**
+- Your project directories (`tools/`, `resources/`, `prompts/`) are untouched—they live in your own repos.
+- Wrapper scripts are only created if you ran `mcp-bash config --wrapper` or `--wrapper-env`.
+- After uninstalling, you can reinstall anytime with the Quick Install command above.
+
 ### 2. Create Your Project
 
 Your server code lives in a separate project directory:
@@ -225,6 +250,41 @@ mcp-bash scaffold test
 ```
 
 The harness wraps `mcp-bash run-tool`, validates your project before running, and refuses to overwrite existing `test/run.sh` or `test/README.md`.
+
+## Security Model (60 seconds)
+
+mcp-bash is **secure by default**. Here's what that means:
+
+| Layer | Default | What it does |
+|-------|---------|--------------|
+| **Tool allowlist** | Deny all | Tools won't run unless explicitly listed in `MCPBASH_TOOL_ALLOWLIST` |
+| **Hooks** | Disabled | Project hooks (`server.d/*.sh`) are ignored unless `MCPBASH_ALLOW_PROJECT_HOOKS=true` |
+| **Tool environment** | Minimal | Tools inherit only essential vars (`PATH`, `HOME`, `TERM`). Use `MCPBASH_TOOL_ENV_MODE` to change |
+
+### Quick reference
+
+```bash
+# Allow a single tool (CLI)
+mcp-bash run-tool my-tool --allow-self --args '{}'
+
+# Allow specific tools (MCP client config)
+MCPBASH_TOOL_ALLOWLIST="tool1,tool2"
+
+# Allow all tools (trusted projects only)
+MCPBASH_TOOL_ALLOWLIST="*"
+
+# Enable project hooks (server.d/*.sh)
+MCPBASH_ALLOW_PROJECT_HOOKS=true
+
+# Tool environment modes
+MCPBASH_TOOL_ENV_MODE=minimal    # default: PATH, HOME, TERM only
+MCPBASH_TOOL_ENV_MODE=inherit    # pass through parent environment
+MCPBASH_TOOL_ENV_MODE=allowlist  # minimal + MCPBASH_TOOL_ENV_ALLOWLIST vars
+```
+
+**Demo tip:** For local testing, use `--allow-self` (CLI) or `MCPBASH_TOOL_ALLOWLIST=*` (MCP clients). For production, allowlist only the tools you need.
+
+→ [Full security guide](docs/SECURITY.md) · [Environment reference](docs/ENV_REFERENCE.md)
 
 ## Configure Your MCP Client
 
