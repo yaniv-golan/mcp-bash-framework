@@ -93,16 +93,19 @@ slow_resp="$(jq -c 'select(.id=="slow")' "${RESPONSES}")"
 if [ -z "${slow_resp}" ]; then
 	test_fail "missing slow response"
 fi
-slow_code="$(echo "${slow_resp}" | jq -r '.error.code')"
-test_assert_eq "${slow_code}" "-32603"
-slow_exit_code="$(echo "${slow_resp}" | jq -r '.error.data.exitCode // empty')"
+# Timeout errors now return isError:true per MCP spec guidance (not JSON-RPC -32603)
+slow_is_error="$(echo "${slow_resp}" | jq -r '.result.isError')"
+test_assert_eq "${slow_is_error}" "true"
+slow_error_type="$(echo "${slow_resp}" | jq -r '.result.structuredContent.error.type')"
+test_assert_eq "${slow_error_type}" "timeout"
+slow_exit_code="$(echo "${slow_resp}" | jq -r '.result._meta.exitCode // .result.structuredContent.error.exitCode // empty')"
 case "${slow_exit_code}" in
 124 | 137 | 143) ;;
 *) test_fail "unexpected timeout exit code: ${slow_exit_code}" ;;
 esac
-slow_stderr_tail="$(echo "${slow_resp}" | jq -r '.error.data.stderrTail // empty')"
-if [ -n "${slow_stderr_tail}" ] && [ "${#slow_stderr_tail}" -gt 4096 ]; then
-	test_fail "timeout stderrTail exceeds expected cap"
+slow_stderr="$(echo "${slow_resp}" | jq -r '.result._meta.stderr // empty')"
+if [ -n "${slow_stderr}" ] && [ "${#slow_stderr}" -gt 4096 ]; then
+	test_fail "timeout stderr exceeds expected cap"
 fi
 
 trace_file="$(find "${LOG_DIR}" "${STATE_DIR}" -name 'trace.*.log' -type f -print -quit 2>/dev/null || true)"
