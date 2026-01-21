@@ -321,6 +321,88 @@ Health check results appear in `mcp-bash health` output:
 {"status":"ok","projectChecks":"ok",...}
 ```
 
+#### Runtime CLI detection for restricted PATH environments
+
+Some MCP hosts (e.g., Claude Cowork) spawn server processes with minimal `PATH` that excludes version manager shims like `~/.pyenv/shims/` or `~/.local/bin/`. Tools depending on CLIs installed via pyenv, asdf, mise, pipx, nvm, etc. will fail with "command not found" even though the CLI is installed.
+
+**Common misconception**: `server.d/env.sh` does **not** run automatically at server startup—it's only sourced during CLI testing with `--with-server-env`. Setting paths there won't help.
+
+**Solution**: Detect CLI paths at runtime in tool scripts, checking known shim locations:
+
+```bash
+#!/usr/bin/env bash
+# lib/cli-detect.sh - add to your MCP server project
+
+# Detect a CLI by searching version manager shim locations.
+# Usage: CLI_PATH=$(mcp_detect_cli mycli "pip install pkg") || mcp_fail "not found"
+#
+# Override: Set ${NAME}_CLI (e.g., MYCLI_CLI) to skip detection.
+# Bash 3.2 compatible (no ${var^^}).
+mcp_detect_cli() {
+    local name="$1" install_hint="$2"
+
+    # Check user override (e.g., MYCLI_CLI for "mycli")
+    local var_name
+    var_name="$(printf '%s_CLI' "$name" | tr '[:lower:]-' '[:upper:]_')"
+    local override=""
+    eval "override=\"\${${var_name}:-}\""
+    [[ -n "$override" ]] && { printf '%s\n' "$override"; return 0; }
+
+    # Search common locations (version managers, Homebrew, system)
+    local candidate
+    for candidate in \
+        "${HOME}/.pyenv/shims/${name}" \
+        "${HOME}/.asdf/shims/${name}" \
+        "${HOME}/.local/share/mise/shims/${name}" \
+        "${HOME}/.rbenv/shims/${name}" \
+        "${HOME}/.goenv/shims/${name}" \
+        "${HOME}/.local/bin/${name}" \
+        "${HOME}/.cargo/bin/${name}" \
+        "${HOME}/.volta/bin/${name}" \
+        "${HOME}/.local/share/fnm/aliases/default/bin/${name}" \
+        "/opt/homebrew/bin/${name}" \
+        "/usr/local/bin/${name}"
+    do
+        [[ -x "$candidate" ]] && { printf '%s\n' "$candidate"; return 0; }
+    done
+
+    # nvm: check all installed node versions (use newest)
+    local nvm_match
+    for nvm_match in "${HOME}"/.nvm/versions/node/*/bin/"${name}"; do
+        [[ -x "$nvm_match" ]] && { printf '%s\n' "$nvm_match"; return 0; }
+    done
+
+    # Fall back to PATH
+    command -v "$name" 2>/dev/null && return 0
+
+    # Not found - emit actionable error
+    printf 'ERROR: %s not found.' "$name" >&2
+    [[ -n "$install_hint" ]] && printf ' Install: %s' "$install_hint" >&2
+    printf ' Or set %s=/path/to/%s\n' "$var_name" "$name" >&2
+    return 1
+}
+```
+
+**Usage in tools:**
+```bash
+source "${MCPBASH_PROJECT_ROOT}/lib/cli-detect.sh"
+MYCLI=$(mcp_detect_cli mycli "pip install my-package") || mcp_fail "mycli not found"
+"${MYCLI}" --version
+```
+
+**Covered version managers:**
+
+| Category | Managers | Paths checked |
+|----------|----------|---------------|
+| Python | pyenv, asdf, mise, pipx, uv | `~/.pyenv/shims/`, `~/.asdf/shims/`, `~/.local/share/mise/shims/`, `~/.local/bin/` |
+| Node.js | nvm, fnm, volta, asdf, mise | `~/.nvm/versions/node/*/bin/`, `~/.local/share/fnm/aliases/default/bin/`, `~/.volta/bin/` |
+| Ruby | rbenv, asdf, mise | `~/.rbenv/shims/` |
+| Go | goenv, asdf, mise | `~/.goenv/shims/` |
+| Rust | cargo/rustup | `~/.cargo/bin/` |
+| System | Homebrew, system | `/opt/homebrew/bin/`, `/usr/local/bin/` |
+
+This pattern works because the server has the correct `$HOME`—shim paths exist, they're just not in `$PATH`.
+
 #### Roots helpers
 
 Tools can query the client-provided roots:
@@ -886,6 +968,8 @@ fi
 #### Calling external CLI tools
 
 When your tool wraps external commands (CLIs, APIs via curl, etc.), handle failures explicitly to avoid empty output breaking jq pipelines.
+
+> **Note**: If your CLI is installed via a version manager (pyenv, asdf, nvm, etc.) and fails with "command not found" in certain MCP hosts, see [Runtime CLI detection](#runtime-cli-detection-for-restricted-path-environments) above.
 
 **Anti-pattern (fails silently):**
 ```bash
