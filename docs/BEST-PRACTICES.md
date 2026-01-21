@@ -657,18 +657,107 @@ mcp_result_success "$(mcp_json_obj \
 )"
 ```
 
-#### Timeouts
+#### Timeout Strategy Guide
 
-Set per-tool `timeoutSecs` inside `<tool>.meta.json` when default (30 seconds) is too high/low:
+##### Choosing Between Static and Dynamic Timeouts
+
+| Scenario | Strategy | Configuration |
+|----------|----------|---------------|
+| Fast operations (<30s typical) | Static timeout | `"timeoutSecs": 30` |
+| Variable runtime, natural progress points | Dynamic (progress-aware) | `"progressExtendsTimeout": true` |
+| Long-running, no natural progress | Static with high limit | `"timeoutSecs": 300` |
+| Unbounded external API calls | Wrap with synthetic progress | See below |
+
+##### Static Timeout (Default)
+
+Use when:
+- Operations complete quickly and predictably
+- Failure is preferable to long waits
+- There's no meaningful progress to report
 
 ```json
 {
-  "name": "long-running-tool",
-  "description": "A tool that needs more time",
-  "timeoutSecs": 120,
-  "inputSchema": { ... }
+  "name": "quick-lookup",
+  "timeoutSecs": 10
 }
 ```
+
+##### Dynamic (Progress-Aware) Timeout
+
+Use when:
+- Runtime varies significantly based on input
+- The operation has natural progress points (loops, batches, pagination)
+- You want fast failure for stuck operations but flexibility for legitimate long runs
+
+```json
+{
+  "name": "batch-processor",
+  "timeoutSecs": 30,
+  "progressExtendsTimeout": true,
+  "maxTimeoutSecs": 600
+}
+```
+
+**How it works:** The timeout resets each time progress is emitted. If no progress is emitted within `timeoutSecs`, the tool times out. The `maxTimeoutSecs` provides a hard cap regardless of progress.
+
+##### Adding Progress to Operations Without Natural Progress Points
+
+Some operations (like external API calls) don't have natural progress points. Strategies:
+
+**1. Wrap sequential API calls:**
+```bash
+total_calls=10
+for i in $(seq 1 "$total_calls"); do
+    mcp_progress "$((i * 100 / total_calls))" "API call $i of $total_calls"
+    make_api_call "$i"
+done
+```
+
+**2. Time-based heartbeat for single long calls:**
+```bash
+# Run the long operation in background with heartbeat
+# Note: mcp_progress clamps percent to 0-100; use 0 for indeterminate progress
+# (0 signals "in progress but unknown percentage", not "0% complete")
+long_running_api_call &
+api_pid=$!
+elapsed=0
+while kill -0 "$api_pid" 2>/dev/null; do
+    mcp_progress 0 "Working... (${elapsed}s elapsed)"
+    sleep 5
+    elapsed=$((elapsed + 5))
+done
+wait "$api_pid"
+```
+
+**3. Accept the static timeout:**
+If progress doesn't make sense, use a generous static timeout and accept that stuck operations won't fail fast:
+```json
+{
+  "timeoutSecs": 300
+}
+```
+
+##### Timeout Error Response
+
+When a tool times out, the response uses `isError: true` (not a JSON-RPC error) so LLMs can see the details and potentially adjust their approach. The structured error includes:
+
+| Field | Description |
+|-------|-------------|
+| `type` | Always `"timeout"` |
+| `reason` | `"fixed"` (static), `"idle"` (no progress), or `"max_exceeded"` (hit hard cap) |
+| `timeoutSecs` | The timeout duration that was exceeded |
+| `exitCode` | 124 (timeout), 137 (SIGKILL), or 143 (SIGTERM) |
+| `progressExtendsTimeout` | Present when progress-aware timeout is enabled |
+| `maxTimeoutSecs` | Present when progress-aware timeout is enabled |
+
+##### Common Pitfalls
+
+| Pitfall | Symptom | Fix |
+|---------|---------|-----|
+| Progress-aware enabled but no progress emitted | `reason: "idle"` timeout | Add `mcp_progress` calls or disable `progressExtendsTimeout` |
+| `timeoutSecs` too low for variable workloads | Intermittent timeouts on large inputs | Enable progress-aware timeout or increase static limit |
+| No `maxTimeoutSecs` with progress-aware | Tool can run indefinitely | Always set `maxTimeoutSecs` as a safety cap |
+| Progress emitted too infrequently | Timeout between progress updates | Emit progress at least every `timeoutSecs / 2` |
 
 #### Tool annotations
 

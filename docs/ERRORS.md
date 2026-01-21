@@ -17,7 +17,7 @@ Protocol errors indicate fundamental issues with the request structure or server
 **When to use Protocol Errors:**
 - Unknown or missing tool name
 - Malformed request that fails schema validation
-- Server errors (internal failures, timeouts, cancellation)
+- Server errors (internal failures, cancellation)
 - Invalid cursors or pagination tokens
 
 Protocol errors are **not actionable by the LLM** in most cases—the model cannot easily self-correct from "unknown tool" or "server error".
@@ -52,7 +52,7 @@ Tool execution errors occur during tool execution and are returned as **successf
 | Date format invalid | Tool Execution (`isError: true`) | LLM can retry with correct format |
 | Value out of range | Tool Execution (`isError: true`) | LLM can adjust the value |
 | File path outside roots | Tool Execution (`isError: true`) | LLM can choose allowed path |
-| Tool timeout | Protocol (`-32603`) | Server-side resource limit |
+| Tool timeout | Tool Execution (`isError: true`) | LLM can adjust parameters; see [Timeout Strategy Guide](BEST-PRACTICES.md#timeout-strategy-guide) |
 | API rate limited | Tool Execution (`isError: true`) | LLM can retry later |
 
 ### SDK Support
@@ -117,7 +117,8 @@ For validation that happens early in a tool (before doing real work), prefer ret
 ## General Error Handling
 
 - Tool failures return `isError=true` with `_meta.exitCode` and captured stderr; error responses include `error.data.exitCode`, `error.data.stderrTail` (bounded), and `error.data.traceLine` when tracing is enabled, with the same `_meta.stderr` for compatibility. Disable capture with `MCPBASH_TOOL_STDERR_CAPTURE=false`; adjust the tail cap with `MCPBASH_TOOL_STDERR_TAIL_LIMIT` (default 4096 bytes).
-- Timeouts and cancellation surface as JSON-RPC errors before tool output is returned; timeouts include `error.data.exitCode`, `error.data.stderrTail`, and `error.data.traceLine` (when tracing) when `MCPBASH_TOOL_TIMEOUT_CAPTURE` is enabled (default).
+- **Timeouts** return `isError=true` with `structuredContent.error` containing `type: "timeout"`, the timeout `reason` (`fixed`, `idle`, or `max_exceeded`), `timeoutSecs`, and `exitCode`. When progress-aware timeout is enabled, `progressExtendsTimeout` and `maxTimeoutSecs` are also included.
+- Cancellation surfaces as JSON-RPC error (`-32001`) as it is client-initiated and not actionable by the LLM.
 - Resource failures use JSON-RPC errors (no `isError` flag) consistent with the MCP spec: invalid cursors/params return `-32602`, provider failures and oversized payloads return `-32603`.
 - Malformed tool output triggers a substitution with an error payload and a logged incident.
 - Registry or discovery errors fall back to minimal capabilities while emitting `notifications/message` with severity `error`.
@@ -155,12 +156,12 @@ Size guardrails: `mcp_core_guard_response_size` rejects oversized responses with
 ## Troubleshooting Quick Hits
 - **Unsupported protocol (`-32602`)**: Client requested an older MCP version. Update the client or request `2025-11-25`/`2025-06-18`/`2025-03-26`/`2024-11-05`.
 - **Invalid cursor (`-32602`)**: Drop the cursor to restart pagination; ensure clients do not cache cursors across registry refreshes.
-- **Tool timed out (`-32603`, message includes "timed out")**: Three timeout variants exist:
-  - `"Tool timed out after Ns"` – Fixed timeout elapsed (progress-aware timeout disabled).
-  - `"Tool timed out after Ns (no progress reported)"` – Progress-aware timeout enabled, but tool didn't emit progress within the idle window.
-  - `"Tool exceeded maximum runtime of Ns"` – Progress-aware timeout enabled, tool emitted progress but hit the hard cap (`MCPBASH_MAX_TIMEOUT_SECS`).
+- **Tool timed out (`isError: true`, `structuredContent.error.type: "timeout"`)**: The tool exceeded its time limit. Check `structuredContent.error.reason` for context:
+  - `"fixed"` – Static timeout elapsed (progress-aware timeout disabled).
+  - `"idle"` – Progress-aware timeout enabled, but tool didn't emit progress within the idle window.
+  - `"max_exceeded"` – Progress-aware timeout enabled, tool emitted progress but hit the hard cap (`maxTimeoutSecs`).
 
-  Fix: Reduce workload, raise `timeoutSecs` in `<tool>.meta.json`, enable `progressExtendsTimeout` for long-running tools that emit progress, or adjust `MCPBASH_MAX_TIMEOUT_SECS` for the hard cap.
+  Fix: Reduce workload, raise `timeoutSecs` in `<tool>.meta.json`, enable `progressExtendsTimeout` for long-running tools that emit progress, or adjust `MCPBASH_MAX_TIMEOUT_SECS` for the hard cap. See [Timeout Strategy Guide](BEST-PRACTICES.md#timeout-strategy-guide) for detailed configuration guidance.
 - **Prompt render failed (`-32603`)**: Ensure the prompt file exists and is readable.
 - **Resource/provider failures (`-32603`, message includes provider detail such as "Unable to read resource")**: Confirm the provider is supported (`file`, `git`, `https`), URI is valid, and payload size is within `MCPBASH_MAX_RESOURCE_BYTES`.
 - **Minimal mode responses (`-32601`)**: Ensure `jq`/`gojq` is available or unset `MCPBASH_FORCE_MINIMAL` to enable tools/resources/prompts.
