@@ -53,6 +53,7 @@ Tool names must match `^[a-zA-Z0-9_-]{1,64}$`; some clients, including Claude De
         }
       },
       "timeoutSecs": 5,
+      "timeoutHint": "Try smaller inputs or enable dryRun mode.",
       "icons": [
         {"src": "https://example.com/hello-icon.svg", "mimeType": "image/svg+xml"}
       ],

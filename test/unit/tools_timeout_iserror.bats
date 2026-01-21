@@ -248,3 +248,115 @@ teardown() {
 	run jq -e '._meta.exitCode == 143' <<< "${_MCP_TOOLS_RESULT}"
 	assert_success
 }
+
+# ==============================================================================
+# Format function tests (mcp_tools_format_timeout_error)
+# ==============================================================================
+
+@test "format timeout error: basic message without hint" {
+	unset MCPBASH_TIMEOUT_REASON
+	unset MCPBASH_TIMEOUT_HINT
+
+	run mcp_tools_format_timeout_error 30
+	assert_success
+	assert_output "Tool timed out after 30s"
+}
+
+@test "format timeout error: idle reason without hint" {
+	export MCPBASH_TIMEOUT_REASON="idle"
+	unset MCPBASH_TIMEOUT_HINT
+
+	run mcp_tools_format_timeout_error 60
+	assert_success
+	assert_output "Tool timed out after 60s (no progress reported)"
+}
+
+@test "format timeout error: max_exceeded reason without hint" {
+	export MCPBASH_TIMEOUT_REASON="max_exceeded"
+	export MCPBASH_MAX_TIMEOUT_SECS=600
+	unset MCPBASH_TIMEOUT_HINT
+
+	run mcp_tools_format_timeout_error 30
+	assert_success
+	assert_output "Tool exceeded maximum runtime of 600s"
+}
+
+@test "format timeout error: appends hint when set" {
+	unset MCPBASH_TIMEOUT_REASON
+	export MCPBASH_TIMEOUT_HINT="Try using dryRun=true first."
+
+	run mcp_tools_format_timeout_error 30
+	assert_success
+	assert_output --partial "Tool timed out after 30s"
+	assert_output --partial "Suggestion: Try using dryRun=true first."
+}
+
+@test "format timeout error: hint with idle reason" {
+	export MCPBASH_TIMEOUT_REASON="idle"
+	export MCPBASH_TIMEOUT_HINT="Enable progress reporting for long operations."
+
+	run mcp_tools_format_timeout_error 45
+	assert_success
+	assert_output --partial "Tool timed out after 45s (no progress reported)"
+	assert_output --partial "Suggestion: Enable progress reporting for long operations."
+}
+
+@test "format timeout error: hint with max_exceeded reason" {
+	export MCPBASH_TIMEOUT_REASON="max_exceeded"
+	export MCPBASH_MAX_TIMEOUT_SECS=300
+	export MCPBASH_TIMEOUT_HINT="Consider batching large requests."
+
+	run mcp_tools_format_timeout_error 30
+	assert_success
+	assert_output --partial "Tool exceeded maximum runtime of 300s"
+	assert_output --partial "Suggestion: Consider batching large requests."
+}
+
+# ==============================================================================
+# Structured content hint tests
+# ==============================================================================
+
+@test "timeout helper: hint included in structuredContent.error" {
+	local message="Tool timed out after 30s\n\nSuggestion: Try smaller inputs."
+	local structured_error='{"type":"timeout","message":"Tool timed out after 30s","reason":"fixed","timeoutSecs":30,"exitCode":124,"hint":"Try smaller inputs."}'
+	local stderr_tail=""
+	local exit_code=124
+
+	_mcp_tools_emit_timeout_result "${message}" "${structured_error}" "${stderr_tail}" "${exit_code}"
+
+	# Verify hint is present in structuredContent.error
+	run jq -e '.structuredContent.error | has("hint")' <<< "${_MCP_TOOLS_RESULT}"
+	assert_success
+
+	run jq -r '.structuredContent.error.hint' <<< "${_MCP_TOOLS_RESULT}"
+	assert_output "Try smaller inputs."
+}
+
+@test "timeout helper: hint with progress-aware fields" {
+	local message="Tool timed out after 60s (no progress reported)\n\nSuggestion: Enable progress or reduce workload."
+	local structured_error='{"type":"timeout","message":"Tool timed out after 60s (no progress reported)","reason":"idle","timeoutSecs":60,"exitCode":124,"progressExtendsTimeout":true,"maxTimeoutSecs":600,"hint":"Enable progress or reduce workload."}'
+	local stderr_tail=""
+	local exit_code=124
+
+	_mcp_tools_emit_timeout_result "${message}" "${structured_error}" "${stderr_tail}" "${exit_code}"
+
+	# Verify hint is present alongside progress-aware fields
+	run jq -e '.structuredContent.error | has("hint", "progressExtendsTimeout", "maxTimeoutSecs")' <<< "${_MCP_TOOLS_RESULT}"
+	assert_success
+
+	run jq -r '.structuredContent.error.hint' <<< "${_MCP_TOOLS_RESULT}"
+	assert_output "Enable progress or reduce workload."
+}
+
+@test "timeout helper: no hint field when not provided" {
+	local message="Tool timed out after 30s"
+	local structured_error='{"type":"timeout","message":"Tool timed out after 30s","reason":"fixed","timeoutSecs":30,"exitCode":124}'
+	local stderr_tail=""
+	local exit_code=124
+
+	_mcp_tools_emit_timeout_result "${message}" "${structured_error}" "${stderr_tail}" "${exit_code}"
+
+	# Verify hint is NOT present when not provided
+	run jq -e '.structuredContent.error | has("hint") | not' <<< "${_MCP_TOOLS_RESULT}"
+	assert_success
+}

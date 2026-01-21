@@ -643,21 +643,29 @@ _mcp_tools_emit_timeout_result() {
 }
 
 # Format timeout error message based on MCPBASH_TIMEOUT_REASON
+# Appends MCPBASH_TIMEOUT_HINT if set (from tool.meta.json timeoutHint field)
 # Returns message appropriate for the timeout type
 mcp_tools_format_timeout_error() {
 	local timeout="$1"
 	local max_timeout="${MCPBASH_MAX_TIMEOUT_SECS:-600}"
+	local hint="${MCPBASH_TIMEOUT_HINT:-}"
+	local msg
 	case "${MCPBASH_TIMEOUT_REASON:-}" in
 	idle)
-		printf 'Tool timed out after %ss (no progress reported)' "${timeout}"
+		msg="Tool timed out after ${timeout}s (no progress reported)"
 		;;
 	max_exceeded)
-		printf 'Tool exceeded maximum runtime of %ss' "${max_timeout}"
+		msg="Tool exceeded maximum runtime of ${max_timeout}s"
 		;;
 	*)
-		printf 'Tool timed out after %ss' "${timeout}"
+		msg="Tool timed out after ${timeout}s"
 		;;
 	esac
+	if [ -n "${hint}" ]; then
+		printf '%s\n\nSuggestion: %s' "${msg}" "${hint}"
+	else
+		printf '%s' "${msg}"
+	fi
 }
 
 mcp_tools_init() {
@@ -973,17 +981,19 @@ mcp_tools_scan() {
 			local description=""
 			local arguments="{}"
 			local timeout=""
+			local timeout_hint=""
 			local output_schema="null"
 			local icons="null"
 			local annotations="null"
 
 			if [ -f "${meta_json}" ]; then
 				# Read each field individually to handle multi-line descriptions correctly
-				local meta_name meta_desc meta_args meta_timeout meta_outschema meta_icons meta_annot
+				local meta_name meta_desc meta_args meta_timeout meta_timeout_hint meta_outschema meta_icons meta_annot
 				meta_name="$("${MCPBASH_JSON_TOOL_BIN}" -r '.name // ""' "${meta_json}" 2>/dev/null || true)"
 				meta_desc="$("${MCPBASH_JSON_TOOL_BIN}" -r '.description // ""' "${meta_json}" 2>/dev/null || true)"
 				meta_args="$("${MCPBASH_JSON_TOOL_BIN}" -c '.inputSchema // .arguments // {type:"object",properties:{}}' "${meta_json}" 2>/dev/null || echo '{}')"
 				meta_timeout="$("${MCPBASH_JSON_TOOL_BIN}" -r '.timeoutSecs // ""' "${meta_json}" 2>/dev/null || true)"
+				meta_timeout_hint="$("${MCPBASH_JSON_TOOL_BIN}" -r '.timeoutHint // ""' "${meta_json}" 2>/dev/null || true)"
 				meta_outschema="$("${MCPBASH_JSON_TOOL_BIN}" -c '.outputSchema // null' "${meta_json}" 2>/dev/null || echo 'null')"
 				meta_icons="$("${MCPBASH_JSON_TOOL_BIN}" -c '.icons // null' "${meta_json}" 2>/dev/null || echo 'null')"
 				meta_annot="$("${MCPBASH_JSON_TOOL_BIN}" -c '.annotations // null' "${meta_json}" 2>/dev/null || echo 'null')"
@@ -995,6 +1005,7 @@ mcp_tools_scan() {
 					description="${meta_desc:-${description}}"
 					arguments="${meta_args}"
 					timeout="${meta_timeout}"
+					timeout_hint="${meta_timeout_hint}"
 					output_schema="${meta_outschema}"
 					icons="${meta_icons:-${icons}}"
 					annotations="${meta_annot:-${annotations}}"
@@ -1046,6 +1057,7 @@ mcp_tools_scan() {
 				--arg path "$rel_path" \
 				--argjson args "$arguments" \
 				--arg timeout "$timeout" \
+				--arg timeout_hint "$timeout_hint" \
 				--argjson out "$output_schema" \
 				--argjson icons "$icons" \
 				--argjson annotations "$annotations" \
@@ -1056,6 +1068,7 @@ mcp_tools_scan() {
 					inputSchema: $args,
 					timeoutSecs: (if ($timeout|test("^[0-9]+$")) then ($timeout|tonumber) else null end)
 				}
+				+ (if $timeout_hint != "" then {timeoutHint: $timeout_hint} else {} end)
 				+ (if $out != null then {outputSchema: $out} else {} end)
 				+ (if $icons != null then {icons: $icons} else {} end)
 				+ (if $annotations != null then {annotations: $annotations} else {} end)' >>"${items_file}"
@@ -1419,11 +1432,12 @@ mcp_tools_call() {
 
 	# Extract metadata fields using separate jq calls to avoid @tsv escaping issues
 	# (consistency with handlers/tools.sh fix for escaped quotes)
-	local tool_path metadata_timeout output_schema progress_extends max_timeout_secs
+	local tool_path metadata_timeout output_schema progress_extends max_timeout_secs timeout_hint
 	tool_path="$(printf '%s' "${metadata}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.path // ""' 2>/dev/null)" || tool_path=""
 	metadata_timeout="$(printf '%s' "${metadata}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.timeoutSecs // ""' 2>/dev/null)" || metadata_timeout=""
 	progress_extends="$(printf '%s' "${metadata}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.progressExtendsTimeout // ""' 2>/dev/null)" || progress_extends=""
 	max_timeout_secs="$(printf '%s' "${metadata}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.maxTimeoutSecs // ""' 2>/dev/null)" || max_timeout_secs=""
+	timeout_hint="$(printf '%s' "${metadata}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.timeoutHint // ""' 2>/dev/null)" || timeout_hint=""
 	output_schema="$(printf '%s' "${metadata}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.outputSchema // null')"
 	case "${metadata_timeout}" in
 	"" | "null") metadata_timeout="" ;;
@@ -1437,6 +1451,9 @@ mcp_tools_call() {
 	fi
 	if [ -n "${max_timeout_secs}" ] && [ "${max_timeout_secs}" != "null" ]; then
 		export MCPBASH_MAX_TIMEOUT_SECS="${max_timeout_secs}"
+	fi
+	if [ -n "${timeout_hint}" ] && [ "${timeout_hint}" != "null" ]; then
+		export MCPBASH_TIMEOUT_HINT="${timeout_hint}"
 	fi
 	if [ -z "${tool_path}" ]; then
 		_mcp_tools_emit_error -32602 "Tool '${name}' path unavailable" "null"
@@ -2008,28 +2025,56 @@ mcp_tools_call() {
 		if [ "${MCPBASH_JSON_TOOL:-none}" != "none" ]; then
 			local max_timeout="${MCPBASH_MAX_TIMEOUT_SECS:-600}"
 			local progress_enabled="${MCPBASH_PROGRESS_EXTENDS_TIMEOUT:-false}"
+			local hint="${MCPBASH_TIMEOUT_HINT:-}"
 
 			if [ "${progress_enabled}" = "true" ]; then
-				structured_error="$(
-					"${MCPBASH_JSON_TOOL_BIN}" -n \
-						--arg type "timeout" \
-						--arg msg "${timeout_msg}" \
-						--argjson timeoutSecs "${effective_timeout}" \
-						--arg reason "${timeout_reason}" \
-						--argjson exitCode "${safe_exit_code}" \
-						--argjson maxTimeoutSecs "${max_timeout}" \
-						'{type: $type, message: $msg, timeoutSecs: $timeoutSecs, reason: $reason, exitCode: $exitCode, progressExtendsTimeout: true, maxTimeoutSecs: $maxTimeoutSecs}'
-				)"
+				if [ -n "${hint}" ]; then
+					structured_error="$(
+						"${MCPBASH_JSON_TOOL_BIN}" -n \
+							--arg type "timeout" \
+							--arg msg "${timeout_msg}" \
+							--argjson timeoutSecs "${effective_timeout}" \
+							--arg reason "${timeout_reason}" \
+							--argjson exitCode "${safe_exit_code}" \
+							--argjson maxTimeoutSecs "${max_timeout}" \
+							--arg hint "${hint}" \
+							'{type: $type, message: $msg, timeoutSecs: $timeoutSecs, reason: $reason, exitCode: $exitCode, progressExtendsTimeout: true, maxTimeoutSecs: $maxTimeoutSecs, hint: $hint}'
+					)"
+				else
+					structured_error="$(
+						"${MCPBASH_JSON_TOOL_BIN}" -n \
+							--arg type "timeout" \
+							--arg msg "${timeout_msg}" \
+							--argjson timeoutSecs "${effective_timeout}" \
+							--arg reason "${timeout_reason}" \
+							--argjson exitCode "${safe_exit_code}" \
+							--argjson maxTimeoutSecs "${max_timeout}" \
+							'{type: $type, message: $msg, timeoutSecs: $timeoutSecs, reason: $reason, exitCode: $exitCode, progressExtendsTimeout: true, maxTimeoutSecs: $maxTimeoutSecs}'
+					)"
+				fi
 			else
-				structured_error="$(
-					"${MCPBASH_JSON_TOOL_BIN}" -n \
-						--arg type "timeout" \
-						--arg msg "${timeout_msg}" \
-						--argjson timeoutSecs "${effective_timeout}" \
-						--arg reason "${timeout_reason}" \
-						--argjson exitCode "${safe_exit_code}" \
-						'{type: $type, message: $msg, timeoutSecs: $timeoutSecs, reason: $reason, exitCode: $exitCode}'
-				)"
+				if [ -n "${hint}" ]; then
+					structured_error="$(
+						"${MCPBASH_JSON_TOOL_BIN}" -n \
+							--arg type "timeout" \
+							--arg msg "${timeout_msg}" \
+							--argjson timeoutSecs "${effective_timeout}" \
+							--arg reason "${timeout_reason}" \
+							--argjson exitCode "${safe_exit_code}" \
+							--arg hint "${hint}" \
+							'{type: $type, message: $msg, timeoutSecs: $timeoutSecs, reason: $reason, exitCode: $exitCode, hint: $hint}'
+					)"
+				else
+					structured_error="$(
+						"${MCPBASH_JSON_TOOL_BIN}" -n \
+							--arg type "timeout" \
+							--arg msg "${timeout_msg}" \
+							--argjson timeoutSecs "${effective_timeout}" \
+							--arg reason "${timeout_reason}" \
+							--argjson exitCode "${safe_exit_code}" \
+							'{type: $type, message: $msg, timeoutSecs: $timeoutSecs, reason: $reason, exitCode: $exitCode}'
+					)"
+				fi
 			fi
 		fi
 

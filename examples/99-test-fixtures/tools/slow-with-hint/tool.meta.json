@@ -1,0 +1,16 @@
+{
+  "name": "slow-with-hint",
+  "description": "Test fixture: slow tool with timeoutHint for actionable timeout messages",
+  "timeoutSecs": 5,
+  "timeoutHint": "Try using dryRun=true first. For large datasets, use limit <= 100.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "duration": {
+        "type": "integer",
+        "description": "Duration in seconds",
+        "default": 10
+      }
+    }
+  }
+}

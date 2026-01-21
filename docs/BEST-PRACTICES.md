@@ -445,9 +445,12 @@ Or per-tool in `tool.meta.json`:
 {
   "timeoutSecs": 30,
   "progressExtendsTimeout": true,
-  "maxTimeoutSecs": 300
+  "maxTimeoutSecs": 300,
+  "timeoutHint": "Use dryRun=true first. For large datasets, try limit <= 100."
 }
 ```
+
+**Timeout hints** – The optional `timeoutHint` field provides actionable guidance that is appended to timeout error messages. This helps LLMs understand how to adjust their approach (e.g., use smaller batches, enable dry-run mode, or adjust parameters).
 
 **Important**: The client must provide a `progressToken` in the request for progress to be written. Emit progress every ~5 seconds to keep the timeout from triggering.
 
@@ -749,6 +752,15 @@ When a tool times out, the response uses `isError: true` (not a JSON-RPC error) 
 | `exitCode` | 124 (timeout), 137 (SIGKILL), or 143 (SIGTERM) |
 | `progressExtendsTimeout` | Present when progress-aware timeout is enabled |
 | `maxTimeoutSecs` | Present when progress-aware timeout is enabled |
+| `hint` | Present when `timeoutHint` is configured in `tool.meta.json` |
+
+The error message also includes the `timeoutHint` text if configured in `tool.meta.json`:
+
+```
+Tool timed out after 30s
+
+Suggestion: Use dryRun=true first. For large datasets, try limit <= 100.
+```
 
 ##### Common Pitfalls
 
