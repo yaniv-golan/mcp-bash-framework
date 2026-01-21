@@ -154,4 +154,49 @@ test_assert_eq "${hard_cap_reason}" "max_exceeded"
 
 printf 'Test 3 passed: hard cap is enforced despite continuous progress.\n'
 
+# --- Test 4: Tool with pattern-matching events (no .progress) survives ---
+# The slow-with-events tool emits structured JSON events that match the pattern
+# but lack the .progress field. The touch-on-pattern-match should extend timeout.
+
+cat <<'JSON' >"${WORKSPACE}/requests-with-events.ndjson"
+{"jsonrpc":"2.0","id":"init","method":"initialize","params":{}}
+{"jsonrpc":"2.0","method":"notifications/initialized"}
+{"jsonrpc":"2.0","id":"events-tool","method":"tools/call","params":{"name":"slow-with-events","arguments":{"duration":8},"_meta":{"progressToken":"pt-4"}}}
+JSON
+
+(
+	cd "${WORKSPACE}" || exit 1
+	MCPBASH_PROJECT_ROOT="${WORKSPACE}" \
+		MCPBASH_PROGRESS_EXTENDS_TIMEOUT=true \
+		MCPBASH_MAX_TIMEOUT_SECS=60 \
+		./bin/mcp-bash <"${WORKSPACE}/requests-with-events.ndjson" >"${WORKSPACE}/responses-with-events.ndjson" 2>/dev/null
+) || true
+
+assert_json_lines "${WORKSPACE}/responses-with-events.ndjson"
+
+events_resp="$(jq -c 'select(.id=="events-tool")' "${WORKSPACE}/responses-with-events.ndjson")"
+if [ -z "${events_resp}" ]; then
+	test_fail "missing events-tool response"
+fi
+
+# Check for successful result (no error) - pattern match should have extended timeout
+if echo "${events_resp}" | jq -e '.error' >/dev/null 2>&1; then
+	error_msg="$(echo "${events_resp}" | jq -r '.error.message // "unknown"')"
+	test_fail "slow-with-events should complete successfully (pattern match extends timeout) but got error: ${error_msg}"
+fi
+
+# Check not a tool execution error
+if echo "${events_resp}" | jq -e '.result.isError == true' >/dev/null 2>&1; then
+	error_msg="$(echo "${events_resp}" | jq -r '.result.content[0].text // "unknown"')"
+	test_fail "slow-with-events should complete successfully but got isError: ${error_msg}"
+fi
+
+# Verify result contains expected completion message
+events_result_text="$(echo "${events_resp}" | jq -r '.result.content[0].text // empty')"
+if [[ "${events_result_text}" != *"Completed"* ]]; then
+	test_fail "slow-with-events result should contain 'Completed': ${events_result_text}"
+fi
+
+printf 'Test 4 passed: tool with pattern-matching events (no .progress) survives timeout.\n'
+
 printf 'Progress-aware timeout tests passed.\n'

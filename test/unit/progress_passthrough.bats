@@ -366,3 +366,146 @@ EOF
 	# Should succeed despite warning (doesn't break progress forwarding)
 	assert_success
 }
+
+# ============================================================================
+# Timeout extension via mtime tests
+# These tests verify that pattern matches extend timeout by touching
+# MCP_PROGRESS_STREAM, decoupling "I'm alive" from "I'm X% done"
+# ============================================================================
+
+@test "progress_passthrough: pattern match without .progress updates mtime" {
+	local progress_file="${BATS_TEST_TMPDIR}/progress.ndjson"
+	: >"${progress_file}"
+	export MCP_PROGRESS_STREAM="${progress_file}"
+
+	# Set mtime to 1 minute ago to avoid 1-second granularity issues
+	touch -t "$(date -v-1M +%Y%m%d%H%M.%S 2>/dev/null || date -d '1 minute ago' +%Y%m%d%H%M.%S)" "${progress_file}"
+	local old_mtime
+	old_mtime=$(stat -f %m "$progress_file" 2>/dev/null || stat -c %Y "$progress_file")
+
+	# Mock CLI that emits progress-like JSON without .progress field
+	local mock_script="${BATS_TEST_TMPDIR}/mock-no-progress.sh"
+	cat >"${mock_script}" <<'EOF'
+#!/usr/bin/env bash
+echo '{"type":"step_start","step":"encoding"}' >&2
+echo '{"result":"ok"}'
+EOF
+
+	run mcp_run_with_progress \
+		--pattern '^\{.*"type"' \
+		--extract json \
+		--quiet \
+		-- bash "${mock_script}"
+
+	assert_success
+
+	# Retry loop for Windows mtime staleness (up to 3 attempts with 100ms delay)
+	local new_mtime attempts=0
+	while [ $attempts -lt 3 ]; do
+		new_mtime=$(stat -f %m "$progress_file" 2>/dev/null || stat -c %Y "$progress_file")
+		[ "$new_mtime" -gt "$old_mtime" ] && break
+		sleep 0.1
+		((attempts++)) || true
+	done
+
+	# mtime should have increased due to touch on pattern match
+	assert [ "$new_mtime" -gt "$old_mtime" ]
+}
+
+@test "progress_passthrough: non-matching lines do not update mtime" {
+	local progress_file="${BATS_TEST_TMPDIR}/progress.ndjson"
+	: >"${progress_file}"
+	export MCP_PROGRESS_STREAM="${progress_file}"
+
+	# Set mtime to 1 minute ago
+	touch -t "$(date -v-1M +%Y%m%d%H%M.%S 2>/dev/null || date -d '1 minute ago' +%Y%m%d%H%M.%S)" "${progress_file}"
+	local old_mtime
+	old_mtime=$(stat -f %m "$progress_file" 2>/dev/null || stat -c %Y "$progress_file")
+
+	# Mock CLI that emits lines NOT matching the pattern
+	run mcp_run_with_progress \
+		--pattern '^\{.*"progress"' \
+		--extract json \
+		--quiet \
+		-- bash -c 'echo "plain text not json" >&2; echo "result"'
+
+	assert_success
+
+	# Wait a moment for any delayed mtime update
+	sleep 0.2
+
+	local new_mtime
+	new_mtime=$(stat -f %m "$progress_file" 2>/dev/null || stat -c %Y "$progress_file")
+
+	# mtime should NOT have changed (no pattern match)
+	assert_equal "$new_mtime" "$old_mtime"
+}
+
+@test "progress_passthrough: pattern match with .progress still calls mcp_progress" {
+	local progress_file="${BATS_TEST_TMPDIR}/progress.ndjson"
+	: >"${progress_file}"
+	export MCP_PROGRESS_STREAM="${progress_file}"
+	export MCP_PROGRESS_TOKEN="test-token-123"
+
+	# Mock CLI that emits valid progress JSON
+	local mock_script="${BATS_TEST_TMPDIR}/mock-with-progress.sh"
+	cat >"${mock_script}" <<'EOF'
+#!/usr/bin/env bash
+echo '{"progress":50,"message":"Halfway there"}' >&2
+echo '{"progress":100,"message":"Done"}' >&2
+echo '{"result":"ok"}'
+EOF
+
+	run mcp_run_with_progress \
+		--pattern '^\{.*"progress"' \
+		--extract json \
+		--quiet \
+		-- bash "${mock_script}"
+
+	assert_success
+
+	# Verify progress notifications were written to the stream
+	assert [ -s "${progress_file}" ]
+	run grep -c 'notifications/progress' "${progress_file}"
+	assert_success
+	# Should have 2 progress notifications (50% and 100%)
+	assert [ "$output" -ge 2 ]
+}
+
+@test "progress_passthrough: dry-run does not touch progress file" {
+	local progress_file="${BATS_TEST_TMPDIR}/progress.ndjson"
+	: >"${progress_file}"
+	export MCP_PROGRESS_STREAM="${progress_file}"
+
+	# Set mtime to 1 minute ago
+	touch -t "$(date -v-1M +%Y%m%d%H%M.%S 2>/dev/null || date -d '1 minute ago' +%Y%m%d%H%M.%S)" "${progress_file}"
+	local old_mtime
+	old_mtime=$(stat -f %m "$progress_file" 2>/dev/null || stat -c %Y "$progress_file")
+
+	# Mock CLI that matches pattern
+	local mock_script="${BATS_TEST_TMPDIR}/mock-progress.sh"
+	cat >"${mock_script}" <<'EOF'
+#!/usr/bin/env bash
+echo '{"type":"progress","progress":50,"message":"Working"}' >&2
+echo '{"result":"ok"}'
+EOF
+
+	# Run with --dry-run
+	run mcp_run_with_progress \
+		--pattern '^\{.*"progress"' \
+		--extract json \
+		--dry-run \
+		--quiet \
+		-- bash "${mock_script}"
+
+	assert_success
+
+	# Wait a moment
+	sleep 0.2
+
+	local new_mtime
+	new_mtime=$(stat -f %m "$progress_file" 2>/dev/null || stat -c %Y "$progress_file")
+
+	# mtime should NOT have changed in dry-run mode
+	assert_equal "$new_mtime" "$old_mtime"
+}

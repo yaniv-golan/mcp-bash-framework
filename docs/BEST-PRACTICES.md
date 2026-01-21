@@ -432,7 +432,7 @@ for i in $(seq 1 100); do
 done
 ```
 
-**Progress-aware timeout extension** – Long-running tools that emit progress can extend their timeout automatically. When enabled, the timeout resets each time progress is written, allowing legitimate operations to run longer while still catching truly stuck tools.
+**Progress-aware timeout extension** – Long-running tools can extend their timeout automatically. When enabled, the timeout resets each time activity is detected (any pattern match when using `mcp_run_with_progress`, or any write to the progress stream), allowing legitimate operations to run longer while still catching truly stuck tools.
 
 Enable globally via environment:
 ```bash
@@ -701,7 +701,7 @@ Use when:
 }
 ```
 
-**How it works:** The timeout resets each time progress is emitted. If no progress is emitted within `timeoutSecs`, the tool times out. The `maxTimeoutSecs` provides a hard cap regardless of progress.
+**How it works:** The timeout resets each time activity is detected (pattern match or progress emission). If no activity occurs within `timeoutSecs`, the tool times out. The `maxTimeoutSecs` provides a hard cap regardless of activity.
 
 ##### Adding Progress to Operations Without Natural Progress Points
 
@@ -766,10 +766,11 @@ Suggestion: Use dryRun=true first. For large datasets, try limit <= 100.
 
 | Pitfall | Symptom | Fix |
 |---------|---------|-----|
-| Progress-aware enabled but no progress emitted | `reason: "idle"` timeout | Add `mcp_progress` calls or disable `progressExtendsTimeout` |
+| Progress-aware enabled but no activity detected | `reason: "idle"` timeout | Ensure pattern matches subprocess output, or add explicit `mcp_progress` calls |
 | `timeoutSecs` too low for variable workloads | Intermittent timeouts on large inputs | Enable progress-aware timeout or increase static limit |
 | No `maxTimeoutSecs` with progress-aware | Tool can run indefinitely | Always set `maxTimeoutSecs` as a safety cap |
-| Progress emitted too infrequently | Timeout between progress updates | Emit progress at least every `timeoutSecs / 2` |
+| Activity too infrequent | Timeout between activity | Ensure activity (pattern match or progress) at least every `timeoutSecs / 2` |
+| Tool times out despite emitting progress-like events | Unexpected `reason: "idle"` timeout | Verify `--pattern` regex matches the actual output; use `--dry-run` to debug extraction |
 
 #### Tool annotations
 
@@ -1367,6 +1368,8 @@ Options:
 | `json` | Parse line as JSON, extract `.progress` and `.message` | CLIs with NDJSON output |
 | `match1` | Use first regex capture group as percentage (0-100) | CLIs with `50%` style output |
 | `ratio` | Calculate `capture[1] * 100 / capture[2]` | CLIs with `[5/10]` style output |
+
+**Timeout extension:** When `progressExtendsTimeout` is enabled, any line matching `--pattern` extends the timeout—even if extraction fails or the line lacks a `.progress` field. This decouples "activity detection" (pattern match = process is alive) from "progress reporting" (`.progress` field = percentage complete). This allows tools that emit structured events like `{"type":"step_start"}` to keep the timeout extended without needing artificial progress values.
 
 #### Common patterns for well-known tools
 

@@ -158,8 +158,8 @@ Size guardrails: `mcp_core_guard_response_size` rejects oversized responses with
 - **Invalid cursor (`-32602`)**: Drop the cursor to restart pagination; ensure clients do not cache cursors across registry refreshes.
 - **Tool timed out (`isError: true`, `structuredContent.error.type: "timeout"`)**: The tool exceeded its time limit. Check `structuredContent.error.reason` for context:
   - `"fixed"` – Static timeout elapsed (progress-aware timeout disabled).
-  - `"idle"` – Progress-aware timeout enabled, but tool didn't emit progress within the idle window.
-  - `"max_exceeded"` – Progress-aware timeout enabled, tool emitted progress but hit the hard cap (`maxTimeoutSecs`).
+  - `"idle"` – Progress-aware timeout enabled, but no activity detected (pattern match or progress emission) within the idle window.
+  - `"max_exceeded"` – Progress-aware timeout enabled, tool showed activity but hit the hard cap (`maxTimeoutSecs`).
 
   Fix: Reduce workload, raise `timeoutSecs` in `<tool>.meta.json`, enable `progressExtendsTimeout` for long-running tools that emit progress, or adjust `MCPBASH_MAX_TIMEOUT_SECS` for the hard cap. Add `timeoutHint` to provide actionable guidance in the error message. See [Timeout Strategy Guide](BEST-PRACTICES.md#timeout-strategy-guide) for detailed configuration guidance.
 - **Prompt render failed (`-32603`)**: Ensure the prompt file exists and is readable.

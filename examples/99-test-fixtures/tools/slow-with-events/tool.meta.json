@@ -1,0 +1,16 @@
+{
+  "name": "slow-with-events",
+  "description": "Test fixture: emits structured events without .progress field via mcp_run_with_progress",
+  "arguments": {
+    "type": "object",
+    "properties": {
+      "duration": {
+        "type": "integer",
+        "description": "How long to run in seconds",
+        "default": 8
+      }
+    }
+  },
+  "timeoutSecs": 5,
+  "progressExtendsTimeout": true
+}

@@ -228,6 +228,13 @@ __mcp_progress_process_lines() {
 	# Timeout of 10s handles slow CLIs while preventing indefinite blocking
 	while IFS= read -r -t 10 line || [[ -n "$line" ]]; do
 		if [[ "$line" =~ $pattern ]]; then
+			# ANY pattern match indicates activity - extend timeout via file mtime
+			# This decouples "I'm alive" (pattern match) from "I'm X% done" (.progress)
+			# Note: Skip in dry-run mode to preserve no-side-effects behavior
+			if [[ -n "${MCP_PROGRESS_STREAM:-}" && "$dry_run" != "true" ]]; then
+				touch "${MCP_PROGRESS_STREAM}" 2>/dev/null || true
+			fi
+
 			local pct msg
 			case "$extract" in
 			json)
@@ -283,6 +290,9 @@ __mcp_progress_process_lines() {
 				else
 					mcp_progress "$pct" "$msg"
 				fi
+			elif [[ "$quiet" != "true" ]]; then
+				# Pattern matched (timeout extended) but no .progress extracted
+				mcp_log_debug "mcp_run_with_progress" "activity detected (timeout extended), no .progress: ${line:0:80}"
 			fi
 		else
 			# Non-progress line: write to file and/or log
