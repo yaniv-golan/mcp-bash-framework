@@ -599,6 +599,49 @@ _mcp_tools_emit_error() {
 	fi
 }
 
+# Emit timeout as tool execution error (isError: true) instead of protocol error
+# This allows LLMs to receive and act on timeout information per MCP spec guidance
+# Usage: _mcp_tools_emit_timeout_result <message> <structured_error_json> <stderr_tail> <exit_code>
+_mcp_tools_emit_timeout_result() {
+	local message="$1"
+	local structured_error="$2"
+	local stderr_tail="$3"
+	local exit_code="$4"
+
+	local result
+	if [ "${MCPBASH_JSON_TOOL:-none}" != "none" ]; then
+		# Full mode: build complete structured response
+		# Use -c for compact (single-line) output required for NDJSON format
+		result="$(
+			"${MCPBASH_JSON_TOOL_BIN}" -cn \
+				--arg msg "${message}" \
+				--argjson err "${structured_error}" \
+				--arg stderr "${stderr_tail}" \
+				--argjson exitcode "${exit_code}" \
+				'{
+					content: [{type: "text", text: $msg}],
+					isError: true,
+					structuredContent: {
+						success: false,
+						error: $err
+					},
+					_meta: ({exitCode: $exitcode} + (if ($stderr | length) > 0 then {stderr: $stderr} else {} end))
+				}'
+		)"
+	else
+		# Minimal mode: basic JSON (consistent with _mcp_tools_emit_error fallback)
+		# Escape backslashes, quotes, newlines, tabs, and carriage returns
+		local msg_escaped="${message//\\/\\\\}"
+		msg_escaped="${msg_escaped//\"/\\\"}"
+		msg_escaped="${msg_escaped//$'\n'/\\n}"
+		msg_escaped="${msg_escaped//$'\t'/\\t}"
+		msg_escaped="${msg_escaped//$'\r'/\\r}"
+		result="{\"content\":[{\"type\":\"text\",\"text\":\"${msg_escaped}\"}],\"isError\":true}"
+	fi
+
+	_MCP_TOOLS_RESULT="${result}"
+}
+
 # Format timeout error message based on MCPBASH_TIMEOUT_REASON
 # Returns message appropriate for the timeout type
 mcp_tools_format_timeout_error() {
@@ -1525,6 +1568,9 @@ mcp_tools_call() {
 	local tool_error_file
 	tool_error_file="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-tool-error.XXXXXX")"
 
+	local timeout_reason_file
+	timeout_reason_file="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-timeout-reason.XXXXXX")"
+
 	local effective_timeout="${timeout_override}"
 	if [ -z "${effective_timeout}" ] && [ -n "${metadata_timeout}" ]; then
 		effective_timeout="${metadata_timeout}"
@@ -1592,6 +1638,7 @@ mcp_tools_call() {
 		rm -f "${stdout_file}" "${stderr_file}"
 		[ -n "${tool_resources_file:-}" ] && rm -f "${tool_resources_file}"
 		[ -n "${tool_error_file}" ] && rm -f "${tool_error_file}"
+		[ -n "${timeout_reason_file}" ] && rm -f "${timeout_reason_file}"
 		[ -n "${args_file}" ] && rm -f "${args_file}"
 		[ -n "${metadata_file}" ] && rm -f "${metadata_file}"
 		[ -n "${request_meta_file}" ] && rm -f "${request_meta_file}"
@@ -1792,19 +1839,25 @@ mcp_tools_call() {
 			fi
 		fi
 
+		# Run tool and capture exit code - then write timeout reason without affecting exit
+		local tool_exit_code=0
 		if [ -n "${effective_timeout}" ]; then
 			if [ "${stderr_streaming_enabled}" = "true" ]; then
-				with_timeout "${effective_timeout}" -- "${tool_runner[@]}" 2> >(tee "${stderr_file}" >&2)
+				with_timeout "${effective_timeout}" -- "${tool_runner[@]}" 2> >(tee "${stderr_file}" >&2) && tool_exit_code=0 || tool_exit_code=$?
 			else
-				with_timeout "${effective_timeout}" -- "${tool_runner[@]}" 2>>"${stderr_file}"
+				with_timeout "${effective_timeout}" -- "${tool_runner[@]}" 2>>"${stderr_file}" && tool_exit_code=0 || tool_exit_code=$?
 			fi
 		else
 			if [ "${stderr_streaming_enabled}" = "true" ]; then
-				"${tool_runner[@]}" 2> >(tee "${stderr_file}" >&2)
+				"${tool_runner[@]}" 2> >(tee "${stderr_file}" >&2) && tool_exit_code=0 || tool_exit_code=$?
 			else
-				"${tool_runner[@]}" 2>>"${stderr_file}"
+				"${tool_runner[@]}" 2>>"${stderr_file}" && tool_exit_code=0 || tool_exit_code=$?
 			fi
 		fi
+		# Write timeout reason to file for parent process (subshell exports don't propagate)
+		[ -n "${MCPBASH_TIMEOUT_REASON:-}" ] && printf '%s' "${MCPBASH_TIMEOUT_REASON}" >"${timeout_reason_file}"
+		# Exit with the tool's exit code (not affected by the write above)
+		exit "${tool_exit_code}"
 		# Outer stderr append captures shell-level errors; tool stderr is redirected above.
 	) >"${stdout_file}" 2>>"${stderr_file}" || exit_code=$?
 	exit_code=${exit_code:-0}
@@ -1932,35 +1985,68 @@ mcp_tools_call() {
 	fi
 
 	if [ "${timed_out}" = "true" ]; then
-		local timeout_data="null"
-		if mcp_tools_timeout_capture_enabled && [ "${MCPBASH_JSON_TOOL:-none}" != "none" ]; then
-			timeout_data="$(
-				"${MCPBASH_JSON_TOOL_BIN}" -n \
-					--argjson code "${exit_code}" \
-					--arg stderr "${stderr_tail}" \
-					--arg traceLine "${trace_line}" \
-					'
-					{
-						exitCode: $code,
-						_meta: ({exitCode: $code} + (if ($stderr|length) > 0 then {stderr: $stderr} else {} end))
-					}
-					| if ($stderr|length) > 0 then .stderrTail = $stderr else . end
-					| if ($traceLine|length) > 0 then .traceLine = $traceLine else . end
-					'
-			)"
+		# Timeout reason is written to file by subshell (exports don't propagate to parent)
+		# Values: "idle" (no progress), "max_exceeded" (hit hard cap), or "fixed" (static timeout)
+		# Read this BEFORE calling mcp_tools_format_timeout_error which uses MCPBASH_TIMEOUT_REASON
+		local timeout_reason=""
+		if [ -n "${timeout_reason_file}" ] && [ -s "${timeout_reason_file}" ]; then
+			timeout_reason="$(cat "${timeout_reason_file}" 2>/dev/null)" || timeout_reason=""
 		fi
+		[ -z "${timeout_reason}" ] && timeout_reason="fixed"
+		# Set env var so mcp_tools_format_timeout_error can use it
+		export MCPBASH_TIMEOUT_REASON="${timeout_reason}"
+
 		local timeout_msg
 		timeout_msg="$(mcp_tools_format_timeout_error "${effective_timeout}")"
+
+		# Guard against empty/non-numeric exit_code (defensive, should not happen in practice)
+		local safe_exit_code="${exit_code:-124}"
+		[[ "${safe_exit_code}" =~ ^[0-9]+$ ]] || safe_exit_code=124
+
+		# Build structured error - only when JSON tooling available (matches existing pattern)
+		local structured_error="{}"
+		if [ "${MCPBASH_JSON_TOOL:-none}" != "none" ]; then
+			local max_timeout="${MCPBASH_MAX_TIMEOUT_SECS:-600}"
+			local progress_enabled="${MCPBASH_PROGRESS_EXTENDS_TIMEOUT:-false}"
+
+			if [ "${progress_enabled}" = "true" ]; then
+				structured_error="$(
+					"${MCPBASH_JSON_TOOL_BIN}" -n \
+						--arg type "timeout" \
+						--arg msg "${timeout_msg}" \
+						--argjson timeoutSecs "${effective_timeout}" \
+						--arg reason "${timeout_reason}" \
+						--argjson exitCode "${safe_exit_code}" \
+						--argjson maxTimeoutSecs "${max_timeout}" \
+						'{type: $type, message: $msg, timeoutSecs: $timeoutSecs, reason: $reason, exitCode: $exitCode, progressExtendsTimeout: true, maxTimeoutSecs: $maxTimeoutSecs}'
+				)"
+			else
+				structured_error="$(
+					"${MCPBASH_JSON_TOOL_BIN}" -n \
+						--arg type "timeout" \
+						--arg msg "${timeout_msg}" \
+						--argjson timeoutSecs "${effective_timeout}" \
+						--arg reason "${timeout_reason}" \
+						--argjson exitCode "${safe_exit_code}" \
+						'{type: $type, message: $msg, timeoutSecs: $timeoutSecs, reason: $reason, exitCode: $exitCode}'
+				)"
+			fi
+		fi
+
 		mcp_tools_emit_github_annotation "${name}" "${timeout_msg}" "${trace_line}"
 		mcp_tools_append_failure_summary "${name}" "${exit_code}" "${timeout_msg}" "${stderr_tail}" "${trace_line}" "${arg_count}" "${arg_bytes}" "${meta_count}" "${MCP_ROOTS_COUNT:-0}" "true"
-		_mcp_tools_emit_error -32603 "${timeout_msg}" "${timeout_data}"
+
+		# Emit as tool execution error (isError: true) instead of protocol error (-32603)
+		# This allows LLMs to receive and act on timeout information per MCP spec guidance
+		_mcp_tools_emit_timeout_result "${timeout_msg}" "${structured_error}" "${stderr_tail}" "${safe_exit_code}"
+
 		# Suggest enabling progress-aware timeout if tool emitted progress but feature was disabled
 		if [ "${MCPBASH_PROGRESS_EXTENDS_TIMEOUT:-false}" != "true" ] && [ -n "${MCP_PROGRESS_STREAM:-}" ] && [ -s "${MCP_PROGRESS_STREAM}" ]; then
 			mcp_logging_warning "${MCP_TOOLS_LOGGER}" \
 				"Tool '${name}' emitted progress but timed out. Consider enabling MCPBASH_PROGRESS_EXTENDS_TIMEOUT=true or adding progressExtendsTimeout:true to tool.meta.json"
 		fi
 		cleanup_tool_temp_files
-		return 1
+		return 0 # Changed from return 1 - flows to success path in handler with isError: true
 	fi
 
 	local tool_error_raw=""

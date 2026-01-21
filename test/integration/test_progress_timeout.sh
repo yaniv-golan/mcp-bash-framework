@@ -94,26 +94,24 @@ if [ -z "${no_progress_resp}" ]; then
 	test_fail "missing no-progress-tool response"
 fi
 
-# Check for error (timeout expected)
-if ! echo "${no_progress_resp}" | jq -e '.error' >/dev/null 2>&1; then
-	test_fail "slow-no-progress should timeout but got success"
+# Check for timeout as tool execution error (isError: true)
+if ! echo "${no_progress_resp}" | jq -e '.result.isError == true' >/dev/null 2>&1; then
+	test_fail "slow-no-progress should timeout with isError:true but got: $(echo "${no_progress_resp}" | jq -c '.result // .error // "no response"')"
 fi
 
-# Verify error code is -32603 (internal error for timeout)
-error_code="$(echo "${no_progress_resp}" | jq -r '.error.code')"
-test_assert_eq "${error_code}" "-32603"
+# Verify structured error has type: "timeout"
+error_type="$(echo "${no_progress_resp}" | jq -r '.result.structuredContent.error.type // empty')"
+test_assert_eq "${error_type}" "timeout"
 
-# Verify error message mentions timeout
-error_msg="$(echo "${no_progress_resp}" | jq -r '.error.message // empty')"
+# Verify error message in content mentions timeout
+error_msg="$(echo "${no_progress_resp}" | jq -r '.result.content[0].text // empty')"
 if [[ "${error_msg}" != *"timed out"* ]]; then
 	test_fail "error message should mention timeout: ${error_msg}"
 fi
 
-# Verify idle timeout reason is included (no progress reported)
-if [[ "${error_msg}" != *"no progress"* ]]; then
-	# Acceptable if message just says "timed out" - the idle detail is optional
-	printf 'Note: timeout message does not include idle reason (acceptable)\n'
-fi
+# Verify reason is "idle" (no progress reported)
+error_reason="$(echo "${no_progress_resp}" | jq -r '.result.structuredContent.error.reason // empty')"
+test_assert_eq "${error_reason}" "idle"
 
 printf 'Test 2 passed: tool without progress times out as expected.\n'
 
@@ -141,14 +139,18 @@ if [ -z "${hard_cap_resp}" ]; then
 	test_fail "missing hard-cap-tool response"
 fi
 
-# Check for error (hard cap timeout expected)
-if ! echo "${hard_cap_resp}" | jq -e '.error' >/dev/null 2>&1; then
-	test_fail "slow-with-progress should hit hard cap but got success"
+# Check for timeout as tool execution error (isError: true)
+if ! echo "${hard_cap_resp}" | jq -e '.result.isError == true' >/dev/null 2>&1; then
+	test_fail "slow-with-progress should hit hard cap with isError:true but got: $(echo "${hard_cap_resp}" | jq -c '.result // .error // "no response"')"
 fi
 
-# Verify error code is -32603
-hard_cap_code="$(echo "${hard_cap_resp}" | jq -r '.error.code')"
-test_assert_eq "${hard_cap_code}" "-32603"
+# Verify structured error has type: "timeout"
+hard_cap_type="$(echo "${hard_cap_resp}" | jq -r '.result.structuredContent.error.type // empty')"
+test_assert_eq "${hard_cap_type}" "timeout"
+
+# Verify reason is "max_exceeded" (hit hard cap despite progress)
+hard_cap_reason="$(echo "${hard_cap_resp}" | jq -r '.result.structuredContent.error.reason // empty')"
+test_assert_eq "${hard_cap_reason}" "max_exceeded"
 
 printf 'Test 3 passed: hard cap is enforced despite continuous progress.\n'
 
