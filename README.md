@@ -180,22 +180,6 @@ mcp-bash run-tool hello --allow-self --args '{"name":"World"}'
 cd .. && rm -rf demo-server
 ```
 
-<details>
-<summary><strong>Something not working?</strong> (click to expand)</summary>
-
-| Symptom | Likely cause | Fix |
-|---------|--------------|-----|
-| `mcp-bash: command not found` | PATH not configured | `export PATH="$HOME/.local/bin:$PATH"` then open a new shell |
-| “Operating in minimal mode…” / tools missing | `jq`/`gojq` missing | `brew install jq` or `apt install jq` |
-| “blocked by policy” | Default-deny tool policy | CLI: re-run with `--allow-self`. MCP clients: set `MCPBASH_TOOL_ALLOWLIST` in client config |
-| Claude Desktop starts but shows no tools | GUI non-login env / PATH | Use `mcp-bash config --wrapper-env` and point the client at the wrapper |
-| macOS `Operation not permitted` / quarantine | Gatekeeper quarantine | `scripts/macos-dequarantine.sh ~/.local/share/mcp-bash` (trusted paths only), restart client |
-| Windows Git Bash path weirdness | MSYS path conversion | `MSYS2_ARG_CONV_EXCL="*"` (and prefer `jq` on Windows CI) |
-
-Still stuck? Run `mcp-bash doctor` (or `mcp-bash doctor --json`) and include output when opening an issue.
-
-</details>
-
 ### 1.6 Uninstall (if needed)
 
 To completely remove mcp-bash from your system:
@@ -219,6 +203,22 @@ rm -f /path/to/your/project/*.sh  # e.g., my-server.sh, my-server-env.sh
 - Your project directories (`tools/`, `resources/`, `prompts/`) are untouched—they live in your own repos.
 - Wrapper scripts are only created if you ran `mcp-bash config --wrapper` or `--wrapper-env`.
 - After uninstalling, you can reinstall anytime with the Quick Install command above.
+
+<details>
+<summary><strong>Something not working?</strong> (click to expand)</summary>
+
+| Symptom | Likely cause | Fix |
+|---------|--------------|-----|
+| `mcp-bash: command not found` | PATH not configured | `export PATH="$HOME/.local/bin:$PATH"` then open a new shell |
+| “Operating in minimal mode…” / tools missing | `jq`/`gojq` missing | `brew install jq` or `apt install jq` |
+| “blocked by policy” | Default-deny tool policy | CLI: re-run with `--allow-self`. MCP clients: set `MCPBASH_TOOL_ALLOWLIST` in client config |
+| Claude Desktop starts but shows no tools | GUI non-login env / PATH | Use `mcp-bash config --wrapper-env` and point the client at the wrapper |
+| macOS `Operation not permitted` / quarantine | Gatekeeper quarantine | `scripts/macos-dequarantine.sh ~/.local/share/mcp-bash` (trusted paths only), restart client |
+| Windows Git Bash path weirdness | MSYS path conversion | `MSYS2_ARG_CONV_EXCL="*"` (and prefer `jq` on Windows CI) |
+
+Still stuck? Run `mcp-bash doctor` (or `mcp-bash doctor --json`) and include output when opening an issue.
+
+</details>
 
 ### 2. Create Your Project
 

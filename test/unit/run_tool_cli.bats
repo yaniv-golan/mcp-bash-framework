@@ -116,9 +116,15 @@ EOF
 }
 
 @test "run_tool_cli: timeout override permits slow tool" {
-	run "${MCPBASH_HOME}/bin/mcp-bash" run-tool test.slow
-	assert_failure
+	# Without override, tool should timeout (returns isError:true, exit 0)
+	timeout_output="$("${MCPBASH_HOME}/bin/mcp-bash" run-tool test.slow)"
+	timeout_is_error="$(printf '%s\n' "${timeout_output}" | jq -r '.isError')"
+	assert_equal "true" "${timeout_is_error}"
+	# Verify it's a timeout error
+	timeout_type="$(printf '%s\n' "${timeout_output}" | jq -r '.structuredContent.error.type')"
+	assert_equal "timeout" "${timeout_type}"
 
+	# With override, tool should complete successfully
 	slow_override_output="$("${MCPBASH_HOME}/bin/mcp-bash" run-tool test.slow --timeout 8)"
 	slow_message="$(printf '%s\n' "${slow_override_output}" | jq -r 'select(.name=="test.slow") | .structuredContent.message')"
 	assert_equal "done" "${slow_message}"
