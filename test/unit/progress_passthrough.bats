@@ -5,6 +5,20 @@ load '../../node_modules/bats-support/load'
 load '../../node_modules/bats-assert/load'
 load '../common/fixtures'
 
+# Cross-platform file mtime helper.
+# Linux `stat -f` shows file system info (not file info) and exits 0,
+# so we must check for GNU stat first via --version.
+get_mtime() {
+	local file="$1"
+	if stat --version &>/dev/null; then
+		# GNU stat (Linux)
+		stat -c %Y "$file"
+	else
+		# BSD stat (macOS)
+		stat -f %m "$file"
+	fi
+}
+
 setup() {
 	# Source runtime for logging and JSON detection
 	# shellcheck source=lib/runtime.sh
@@ -381,7 +395,7 @@ EOF
 	# Set mtime to 1 minute ago to avoid 1-second granularity issues
 	touch -t "$(date -v-1M +%Y%m%d%H%M.%S 2>/dev/null || date -d '1 minute ago' +%Y%m%d%H%M.%S)" "${progress_file}"
 	local old_mtime
-	old_mtime=$(stat -f %m "$progress_file" 2>/dev/null || stat -c %Y "$progress_file")
+	old_mtime=$(get_mtime "$progress_file")
 
 	# Mock CLI that emits progress-like JSON without .progress field
 	local mock_script="${BATS_TEST_TMPDIR}/mock-no-progress.sh"
@@ -402,7 +416,7 @@ EOF
 	# Retry loop for Windows mtime staleness (up to 3 attempts with 100ms delay)
 	local new_mtime attempts=0
 	while [ $attempts -lt 3 ]; do
-		new_mtime=$(stat -f %m "$progress_file" 2>/dev/null || stat -c %Y "$progress_file")
+		new_mtime=$(get_mtime "$progress_file")
 		[ "$new_mtime" -gt "$old_mtime" ] && break
 		sleep 0.1
 		((attempts++)) || true
@@ -420,7 +434,7 @@ EOF
 	# Set mtime to 1 minute ago
 	touch -t "$(date -v-1M +%Y%m%d%H%M.%S 2>/dev/null || date -d '1 minute ago' +%Y%m%d%H%M.%S)" "${progress_file}"
 	local old_mtime
-	old_mtime=$(stat -f %m "$progress_file" 2>/dev/null || stat -c %Y "$progress_file")
+	old_mtime=$(get_mtime "$progress_file")
 
 	# Mock CLI that emits lines NOT matching the pattern
 	run mcp_run_with_progress \
@@ -435,7 +449,7 @@ EOF
 	sleep 0.2
 
 	local new_mtime
-	new_mtime=$(stat -f %m "$progress_file" 2>/dev/null || stat -c %Y "$progress_file")
+	new_mtime=$(get_mtime "$progress_file")
 
 	# mtime should NOT have changed (no pattern match)
 	assert_equal "$new_mtime" "$old_mtime"
@@ -480,7 +494,7 @@ EOF
 	# Set mtime to 1 minute ago
 	touch -t "$(date -v-1M +%Y%m%d%H%M.%S 2>/dev/null || date -d '1 minute ago' +%Y%m%d%H%M.%S)" "${progress_file}"
 	local old_mtime
-	old_mtime=$(stat -f %m "$progress_file" 2>/dev/null || stat -c %Y "$progress_file")
+	old_mtime=$(get_mtime "$progress_file")
 
 	# Mock CLI that matches pattern
 	local mock_script="${BATS_TEST_TMPDIR}/mock-progress.sh"
@@ -504,7 +518,7 @@ EOF
 	sleep 0.2
 
 	local new_mtime
-	new_mtime=$(stat -f %m "$progress_file" 2>/dev/null || stat -c %Y "$progress_file")
+	new_mtime=$(get_mtime "$progress_file")
 
 	# mtime should NOT have changed in dry-run mode
 	assert_equal "$new_mtime" "$old_mtime"

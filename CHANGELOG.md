@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-01-22
+
 ### Added
 
 - **`timeoutHint` field in `tool.meta.json`**: New optional field that provides actionable guidance appended to timeout error messages. When a tool times out, the hint text is displayed as a "Suggestion:" in the error message and is also available programmatically via `structuredContent.error.hint`. This helps LLMs adjust their approach (e.g., use smaller batches, enable dry-run mode). Example: `"timeoutHint": "Use dryRun=true first. For large datasets, try limit <= 100."`. See [Timeout Strategy Guide](docs/BEST-PRACTICES.md#timeout-strategy-guide) for details.

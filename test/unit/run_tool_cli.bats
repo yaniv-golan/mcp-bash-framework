@@ -78,7 +78,10 @@ EOF
 
 @test "run_tool_cli: print-env shows wiring without executing tool" {
 	env_output="$("${MCPBASH_HOME}/bin/mcp-bash" run-tool test.echo --print-env)"
-	assert_contains "MCPBASH_PROJECT_ROOT=${PROJECT_ROOT}" "${env_output}"
+	# Use realpath for comparison since macOS resolves /var -> /private/var
+	local real_project_root
+	real_project_root="$(cd "${PROJECT_ROOT}" && pwd -P)"
+	assert_contains "MCPBASH_PROJECT_ROOT=${real_project_root}" "${env_output}"
 	assert_contains "ROOTS=none" "${env_output}"
 }
 
