@@ -113,6 +113,7 @@ jobs:
           path: test-results/*.xml
           reporter: java-junit
           fail-on-error: false
+          token: ${{ secrets.GITHUB_TOKEN }}
 
   # Core integration tests (Ubuntu + macOS) - required for release
   integration:
