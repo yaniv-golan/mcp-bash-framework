@@ -34,7 +34,9 @@ jobs:
 
       - name: Install dependencies (Windows)
         if: runner.os == 'Windows'
-        run: choco install jq zip unzip -y
+        run: |
+          # Only jq from Chocolatey; use pre-installed 7z for zip/unzip
+          choco install jq -y
 
       - name: Set up environment
         run: |
@@ -65,7 +67,12 @@ jobs:
         working-directory: examples/00-hello-tool
         run: |
           mkdir -p /tmp/bundle-test
-          unzip -d /tmp/bundle-test dist/hello-tool-example-1.0.0.mcpb
+          # Use unzip if available, otherwise 7z (Windows)
+          if command -v unzip >/dev/null 2>&1; then
+            unzip -d /tmp/bundle-test dist/hello-tool-example-1.0.0.mcpb
+          else
+            7z x -o/tmp/bundle-test dist/hello-tool-example-1.0.0.mcpb
+          fi
           # Verify manifest
           test -f /tmp/bundle-test/manifest.json
           # Verify server directory

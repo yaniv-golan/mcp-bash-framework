@@ -100,18 +100,48 @@ EOF
 mcp_bundle_check_dependencies() {
 	local missing=""
 
-	# Required: zip command
-	if ! command -v zip >/dev/null 2>&1; then
-		missing="${missing}zip "
+	# Required: zip or 7z command
+	if ! command -v zip >/dev/null 2>&1 && ! command -v 7z >/dev/null 2>&1; then
+		missing="${missing}zip (or 7z) "
 	fi
 
 	if [ -n "${missing}" ]; then
 		printf '  \342\234\227 Missing required commands: %s\n' "${missing}" >&2
-		printf '    Install: brew install %s (macOS), apt install %s (Linux), choco install %s (Windows)\n' "${missing}" "${missing}" "${missing}" >&2
+		printf '    Install: brew install zip (macOS), apt install zip (Linux), or use pre-installed 7z (Windows)\n' >&2
 		return 3
 	fi
 
 	return 0
+}
+
+# Cross-platform zip creation (prefers zip, falls back to 7z)
+mcp_bundle_create_zip() {
+	local output_path="$1"
+	local source_dir="$2"
+
+	if command -v zip >/dev/null 2>&1; then
+		(cd "${source_dir}" && zip -rq "${output_path}" .)
+	elif command -v 7z >/dev/null 2>&1; then
+		(cd "${source_dir}" && 7z a -tzip -bso0 -bsp0 "${output_path}" .)
+	else
+		printf 'Error: Neither zip nor 7z found\n' >&2
+		return 1
+	fi
+}
+
+# Cross-platform zip extraction (prefers unzip, falls back to 7z)
+mcp_bundle_extract_zip() {
+	local archive="$1"
+	local dest_dir="$2"
+
+	if command -v unzip >/dev/null 2>&1; then
+		unzip -q "${archive}" -d "${dest_dir}"
+	elif command -v 7z >/dev/null 2>&1; then
+		7z x -bso0 -bsp0 -o"${dest_dir}" "${archive}"
+	else
+		printf 'Error: Neither unzip nor 7z found\n' >&2
+		return 1
+	fi
 }
 
 mcp_bundle_download_gojq() {
@@ -162,7 +192,7 @@ mcp_bundle_download_gojq() {
 	# Extract
 	mkdir -p "${tmp_dir}/extracted"
 	if [ "${platform}" = "win32" ]; then
-		unzip -q "${archive}" -d "${tmp_dir}/extracted"
+		mcp_bundle_extract_zip "${archive}" "${tmp_dir}/extracted"
 	else
 		tar -xzf "${archive}" -C "${tmp_dir}/extracted"
 	fi
@@ -1084,11 +1114,8 @@ mcp_bundle_create_archive() {
 	local output_path="$2"
 	local verbose="$3"
 
-	# Create ZIP archive
-	(
-		cd "${staging_dir}"
-		zip -rq "${output_path}" .
-	)
+	# Create ZIP archive (uses zip or 7z)
+	mcp_bundle_create_zip "${output_path}" "${staging_dir}"
 
 	if [ "${verbose}" = "true" ]; then
 		local size
