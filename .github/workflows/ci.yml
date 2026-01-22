@@ -416,6 +416,19 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Verify tag is on main branch
+        run: |
+          set -euo pipefail
+          # Fetch main branch ref
+          git fetch origin main:refs/remotes/origin/main
+          # Check if the tagged commit is an ancestor of (or equal to) main
+          if ! git merge-base --is-ancestor HEAD origin/main; then
+            echo "::error::Release tags must be on the main branch. This tag points to a commit not on main."
+            echo "To fix: merge dev into main, then re-tag on main."
+            exit 1
+          fi
+          echo "Tag is on main branch"
+
       - name: Validate tag matches VERSION and rendered README
         run: |
           set -euo pipefail
