@@ -62,6 +62,10 @@ mcp_core_bootstrap_state() {
 	MCPBASH_INITIALIZE_HANDSHAKE_DONE=false
 	_MCP_NOTIFICATION_PAYLOAD=""
 	mcp_runtime_init_paths
+	# Sync MCP logging level with MCPBASH_LOG_LEVEL (may be set by .debug file detection)
+	if [ -n "${MCPBASH_LOG_LEVEL:-}" ]; then
+		mcp_logging_set_level "${MCPBASH_LOG_LEVEL}"
+	fi
 	if ! mcp_auth_init; then
 		exit 1
 	fi

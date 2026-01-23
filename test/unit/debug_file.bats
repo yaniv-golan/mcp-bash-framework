@@ -52,3 +52,28 @@ setup() {
 	mcp_runtime_init_paths
 	assert_equal "${MCPBASH_LOG_LEVEL}" "debug"
 }
+
+@test "debug file: MCP logging level synced after detection" {
+	# Source logging.sh to get MCP_LOG_LEVEL_CURRENT
+	# shellcheck disable=SC1091
+	. "${MCPBASH_HOME}/lib/json.sh"
+	# shellcheck disable=SC1091
+	. "${MCPBASH_HOME}/lib/logging.sh"
+
+	# Before: MCP logging level should be info (default)
+	assert_equal "${MCP_LOG_LEVEL_CURRENT}" "info"
+
+	# Create .debug file and init paths
+	touch "${BATS_TEST_TMPDIR}/server.d/.debug"
+	mcp_runtime_init_paths
+
+	# Simulate what mcp_core_bootstrap_state does after init_paths
+	if [ -n "${MCPBASH_LOG_LEVEL:-}" ]; then
+		mcp_logging_set_level "${MCPBASH_LOG_LEVEL}"
+	fi
+
+	# After: MCP logging level should be synced to debug
+	assert_equal "${MCP_LOG_LEVEL_CURRENT}" "debug"
+	# And debug logging should be enabled
+	mcp_logging_is_enabled "debug"
+}
