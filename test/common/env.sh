@@ -485,6 +485,7 @@ test_run_mcp() {
 		export MCPBASH_REMOTE_TOKEN="${MCPBASH_REMOTE_TOKEN:-}"
 		export MCPBASH_REMOTE_TOKEN_KEY="${MCPBASH_REMOTE_TOKEN_KEY:-}"
 		export MCPBASH_REMOTE_TOKEN_FALLBACK_KEY="${MCPBASH_REMOTE_TOKEN_FALLBACK_KEY:-}"
+		export MCPBASH_CI_MODE="${MCPBASH_CI_MODE:-}"
 		./bin/mcp-bash <"${requests_file}" >"${responses_file}" 2>"${stderr_file}"
 	)
 }
