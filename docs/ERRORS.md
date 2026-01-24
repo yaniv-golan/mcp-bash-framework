@@ -138,7 +138,7 @@ Example `resources/read` error payload:
 | `-32600` | Invalid request (missing method, batch arrays when disabled) | `lib/core.sh` |
 | `-32601` | Unknown or disallowed method (`notifications/message` from client, missing handler) | `lib/core.sh`, `handlers/*` |
 | `-32602` | Invalid params (unsupported protocol version, invalid cursor/log level, missing/invalid remote token) | `handlers/lifecycle.sh`, `handlers/completion.sh`, `handlers/logging.sh`, `lib/auth.sh`, registry cursors |
-| `-32603` | Internal errors (empty handler response, registry size/parse failures, tool output/stderr over limits, provider failures); also used for tool timeouts | `lib/core.sh`, `lib/tools.sh`, `lib/resources.sh`, `lib/prompts.sh` |
+| `-32603` | Internal errors (empty handler response, registry size/parse failures, tool output/stderr over limits, provider failures) | `lib/core.sh`, `lib/tools.sh`, `lib/resources.sh`, `lib/prompts.sh` |
 | `-32001` | Tool cancelled (SIGTERM/INT from client) | `lib/tools.sh` |
 | `-32000` | Server not initialized (`initialize` not completed) | `lib/core.sh` |
 | `-32002` | Resource not found (`resources/read`) | `lib/resources.sh` |

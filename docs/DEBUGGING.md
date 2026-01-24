@@ -313,6 +313,58 @@ When a server works from CLI but fails in MCP clients, follow this diagnostic pa
    - Use login-aware wrapper: mcp-bash config --wrapper-env > wrapper.sh
 ```
 
+## Zombie/Orphaned MCP Server Processes
+
+### Symptoms
+
+- Multiple `mcp-bash` processes accumulating over time
+- Processes with high uptime that appear to be doing nothing
+- High memory usage from accumulated server instances
+
+### Causes
+
+MCP clients (like Claude Desktop) may disconnect without sending proper `shutdown`/`exit` JSON-RPC messages. When this happens, mcp-bash servers can remain running indefinitely waiting for input that never arrives.
+
+### Built-in Mitigations (v0.14.0+)
+
+mcp-bash includes automatic defenses against zombie processes:
+
+1. **Idle Timeout** (enabled by default): Servers exit after 1 hour of no client activity
+2. **Orphan Detection** (enabled on Unix): Servers exit if their parent process dies
+
+### Manual Cleanup
+
+If you have accumulated zombie processes, you can clean them up:
+
+```bash
+# List all mcp-bash processes
+ps aux | grep mcp-bash
+
+# Kill all mcp-bash processes (use with caution)
+pkill -f mcp-bash
+
+# Kill processes older than 1 day with PPID=1 (orphaned)
+ps -eo pid,ppid,etime,args | grep mcp-bash | awk '$2==1 && $3 ~ /-/ {print $1}' | xargs kill
+```
+
+### Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MCPBASH_IDLE_TIMEOUT` | `3600` | Seconds before idle exit (0 = disabled) |
+| `MCPBASH_IDLE_TIMEOUT_ENABLED` | `true` | Master switch for idle timeout |
+| `MCPBASH_ORPHAN_CHECK_ENABLED` | `true` (Unix) | Enable parent-death detection |
+| `MCPBASH_ORPHAN_CHECK_INTERVAL` | `30` | Seconds between orphan checks |
+
+### Disabling Mitigations
+
+For long-running embedded scenarios where the server intentionally runs without client interaction:
+
+```bash
+export MCPBASH_IDLE_TIMEOUT=0
+export MCPBASH_ORPHAN_CHECK_ENABLED=false
+```
+
 ## See Also
 
 - [LOGGING.md](LOGGING.md) - General logging configuration

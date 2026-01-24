@@ -14,6 +14,24 @@ MCPBASH_EXIT_REQUESTED=false
 MCPBASH_PROGRESS_FLUSHER_PID=""
 MCPBASH_RESOURCE_POLL_PID=""
 MCPBASH_LAST_REGISTRY_POLL=""
+
+# Zombie process mitigation (idle timeout + orphan detection)
+MCPBASH_ORIGINAL_PPID=""
+MCPBASH_IDLE_TIMEOUT_TRIGGERED=false
+MCPBASH_ORPHAN_DETECTED=false
+_MCPBASH_SIGNAL_RECEIVED=""
+_MCPBASH_CLEANUP_DONE=false
+
+# EXIT trap handler with idempotency guard.
+# Ensures cleanup runs exactly once, whether from normal exit or signal.
+_mcp_exit_handler() {
+	local exit_code=$?
+	if [ "${_MCPBASH_CLEANUP_DONE}" != "true" ]; then
+		_MCPBASH_CLEANUP_DONE=true
+		mcp_runtime_cleanup 2>/dev/null || true
+	fi
+	exit ${exit_code}
+}
 MCPBASH_DEFAULT_MAX_CONCURRENT_REQUESTS="${MCPBASH_DEFAULT_MAX_CONCURRENT_REQUESTS:-16}"
 MCPBASH_DEFAULT_MAX_OUTPUT_BYTES="${MCPBASH_DEFAULT_MAX_OUTPUT_BYTES:-10485760}"
 MCPBASH_DEFAULT_PROGRESS_PER_MIN="${MCPBASH_DEFAULT_PROGRESS_PER_MIN:-100}"
@@ -57,6 +75,12 @@ mcp_core_require_handlers() {
 }
 
 mcp_core_bootstrap_state() {
+	# Capture original PPID early for orphan detection (before any defaults are applied)
+	mcp_core_capture_original_ppid
+
+	# Set up EXIT trap for cleanup (runs on normal exit and signals)
+	trap '_mcp_exit_handler' EXIT
+
 	MCPBASH_INITIALIZED=false
 	MCPBASH_SHUTDOWN_PENDING=false
 	MCPBASH_INITIALIZE_HANDSHAKE_DONE=false
@@ -129,25 +153,249 @@ mcp_core_maybe_start_background_workers() {
 	fi
 }
 
+# Capture original PPID at startup for orphan detection.
+# Must be called early in bootstrap before any defaults are applied.
+mcp_core_capture_original_ppid() {
+	MCPBASH_ORIGINAL_PPID="${PPID:-}"
+
+	# Platform detection MUST run before defaults are applied.
+	# Disable orphan detection on Windows/Cygwin/MSYS where PPID semantics differ.
+	case "$(uname -s 2>/dev/null)" in
+	CYGWIN* | MINGW* | MSYS*)
+		MCPBASH_ORPHAN_CHECK_ENABLED="${MCPBASH_ORPHAN_CHECK_ENABLED:-false}"
+		;;
+	*)
+		MCPBASH_ORPHAN_CHECK_ENABLED="${MCPBASH_ORPHAN_CHECK_ENABLED:-true}"
+		;;
+	esac
+
+	# If already orphaned at startup (PPID=1), disable orphan detection
+	if [ "${MCPBASH_ORIGINAL_PPID}" = "1" ]; then
+		MCPBASH_ORPHAN_CHECK_ENABLED="false"
+	fi
+}
+
+# Check if we've been orphaned (original parent process died).
+# Works regardless of whether orphans are reparented to PID 1 or a subreaper.
+mcp_core_check_orphaned() {
+	[ "${MCPBASH_ORPHAN_CHECK_ENABLED:-true}" = "true" ] || return 1
+	[ -n "${MCPBASH_ORIGINAL_PPID:-}" ] || return 1
+	[ "${MCPBASH_ORIGINAL_PPID}" != "1" ] || return 1
+
+	# Check if original parent is still alive using multiple methods:
+	# 1. /proc check (Linux) - most reliable
+	# 2. kill -0 - works if we have permission
+	# 3. ps fallback - handles EPERM case where kill -0 fails
+	if [ -d "/proc/${MCPBASH_ORIGINAL_PPID}" ]; then
+		return 1 # Parent still alive
+	elif kill -0 "${MCPBASH_ORIGINAL_PPID}" 2>/dev/null; then
+		return 1 # Parent still alive
+	elif ps -p "${MCPBASH_ORIGINAL_PPID}" >/dev/null 2>&1; then
+		return 1 # Parent still alive (handles EPERM case)
+	fi
+
+	return 0 # Parent not found - we're orphaned
+}
+
+mcp_core_handle_orphaned() {
+	if [ "${MCPBASH_LOG_LEVEL:-info}" = "debug" ] || [ "${MCPBASH_CI_MODE:-false}" = "true" ]; then
+		printf '%s\n' "mcp-bash: process orphaned (original parent PID ${MCPBASH_ORIGINAL_PPID} no longer exists); exiting" >&2
+	fi
+
+	if [ "${MCPBASH_INITIALIZED:-false}" = "true" ]; then
+		if mcp_logging_is_enabled "warning"; then
+			mcp_logging_warning "mcp.core" "Process orphaned - original parent PID ${MCPBASH_ORIGINAL_PPID} no longer exists"
+		fi
+	fi
+
+	MCPBASH_ORPHAN_DETECTED=true
+}
+
+mcp_core_handle_idle_timeout() {
+	local timeout="$1"
+
+	# Always log to stderr so users understand the exit reason
+	printf '%s\n' "mcp-bash: idle timeout after ${timeout}s with no client activity; exiting" >&2
+
+	if [ "${MCPBASH_INITIALIZED:-false}" = "true" ]; then
+		if mcp_logging_is_enabled "warning"; then
+			mcp_logging_warning "mcp.core" "Server idle timeout (${timeout}s) - no client activity"
+		fi
+	fi
+
+	MCPBASH_IDLE_TIMEOUT_TRIGGERED=true
+}
+
 mcp_core_read_loop() {
 	local line
-	while IFS= read -r line || [ -n "${line}" ]; do
+	local idle_timeout="${MCPBASH_IDLE_TIMEOUT:-3600}"
+	local idle_enabled="${MCPBASH_IDLE_TIMEOUT_ENABLED:-true}"
+	local orphan_interval="${MCPBASH_ORPHAN_CHECK_INTERVAL:-30}"
+	local orphan_enabled="${MCPBASH_ORPHAN_CHECK_ENABLED:-true}"
+
+	# Validate/normalize timeout values
+	case "${idle_timeout}" in
+	'' | *[!0-9]*) idle_timeout=3600 ;;
+	0) idle_enabled="false" ;;
+	esac
+	case "${orphan_interval}" in
+	'' | *[!0-9]*) orphan_interval=30 ;;
+	0) orphan_interval=30 ;;
+	esac
+	# Minimum interval of 1 second to prevent busy loop
+	if [ "${orphan_interval}" -lt 1 ]; then
+		orphan_interval=1
+	fi
+
+	# Honor the enable flag
+	if [ "${idle_enabled}" = "false" ]; then
+		idle_timeout=0
+	fi
+
+	# Determine read timeout: use orphan interval for periodic checks,
+	# but cap at idle_timeout if it's shorter and enabled
+	local read_timeout="${orphan_interval}"
+	if [ "${idle_timeout}" -gt 0 ] && [ "${idle_timeout}" -lt "${orphan_interval}" ]; then
+		read_timeout="${idle_timeout}"
+	fi
+
+	# If both features are disabled, use blocking read (no timeout)
+	local use_timeout="true"
+	if [ "${idle_timeout}" -eq 0 ] && [ "${orphan_enabled}" != "true" ]; then
+		use_timeout="false"
+	fi
+
+	# Set up signal traps to distinguish signals from timeout/EOF
+	# (portable across bash 3.2+ since we can't rely on exit code 142)
+	trap '_MCPBASH_SIGNAL_RECEIVED=INT' INT
+	trap '_MCPBASH_SIGNAL_RECEIVED=TERM' TERM
+
+	# Track idle time using wall clock for accuracy
+	local idle_start
+	idle_start=$(date +%s)
+
+	# For EOF detection heuristic: track consecutive immediate returns
+	local immediate_returns=0
+
+	while true; do
+		# Clear line before read to prevent stale data on timeout/EOF
+		line=""
+		_MCPBASH_SIGNAL_RECEIVED=""
+
+		if [ "${use_timeout}" = "true" ]; then
+			local read_start read_end read_elapsed
+			read_start=$(date +%s)
+
+			# Capture exit status directly (don't use ! which inverts $?)
+			IFS= read -t "${read_timeout}" -r line
+			local read_status=$?
+
+			read_end=$(date +%s)
+			read_elapsed=$((read_end - read_start))
+
+			if [ ${read_status} -ne 0 ]; then
+				# Check for signal first (portable - works on bash 3.2+)
+				if [ -n "${_MCPBASH_SIGNAL_RECEIVED}" ]; then
+					case "${_MCPBASH_SIGNAL_RECEIVED}" in
+					INT) exit 130 ;;
+					TERM) exit 143 ;;
+					*) exit 1 ;;
+					esac
+				fi
+
+				# Handle any partial line data (for EOF case)
+				[ -n "${line}" ] && mcp_core_handle_line "${line}"
+
+				# Timing heuristic for EOF detection (bash 3.2 compatibility):
+				# If read returned very quickly relative to timeout, it's likely EOF.
+				local quick_threshold=2
+				if [ "${read_timeout}" -le 2 ]; then
+					quick_threshold=1
+				fi
+
+				if [ "${read_elapsed}" -le "${quick_threshold}" ]; then
+					immediate_returns=$((immediate_returns + 1))
+					# 3 consecutive immediate returns = definitely EOF
+					if [ ${immediate_returns} -ge 3 ]; then
+						break
+					fi
+					# Backoff to prevent busy loop on EOF with short timeouts
+					if [ "${read_timeout}" -le 2 ] && [ ${immediate_returns} -ge 1 ]; then
+						sleep 1 2>/dev/null || true
+					fi
+				else
+					immediate_returns=0
+				fi
+
+				# Check wall-clock idle time and orphan status
+				local now idle_elapsed
+				now=$(date +%s)
+				idle_elapsed=$((now - idle_start))
+
+				# Check orphan status (if enabled)
+				if [ "${orphan_enabled}" = "true" ] && mcp_core_check_orphaned; then
+					mcp_core_handle_orphaned
+					break
+				fi
+
+				# Check idle timeout (if enabled)
+				if [ "${idle_timeout}" -gt 0 ] && [ "${idle_elapsed}" -ge "${idle_timeout}" ]; then
+					mcp_core_handle_idle_timeout "${idle_timeout}"
+					break
+				fi
+
+				# Not at timeout yet - continue loop
+				continue
+			fi
+
+			# Successful read - reset counters
+			immediate_returns=0
+		else
+			# Both features disabled - use blocking read
+			IFS= read -r line
+			local read_status=$?
+
+			if [ ${read_status} -ne 0 ]; then
+				# Check for signal (same handling as timeout branch)
+				if [ -n "${_MCPBASH_SIGNAL_RECEIVED}" ]; then
+					case "${_MCPBASH_SIGNAL_RECEIVED}" in
+					INT) exit 130 ;;
+					TERM) exit 143 ;;
+					*) exit 1 ;;
+					esac
+				fi
+				[ -n "${line}" ] && mcp_core_handle_line "${line}"
+				break
+			fi
+		fi
+
+		# Reset idle timer on activity
+		idle_start=$(date +%s)
+		[ -z "${line}" ] && continue
 		mcp_core_handle_line "${line}"
 	done
+
+	# Restore default signal handling
+	trap - INT TERM
 }
 
 mcp_core_finish_after_read_loop() {
 	local shutdown_pending="${MCPBASH_SHUTDOWN_PENDING:-false}"
 	local exit_requested="${MCPBASH_EXIT_REQUESTED:-false}"
+	local idle_timeout="${MCPBASH_IDLE_TIMEOUT_TRIGGERED:-false}"
+	local orphan_detected="${MCPBASH_ORPHAN_DETECTED:-false}"
 
 	if [ "${shutdown_pending}" = true ]; then
 		mcp_core_cancel_shutdown_watchdog
 		MCPBASH_SHUTDOWN_TIMER_STARTED=false
 	fi
 
-	if [ "${exit_requested}" = true ] || [ "${shutdown_pending}" = true ]; then
+	# Clean exit on: explicit exit, shutdown, idle timeout, OR orphan detected
+	if [ "${exit_requested}" = true ] || [ "${shutdown_pending}" = true ] \
+		|| [ "${idle_timeout}" = true ] || [ "${orphan_detected}" = true ]; then
 		mcp_core_wait_for_workers
 		mcp_runtime_cleanup
+		_MCPBASH_CLEANUP_DONE=true # Prevent double cleanup in EXIT trap
 		exit 0
 	fi
 

@@ -168,6 +168,11 @@ Pure Bash MCP server framework. Bash≥3.2 + jq/gojq. Stdio transport only.
   - `MCPBASH_MAX_RESOURCE_BYTES` (default same as output limit).
   - `MCPBASH_REGISTRY_MAX_BYTES` (default `104857600`).
   - `MCPBASH_ENV_PAYLOAD_THRESHOLD` (default `65536` bytes) → spill large args/metadata to temp files.
+- Server lifecycle (zombie process mitigation):
+  - `MCPBASH_IDLE_TIMEOUT` (default 3600s) → exit after no client activity; 0 to disable.
+  - `MCPBASH_IDLE_TIMEOUT_ENABLED` (default `true`) → master switch for idle timeout.
+  - `MCPBASH_ORPHAN_CHECK_ENABLED` (default `true` on Unix, `false` on Windows) → exit if parent process dies.
+  - `MCPBASH_ORPHAN_CHECK_INTERVAL` (default 30s) → orphan check frequency.
 - Progress & logging throttles:
   - `MCPBASH_MAX_PROGRESS_PER_MIN` (default 100 per request).
   - `MCPBASH_MAX_LOGS_PER_MIN` (default 100 per request).
@@ -223,7 +228,7 @@ Pure Bash MCP server framework. Bash≥3.2 + jq/gojq. Stdio transport only.
   - `-32600` → invalid request (missing method, disallowed batch arrays).
   - `-32601` → method not found / unsupported method.
   - `-32602` → invalid params (bad args, unsupported protocol version, invalid cursor, invalid log level).
-  - `-32603` → internal error (tool timeout, provider failure, output size limit, registry errors, empty handler response).
+  - `-32603` → internal error (provider failure, output size limit, registry errors, empty handler response).
   - `-32000` → server not initialized (`initialize` not completed).
   - `-32001` → tool cancelled (SIGTERM/INT).
   - `-32002` → resource not found (`resources/read`).

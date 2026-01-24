@@ -23,6 +23,10 @@ Authoritative list of supported environment variables. Defaults shown are the sh
 | `MCPBASH_DEFAULT_TOOL_TIMEOUT` | `30` | Default tool timeout (seconds). |
 | `MCPBASH_DEFAULT_SUBSCRIBE_TIMEOUT` | `120` | Default `resources/subscribe` timeout (seconds). |
 | `MCPBASH_SHUTDOWN_TIMEOUT` | `5` | Graceful shutdown timeout (seconds). |
+| `MCPBASH_IDLE_TIMEOUT` | `3600` | Seconds to wait for client activity before exiting (0 = disabled). Prevents zombie processes when clients disconnect without shutdown. |
+| `MCPBASH_IDLE_TIMEOUT_ENABLED` | `true` | Set to `false` to disable idle timeout entirely. |
+| `MCPBASH_ORPHAN_CHECK_ENABLED` | `true` (Unix), `false` (Windows) | Enable parent-death detection. Server exits if original parent process dies. |
+| `MCPBASH_ORPHAN_CHECK_INTERVAL` | `30` | Seconds between orphan detection checks. |
 | `MCPBASH_PROGRESS_EXTENDS_TIMEOUT` | `false` | When `true`, activity detection (pattern matches or progress emissions) resets the idle timeout, allowing long-running tools to continue as long as they show activity. |
 | `MCPBASH_MAX_TIMEOUT_SECS` | `600` | Hard cap on tool runtime (seconds) when progress-aware timeout is enabled. |
 | `MCPBASH_LOG_LEVEL` | `info` | RFC-5424 level; `debug` shows discovery traces. Can also be enabled via `server.d/.debug` file (see [DEBUGGING.md](DEBUGGING.md#debug-file-persistent-debug-mode)). |
