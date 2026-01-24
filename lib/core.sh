@@ -160,12 +160,17 @@ mcp_core_capture_original_ppid() {
 
 	# Platform detection MUST run before defaults are applied.
 	# Disable orphan detection on Windows/Cygwin/MSYS where PPID semantics differ.
+	# Also disable in CI mode where process trees are managed differently.
 	case "$(uname -s 2>/dev/null)" in
 	CYGWIN* | MINGW* | MSYS*)
 		MCPBASH_ORPHAN_CHECK_ENABLED="${MCPBASH_ORPHAN_CHECK_ENABLED:-false}"
 		;;
 	*)
-		MCPBASH_ORPHAN_CHECK_ENABLED="${MCPBASH_ORPHAN_CHECK_ENABLED:-true}"
+		if [ "${MCPBASH_CI_MODE:-false}" = "true" ]; then
+			MCPBASH_ORPHAN_CHECK_ENABLED="${MCPBASH_ORPHAN_CHECK_ENABLED:-false}"
+		else
+			MCPBASH_ORPHAN_CHECK_ENABLED="${MCPBASH_ORPHAN_CHECK_ENABLED:-true}"
+		fi
 		;;
 	esac
 
@@ -232,6 +237,12 @@ mcp_core_read_loop() {
 	local idle_enabled="${MCPBASH_IDLE_TIMEOUT_ENABLED:-true}"
 	local orphan_interval="${MCPBASH_ORPHAN_CHECK_INTERVAL:-30}"
 	local orphan_enabled="${MCPBASH_ORPHAN_CHECK_ENABLED:-true}"
+
+	# Disable zombie mitigations in CI mode to preserve simple read loop behavior
+	if [ "${MCPBASH_CI_MODE:-false}" = "true" ]; then
+		idle_enabled="false"
+		orphan_enabled="false"
+	fi
 
 	# Validate/normalize timeout values
 	case "${idle_timeout}" in

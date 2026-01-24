@@ -353,7 +353,7 @@ ps -eo pid,ppid,etime,args | grep mcp-bash | awk '$2==1 && $3 ~ /-/ {print $1}' 
 |----------|---------|-------------|
 | `MCPBASH_IDLE_TIMEOUT` | `3600` | Seconds before idle exit (0 = disabled) |
 | `MCPBASH_IDLE_TIMEOUT_ENABLED` | `true` | Master switch for idle timeout |
-| `MCPBASH_ORPHAN_CHECK_ENABLED` | `true` (Unix) | Enable parent-death detection |
+| `MCPBASH_ORPHAN_CHECK_ENABLED` | `true` (Unix), `false` (Windows/CI) | Enable parent-death detection |
 | `MCPBASH_ORPHAN_CHECK_INTERVAL` | `30` | Seconds between orphan checks |
 
 ### Disabling Mitigations

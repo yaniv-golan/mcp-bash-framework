@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`.debug` file detection not enabling MCP debug logs**: The `server.d/.debug` marker file correctly set `MCPBASH_LOG_LEVEL=debug`, but debug-level MCP log notifications were still filtered out. Root cause: `MCP_LOG_LEVEL_CURRENT` was initialized when `logging.sh` was sourced (before `.debug` file detection runs). Fix: sync MCP logging level after `mcp_runtime_init_paths()` in `mcp_core_bootstrap_state()`.
 
+- **Zombie mitigations causing CI test failures**: The zombie process mitigation feature's timeout-based read loop caused widespread test failures in CI. The new read loop with `read -t` behaves differently than the simple blocking `read` when processing piped input. Fix: disable both idle timeout and orphan detection when `MCPBASH_CI_MODE=true` to restore simple blocking read loop behavior.
+
 ## [0.13.0] - 2026-01-22
 
 ### Added

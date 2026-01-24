@@ -25,7 +25,7 @@ Authoritative list of supported environment variables. Defaults shown are the sh
 | `MCPBASH_SHUTDOWN_TIMEOUT` | `5` | Graceful shutdown timeout (seconds). |
 | `MCPBASH_IDLE_TIMEOUT` | `3600` | Seconds to wait for client activity before exiting (0 = disabled). Prevents zombie processes when clients disconnect without shutdown. |
 | `MCPBASH_IDLE_TIMEOUT_ENABLED` | `true` | Set to `false` to disable idle timeout entirely. |
-| `MCPBASH_ORPHAN_CHECK_ENABLED` | `true` (Unix), `false` (Windows) | Enable parent-death detection. Server exits if original parent process dies. |
+| `MCPBASH_ORPHAN_CHECK_ENABLED` | `true` (Unix), `false` (Windows/CI) | Enable parent-death detection. Server exits if original parent process dies. Disabled by default when `MCPBASH_CI_MODE=true`. |
 | `MCPBASH_ORPHAN_CHECK_INTERVAL` | `30` | Seconds between orphan detection checks. |
 | `MCPBASH_PROGRESS_EXTENDS_TIMEOUT` | `false` | When `true`, activity detection (pattern matches or progress emissions) resets the idle timeout, allowing long-running tools to continue as long as they show activity. |
 | `MCPBASH_MAX_TIMEOUT_SECS` | `600` | Hard cap on tool runtime (seconds) when progress-aware timeout is enabled. |
