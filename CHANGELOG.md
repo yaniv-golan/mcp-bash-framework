@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-01-24
+
 ### Added
 
 - **Zombie process mitigation**: MCP servers now include automatic defenses against zombie/orphan process accumulation. **Idle timeout** (default: 1 hour) exits the server when no client activity is received. **Orphan detection** (Unix only) exits the server when the parent process dies. Both features are enabled by default and can be configured via environment variables (`MCPBASH_IDLE_TIMEOUT`, `MCPBASH_IDLE_TIMEOUT_ENABLED`, `MCPBASH_ORPHAN_CHECK_ENABLED`, `MCPBASH_ORPHAN_CHECK_INTERVAL`). See [DEBUGGING.md](docs/DEBUGGING.md#zombieorphaned-mcp-server-processes) for details.
