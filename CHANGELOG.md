@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Registry generation missing `progressExtendsTimeout` and `maxTimeoutSecs` fields**: Tools with progress-aware timeout configuration in `tool.meta.json` would silently fall back to fixed countdown mode because the registry generator did not copy `progressExtendsTimeout` or `maxTimeoutSecs` fields to `.registry/tools.json`. The timeout watchdog reads these values from the registry at runtime, but they were always null, causing `MCPBASH_PROGRESS_EXTENDS_TIMEOUT` to never be set. Fix: added both fields to auto-discovery and manual registration registry generation paths. Added unit tests to prevent regression.
+
 - **`.debug` file detection not enabling MCP debug logs**: The `server.d/.debug` marker file correctly set `MCPBASH_LOG_LEVEL=debug`, but debug-level MCP log notifications were still filtered out. Root cause: `MCP_LOG_LEVEL_CURRENT` was initialized when `logging.sh` was sourced (before `.debug` file detection runs). Fix: sync MCP logging level after `mcp_runtime_init_paths()` in `mcp_core_bootstrap_state()`.
 
 ## [0.13.0] - 2026-01-22

@@ -223,3 +223,74 @@ EOF
 	has_annotations="$("${MCPBASH_JSON_TOOL_BIN}" -r '.items[0] | has("annotations")' "${MCP_TOOLS_REGISTRY_PATH}")"
 	assert_equal "false" "${has_annotations}"
 }
+
+@test "tools_registry_phases: full scan extracts timeout fields from meta.json" {
+	MCPBASH_TOOLS_DIR="${BATS_TEST_TMPDIR}/toolsdir-timeout-fields"
+	mkdir -p "${MCPBASH_TOOLS_DIR}/slow-tool"
+	cat >"${MCPBASH_TOOLS_DIR}/slow-tool/tool.meta.json" <<'EOF'
+{
+  "name": "slow-tool",
+  "description": "Tool with timeout configuration",
+  "inputSchema": {"type": "object", "properties": {}},
+  "timeoutSecs": 30,
+  "timeoutHint": "Use smaller inputs or enable dryRun mode.",
+  "progressExtendsTimeout": true,
+  "maxTimeoutSecs": 300
+}
+EOF
+	cat >"${MCPBASH_TOOLS_DIR}/slow-tool/tool.sh" <<'EOF'
+#!/usr/bin/env bash
+echo '{"status":"ok"}'
+EOF
+	chmod +x "${MCPBASH_TOOLS_DIR}/slow-tool/tool.sh"
+	MCP_TOOLS_REGISTRY_PATH="${BATS_TEST_TMPDIR}/tools-registry-timeout.json"
+	MCP_TOOLS_REGISTRY_HASH=""
+	MCP_TOOLS_REGISTRY_JSON=""
+	MCP_TOOLS_TOTAL=0
+	mcp_lock_init
+	scan_time="$(date +%s)"
+	mcp_tools_perform_full_scan "${MCPBASH_TOOLS_DIR}" "${scan_time}"
+	assert_file_exist "${MCP_TOOLS_REGISTRY_PATH}"
+	# Check timeoutSecs is captured as number
+	timeout_secs="$("${MCPBASH_JSON_TOOL_BIN}" -r '.items[0].timeoutSecs' "${MCP_TOOLS_REGISTRY_PATH}")"
+	assert_equal "30" "${timeout_secs}"
+	# Check progressExtendsTimeout is captured as boolean true
+	progress_extends="$("${MCPBASH_JSON_TOOL_BIN}" -r '.items[0].progressExtendsTimeout' "${MCP_TOOLS_REGISTRY_PATH}")"
+	assert_equal "true" "${progress_extends}"
+	# Check maxTimeoutSecs is captured as number
+	max_timeout="$("${MCPBASH_JSON_TOOL_BIN}" -r '.items[0].maxTimeoutSecs' "${MCP_TOOLS_REGISTRY_PATH}")"
+	assert_equal "300" "${max_timeout}"
+	# Check timeoutHint is captured as string
+	timeout_hint="$("${MCPBASH_JSON_TOOL_BIN}" -r '.items[0].timeoutHint' "${MCP_TOOLS_REGISTRY_PATH}")"
+	assert_equal "Use smaller inputs or enable dryRun mode." "${timeout_hint}"
+}
+
+@test "tools_registry_phases: tool without timeout fields omits them from registry" {
+	MCPBASH_TOOLS_DIR="${BATS_TEST_TMPDIR}/toolsdir-no-timeout"
+	mkdir -p "${MCPBASH_TOOLS_DIR}/quick-tool"
+	cat >"${MCPBASH_TOOLS_DIR}/quick-tool/tool.meta.json" <<'EOF'
+{
+  "name": "quick-tool",
+  "inputSchema": {"type": "object", "properties": {}}
+}
+EOF
+	cat >"${MCPBASH_TOOLS_DIR}/quick-tool/tool.sh" <<'EOF'
+#!/usr/bin/env bash
+echo '{"status":"ok"}'
+EOF
+	chmod +x "${MCPBASH_TOOLS_DIR}/quick-tool/tool.sh"
+	MCP_TOOLS_REGISTRY_PATH="${BATS_TEST_TMPDIR}/tools-registry-no-timeout.json"
+	MCP_TOOLS_REGISTRY_HASH=""
+	MCP_TOOLS_REGISTRY_JSON=""
+	MCP_TOOLS_TOTAL=0
+	mcp_lock_init
+	scan_time="$(date +%s)"
+	mcp_tools_perform_full_scan "${MCPBASH_TOOLS_DIR}" "${scan_time}"
+	# Check timeout fields are absent (not null)
+	has_progress_extends="$("${MCPBASH_JSON_TOOL_BIN}" -r '.items[0] | has("progressExtendsTimeout")' "${MCP_TOOLS_REGISTRY_PATH}")"
+	assert_equal "false" "${has_progress_extends}"
+	has_max_timeout="$("${MCPBASH_JSON_TOOL_BIN}" -r '.items[0] | has("maxTimeoutSecs")' "${MCP_TOOLS_REGISTRY_PATH}")"
+	assert_equal "false" "${has_max_timeout}"
+	has_timeout_hint="$("${MCPBASH_JSON_TOOL_BIN}" -r '.items[0] | has("timeoutHint")' "${MCP_TOOLS_REGISTRY_PATH}")"
+	assert_equal "false" "${has_timeout_hint}"
+}

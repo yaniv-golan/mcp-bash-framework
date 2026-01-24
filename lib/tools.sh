@@ -193,6 +193,9 @@ mcp_tools_manual_finalize() {
 			path: .path,
 			inputSchema: (.inputSchema // .arguments // {type: "object", properties: {}}),
 			timeoutSecs: (.timeoutSecs // null),
+			timeoutHint: (.timeoutHint // null),
+			progressExtendsTimeout: (.progressExtendsTimeout // null),
+			maxTimeoutSecs: (.maxTimeoutSecs // null),
 			outputSchema: (.outputSchema // null),
 			icons: (.icons // null),
 			annotations: (.annotations // null)
@@ -200,7 +203,10 @@ mcp_tools_manual_finalize() {
 		map(
 			if .outputSchema == null then del(.outputSchema) else . end |
 			if .icons == null then del(.icons) else . end |
-			if .annotations == null then del(.annotations) else . end
+			if .annotations == null then del(.annotations) else . end |
+			if .timeoutHint == null then del(.timeoutHint) else . end |
+			if .progressExtendsTimeout == null then del(.progressExtendsTimeout) else . end |
+			if .maxTimeoutSecs == null then del(.maxTimeoutSecs) else . end
 		) |
 		sort_by(.name) |
 		{
@@ -982,18 +988,22 @@ mcp_tools_scan() {
 			local arguments="{}"
 			local timeout=""
 			local timeout_hint=""
+			local progress_extends=""
+			local max_timeout_secs=""
 			local output_schema="null"
 			local icons="null"
 			local annotations="null"
 
 			if [ -f "${meta_json}" ]; then
 				# Read each field individually to handle multi-line descriptions correctly
-				local meta_name meta_desc meta_args meta_timeout meta_timeout_hint meta_outschema meta_icons meta_annot
+				local meta_name meta_desc meta_args meta_timeout meta_timeout_hint meta_progress_extends meta_max_timeout_secs meta_outschema meta_icons meta_annot
 				meta_name="$("${MCPBASH_JSON_TOOL_BIN}" -r '.name // ""' "${meta_json}" 2>/dev/null || true)"
 				meta_desc="$("${MCPBASH_JSON_TOOL_BIN}" -r '.description // ""' "${meta_json}" 2>/dev/null || true)"
 				meta_args="$("${MCPBASH_JSON_TOOL_BIN}" -c '.inputSchema // .arguments // {type:"object",properties:{}}' "${meta_json}" 2>/dev/null || echo '{}')"
 				meta_timeout="$("${MCPBASH_JSON_TOOL_BIN}" -r '.timeoutSecs // ""' "${meta_json}" 2>/dev/null || true)"
 				meta_timeout_hint="$("${MCPBASH_JSON_TOOL_BIN}" -r '.timeoutHint // ""' "${meta_json}" 2>/dev/null || true)"
+				meta_progress_extends="$("${MCPBASH_JSON_TOOL_BIN}" -r '.progressExtendsTimeout // ""' "${meta_json}" 2>/dev/null || true)"
+				meta_max_timeout_secs="$("${MCPBASH_JSON_TOOL_BIN}" -r '.maxTimeoutSecs // ""' "${meta_json}" 2>/dev/null || true)"
 				meta_outschema="$("${MCPBASH_JSON_TOOL_BIN}" -c '.outputSchema // null' "${meta_json}" 2>/dev/null || echo 'null')"
 				meta_icons="$("${MCPBASH_JSON_TOOL_BIN}" -c '.icons // null' "${meta_json}" 2>/dev/null || echo 'null')"
 				meta_annot="$("${MCPBASH_JSON_TOOL_BIN}" -c '.annotations // null' "${meta_json}" 2>/dev/null || echo 'null')"
@@ -1006,6 +1016,8 @@ mcp_tools_scan() {
 					arguments="${meta_args}"
 					timeout="${meta_timeout}"
 					timeout_hint="${meta_timeout_hint}"
+					progress_extends="${meta_progress_extends}"
+					max_timeout_secs="${meta_max_timeout_secs}"
 					output_schema="${meta_outschema}"
 					icons="${meta_icons:-${icons}}"
 					annotations="${meta_annot:-${annotations}}"
@@ -1058,6 +1070,8 @@ mcp_tools_scan() {
 				--argjson args "$arguments" \
 				--arg timeout "$timeout" \
 				--arg timeout_hint "$timeout_hint" \
+				--arg progress_extends "$progress_extends" \
+				--arg max_timeout_secs "$max_timeout_secs" \
 				--argjson out "$output_schema" \
 				--argjson icons "$icons" \
 				--argjson annotations "$annotations" \
@@ -1069,6 +1083,8 @@ mcp_tools_scan() {
 					timeoutSecs: (if ($timeout|test("^[0-9]+$")) then ($timeout|tonumber) else null end)
 				}
 				+ (if $timeout_hint != "" then {timeoutHint: $timeout_hint} else {} end)
+				+ (if $progress_extends == "true" then {progressExtendsTimeout: true} else {} end)
+				+ (if ($max_timeout_secs|test("^[0-9]+$")) then {maxTimeoutSecs: ($max_timeout_secs|tonumber)} else {} end)
 				+ (if $out != null then {outputSchema: $out} else {} end)
 				+ (if $icons != null then {icons: $icons} else {} end)
 				+ (if $annotations != null then {annotations: $annotations} else {} end)' >>"${items_file}"
