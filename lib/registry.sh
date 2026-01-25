@@ -886,11 +886,12 @@ mcp_registry_register_execute() {
 
 	# Execute in the current shell so manual registration buffers are retained.
 	# errexit-safe: capture exit code without toggling shell state
+	# Note: use fd 8 to avoid conflicting with MCPBASH_DIRECT_FD (fd 3)
 	# shellcheck disable=SC1090
 	# shellcheck disable=SC1091
-	if exec 3<"${script_path}"; then
-		cat <&3 >"${tmp_script}" 2>/dev/null && script_status=0 || script_status=$?
-		exec 3<&-
+	if exec 8<"${script_path}"; then
+		cat <&8 >"${tmp_script}" 2>/dev/null && script_status=0 || script_status=$?
+		exec 8<&-
 	else
 		script_status=1
 	fi

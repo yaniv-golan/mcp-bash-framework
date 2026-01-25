@@ -137,8 +137,8 @@ rpc_send_line_direct() {
 		rpc_send_line "${payload}"
 		return 0
 	fi
-	(
-		exec 1>&"${MCPBASH_DIRECT_FD}"
-		rpc_send_line "${payload}"
-	)
+	# Write directly to the target fd using mcp_io_send_line_to_fd.
+	# This avoids subshell spawning (which causes BASHPID-based lock ownership issues)
+	# and avoids exec fd manipulation (which can be affected by nested command substitutions).
+	mcp_io_send_line_to_fd "${payload}" "${MCPBASH_DIRECT_FD}"
 }

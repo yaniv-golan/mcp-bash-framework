@@ -58,7 +58,7 @@ mcp_logging_emit() {
 	local level="$1"
 	local logger="$2"
 	local message="$3"
-	local logger_json message_json
+	local logger_json message_json notification_json
 	[ -n "${level}" ] || level="info"
 	[ -n "${logger}" ] || logger="mcp-bash"
 	if ! mcp_logging_is_enabled "${level}"; then
@@ -76,7 +76,15 @@ mcp_logging_emit() {
 	# Defensive: ensure quoted strings are non-empty to avoid malformed JSON
 	[ -n "${logger_json}" ] || logger_json='""'
 	[ -n "${message_json}" ] || message_json='""'
-	rpc_send_line_direct "$(printf '{"jsonrpc":"2.0","method":"notifications/message","params":{"level":"%s","logger":%s,"data":%s}}' "${level}" "${logger_json}" "${message_json}")"
+	notification_json="$(printf '{"jsonrpc":"2.0","method":"notifications/message","params":{"level":"%s","logger":%s,"data":%s}}' "${level}" "${logger_json}" "${message_json}")"
+
+	# If notification queue is active (inside handler context), defer emission
+	# to avoid fd corruption in nested command substitutions. Otherwise emit directly.
+	if mcp_notification_queue_active; then
+		mcp_notification_queue_append "${notification_json}"
+	else
+		rpc_send_line_direct "${notification_json}"
+	fi
 }
 
 mcp_logging_debug() {

@@ -9,6 +9,49 @@ MCPBASH_ALLOW_CORRUPT_STDOUT="${MCPBASH_ALLOW_CORRUPT_STDOUT:-false}"
 MCP_IO_ACTIVE_KEY=""
 MCP_IO_ACTIVE_CATEGORY=""
 
+# Notification queue for deferred emission (avoids fd corruption in command substitutions)
+MCP_NOTIFICATION_QUEUE_FILE=""
+
+mcp_notification_queue_init() {
+	# Initialize the notification queue file for the current handler invocation.
+	# Called before handler execution to enable deferred notification emission.
+	if [ -n "${MCPBASH_STATE_DIR:-}" ]; then
+		MCP_NOTIFICATION_QUEUE_FILE="${MCPBASH_STATE_DIR}/notifications.${BASHPID:-$$}.queue"
+		: >"${MCP_NOTIFICATION_QUEUE_FILE}"
+	fi
+}
+
+mcp_notification_queue_append() {
+	# Append a notification payload to the queue file for later emission.
+	# This avoids writing to fds inside command substitutions where fd
+	# inheritance is unreliable.
+	local payload="$1"
+	if [ -n "${MCP_NOTIFICATION_QUEUE_FILE:-}" ] && [ -n "${payload}" ]; then
+		printf '%s\n' "${payload}" >>"${MCP_NOTIFICATION_QUEUE_FILE}"
+	fi
+}
+
+mcp_notification_queue_flush() {
+	# Flush all queued notifications to stdout. Must be called at the top
+	# level of handler invocation (outside any command substitutions) to
+	# ensure reliable fd writes.
+	if [ -z "${MCP_NOTIFICATION_QUEUE_FILE:-}" ] || [ ! -f "${MCP_NOTIFICATION_QUEUE_FILE}" ]; then
+		return 0
+	fi
+	local line
+	while IFS= read -r line; do
+		[ -z "${line}" ] && continue
+		mcp_io_send_line "${line}"
+	done <"${MCP_NOTIFICATION_QUEUE_FILE}"
+	rm -f "${MCP_NOTIFICATION_QUEUE_FILE}"
+	MCP_NOTIFICATION_QUEUE_FILE=""
+}
+
+mcp_notification_queue_active() {
+	# Check if notification queueing is active (we're inside a handler context).
+	[ -n "${MCP_NOTIFICATION_QUEUE_FILE:-}" ]
+}
+
 mcp_io_corruption_file() {
 	if [ -z "${MCPBASH_STATE_DIR:-}" ]; then
 		printf ''
@@ -286,6 +329,42 @@ mcp_io_send_line() {
 	return 0
 }
 
+mcp_io_send_line_to_fd() {
+	# Write directly to a specified file descriptor instead of stdout.
+	# Used by rpc_send_line_direct when MCPBASH_DIRECT_FD is set to bypass
+	# stdout capture (e.g., inside command substitutions in handlers).
+	local payload="$1"
+	local target_fd="$2"
+
+	if [ -z "${payload}" ]; then
+		mcp_io_debug_log "rpc" "-" "empty" ""
+		return 0
+	fi
+
+	local status="ok"
+	local category="rpc"
+	local prev_key="${MCP_IO_ACTIVE_KEY}"
+	local prev_category="${MCP_IO_ACTIVE_CATEGORY}"
+	MCP_IO_ACTIVE_KEY="-"
+	MCP_IO_ACTIVE_CATEGORY="${category}"
+	mcp_io_stdout_lock_acquire
+
+	if ! mcp_io_write_payload_to_fd "${payload}" "${target_fd}"; then
+		status="error"
+		mcp_io_stdout_lock_release
+		MCP_IO_ACTIVE_KEY="${prev_key}"
+		MCP_IO_ACTIVE_CATEGORY="${prev_category}"
+		mcp_io_debug_log "rpc" "-" "${status}" "${payload}"
+		return 1
+	fi
+
+	mcp_io_stdout_lock_release
+	MCP_IO_ACTIVE_KEY="${prev_key}"
+	MCP_IO_ACTIVE_CATEGORY="${prev_category}"
+	mcp_io_debug_log "rpc" "-" "${status}" "${payload}"
+	return 0
+}
+
 mcp_io_send_response() {
 	local key="$1"
 	local payload="$2"
@@ -346,6 +425,68 @@ mcp_io_write_payload() {
 	if ! printf '%s\n' "${normalized}"; then
 		mcp_io_handle_corruption "stdout write failure" "${key}" "${category}" "${normalized}"
 		return 1
+	fi
+	return 0
+}
+
+_mcp_io_write_to_fd3() {
+	# Helper function for writing to fd 3, which is the common case
+	# for MCPBASH_DIRECT_FD. Using a dedicated function ensures the
+	# >&3 redirection is applied correctly regardless of shell context.
+	#
+	# Verify fd 3 is valid and different from fd 1 before writing.
+	if ! { : >&3; } 2>/dev/null; then
+		printf 'mcp-bash: fd 3 unavailable in direct write context\n' >&2
+		return 1
+	fi
+	# Check if fd 3 and fd 1 point to the same file (would cause corruption)
+	local fd1_inode fd3_inode
+	fd1_inode="$(stat -f '%i' /dev/fd/1 2>/dev/null || stat -c '%i' /dev/fd/1 2>/dev/null || echo "1")"
+	fd3_inode="$(stat -f '%i' /dev/fd/3 2>/dev/null || stat -c '%i' /dev/fd/3 2>/dev/null || echo "3")"
+	if [ "${fd1_inode}" = "${fd3_inode}" ]; then
+		printf 'mcp-bash: fd 3 same as fd 1 (inode %s), skipping direct write\n' "${fd1_inode}" >&2
+		return 1
+	fi
+	printf '%s\n' "$1" >&3
+}
+
+mcp_io_write_payload_to_fd() {
+	# Write payload directly to a specified file descriptor.
+	# Used when we need to bypass stdout capture in command substitutions.
+	local payload="$1"
+	local target_fd="$2"
+	local normalized
+	local key="${MCP_IO_ACTIVE_KEY:-"-"}"
+	local category="${MCP_IO_ACTIVE_CATEGORY:-"-"}"
+
+	normalized="$(printf '%s' "${payload}" | tr -d '\r')"
+
+	case "${normalized}" in
+	*$'\n'*)
+		mcp_io_handle_corruption "multi-line payload" "${key}" "${category}" "${normalized}"
+		normalized="${normalized//$'\n'/\\n}"
+		;;
+	esac
+
+	if ! mcp_io_validate_utf8 "${normalized}"; then
+		printf '%s\n' 'mcp-bash: dropping non-UTF8 payload to preserve stdout contract.' >&2
+		mcp_io_handle_corruption "invalid UTF-8" "${key}" "${category}" "${normalized}"
+		return 1
+	fi
+
+	# Write directly to the target fd. For fd 3 (the common case when
+	# MCPBASH_DIRECT_FD is set), use a dedicated helper function. For
+	# other fds, fall back to eval.
+	if [ "${target_fd}" = "3" ]; then
+		if ! _mcp_io_write_to_fd3 "${normalized}"; then
+			mcp_io_handle_corruption "fd write failure" "${key}" "${category}" "${normalized}"
+			return 1
+		fi
+	else
+		if ! eval "printf '%s\\n' \"\${normalized}\" >&${target_fd}"; then
+			mcp_io_handle_corruption "fd write failure" "${key}" "${category}" "${normalized}"
+			return 1
+		fi
 	fi
 	return 0
 }

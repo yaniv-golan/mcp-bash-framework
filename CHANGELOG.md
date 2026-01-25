@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Zombie mitigations causing CI test failures**: The zombie process mitigation feature's timeout-based read loop caused widespread test failures in CI. The new read loop with `read -t` behaves differently than the simple blocking `read` when processing piped input. Fix: disable both idle timeout and orphan detection when `MCPBASH_CI_MODE=true` to restore simple blocking read loop behavior.
 
+- **Log notification corruption in handler responses**: Log notifications emitted inside command substitutions (e.g., during registry building) could intermittently corrupt JSON-RPC responses due to unreliable fd inheritance in nested bash subshells. Fix: defer log notifications to a queue file during handler execution and flush after the handler completes. This ensures notifications are emitted outside any command substitution context. Trade-off: log notifications are now batched per-request rather than streaming in real-time. Progress notifications (used for timeout extension) are unaffected as they use a separate file-based mechanism.
+
 ## [0.13.0] - 2026-01-22
 
 ### Added

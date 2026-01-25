@@ -1181,12 +1181,22 @@ mcp_core_invoke_handler() {
 
 	tmp_file="$(mktemp "${MCPBASH_STATE_DIR}/handler.${BASHPID:-$$}.XXXXXX")"
 	MCPBASH_HANDLER_OUTPUT=""
+
+	# Initialize notification queue to buffer log notifications during handler
+	# execution. This avoids fd corruption when logging inside command substitutions.
+	mcp_notification_queue_init
+
 	if MCPBASH_DIRECT_FD=3 "${handler}" "${method}" "${json_line}" 3>&1 >"${tmp_file}"; then
 		status=0
 	else
 		status=$?
 	fi
 	MCPBASH_HANDLER_OUTPUT="$(mcp_io_read_file_exact "${tmp_file}")"
+
+	# Flush queued notifications now that we're outside the handler's stdout capture.
+	# This ensures notifications go to the real stdout without fd inheritance issues.
+	mcp_notification_queue_flush
+
 	if [ "${MCPBASH_DEBUG_PAYLOADS:-}" = "true" ] && [ -n "${MCPBASH_STATE_DIR:-}" ]; then
 		mcp_io_debug_log "handler" "${method}" "exit=${status}" "${MCPBASH_HANDLER_OUTPUT}"
 	fi
