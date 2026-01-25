@@ -297,9 +297,9 @@ mcp_core_read_loop() {
 			local read_start read_end read_elapsed
 			read_start=$(date +%s)
 
-			# Capture exit status directly (don't use ! which inverts $?)
-			IFS= read -t "${read_timeout}" -r line
-			local read_status=$?
+			# Capture exit status in a way that prevents set -e from aborting on timeout/EOF
+			local read_status=0
+			IFS= read -t "${read_timeout}" -r line || read_status=$?
 
 			read_end=$(date +%s)
 			read_elapsed=$((read_end - read_start))
@@ -363,8 +363,9 @@ mcp_core_read_loop() {
 			immediate_returns=0
 		else
 			# Both features disabled - use blocking read
-			IFS= read -r line
-			local read_status=$?
+			# Capture exit status in a way that prevents set -e from aborting on EOF
+			local read_status=0
+			IFS= read -r line || read_status=$?
 
 			if [ ${read_status} -ne 0 ]; then
 				# Check for signal (same handling as timeout branch)
@@ -410,7 +411,11 @@ mcp_core_finish_after_read_loop() {
 		exit 0
 	fi
 
+	# EOF without explicit shutdown: still exit cleanly
 	mcp_core_wait_for_workers
+	mcp_runtime_cleanup
+	_MCPBASH_CLEANUP_DONE=true
+	exit 0
 }
 
 mcp_core_wait_for_workers() {

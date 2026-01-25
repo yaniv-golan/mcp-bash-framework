@@ -245,6 +245,8 @@ mkfifo "${pipe_in}" "${pipe_out}"
 	./bin/mcp-bash <"${pipe_in}" >"${pipe_out}" &
 	echo $! >"${POLL_ROOT}/server.pid"
 ) || true
+# Wait for server to start before interacting with pipes
+sleep 1
 exec 3>"${pipe_in}"
 exec 4<"${pipe_out}"
 
@@ -257,10 +259,9 @@ read_response() {
 	# Safety timeout to avoid hanging if the server stops producing output
 	if read -r -t 5 -u 4 line; then
 		printf '%s' "${line}"
-		return 0
 	fi
-	# Timeout or EOF: return empty so callers can decide to continue waiting
-	return 2
+	# Return 0 regardless - callers check if response is empty to detect timeout
+	return 0
 }
 
 wait_for() {
