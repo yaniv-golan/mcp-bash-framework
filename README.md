@@ -117,13 +117,13 @@ command -v jq >/dev/null 2>&1 || command -v gojq >/dev/null 2>&1 || printf '%s\n
 Quick install (good for local dev / trusted networks):
 
 ```bash
-curl -fsSL "https://raw.githubusercontent.com/yaniv-golan/mcp-bash-framework/v0.14.0/install.sh" | bash -s -- --yes --version "v0.14.0"
+curl -fsSL "https://raw.githubusercontent.com/yaniv-golan/mcp-bash-framework/v1.0.0/install.sh" | bash -s -- --yes --version "v1.0.0"
 ```
 
 Verified install (recommended for production / security-sensitive environments):
 
 ```bash
-version="v0.14.0"
+version="v1.0.0"
 file="mcp-bash-${version}.tar.gz"
 curl -fsSLO "https://github.com/yaniv-golan/mcp-bash-framework/releases/download/${version}/${file}"
 curl -fsSLO "https://github.com/yaniv-golan/mcp-bash-framework/releases/download/${version}/SHA256SUMS"
@@ -152,7 +152,7 @@ echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc  # or ~/.zshrc (if not 
 Pin a release with the installer (auto-prefixes `v` for bare versions):
 
 ```bash
-bash install.sh --verify <sha256-from-SHA256SUMS> --version 0.14.0
+bash install.sh --verify <sha256-from-SHA256SUMS> --version 1.0.0
 ```
 
 ### 1.5 Verify It Works (30 seconds)
@@ -368,6 +368,23 @@ Picking a wrapper:
   ) as server:
       ...
   ```
+- **Clawdbot**: Clawdbot uses [mcporter](https://github.com/steipete/mcporter) for MCP. Add to `~/.mcporter/mcporter.json`:
+  ```json
+  {
+    "servers": {
+      "mcp-bash": {
+        "type": "stdio",
+        "command": "/Users/you/.local/bin/mcp-bash",
+        "env": {"MCPBASH_PROJECT_ROOT": "/Users/you/my-mcp-server"}
+      }
+    }
+  }
+  ```
+  Verify with `npx mcporter list mcp-bash`. Clawdbot agents call tools via the bundled `mcporter` skill.
+- **Highlight AI**: Go to Highlight → Settings → Connections → Add → Custom command:
+  - **Connection name**: `mcp-bash`
+  - **Command**: `/Users/you/.local/bin/mcp-bash`
+  - **Environment variables**: `MCPBASH_PROJECT_ROOT=/Users/you/my-mcp-server`
 - **Windows note**: Git Bash (CI-tested) or WSL both work. Git Bash ships with Git for Windows; WSL behaves like Linux. See [Windows Support](docs/WINDOWS.md) for details.
 
 ### Compatibility Notes
@@ -376,8 +393,10 @@ Picking a wrapper:
 |--------|--------|----------------------|
 | Claude Desktop | Tested (macOS, Windows) | macOS: non-login shell PATH/env (use `config --wrapper-env`); macOS quarantine/TCC can block execution; restart required after config changes |
 | Claude CLI / Claude Code | Tested | Generally straightforward; ensure `MCPBASH_PROJECT_ROOT` points at your project |
+| Clawdbot | Config documented | Uses mcporter for MCP; config in `~/.mcporter/mcporter.json` |
+| Highlight AI | Tested | UI-based config: Settings → Connections → Add → Custom command |
 | Cursor | Config documented | Config file location differs by install; use `mcp-bash config --client cursor` |
-| Windsurf (Cascade) | Config documented | Use the app’s MCP config UI/file; see snippet in README |
+| Windsurf (Cascade) | Config documented | Use the app's MCP config UI/file; see snippet in README |
 | LibreChat | Config documented | YAML config format; see snippet in README |
 | OpenAI Agents SDK | Example provided | Python example only; verify SDK version and stdio wiring |
 

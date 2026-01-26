@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-01-26
+
+**mcp-bash reaches 1.0.0** — the framework is now considered stable for production use. The protocol implementation is complete, the SDK API is mature, and the project has been validated across multiple MCP servers and clients.
+
+### Added
+
+- **Clawdbot client documentation**: Added configuration instructions for [Clawdbot](https://github.com/clawdbot/clawdbot), which uses [mcporter](https://github.com/steipete/mcporter) for MCP integration. Config goes in `~/.mcporter/mcporter.json`.
+- **Highlight AI client documentation**: Added configuration instructions for [Highlight AI](https://highlightai.com). Tested end-to-end. Uses UI-based config: Settings → Connections → Add → Custom command.
+
+### Changed
+
+- **Version bump to 1.0.0**: Signals API stability. The MCP protocol implementation covers the full 2025-11-25 spec (tools, resources, prompts, elicitation, roots, progress, cancellation). No breaking changes are expected in the 1.x series.
+
 ## [0.14.0] - 2026-01-24
 
 ### Added
