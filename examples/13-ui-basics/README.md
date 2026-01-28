@@ -37,11 +37,13 @@
 
 **Key Concepts**
 
-1. **Tool-associated UI**: The weather tool has a UI in `tools/weather/ui/`. When the tool is called, the result includes `_meta.ui.resourceUri` pointing to this UI.
+1. **Tool-associated UI**: The weather tool has a UI in `tools/weather/ui/`. The framework automatically links them - no explicit `_meta.ui.resourceUri` is needed in `tool.meta.json`.
 
-2. **Standalone UI**: The dashboard in `ui/standalone-dashboard/` is independent and can be referenced by any tool or accessed directly.
+2. **Automatic linking**: When a tool has a `ui/` subdirectory with content (`index.html` or `ui.meta.json`), the framework auto-generates the `_meta.ui` field using the server name from `server.d/server.meta.json`.
 
-3. **UI Metadata**: Each UI has `ui.meta.json` with:
+3. **Standalone UI**: The dashboard in `ui/standalone-dashboard/` is independent and can be referenced by any tool or accessed directly.
+
+4. **UI Metadata**: Each UI has `ui.meta.json` with:
    - `description`: Human-readable description
    - `meta.csp`: Content Security Policy domains
    - `meta.prefersBorder`: Whether to show border

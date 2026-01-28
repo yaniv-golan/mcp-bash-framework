@@ -5,11 +5,5 @@
     "type": "object",
     "properties": {},
     "required": []
-  },
-  "_meta": {
-    "ui": {
-      "resourceUri": "ui://system-dashboard/system-info",
-      "visibility": ["model", "app"]
-    }
   }
 }

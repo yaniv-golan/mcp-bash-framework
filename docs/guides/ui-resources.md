@@ -38,6 +38,56 @@ ui/
     └── ui.meta.json
 ```
 
+## Automatic Tool-UI Linking
+
+When a tool has a `ui/` subdirectory with content (`index.html` or `ui.meta.json`), mcp-bash automatically links them:
+
+```
+tools/
+└── weather/
+    ├── tool.sh
+    ├── tool.meta.json      # No _meta.ui needed!
+    └── ui/
+        ├── index.html
+        └── ui.meta.json
+```
+
+The framework auto-generates `_meta.ui` in the tool definition sent to clients:
+
+```json
+"_meta": {
+  "ui": {
+    "resourceUri": "ui://{server-name}/weather",
+    "visibility": ["model", "app"]
+  }
+}
+```
+
+The `{server-name}` comes from your `server.d/server.meta.json`:
+
+```json
+{
+  "name": "my-server",
+  ...
+}
+```
+
+### Overriding Defaults
+
+To use a different UI resource or custom visibility, add explicit `_meta.ui` to `tool.meta.json`:
+
+```json
+{
+  "name": "weather",
+  "_meta": {
+    "ui": {
+      "resourceUri": "ui://my-server/shared-dashboard",
+      "visibility": ["app"]
+    }
+  }
+}
+```
+
 ## UI Metadata (ui.meta.json)
 
 Every UI resource needs a `ui.meta.json` file:

@@ -14,11 +14,12 @@ This example demonstrates how to display tool results in a rich UI dashboard usi
 ```
 examples/14-ui-templates/
 ├── README.md
-├── server.meta.json
+├── server.d/
+│   └── server.meta.json  # Server name: ui-templates-example
 └── tools/
     └── system-info/
         ├── tool.sh           # Gathers system info (CPU, memory, disk)
-        ├── tool.meta.json    # Tool metadata with UI resource reference
+        ├── tool.meta.json    # Tool metadata (UI is auto-linked)
         └── ui/
             ├── index.html    # Dashboard HTML with SDK integration
             └── ui.meta.json  # UI metadata (CSP, preferences)
@@ -57,6 +58,10 @@ Or add to Claude Desktop config:
 ```
 
 ## Key Concepts
+
+### Automatic UI Linking
+
+The tool has a `ui/` subdirectory, so the framework automatically links them. No explicit `_meta.ui.resourceUri` is needed in `tool.meta.json` - it's auto-generated as `ui://ui-templates-example/system-info` from the server name in `server.d/server.meta.json`.
 
 ### Tool Returns Data, UI Displays It
 

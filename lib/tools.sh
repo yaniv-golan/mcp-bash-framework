@@ -1096,6 +1096,29 @@ mcp_tools_scan() {
 			[ -z "${annotations}" ] && annotations='null'
 			[ -z "${tool_meta}" ] && tool_meta='null'
 
+			# MCP Apps: auto-infer _meta.ui if tool has ui/ subdirectory with content
+			local tool_ui_dir="${dir_name}/ui"
+			if [ -d "${tool_ui_dir}" ] && { [ -f "${tool_ui_dir}/index.html" ] || [ -f "${tool_ui_dir}/ui.meta.json" ]; }; then
+				local server_name="${MCPBASH_SERVER_NAME:-mcp-server}"
+				local ui_name
+				ui_name="$(basename "${dir_name}")"
+				local generated_uri="ui://${server_name}/${ui_name}"
+
+				# Check if resourceUri is already explicitly set
+				local existing_uri=""
+				if [ "${tool_meta}" != "null" ]; then
+					existing_uri="$("${MCPBASH_JSON_TOOL_BIN}" -r '.ui.resourceUri // ""' <<<"${tool_meta}" 2>/dev/null || true)"
+				fi
+
+				if [ -z "${existing_uri}" ]; then
+					# Auto-generate or merge _meta.ui
+					tool_meta="$("${MCPBASH_JSON_TOOL_BIN}" -n \
+						--argjson base "${tool_meta}" \
+						--arg uri "${generated_uri}" \
+						'($base // {}) | .ui = ((.ui // {}) + {resourceUri: $uri}) | .ui.visibility //= ["model","app"]')"
+				fi
+			fi
+
 			# Construct item object
 			"${MCPBASH_JSON_TOOL_BIN}" -n \
 				--arg name "$name" \

@@ -9,11 +9,5 @@
         "description": "City name or location"
       }
     }
-  },
-  "_meta": {
-    "ui": {
-      "resourceUri": "ui://ui-basics-example/weather",
-      "visibility": ["model", "app"]
-    }
   }
 }
