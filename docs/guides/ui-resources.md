@@ -23,9 +23,11 @@ tools/
     ├── tool.sh
     ├── tool.meta.json
     └── ui/
-        ├── index.html        # Optional: static HTML
-        └── ui.meta.json      # Required: UI metadata
+        ├── index.html        # Static HTML (required if no template)
+        └── ui.meta.json      # UI metadata (required if using templates)
 ```
+
+> **Note**: At least one of `index.html` or `ui.meta.json` must exist for auto-linking to work.
 
 ### Standalone UI
 
@@ -125,13 +127,13 @@ Every UI resource needs a `ui.meta.json` file:
 
 ### Loading the MCP Apps SDK
 
-mcp-bash uses [esm.sh](https://esm.sh) to load the official MCP Apps SDK directly in the browser without a build step:
+mcp-bash uses [jsdelivr](https://cdn.jsdelivr.net) to load the official MCP Apps SDK directly in the browser without a build step:
 
 ```javascript
-import { App } from 'https://esm.sh/@modelcontextprotocol/ext-apps';
+import { App } from 'https://cdn.jsdelivr.net/npm/@modelcontextprotocol/ext-apps/+esm';
 ```
 
-**Why esm.sh instead of bundling?**
+**Why CDN instead of bundling?**
 
 | Approach | Requires | Pros | Cons |
 |----------|----------|------|------|
@@ -140,13 +142,13 @@ import { App } from 'https://esm.sh/@modelcontextprotocol/ext-apps';
 
 mcp-bash is a pure Bash framework - adding a JavaScript build step would contradict the "just write Bash" philosophy. For production deployments where you want to eliminate the CDN dependency, you can inline a bundled copy of the SDK.
 
-**CSP requirement:** When using esm.sh, add it to your `ui.meta.json`:
+**CSP requirement:** When using jsdelivr, add it to your `ui.meta.json`:
 ```json
 {
   "meta": {
     "csp": {
-      "connectDomains": ["https://esm.sh"],
-      "resourceDomains": ["https://esm.sh"]
+      "connectDomains": ["https://cdn.jsdelivr.net"],
+      "resourceDomains": ["https://cdn.jsdelivr.net"]
     }
   }
 }
@@ -175,7 +177,7 @@ mcp-bash is a pure Bash framework - adding a JavaScript build step would contrad
   <div id="weather-data">Loading...</div>
 
   <script type="module">
-    import { App } from 'https://esm.sh/@modelcontextprotocol/ext-apps';
+    import { App } from 'https://cdn.jsdelivr.net/npm/@modelcontextprotocol/ext-apps/+esm';
 
     // Create app instance with metadata
     const app = new App({ name: "Weather Dashboard", version: "1.0.0" });
@@ -331,7 +333,11 @@ For common patterns, use templates instead of writing HTML:
 
 ## Linking Tools to UI
 
-### In tool.meta.json
+For tool-associated UI (where `ui/` is inside the tool directory), linking is **automatic** - see [Automatic Tool-UI Linking](#automatic-tool-ui-linking) above.
+
+### Manual Linking (Standalone UI)
+
+For standalone UI resources in `ui/`, or to override the auto-generated link, add explicit `_meta.ui` to `tool.meta.json`:
 
 ```json
 {
@@ -400,7 +406,7 @@ mcp-bash generates CSP headers automatically:
 
 ```
 default-src 'self';
-script-src 'self' https://esm.sh;
+script-src 'self' https://cdn.jsdelivr.net;
 style-src 'self' 'unsafe-inline';
 connect-src 'self' api.example.com ws.example.com;
 font-src 'self' cdn.example.com;

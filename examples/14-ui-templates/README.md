@@ -46,7 +46,7 @@ Or add to Claude Desktop config:
 ```json
 {
   "mcpServers": {
-    "system-dashboard": {
+    "ui-templates-example": {
       "command": "/path/to/mcp-bash",
       "env": {
         "MCPBASH_PROJECT_ROOT": "/path/to/examples/14-ui-templates",
