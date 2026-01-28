@@ -53,4 +53,34 @@ if (cd "${WORKSPACE}/tools/demo" && MCPBASH_HOME="${WORKSPACE}" MCPBASH_PROJECT_
 	exit 1
 fi
 
+# Test: scaffold ui standalone
+(
+	cd "${WORKSPACE}" || exit 1
+	MCPBASH_HOME="${WORKSPACE}" MCPBASH_PROJECT_ROOT="${WORKSPACE}" PATH="${WORKSPACE}/bin:${PATH}" \
+		./bin/mcp-bash scaffold ui dashboard >/dev/null
+)
+[ -f "${WORKSPACE}/ui/dashboard/index.html" ] || {
+	printf 'scaffold ui: index.html not created\n' >&2
+	exit 1
+}
+grep -q "cdn.jsdelivr.net" "${WORKSPACE}/ui/dashboard/ui.meta.json" || {
+	printf 'scaffold ui: CSP missing jsdelivr\n' >&2
+	exit 1
+}
+
+# Test: scaffold tool --ui
+(
+	cd "${WORKSPACE}" || exit 1
+	MCPBASH_HOME="${WORKSPACE}" MCPBASH_PROJECT_ROOT="${WORKSPACE}" PATH="${WORKSPACE}/bin:${PATH}" \
+		./bin/mcp-bash scaffold tool weather --ui >/dev/null
+)
+[ -f "${WORKSPACE}/tools/weather/ui/index.html" ] || {
+	printf 'scaffold tool --ui: UI not created with tool\n' >&2
+	exit 1
+}
+[ -f "${WORKSPACE}/tools/weather/ui/ui.meta.json" ] || {
+	printf 'scaffold tool --ui: ui.meta.json not created\n' >&2
+	exit 1
+}
+
 printf 'Scaffolded smoke test coverage passed.\n'

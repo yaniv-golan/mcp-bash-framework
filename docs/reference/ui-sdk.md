@@ -296,7 +296,7 @@ Generate CSP header string for a UI resource.
 
 ```bash
 csp="$(mcp_ui_get_csp_header "dashboard")"
-# Returns: default-src 'self'; script-src 'self' https://esm.sh; ...
+# Returns: default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; ...
 ```
 
 **Parameters:**
@@ -309,7 +309,7 @@ csp="$(mcp_ui_get_csp_header "dashboard")"
 **Default CSP:**
 ```
 default-src 'self';
-script-src 'self' https://esm.sh;
+script-src 'self' https://cdn.jsdelivr.net;
 style-src 'self' 'unsafe-inline';
 img-src 'self' data:;
 connect-src 'self';

@@ -6,6 +6,7 @@ Minimum layout for an MCP-Bash project:
 - `tools/` — tool directories (`<tool>/tool.sh` + `<tool>/tool.meta.json`).
 - `resources/` — resource providers and metadata.
 - `prompts/` — prompt templates and metadata.
+- `ui/` — standalone UI resources for MCP Apps (dashboards, monitors). See [UI Resources Guide](guides/ui-resources.md).
 - `.registry/` — auto-generated registries (ignored by VCS).
 - `lib/` — optional shared helpers you source from tools/resources/prompts.
 - `mcpb.conf` — optional bundle configuration for `mcp-bash bundle`.

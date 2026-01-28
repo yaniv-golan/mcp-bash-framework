@@ -1,0 +1,10 @@
+{
+  "description": "UI resource for __NAME__",
+  "meta": {
+    "csp": {
+      "connectDomains": ["https://cdn.jsdelivr.net"],
+      "resourceDomains": ["https://cdn.jsdelivr.net"]
+    },
+    "prefersBorder": true
+  }
+}

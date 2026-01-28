@@ -52,3 +52,8 @@ For a project at `/home/user/weather-api/` with no `server.meta.json`:
 }
 ```
 
+## UI Resources
+
+This server can provide HTML interfaces to MCP clients that support MCP Apps.
+See [UI Resources Guide](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/docs/guides/ui-resources.md).
+

@@ -132,6 +132,9 @@ initialize_scaffold_paths() {
 	if [ -z "${MCPBASH_COMPLETIONS_DIR:-}" ]; then
 		MCPBASH_COMPLETIONS_DIR="${MCPBASH_PROJECT_ROOT}/completions"
 	fi
+	if [ -z "${MCPBASH_UI_DIR:-}" ]; then
+		MCPBASH_UI_DIR="${MCPBASH_PROJECT_ROOT}/ui"
+	fi
 }
 
 mcp_init_project_skeleton() {

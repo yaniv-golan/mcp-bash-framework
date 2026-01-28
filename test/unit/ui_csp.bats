@@ -121,13 +121,13 @@ teardown() {
 	[[ "${output}" == *"frame-ancestors 'none'"* ]]
 }
 
-@test "csp: mcp_ui_get_csp_header allows esm.sh for scripts" {
+@test "csp: mcp_ui_get_csp_header allows jsdelivr for scripts" {
 	MCP_UI_REGISTRY_JSON='{"uiResources":[{"name":"test-ui","csp":{"connectDomains":["api.example.com"]}}]}'
 
 	output="$(mcp_ui_get_csp_header "test-ui")"
 
-	# Must allow esm.sh for MCP Apps SDK
-	[[ "${output}" == *"script-src 'self' https://esm.sh"* ]]
+	# Must allow jsdelivr for MCP Apps SDK
+	[[ "${output}" == *"script-src 'self' https://cdn.jsdelivr.net"* ]]
 }
 
 @test "csp: mcp_ui_get_csp_meta returns valid JSON" {

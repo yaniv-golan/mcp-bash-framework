@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-01-28
+
+### Added
+
+- **MCP Apps extension support (SEP-1865)**: Full implementation of the MCP Apps specification for serving interactive HTML UIs. Tools can now provide rich visual interfaces via `ui://` resources. Includes auto-discovery of UI resources, CSP header generation, and template-based UI generation.
+
+- **Auto-inference of `_meta.ui.resourceUri`**: When a tool has a `ui/` subdirectory containing `index.html` or `ui.meta.json`, the framework automatically links the tool to its UI resource. No manual `_meta.ui` configuration needed—the URI is generated as `ui://{server-name}/{tool-name}`.
+
+- **`mcp-bash scaffold ui` command**: New scaffold command for creating UI resources:
+  - `mcp-bash scaffold ui <name>` — creates standalone UI in `ui/<name>/`
+  - `mcp-bash scaffold ui --tool <name>` — creates UI for existing tool (auto-linked)
+  - Generates `index.html` with MCP Apps SDK integration, `ui.meta.json` with CSP configuration
+
+- **`--ui` flag for `mcp-bash scaffold tool`**: Create a tool with UI in one command: `mcp-bash scaffold tool weather --ui`. Generates both the tool files and the `ui/` subdirectory with working templates.
+
+- **UI Resources Guide**: New documentation at `docs/guides/ui-resources.md` covering static HTML UIs, template-based UIs, auto-linking, CSP configuration, and the MCP Apps SDK.
+
+### Fixed
+
+- **`MCPBASH_HOME` override support**: The `bin/mcp-bash` script now respects the `MCPBASH_HOME` environment variable, allowing the installed binary to use development code during testing.
+
+### Documentation
+
+- Added MCP Apps concepts documentation (`docs/concepts/mcp-apps.md`)
+- Added UI SDK reference (`docs/reference/ui-sdk.md`)
+- Added UI templates reference (`docs/reference/ui-templates.md`)
+- Updated `docs/PROJECT-STRUCTURE.md` to document the `ui/` directory
+- Updated scaffold READMEs with UI documentation links
+
 ## [1.0.0] - 2026-01-26
 
 **mcp-bash reaches 1.0.0** — the framework is now considered stable for production use. The protocol implementation is complete, the SDK API is mature, and the project has been validated across multiple MCP servers and clients.

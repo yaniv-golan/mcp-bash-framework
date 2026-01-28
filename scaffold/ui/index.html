@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>__NAME__</title>
+  <style>
+    :root {
+      --color-background: #ffffff;
+      --color-text: #1a1a1a;
+      --color-text-secondary: #666666;
+      --color-border: #e5e5e5;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --color-background: #1a1a1a;
+        --color-text: #f5f5f5;
+        --color-text-secondary: #a0a0a0;
+        --color-border: #333333;
+      }
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--color-background);
+      color: var(--color-text);
+      padding: 20px;
+      line-height: 1.5;
+    }
+    h1 { font-size: 1.5rem; margin-bottom: 16px; }
+    .loading { color: var(--color-text-secondary); }
+    .error { color: #ef4444; }
+  </style>
+</head>
+<body>
+  <h1>__NAME__</h1>
+  <div id="content" class="loading">Waiting for data...</div>
+
+  <script type="module">
+    const content = document.getElementById('content');
+
+    function render(data) {
+      // TODO: Render your UI here
+      content.innerHTML = `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+    }
+
+    // Load MCP Apps SDK
+    let App;
+    try {
+      const module = await import('https://cdn.jsdelivr.net/npm/@modelcontextprotocol/ext-apps/+esm');
+      App = module.App;
+    } catch (e) {
+      content.innerHTML = `<p class="error">Failed to load SDK: ${e.message}</p>`;
+      throw e;
+    }
+
+    const app = new App({ name: "__NAME__", version: "1.0.0" });
+
+    app.onerror = (error) => {
+      console.error('App error:', error);
+      content.innerHTML = `<p class="error">Error: ${error.message}</p>`;
+    };
+
+    app.ontoolresult = (result) => {
+      console.log('Tool result:', result);
+      if (result?.structuredContent) {
+        const data = result.structuredContent.result || result.structuredContent;
+        render(data);
+      }
+    };
+
+    await app.connect();
+    console.log('Connected to MCP host');
+  </script>
+</body>
+</html>

@@ -151,7 +151,7 @@ UIs communicate with the host using the official MCP Apps SDK:
 
 ```html
 <script type="module">
-  import { App } from 'https://esm.sh/@modelcontextprotocol/ext-apps';
+  import { App } from 'https://cdn.jsdelivr.net/npm/@modelcontextprotocol/ext-apps/+esm';
 
   // Create app instance with metadata
   const app = new App({ name: "My App", version: "1.0.0" });

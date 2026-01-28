@@ -15,3 +15,13 @@ Next steps:
 4. Run `./smoke.sh` after edits to validate JSON output. Update the sample args in `smoke.sh` if you change `tool.meta.json`.
 
 Run `mcp-bash` after editing to ensure the tool loads and passes the integration tests under `test/integration/test_tools.sh`.
+
+## Adding a UI
+
+Tools can provide rich HTML interfaces via MCP Apps. See:
+- [UI Resources Guide](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/docs/guides/ui-resources.md)
+- [Example: UI Basics](https://github.com/yaniv-golan/mcp-bash-framework/tree/main/examples/13-ui-basics)
+
+To add UI to this tool:
+1. Create `ui/` subdirectory with `index.html` and/or `ui.meta.json`
+2. The framework automatically links the UI - no manual `_meta.ui` configuration needed

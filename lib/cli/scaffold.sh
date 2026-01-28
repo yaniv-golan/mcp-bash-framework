@@ -83,19 +83,65 @@ EOF
 }
 
 mcp_scaffold_tool() {
-	local name="$1"
+	local name=""
+	local with_ui=false
+
+	# Parse arguments (handles both positional and flags)
+	while [[ $# -gt 0 ]]; do
+		case "$1" in
+		--ui)
+			with_ui=true
+			shift
+			;;
+		-*)
+			printf 'Unknown option: %s\n' "$1" >&2
+			exit 1
+			;;
+		*)
+			if [ -z "${name}" ]; then
+				name="$1"
+			else
+				printf 'Unexpected argument: %s\n' "$1" >&2
+				exit 1
+			fi
+			shift
+			;;
+		esac
+	done
+
 	mcp_scaffold_require_project_root
 	initialize_scaffold_paths
 	local scaffold_dir="${MCPBASH_HOME}/scaffold/tool"
 	local target_dir="${MCPBASH_TOOLS_DIR}/${name}"
 	mcp_scaffold_prepare "tool" "${name}" "${scaffold_dir}" "${target_dir}" "Tool"
+
 	mcp_template_render "${scaffold_dir}/tool.sh" "${target_dir}/tool.sh" "__NAME__=${name}"
 	chmod +x "${target_dir}/tool.sh"
+
+	# Always use standard tool.meta.json (no _meta.ui needed - framework auto-infers)
 	mcp_template_render "${scaffold_dir}/tool.meta.json" "${target_dir}/tool.meta.json" "__NAME__=${name}"
+
+	if [ "${with_ui}" = true ]; then
+		# Also scaffold UI directory
+		local ui_scaffold_dir="${MCPBASH_HOME}/scaffold/ui"
+		if [ ! -d "${ui_scaffold_dir}" ]; then
+			printf 'Error: UI scaffold template not found at %s\n' "${ui_scaffold_dir}" >&2
+			exit 1
+		fi
+		local ui_target_dir="${target_dir}/ui"
+		mkdir -p "${ui_target_dir}"
+		mcp_template_render "${ui_scaffold_dir}/index.html" "${ui_target_dir}/index.html" "__NAME__=${name}"
+		mcp_template_render "${ui_scaffold_dir}/ui.meta.json" "${ui_target_dir}/ui.meta.json" "__NAME__=${name}"
+	fi
+
 	mcp_template_render "${scaffold_dir}/README.md" "${target_dir}/README.md" "__NAME__=${name}"
 	mcp_template_render "${scaffold_dir}/smoke.sh" "${target_dir}/smoke.sh" "__NAME__=${name}"
 	chmod +x "${target_dir}/smoke.sh"
+
 	printf 'Scaffolded tool at %s\n' "${target_dir}"
+	if [ "${with_ui}" = true ]; then
+		printf 'Scaffolded UI at %s/ui\n' "${target_dir}"
+	fi
 	exit 0
 }
 
@@ -182,5 +228,77 @@ mcp_scaffold_completion() {
 	mcp_scaffold_register_completion "${name}" "${script_path}"
 
 	printf 'Scaffolded completion at %s\n' "${target_dir}"
+	exit 0
+}
+
+mcp_scaffold_ui() {
+	local name=""
+	local for_tool=""
+
+	# Parse arguments (handles both positional and flags)
+	while [[ $# -gt 0 ]]; do
+		case "$1" in
+		--tool)
+			for_tool="$2"
+			shift 2
+			;;
+		-*)
+			printf 'Unknown option: %s\n' "$1" >&2
+			exit 1
+			;;
+		*)
+			if [ -z "${name}" ]; then
+				name="$1"
+			else
+				printf 'Unexpected argument: %s\n' "$1" >&2
+				exit 1
+			fi
+			shift
+			;;
+		esac
+	done
+
+	mcp_scaffold_require_project_root
+	initialize_scaffold_paths
+
+	local scaffold_dir="${MCPBASH_HOME}/scaffold/ui"
+	local target_dir
+
+	if [ -n "${for_tool}" ]; then
+		# Tool-associated UI - validate tool exists
+		if [ ! -d "${MCPBASH_TOOLS_DIR}/${for_tool}" ]; then
+			printf 'Error: Tool directory not found: tools/%s\n' "${for_tool}" >&2
+			exit 1
+		fi
+		# Default name to tool name if not provided
+		[ -z "${name}" ] && name="${for_tool}"
+		target_dir="${MCPBASH_TOOLS_DIR}/${for_tool}/ui"
+	else
+		# Standalone UI - name is required
+		if [ -z "${name}" ]; then
+			printf 'Error: UI name required for standalone UIs\n' >&2
+			exit 1
+		fi
+		target_dir="${MCPBASH_UI_DIR}/${name}"
+	fi
+
+	# mcp_scaffold_prepare handles: empty name, invalid name, missing templates, existing target_dir
+	mcp_scaffold_prepare "ui" "${name}" "${scaffold_dir}" "${target_dir}" "UI"
+
+	mcp_template_render "${scaffold_dir}/index.html" "${target_dir}/index.html" "__NAME__=${name}"
+	mcp_template_render "${scaffold_dir}/ui.meta.json" "${target_dir}/ui.meta.json" "__NAME__=${name}"
+
+	# Only create README for standalone UIs (tool has its own README)
+	if [ -z "${for_tool}" ]; then
+		mcp_template_render "${scaffold_dir}/README.md" "${target_dir}/README.md" "__NAME__=${name}"
+	fi
+
+	printf 'Scaffolded UI at %s\n' "${target_dir}"
+
+	if [ -n "${for_tool}" ]; then
+		printf '\nThe framework will automatically link this UI to the tool.\n'
+		printf 'No manual _meta.ui configuration needed.\n'
+	fi
+
 	exit 0
 }

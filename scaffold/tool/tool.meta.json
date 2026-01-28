@@ -35,5 +35,6 @@
     "destructiveHint": false,
     "idempotentHint": true,
     "openWorldHint": false
-  }
+  },
+  "_comment_ui": "To add UI: create tools/__NAME__/ui/ with index.html and ui.meta.json. The framework automatically links them - no _meta.ui needed. See docs/guides/ui-resources.md"
 }

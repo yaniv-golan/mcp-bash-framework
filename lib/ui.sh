@@ -393,7 +393,7 @@ mcp_ui_get_csp_header() {
 	local name="$1"
 
 	# Default restrictive CSP
-	local default_csp="default-src 'self'; script-src 'self' https://esm.sh; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'"
+	local default_csp="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'"
 
 	mcp_ui_refresh_registry
 
@@ -428,7 +428,7 @@ mcp_ui_get_csp_header() {
 
 	# Default directives
 	csp_parts+=("default-src 'self'")
-	csp_parts+=("script-src 'self' https://esm.sh")
+	csp_parts+=("script-src 'self' https://cdn.jsdelivr.net")
 	csp_parts+=("style-src 'self' 'unsafe-inline'")
 	csp_parts+=("img-src 'self' data:")
 

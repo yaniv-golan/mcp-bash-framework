@@ -11,6 +11,62 @@ UI resources are HTML pages that can be rendered in MCP clients that support the
 1. **Static HTML**: Write your own HTML/CSS/JS (spec-compliant)
 2. **Templates**: Generate HTML from JSON configuration (mcp-bash convenience)
 
+## Quick Start with Scaffold
+
+The fastest way to add UI to your project is using the scaffold commands:
+
+### Tool-Associated UI (Recommended)
+
+Create a tool with UI in one command:
+
+```bash
+mcp-bash scaffold tool weather --ui
+```
+
+This creates:
+- `tools/weather/tool.sh` - Tool implementation
+- `tools/weather/tool.meta.json` - Tool metadata
+- `tools/weather/ui/index.html` - UI template with MCP Apps SDK
+- `tools/weather/ui/ui.meta.json` - UI metadata with CSP
+
+The framework **automatically links** the UI to the tool - no manual configuration needed.
+
+### Add UI to Existing Tool
+
+```bash
+mcp-bash scaffold ui --tool weather
+```
+
+Creates `tools/weather/ui/` with the UI template. The name defaults to the tool name.
+
+### Standalone UI (Dashboards, Monitors)
+
+For UIs not tied to a specific tool:
+
+```bash
+mcp-bash scaffold ui dashboard
+```
+
+Creates `ui/dashboard/` with UI files. Standalone UIs require **manual linking** - add `_meta.ui` to the tool that should display them:
+
+```json
+{
+  "_meta": {
+    "ui": {
+      "resourceUri": "ui://my-server/dashboard"
+    }
+  }
+}
+```
+
+### When to Use Each Pattern
+
+| Pattern | Command | Use Case |
+|---------|---------|----------|
+| **Tool + UI** | `scaffold tool <name> --ui` | New tool that displays results visually |
+| **UI for existing tool** | `scaffold ui --tool <name>` | Add UI to a tool you already created |
+| **Standalone UI** | `scaffold ui <name>` | Server-wide dashboards, monitors, settings |
+
 ## Directory Structure
 
 ### Tool-Associated UI

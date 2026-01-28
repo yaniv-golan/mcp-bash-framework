@@ -49,10 +49,12 @@ Usage:
                            [--timeout SECS] [--verbose] [--no-refresh]
                            [--minimal] [--project-root DIR] [--print-env]
                            [--allow-self] [--allow TOOL] [--allow-all]
-  mcp-bash scaffold tool <name>
+  mcp-bash scaffold tool <name> [--ui]
   mcp-bash scaffold prompt <name>
   mcp-bash scaffold resource <name>
   mcp-bash scaffold completion <name>
+  mcp-bash scaffold ui <name>           # create standalone UI in ui/<name>/
+  mcp-bash scaffold ui [name] --tool T  # create UI for tool T (name defaults to T)
   mcp-bash scaffold test   # create test harness for project
   mcp-bash validate [--project-root DIR] [--fix] [--json]
                      [--explain-defaults] [--strict]
@@ -300,7 +302,7 @@ if [ "${cli_cmd}" = "scaffold" ]; then
 	case "${1-}" in
 	tool)
 		shift
-		mcp_scaffold_tool "${1:-}"
+		mcp_scaffold_tool "$@"
 		;;
 	prompt)
 		shift
@@ -313,6 +315,10 @@ if [ "${cli_cmd}" = "scaffold" ]; then
 		completion)
 			shift
 			mcp_scaffold_completion "${1:-}"
+			;;
+		ui)
+			shift
+			mcp_scaffold_ui "$@"
 			;;
 		test)
 			shift
