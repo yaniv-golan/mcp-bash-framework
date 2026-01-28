@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>System Dashboard</title>
+  <style>
+    :root {
+      --color-background: #ffffff;
+      --color-text: #1a1a1a;
+      --color-text-secondary: #666666;
+      --color-border: #e5e5e5;
+      --color-primary: #0066cc;
+      --color-success: #22c55e;
+      --color-warning: #f59e0b;
+      --color-danger: #ef4444;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --color-background: #1a1a1a;
+        --color-text: #f5f5f5;
+        --color-text-secondary: #a0a0a0;
+        --color-border: #333333;
+        --color-primary: #3b82f6;
+      }
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--color-background);
+      color: var(--color-text);
+      padding: 20px;
+      line-height: 1.5;
+    }
+    h1 { font-size: 1.5rem; margin-bottom: 20px; }
+    .loading { color: var(--color-text-secondary); }
+    .error { color: var(--color-danger); }
+
+    .dashboard { display: grid; gap: 16px; }
+    .card {
+      background: var(--color-background);
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+      padding: 16px;
+    }
+    .card-title {
+      font-size: 0.875rem;
+      color: var(--color-text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 8px;
+    }
+    .card-value {
+      font-size: 1.5rem;
+      font-weight: 600;
+    }
+    .card-subtitle {
+      font-size: 0.875rem;
+      color: var(--color-text-secondary);
+    }
+
+    .progress-bar {
+      height: 8px;
+      background: var(--color-border);
+      border-radius: 4px;
+      overflow: hidden;
+      margin-top: 8px;
+    }
+    .progress-fill {
+      height: 100%;
+      border-radius: 4px;
+      transition: width 0.3s ease;
+    }
+    .progress-fill.low { background: var(--color-success); }
+    .progress-fill.medium { background: var(--color-warning); }
+    .progress-fill.high { background: var(--color-danger); }
+
+    .info-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px;
+    }
+    @media (max-width: 400px) {
+      .info-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <h1>System Dashboard</h1>
+  <div id="content" class="loading">Loading system information...</div>
+
+  <script type="module">
+    const content = document.getElementById('content');
+
+    function getProgressClass(pct) {
+      if (pct < 60) return 'low';
+      if (pct < 85) return 'medium';
+      return 'high';
+    }
+
+    function renderDashboard(data) {
+      const memPct = parseInt(data.memoryPercent) || 0;
+      const diskPct = parseInt(data.diskPercent) || 0;
+
+      content.innerHTML = `
+        <div class="dashboard">
+          <div class="info-grid">
+            <div class="card">
+              <div class="card-title">Hostname</div>
+              <div class="card-value">${escapeHtml(data.hostname || 'Unknown')}</div>
+            </div>
+            <div class="card">
+              <div class="card-title">Operating System</div>
+              <div class="card-value">${escapeHtml(data.os || 'Unknown')}</div>
+            </div>
+            <div class="card">
+              <div class="card-title">Uptime</div>
+              <div class="card-value">${escapeHtml(data.uptime || 'N/A')}</div>
+            </div>
+            <div class="card">
+              <div class="card-title">CPU Load</div>
+              <div class="card-value">${escapeHtml(data.cpuLoad || 'N/A')}</div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Memory Usage</div>
+            <div class="card-value">${memPct}%</div>
+            <div class="card-subtitle">${data.memoryUsedMB || 0} MB / ${data.memoryTotalMB || 0} MB</div>
+            <div class="progress-bar">
+              <div class="progress-fill ${getProgressClass(memPct)}" style="width: ${memPct}%"></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Disk Usage (/)</div>
+            <div class="card-value">${diskPct}%</div>
+            <div class="card-subtitle">${data.diskUsed || '0'} / ${data.diskTotal || '0'}</div>
+            <div class="progress-bar">
+              <div class="progress-fill ${getProgressClass(diskPct)}" style="width: ${diskPct}%"></div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = String(text);
+      return div.innerHTML;
+    }
+
+    // Load MCP Apps SDK and connect
+    let App;
+    try {
+      const module = await import('https://cdn.jsdelivr.net/npm/@modelcontextprotocol/ext-apps/+esm');
+      App = module.App;
+    } catch (e) {
+      content.innerHTML = `<p class="error">Failed to load SDK: ${e.message}</p>`;
+      throw e;
+    }
+
+    const app = new App({ name: "System Dashboard", version: "1.0.0" });
+
+    app.onerror = (error) => {
+      console.error('App error:', error);
+    };
+
+    app.ontoolresult = (result) => {
+      console.log('Tool result:', result);
+      if (result?.structuredContent) {
+        // mcp_result_success wraps data in {success: true, result: ...}
+        const data = result.structuredContent.result || result.structuredContent;
+        renderDashboard(data);
+      } else if (result?.content) {
+        const textContent = result.content.find(c => c.type === 'text');
+        if (textContent) {
+          try {
+            const parsed = JSON.parse(textContent.text);
+            const data = parsed.result || parsed;
+            renderDashboard(data);
+          } catch (e) {
+            content.innerHTML = `<pre>${escapeHtml(textContent.text)}</pre>`;
+          }
+        }
+      }
+    };
+
+    await app.connect();
+    console.log('Connected to MCP host');
+  </script>
+</body>
+</html>

@@ -717,6 +717,11 @@ mcp_resources_list() {
 		return 1
 	}
 
+	# Refresh UI registry if available (from lib/ui.sh)
+	if declare -F mcp_ui_refresh_registry >/dev/null 2>&1; then
+		mcp_ui_refresh_registry
+	fi
+
 	local numeric_limit
 	if [ -z "${limit}" ]; then
 		numeric_limit=50
@@ -740,12 +745,40 @@ mcp_resources_list() {
 	fi
 
 	local total="${MCP_RESOURCES_TOTAL}"
+
+	# Merge UI resources if available (from lib/ui.sh)
+	local all_items_json
+	all_items_json="$(printf '%s' "${MCP_RESOURCES_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.items // []')"
+
+	if [ -n "${MCP_UI_REGISTRY_JSON:-}" ]; then
+		# Convert UI resources to standard resource format and merge
+		# Per MCP Apps spec, UIResource in resources/list MUST include _meta.ui with CSP
+		local ui_resources
+		ui_resources="$(printf '%s' "${MCP_UI_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -c '
+			(.uiResources // []) | map({
+				name: .name,
+				uri: .uri,
+				description: .description,
+				mimeType: .mimeType,
+				_meta: {
+					ui: {
+						csp: (.csp // {}),
+						permissions: (.permissions // {}),
+						prefersBorder: (if .prefersBorder == null then true else .prefersBorder end)
+					}
+				}
+			})
+		' 2>/dev/null || printf '[]')"
+		all_items_json="$(printf '%s\n%s' "${all_items_json}" "${ui_resources}" | "${MCPBASH_JSON_TOOL_BIN}" -s 'add')"
+		total="$(printf '%s' "${all_items_json}" | "${MCPBASH_JSON_TOOL_BIN}" 'length')"
+	fi
+
 	local result_json
 	# Like tools/list, expose total via result._meta["mcpbash/total"] for strict-client
 	# compatibility (instead of a top-level field).
-	result_json="$(printf '%s' "${MCP_RESOURCES_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -c --argjson offset "$offset" --argjson limit "$numeric_limit" --argjson total "${total}" '
+	result_json="$(printf '%s' "${all_items_json}" | "${MCPBASH_JSON_TOOL_BIN}" -c --argjson offset "$offset" --argjson limit "$numeric_limit" --argjson total "${total}" '
 		{
-			resources: .items[$offset:$offset+$limit],
+			resources: .[$offset:$offset+$limit],
 			_meta: {"mcpbash/total": $total}
 		}
 	')"
@@ -1498,6 +1531,7 @@ mcp_resources_provider_from_uri() {
 	file://*) echo "file" ;;
 	git+https://*) echo "git" ;;
 	https://*) echo "https" ;;
+	ui://*) echo "ui" ;;
 	*) echo "" ;;
 	esac
 }
@@ -1620,6 +1654,15 @@ mcp_resources_read_via_provider() {
 				if [ -n "${SSL_CERT_FILE-}" ]; then env_pairs+=("SSL_CERT_FILE=${SSL_CERT_FILE-}"); fi
 				if [ -n "${SSL_CERT_DIR-}" ]; then env_pairs+=("SSL_CERT_DIR=${SSL_CERT_DIR-}"); fi
 				if [ -n "${CURL_CA_BUNDLE-}" ]; then env_pairs+=("CURL_CA_BUNDLE=${CURL_CA_BUNDLE-}"); fi
+				;;
+			ui)
+				# UI provider needs JSON tooling for template generation
+				if [ -n "${MCPBASH_JSON_TOOL_BIN-}" ]; then env_pairs+=("MCPBASH_JSON_TOOL_BIN=${MCPBASH_JSON_TOOL_BIN-}"); fi
+				if [ -n "${MCPBASH_JSON_TOOL-}" ]; then env_pairs+=("MCPBASH_JSON_TOOL=${MCPBASH_JSON_TOOL-}"); fi
+				if [ -n "${MCPBASH_STATE_DIR-}" ]; then env_pairs+=("MCPBASH_STATE_DIR=${MCPBASH_STATE_DIR-}"); fi
+				if [ -n "${MCPBASH_REGISTRY_DIR-}" ]; then env_pairs+=("MCPBASH_REGISTRY_DIR=${MCPBASH_REGISTRY_DIR-}"); fi
+				if [ -n "${MCPBASH_TOOLS_DIR-}" ]; then env_pairs+=("MCPBASH_TOOLS_DIR=${MCPBASH_TOOLS_DIR-}"); fi
+				if [ -n "${MCPBASH_UI_DIR-}" ]; then env_pairs+=("MCPBASH_UI_DIR=${MCPBASH_UI_DIR-}"); fi
 				;;
 			esac
 			if [ -n "${http_proxy-}" ]; then env_pairs+=("http_proxy=${http_proxy-}"); fi
@@ -1758,11 +1801,37 @@ mcp_resources_read() {
 	fi
 	local result
 	local content_obj
+
+	# For UI resources, override MIME type to spec-defined value
+	if [ "${provider}" = "ui" ]; then
+		mime="text/html;profile=mcp-app"
+	fi
+
 	if ! content_obj="$(mcp_resource_content_object_from_file "${content_file}" "${mime}" "${uri}")"; then
 		rm -f "${content_file}"
 		mcp_resources_error -32603 "Unable to encode resource content"
 		return 1
 	fi
+
+	# For UI resources, add _meta.ui with CSP and permissions if available
+	if [ "${provider}" = "ui" ]; then
+		local ui_meta="{}"
+		# Check if mcp_ui_get_metadata exists (loaded from lib/ui.sh in Phase 2)
+		if declare -F mcp_ui_get_metadata >/dev/null 2>&1; then
+			# Extract resource name from UI URI
+			local without_scheme="${uri#ui://}"
+			local resource_name
+			if [[ "${without_scheme}" == */* ]]; then
+				resource_name="${without_scheme#*/}"
+			else
+				resource_name="${without_scheme}"
+			fi
+			ui_meta="$(mcp_ui_get_metadata "${resource_name}")"
+		fi
+		# Add _meta.ui to content object
+		content_obj="$("${MCPBASH_JSON_TOOL_BIN}" -c --argjson meta "${ui_meta}" '. + {_meta: {ui: $meta}}' <<<"${content_obj}")"
+	fi
+
 	result="$("${MCPBASH_JSON_TOOL_BIN}" -n -c --argjson content "${content_obj}" '{
 		contents: [$content]
 	}')" || result=""

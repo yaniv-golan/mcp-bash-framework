@@ -45,6 +45,22 @@ __mcp_sdk_load_progress_passthrough() {
 
 __mcp_sdk_load_progress_passthrough
 
+__mcp_sdk_load_ui_helpers() {
+	# Load UI SDK helpers for MCP Apps support (SEP-1865)
+	if declare -F mcp_client_supports_ui >/dev/null 2>&1; then
+		return 0
+	fi
+	local script_dir
+	script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+	local helper="${script_dir}/ui-sdk.sh"
+	if [ -f "${helper}" ]; then
+		# shellcheck disable=SC1090
+		. "${helper}"
+	fi
+}
+
+__mcp_sdk_load_ui_helpers
+
 __mcp_sdk_json_escape() {
 	# Return a quoted JSON string literal for the given value.
 	# Prefer the framework-selected JSON tool, then fall back to jq, then a

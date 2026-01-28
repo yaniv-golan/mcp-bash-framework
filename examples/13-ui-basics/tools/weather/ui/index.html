@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Weather</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--font-sans, system-ui, -apple-system, sans-serif);
+      padding: 20px;
+      background: var(--color-background-primary, #fff);
+      color: var(--color-text-primary, #1a1a1a);
+    }
+
+    .weather-card {
+      max-width: 320px;
+      border-radius: var(--border-radius-lg, 12px);
+      background: linear-gradient(135deg,
+        var(--color-background-info, #e0f2fe) 0%,
+        var(--color-background-primary, #fff) 100%);
+      padding: 24px;
+      box-shadow: var(--shadow-md, 0 4px 6px rgba(0,0,0,0.1));
+    }
+
+    .location {
+      font-size: var(--font-heading-md-size, 18px);
+      font-weight: var(--font-weight-semibold, 600);
+      color: var(--color-text-primary, #1a1a1a);
+      margin-bottom: 8px;
+    }
+
+    .temperature {
+      font-size: 48px;
+      font-weight: var(--font-weight-bold, 700);
+      color: var(--color-text-info, #0066cc);
+      line-height: 1;
+      margin-bottom: 8px;
+    }
+
+    .condition {
+      font-size: var(--font-text-lg-size, 16px);
+      color: var(--color-text-secondary, #666);
+      margin-bottom: 16px;
+    }
+
+    .details {
+      display: flex;
+      gap: 16px;
+      padding-top: 16px;
+      border-top: 1px solid var(--color-border-secondary, #eee);
+    }
+
+    .detail-item {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .detail-label {
+      font-size: var(--font-text-xs-size, 11px);
+      color: var(--color-text-tertiary, #999);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .detail-value {
+      font-size: var(--font-text-md-size, 14px);
+      font-weight: var(--font-weight-medium, 500);
+      color: var(--color-text-primary, #1a1a1a);
+    }
+
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: var(--color-text-tertiary, #999);
+    }
+
+    .weather-icon {
+      font-size: 48px;
+      margin-bottom: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div id="content" class="loading">
+    <div class="spinner"></div>
+    <p>Waiting for weather data...</p>
+  </div>
+
+  <script type="module">
+    const content = document.getElementById('content');
+
+    // Global error handler for debugging
+    window.onerror = (msg, src, line, col, error) => {
+      console.error('Global error:', msg, src, line, col, error);
+      content.innerHTML = `<p class="loading">JS Error: ${msg}</p>`;
+    };
+
+    let App;
+    try {
+      // Try jsdelivr first (more compatible bundling)
+      const module = await import('https://cdn.jsdelivr.net/npm/@modelcontextprotocol/ext-apps/+esm');
+      App = module.App;
+      console.log('SDK loaded successfully from jsdelivr, App:', App);
+    } catch (e) {
+      console.error('Failed to load SDK:', e);
+      content.innerHTML = `<p class="loading">Failed to load SDK: ${e.message}</p>`;
+      throw e;
+    }
+
+    const weatherIcons = {
+      'Sunny': '\u2600\uFE0F',
+      'Cloudy': '\u2601\uFE0F',
+      'Rainy': '\u{1F327}\uFE0F',
+      'Partly Cloudy': '\u26C5'
+    };
+
+    function renderWeather(data) {
+      const icon = weatherIcons[data.condition] || '\u{1F321}\uFE0F';
+      content.innerHTML = `
+        <div class="weather-card">
+          <div class="weather-icon">${icon}</div>
+          <div class="location">${escapeHtml(data.location)}</div>
+          <div class="temperature">${data.temperature}\u00B0${data.unit || 'F'}</div>
+          <div class="condition">${escapeHtml(data.condition)}</div>
+          <div class="details">
+            <div class="detail-item">
+              <span class="detail-label">Humidity</span>
+              <span class="detail-value">${data.humidity}%</span>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // Create app instance
+    const app = new App({ name: "Weather App", version: "1.0.0" });
+
+    // Error handler
+    app.onerror = (error) => {
+      console.error('MCP App error:', error);
+      content.innerHTML = `<p class="loading">Error: ${error.message || 'Unknown error'}</p>`;
+    };
+
+    // Tool input handler (receives arguments before result)
+    app.ontoolinput = (input) => {
+      console.log('Tool input received:', input);
+    };
+
+    // Tool result handler - MUST be set BEFORE connect()
+    app.ontoolresult = (result) => {
+      console.log('Tool result received:', result);
+      // Try structuredContent first (per MCP spec)
+      if (result?.structuredContent) {
+        renderWeather(result.structuredContent);
+      } else if (result?.content) {
+        // Fallback: parse from text content
+        const textContent = result.content.find(c => c.type === 'text');
+        if (textContent) {
+          try {
+            const data = JSON.parse(textContent.text);
+            renderWeather(data);
+          } catch (e) {
+            content.innerHTML = '<p class="loading">Error parsing weather data</p>';
+          }
+        }
+      }
+    };
+
+    // Connect to host (use .then() pattern like official examples)
+    app.connect().then(() => {
+      console.log('Connected to host');
+    }).catch((e) => {
+      console.error('Failed to connect:', e);
+      content.innerHTML = `<p class="loading">Failed to connect to host</p>`;
+    });
+  </script>
+</body>
+</html>

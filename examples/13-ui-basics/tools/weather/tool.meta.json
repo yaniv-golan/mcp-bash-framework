@@ -1,0 +1,19 @@
+{
+  "name": "weather",
+  "description": "Get current weather for a location with visual display",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "location": {
+        "type": "string",
+        "description": "City name or location"
+      }
+    }
+  },
+  "_meta": {
+    "ui": {
+      "resourceUri": "ui://ui-basics-example/weather",
+      "visibility": ["model", "app"]
+    }
+  }
+}

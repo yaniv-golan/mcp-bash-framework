@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--font-sans, system-ui, -apple-system, sans-serif);
+      padding: 24px;
+      background: var(--color-background-primary, #fff);
+      color: var(--color-text-primary, #1a1a1a);
+    }
+
+    h1 {
+      font-size: var(--font-heading-lg-size, 24px);
+      font-weight: var(--font-weight-semibold, 600);
+      margin-bottom: 24px;
+      color: var(--color-text-primary, #1a1a1a);
+    }
+
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+    }
+
+    .stat-card {
+      background: var(--color-background-secondary, #f8f8f8);
+      border-radius: var(--border-radius-md, 8px);
+      padding: 20px;
+      border: 1px solid var(--color-border-secondary, #eee);
+    }
+
+    .stat-label {
+      font-size: var(--font-text-sm-size, 12px);
+      color: var(--color-text-tertiary, #999);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+    }
+
+    .stat-value {
+      font-size: var(--font-heading-xl-size, 32px);
+      font-weight: var(--font-weight-bold, 700);
+      color: var(--color-text-primary, #1a1a1a);
+    }
+
+    .stat-change {
+      font-size: var(--font-text-xs-size, 11px);
+      margin-top: 8px;
+    }
+
+    .stat-change.positive { color: var(--color-text-success, #16a34a); }
+    .stat-change.negative { color: var(--color-text-danger, #dc2626); }
+
+    .activity-section {
+      margin-top: 32px;
+    }
+
+    .activity-title {
+      font-size: var(--font-heading-md-size, 18px);
+      font-weight: var(--font-weight-semibold, 600);
+      margin-bottom: 16px;
+    }
+
+    .activity-list {
+      list-style: none;
+    }
+
+    .activity-item {
+      padding: 12px 0;
+      border-bottom: 1px solid var(--color-border-secondary, #eee);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .activity-item:last-child {
+      border-bottom: none;
+    }
+
+    .activity-text {
+      font-size: var(--font-text-sm-size, 13px);
+      color: var(--color-text-secondary, #666);
+    }
+
+    .activity-time {
+      font-size: var(--font-text-xs-size, 11px);
+      color: var(--color-text-tertiary, #999);
+    }
+
+    .actions {
+      margin-top: 24px;
+      display: flex;
+      gap: 12px;
+    }
+
+    button {
+      padding: 10px 20px;
+      border-radius: var(--border-radius-md, 6px);
+      font-family: inherit;
+      font-size: var(--font-text-sm-size, 13px);
+      font-weight: var(--font-weight-medium, 500);
+      cursor: pointer;
+      border: none;
+      transition: background 0.15s;
+    }
+
+    .btn-primary {
+      background: var(--color-background-info, #0066cc);
+      color: var(--color-text-inverse, #fff);
+    }
+
+    .btn-primary:hover {
+      filter: brightness(0.9);
+    }
+
+    .btn-secondary {
+      background: var(--color-background-secondary, #f0f0f0);
+      color: var(--color-text-primary, #1a1a1a);
+      border: 1px solid var(--color-border-primary, #ccc);
+    }
+  </style>
+</head>
+<body>
+  <h1>Dashboard</h1>
+
+  <div class="dashboard-grid">
+    <div class="stat-card">
+      <div class="stat-label">Total Users</div>
+      <div class="stat-value" id="totalUsers">1,234</div>
+      <div class="stat-change positive">+12% from last week</div>
+    </div>
+
+    <div class="stat-card">
+      <div class="stat-label">Active Sessions</div>
+      <div class="stat-value" id="activeSessions">89</div>
+      <div class="stat-change positive">+5% from yesterday</div>
+    </div>
+
+    <div class="stat-card">
+      <div class="stat-label">Tasks Completed</div>
+      <div class="stat-value" id="tasksCompleted">456</div>
+      <div class="stat-change negative">-3% from last week</div>
+    </div>
+
+    <div class="stat-card">
+      <div class="stat-label">System Health</div>
+      <div class="stat-value" id="systemHealth">98%</div>
+      <div class="stat-change positive">Healthy</div>
+    </div>
+  </div>
+
+  <section class="activity-section">
+    <h2 class="activity-title">Recent Activity</h2>
+    <ul class="activity-list" id="activityList">
+      <li class="activity-item">
+        <span class="activity-text">User john@example.com signed in</span>
+        <span class="activity-time">2 minutes ago</span>
+      </li>
+      <li class="activity-item">
+        <span class="activity-text">Task "Update documentation" completed</span>
+        <span class="activity-time">15 minutes ago</span>
+      </li>
+      <li class="activity-item">
+        <span class="activity-text">New user registered</span>
+        <span class="activity-time">1 hour ago</span>
+      </li>
+    </ul>
+  </section>
+
+  <div class="actions">
+    <button class="btn-primary" id="refreshBtn">Refresh Data</button>
+    <button class="btn-secondary" id="exportBtn">Export Report</button>
+  </div>
+
+  <script type="module">
+    import { App } from 'https://cdn.jsdelivr.net/npm/@modelcontextprotocol/ext-apps/+esm';
+
+    // Create app instance
+    const app = new App({ name: "Standalone Dashboard", version: "1.0.0" });
+
+    // Set handler BEFORE connect() to avoid missing initial result
+    app.ontoolresult = (result) => {
+      // Prefer structuredContent, fall back to parsing content
+      const data = result?.structuredContent ??
+        (() => {
+          const textContent = result?.content?.find(c => c.type === 'text');
+          if (textContent) {
+            try { return JSON.parse(textContent.text); } catch (e) { return {}; }
+          }
+          return {};
+        })();
+
+      if (data.totalUsers) document.getElementById('totalUsers').textContent = data.totalUsers;
+      if (data.activeSessions) document.getElementById('activeSessions').textContent = data.activeSessions;
+      if (data.tasksCompleted) document.getElementById('tasksCompleted').textContent = data.tasksCompleted;
+      if (data.systemHealth) document.getElementById('systemHealth').textContent = data.systemHealth;
+    };
+
+    // Connect to host
+    await app.connect();
+
+    // Wire up buttons
+    document.getElementById('refreshBtn').addEventListener('click', () => {
+      app.sendMessage({ role: 'user', content: { type: 'text', text: 'Refreshing dashboard data...' } });
+    });
+
+    document.getElementById('exportBtn').addEventListener('click', () => {
+      app.sendMessage({ role: 'user', content: { type: 'text', text: 'Export report requested' } });
+    });
+  </script>
+</body>
+</html>

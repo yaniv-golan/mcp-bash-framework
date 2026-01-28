@@ -865,6 +865,7 @@ mcp_runtime_detect_json_tool() {
 		MCPBASH_JSON_TOOL="jq"
 		MCPBASH_JSON_TOOL_BIN="${candidate}"
 		MCPBASH_MODE="full"
+		export MCPBASH_JSON_TOOL MCPBASH_JSON_TOOL_BIN MCPBASH_MODE
 		if mcp_runtime_log_allowed && { [ "${MCPBASH_LOG_JSON_TOOL}" = "log" ] || mcp_logging_verbose_enabled; }; then
 			if mcp_logging_verbose_enabled; then
 				printf '%s\n' "JSON tooling: jq at ${candidate}; full protocol surface enabled." >&2
@@ -881,6 +882,7 @@ mcp_runtime_detect_json_tool() {
 		MCPBASH_JSON_TOOL="gojq"
 		MCPBASH_JSON_TOOL_BIN="${candidate}"
 		MCPBASH_MODE="full"
+		export MCPBASH_JSON_TOOL MCPBASH_JSON_TOOL_BIN MCPBASH_MODE
 		if mcp_runtime_log_allowed && { [ "${MCPBASH_LOG_JSON_TOOL}" = "log" ] || mcp_logging_verbose_enabled; }; then
 			if mcp_logging_verbose_enabled; then
 				printf '%s\n' "JSON tooling: gojq at ${candidate}; full protocol surface enabled." >&2
@@ -897,6 +899,7 @@ mcp_runtime_detect_json_tool() {
 	# shellcheck disable=SC2034
 	MCPBASH_JSON_TOOL_BIN=""
 	MCPBASH_MODE="minimal"
+	export MCPBASH_JSON_TOOL MCPBASH_JSON_TOOL_BIN MCPBASH_MODE
 	if mcp_runtime_log_allowed; then
 		printf '%s\n' 'No jq/gojq found; entering minimal mode with reduced capabilities.' >&2
 	fi

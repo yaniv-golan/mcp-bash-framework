@@ -268,6 +268,36 @@ mcp_tools_normalize_schema() {
 	printf '%s' "${normalized}"
 }
 
+# Normalize deprecated _meta format to current nested structure
+# Converts _meta["ui/resourceUri"] to _meta.ui.resourceUri per MCP Apps spec
+mcp_tools_normalize_meta() {
+	local output="$1"
+
+	# Only process if JSON tooling is available
+	if [ "${MCPBASH_JSON_TOOL:-none}" = "none" ]; then
+		printf '%s' "${output}"
+		return
+	fi
+
+	# Check for deprecated flat format: _meta["ui/resourceUri"]
+	local has_deprecated
+	has_deprecated="$("${MCPBASH_JSON_TOOL_BIN}" -r '._meta["ui/resourceUri"] // empty' <<<"${output}" 2>/dev/null || true)"
+
+	if [ -n "${has_deprecated}" ]; then
+		# Convert to nested format
+		output="$("${MCPBASH_JSON_TOOL_BIN}" -c '
+			if ._meta["ui/resourceUri"] then
+				._meta.ui.resourceUri = ._meta["ui/resourceUri"] |
+				del(._meta["ui/resourceUri"])
+			else
+				.
+			end
+		' <<<"${output}" 2>/dev/null || printf '%s' "${output}")"
+	fi
+
+	printf '%s' "${output}"
+}
+
 mcp_tools_normalize_local_path() {
 	local raw="$1"
 	if [ -z "${raw}" ]; then
@@ -994,6 +1024,7 @@ mcp_tools_scan() {
 			local icons="null"
 			local annotations="null"
 
+			local tool_meta="null"
 			if [ -f "${meta_json}" ]; then
 				# Read each field individually to handle multi-line descriptions correctly
 				local meta_name meta_desc meta_args meta_timeout meta_timeout_hint meta_progress_extends meta_max_timeout_secs meta_outschema meta_icons meta_annot
@@ -1007,6 +1038,8 @@ mcp_tools_scan() {
 				meta_outschema="$("${MCPBASH_JSON_TOOL_BIN}" -c '.outputSchema // null' "${meta_json}" 2>/dev/null || echo 'null')"
 				meta_icons="$("${MCPBASH_JSON_TOOL_BIN}" -c '.icons // null' "${meta_json}" 2>/dev/null || echo 'null')"
 				meta_annot="$("${MCPBASH_JSON_TOOL_BIN}" -c '.annotations // null' "${meta_json}" 2>/dev/null || echo 'null')"
+				# MCP Apps: read _meta for UI resource references
+				tool_meta="$("${MCPBASH_JSON_TOOL_BIN}" -c '._meta // null' "${meta_json}" 2>/dev/null || echo 'null')"
 
 				if [ -n "${meta_name}" ] || [ -n "${meta_desc}" ]; then
 					[ -n "${meta_args}" ] || meta_args='{}'
@@ -1061,6 +1094,7 @@ mcp_tools_scan() {
 			[ -z "${output_schema}" ] && output_schema='null'
 			[ -z "${icons}" ] && icons='null'
 			[ -z "${annotations}" ] && annotations='null'
+			[ -z "${tool_meta}" ] && tool_meta='null'
 
 			# Construct item object
 			"${MCPBASH_JSON_TOOL_BIN}" -n \
@@ -1075,6 +1109,7 @@ mcp_tools_scan() {
 				--argjson out "$output_schema" \
 				--argjson icons "$icons" \
 				--argjson annotations "$annotations" \
+				--argjson tool_meta "$tool_meta" \
 				'{
 					name: $name,
 					description: $desc,
@@ -1087,7 +1122,8 @@ mcp_tools_scan() {
 				+ (if ($max_timeout_secs|test("^[0-9]+$")) then {maxTimeoutSecs: ($max_timeout_secs|tonumber)} else {} end)
 				+ (if $out != null then {outputSchema: $out} else {} end)
 				+ (if $icons != null then {icons: $icons} else {} end)
-				+ (if $annotations != null then {annotations: $annotations} else {} end)' >>"${items_file}"
+				+ (if $annotations != null then {annotations: $annotations} else {} end)
+				+ (if $tool_meta != null then {_meta: $tool_meta} else {} end)' >>"${items_file}"
 		done < <(find "${scan_root}" -type f ! -name ".*" ! -name "*.meta.json" -print0 2>/dev/null)
 	fi
 
@@ -2257,9 +2293,10 @@ mcp_tools_call() {
 				# Detect if output is already a CallToolResult (has content array and isError field)
 				if ($json | type) == "object" and ($json.content | type) == "array" and ($json | has("isError")) then
 					# Tool already emitted CallToolResult - use it directly with metadata
+					# Merge existing _meta with framework metadata (preserving ui field, etc.)
 					$json
 					| .name = $name
-					| ._meta = ({exitCode: $exit_code} + (if ($stderr | length > 0) then {stderr: $stderr} else {} end))
+					| ._meta = ((._meta // {}) + {exitCode: $exit_code} + (if ($stderr | length > 0) then {stderr: $stderr} else {} end))
 					| if $exit_code != 0 then .isError = true else . end
 				else
 					# Normal JSON output - wrap in CallToolResult
@@ -2299,6 +2336,9 @@ mcp_tools_call() {
 	fi
 
 	cleanup_tool_temp_files
+
+	# Normalize deprecated _meta format (ui/resourceUri -> ui.resourceUri)
+	result_json="$(mcp_tools_normalize_meta "${result_json}")"
 
 	_MCP_TOOLS_RESULT="${result_json}"
 }

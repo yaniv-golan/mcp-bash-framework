@@ -1,0 +1,13 @@
+{
+  "description": "Standalone dashboard showing system metrics",
+  "meta": {
+    "csp": {
+      "connectDomains": ["https://cdn.jsdelivr.net"],
+      "resourceDomains": ["https://cdn.jsdelivr.net"],
+      "frameDomains": [],
+      "baseUriDomains": []
+    },
+    "permissions": {},
+    "prefersBorder": false
+  }
+}

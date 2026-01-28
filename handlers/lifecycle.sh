@@ -73,6 +73,16 @@ mcp_handle_lifecycle() {
 			mcp_logging_debug "mcp.lifecycle" "Roots support=${MCPBASH_CLIENT_SUPPORTS_ROOTS} listChanged=${MCPBASH_CLIENT_SUPPORTS_ROOTS_LIST_CHANGED}"
 		fi
 
+		# Initialize extension capabilities (MCP Apps UI, etc.)
+		if declare -F mcp_extensions_init >/dev/null 2>&1; then
+			mcp_extensions_init "${client_caps}"
+			if mcp_logging_is_enabled "debug"; then
+				mcp_logging_debug "mcp.lifecycle" "UI extension support=${MCPBASH_CLIENT_SUPPORTS_UI:-0}"
+			fi
+			# Merge extension capabilities into server response
+			capabilities="$(mcp_extensions_merge_capabilities "${capabilities}")"
+		fi
+
 		printf '%s' "$(mcp_spec_build_initialize_response "${id}" "${capabilities}" "${negotiated_version}")"
 		;;
 	notifications/initialized | initialized)

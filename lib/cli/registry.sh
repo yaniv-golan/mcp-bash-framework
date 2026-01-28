@@ -80,9 +80,11 @@ mcp_registry_refresh_cli() {
 	local tools_status="ok"
 	local resources_status="ok"
 	local prompts_status="ok"
+	local ui_status="ok"
 	local tools_error=""
 	local resources_error=""
 	local prompts_error=""
+	local ui_error=""
 	local fatal=0
 	local any_fail=0
 
@@ -90,9 +92,11 @@ mcp_registry_refresh_cli() {
 		tools_status="skipped"
 		resources_status="skipped"
 		prompts_status="skipped"
+		ui_status="skipped"
 		tools_error="minimal mode"
 		resources_error="minimal mode"
 		prompts_error="minimal mode"
+		ui_error="minimal mode"
 	else
 		# shellcheck disable=SC2034  # Globals consumed by refresh helpers
 		MCP_TOOLS_LAST_SCAN=0
@@ -100,6 +104,8 @@ mcp_registry_refresh_cli() {
 		MCP_RESOURCES_LAST_SCAN=0
 		# shellcheck disable=SC2034
 		MCP_PROMPTS_LAST_SCAN=0
+		# shellcheck disable=SC2034
+		MCP_UI_LAST_SCAN=0
 
 		mcp_tools_refresh_registry || {
 			case "$?" in
@@ -125,12 +131,21 @@ mcp_registry_refresh_cli() {
 			prompts_status="failed"
 			prompts_error="refresh failed"
 		}
+		# Refresh UI resources registry (MCP Apps support)
+		if declare -F mcp_ui_generate_registry >/dev/null 2>&1; then
+			mcp_ui_generate_registry || {
+				any_fail=1
+				ui_status="failed"
+				ui_error="refresh failed"
+			}
+		fi
 	fi
 
-	local tools_error_json resources_error_json prompts_error_json
+	local tools_error_json resources_error_json prompts_error_json ui_error_json
 	tools_error_json="null"
 	resources_error_json="null"
 	prompts_error_json="null"
+	ui_error_json="null"
 	if [ -n "${tools_error}" ]; then
 		tools_error_json="$(mcp_json_quote_text "${tools_error}")"
 	fi
@@ -140,12 +155,16 @@ mcp_registry_refresh_cli() {
 	if [ -n "${prompts_error}" ]; then
 		prompts_error_json="$(mcp_json_quote_text "${prompts_error}")"
 	fi
+	if [ -n "${ui_error}" ]; then
+		ui_error_json="$(mcp_json_quote_text "${ui_error}")"
+	fi
 
 	cat <<EOF
 {
   "tools": {"status":"${tools_status}","count":${MCP_TOOLS_TOTAL:-0},"error":${tools_error_json}},
   "resources": {"status":"${resources_status}","count":${MCP_RESOURCES_TOTAL:-0},"error":${resources_error_json}},
   "prompts": {"status":"${prompts_status}","count":${MCP_PROMPTS_TOTAL:-0},"error":${prompts_error_json}},
+  "ui": {"status":"${ui_status}","count":${MCP_UI_TOTAL:-0},"error":${ui_error_json}},
   "notificationsSent": false,
   "mode": "${mode}"
 }
@@ -212,10 +231,11 @@ mcp_registry_status_cli() {
 EOF
 	}
 
-	local tools_json resources_json prompts_json
+	local tools_json resources_json prompts_json ui_json
 	tools_json="$(read_registry_file "tools")"
 	resources_json="$(read_registry_file "resources")"
 	prompts_json="$(read_registry_file "prompts")"
+	ui_json="$(read_registry_file "ui-resources")"
 
 	cat <<EOF
 {
@@ -223,7 +243,8 @@ EOF
   "jsonTool": "${MCPBASH_JSON_TOOL:-none}",
   "tools": ${tools_json},
   "resources": ${resources_json},
-  "prompts": ${prompts_json}
+  "prompts": ${prompts_json},
+  "ui": ${ui_json}
 }
 EOF
 }

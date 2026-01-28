@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mcp-bash.dev/schemas/ui.meta.schema.json",
+  "title": "MCP Bash UI Resource Metadata",
+  "description": "Schema for ui.meta.json files that configure MCP Apps UI resources",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "UI resource name (defaults to directory name if not specified)"
+    },
+    "description": {
+      "type": "string",
+      "description": "Human-readable description of the UI resource"
+    },
+    "template": {
+      "type": "string",
+      "enum": ["form", "data-table", "progress", "diff-viewer", "tree-view", "kanban"],
+      "description": "Built-in template to use (if no index.html is provided)"
+    },
+    "config": {
+      "type": "object",
+      "description": "Template-specific configuration (varies by template type)"
+    },
+    "entrypoint": {
+      "type": "string",
+      "default": "index.html",
+      "description": "Entry point HTML file relative to the UI directory"
+    },
+    "meta": {
+      "type": "object",
+      "description": "MCP Apps metadata for the UI resource",
+      "properties": {
+        "csp": {
+          "type": "object",
+          "description": "Content Security Policy domain declarations",
+          "properties": {
+            "connectDomains": {
+              "type": "array",
+              "items": {"type": "string", "pattern": "^https://"},
+              "description": "Allowed origins for fetch/XHR requests (connect-src). Must include https:// prefix, e.g., 'https://api.example.com'"
+            },
+            "resourceDomains": {
+              "type": "array",
+              "items": {"type": "string", "pattern": "^https://"},
+              "description": "Allowed origins for images, scripts, and styles. Must include https:// prefix, e.g., 'https://cdn.example.com'"
+            },
+            "frameDomains": {
+              "type": "array",
+              "items": {"type": "string", "pattern": "^https://"},
+              "description": "Allowed origins for nested iframes (frame-src). Must include https:// prefix"
+            },
+            "baseUriDomains": {
+              "type": "array",
+              "items": {"type": "string", "pattern": "^https://"},
+              "description": "Allowed base URI origins. Must include https:// prefix"
+            }
+          },
+          "additionalProperties": false
+        },
+        "permissions": {
+          "type": "object",
+          "description": "Requested browser permissions (each key maps to empty object per MCP Apps spec)",
+          "properties": {
+            "camera": {
+              "type": "object",
+              "description": "Request camera access"
+            },
+            "microphone": {
+              "type": "object",
+              "description": "Request microphone access"
+            },
+            "geolocation": {
+              "type": "object",
+              "description": "Request geolocation access"
+            },
+            "clipboardWrite": {
+              "type": "object",
+              "description": "Request clipboard write access"
+            }
+          },
+          "additionalProperties": false
+        },
+        "prefersBorder": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether the UI prefers to be rendered with a border"
+        },
+        "sandboxDomain": {
+          "type": ["string", "null"],
+          "description": "Custom sandbox domain for iframe isolation (null uses client default)"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

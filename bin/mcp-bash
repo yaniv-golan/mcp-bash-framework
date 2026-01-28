@@ -154,6 +154,12 @@ initialize_runtime_paths() {
 	# shellcheck disable=SC1090
 	. "${MCPBASH_HOME}/lib/elicitation.sh"
 	# shellcheck disable=SC1090
+	. "${MCPBASH_HOME}/lib/capabilities.sh"
+	# shellcheck disable=SC1090
+	. "${MCPBASH_HOME}/lib/ui.sh"
+	# shellcheck disable=SC1090
+	. "${MCPBASH_HOME}/lib/ui-templates.sh"
+	# shellcheck disable=SC1090
 	. "${MCPBASH_HOME}/lib/roots.sh"
 	# shellcheck disable=SC1090
 	. "${MCPBASH_HOME}/lib/rpc.sh"

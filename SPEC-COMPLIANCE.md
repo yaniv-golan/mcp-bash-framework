@@ -74,6 +74,12 @@ This table shows when features were introduced in the MCP specification and when
 | Async Operations (Tasks) | 2025-11-25 | ❌ Not planned | ❌ Not planned | Durable task state; stdio makes reconnection moot |
 | Server Identity Discovery | 2025-11-25 | ❌ Not applicable | ❌ Not applicable | HTTP-only; stdio servers use initialize response |
 | Sampling (sampling/createMessage) | 2025-11-25 | ❌ Not yet | ❌ Not yet | Server-initiated LLM requests with `includeContext` for agent loops |
+| **MCP Apps Extension (SEP-1865)** | | | | |
+| MCP Apps UI Extension | 2026-01-26 | 0.8.0 | ✅ Full | `io.modelcontextprotocol/ui` extension support |
+| UI Resource Discovery | 2026-01-26 | 0.8.0 | ✅ Full | Auto-discovery from tools/*/ui/ and ui/*/ |
+| UI Templates | 2026-01-26 | 0.8.0 | ✅ Full | Form, data-table, progress, diff-viewer, tree-view, kanban |
+| UI CSP Generation | 2026-01-26 | 0.8.0 | ✅ Full | Content Security Policy from metadata |
+| MCP Apps Theming | 2026-01-26 | 0.8.0 | ✅ Full | CSS variables for light/dark mode |
 
 ### Legend
 - ✅ Full: Complete implementation
@@ -122,6 +128,12 @@ This table shows when features were introduced in the MCP specification and when
 | Tool SDK | Tool SDK, progress and logging wiring | `sdk/tool-sdk.sh` |
 | Scaffolding | Templates for tools, resources, prompts | `scaffold/` |
 | Manual Registration | Extension workflow for custom tools | README manual overrides, examples |
+| **MCP Apps (SEP-1865)** | | |
+| UI Extension | Capability negotiation, server advertisement | `lib/capabilities.sh`, `handlers/lifecycle.sh` |
+| UI Resource Discovery | Auto-discovery from tools/*/ui/ and ui/*/ | `lib/ui.sh` |
+| UI Resource Serving | resources/read for ui:// URIs | `providers/ui.sh`, `handlers/resources.sh` |
+| UI Templates | Declarative JSON to HTML generation | `lib/ui-templates.sh` |
+| UI SDK | UI metadata, CSP generation | `sdk/ui-sdk.sh`, `lib/ui.sh` |
 | **Portability** | | |
 | macOS | Bash 3.2+ support | Tested, CI verified |
 | Linux | Bash 3.2+ support | Tested, CI verified |

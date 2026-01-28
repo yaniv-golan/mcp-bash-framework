@@ -1,0 +1,11 @@
+{
+  "title": "System Dashboard",
+  "description": "Real-time system information display",
+  "meta": {
+    "csp": {
+      "connectDomains": ["https://cdn.jsdelivr.net"],
+      "resourceDomains": ["https://cdn.jsdelivr.net"]
+    },
+    "prefersBorder": true
+  }
+}

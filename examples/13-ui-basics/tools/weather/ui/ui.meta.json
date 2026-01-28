@@ -1,0 +1,13 @@
+{
+  "description": "Weather visualization card",
+  "meta": {
+    "csp": {
+      "connectDomains": ["https://cdn.jsdelivr.net"],
+      "resourceDomains": ["https://cdn.jsdelivr.net"],
+      "frameDomains": [],
+      "baseUriDomains": []
+    },
+    "permissions": {},
+    "prefersBorder": true
+  }
+}

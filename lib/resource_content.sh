@@ -7,6 +7,15 @@ mcp_resource_detect_mime() {
 	local path="$1"
 	local fallback="${2:-text/plain}"
 
+	# If fallback contains a profile suffix (e.g., text/html;profile=mcp-app),
+	# trust it directly since `file` command won't preserve profile info
+	case "${fallback}" in
+	*";profile="*)
+		printf '%s' "${fallback}"
+		return 0
+		;;
+	esac
+
 	if command -v file >/dev/null 2>&1; then
 		local detected
 		# --brief keeps output compact; --mime returns mime + charset where available.
