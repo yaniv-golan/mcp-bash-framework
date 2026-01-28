@@ -258,6 +258,19 @@ See:
 - [UI Templates Reference](../reference/ui-templates.md) - Template configuration (mcp-bash specific)
 - [UI SDK Reference](../reference/ui-sdk.md) - Bash helper functions (mcp-bash specific)
 
+## Known Limitations
+
+Current Claude Desktop limitations (as of Jan 2026):
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Tool result display | ✅ Works | `ontoolresult` receives final result |
+| Real-time progress | ❌ Blocked | `notifications/progress` not forwarded to UIs |
+| UI-initiated tool calls | ❌ Blocked | `callServerTool()` rejected ([bug #386](https://github.com/modelcontextprotocol/ext-apps/issues/386)) |
+| UI resource polling | ❌ Blocked | `resources/read` rejected (same bug) |
+
+UIs are currently **receive-only** - they can display tool results but cannot initiate requests.
+
 ## References
 
 - [MCP Apps Extension Specification](https://modelcontextprotocol.io/specification/2025-03-26/extensions/apps) - Official stable spec

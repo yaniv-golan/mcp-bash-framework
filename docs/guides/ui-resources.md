@@ -532,6 +532,18 @@ See `test/unit/ui_*.bats` for examples.
 3. Ensure `app.ontoolresult` handler is set BEFORE calling `app.connect()`
 4. Delete `.registry/tools.json` cache to regenerate tool definitions
 
+## Known Limitations
+
+Due to current Claude Desktop implementation limitations:
+
+- **Real-time progress updates**: UIs cannot receive `notifications/progress` during tool execution. The UI only receives `ontoolinput` when the tool starts and `ontoolresult` when it completes.
+
+- **UI-initiated requests**: The MCP Apps SDK methods `callServerTool()` and `resources/read` are blocked by a [Claude Desktop bug](https://github.com/modelcontextprotocol/ext-apps/issues/386). UIs cannot poll for data or call other tools.
+
+**Workarounds**:
+- Use indeterminate progress (spinner) while waiting for results
+- For multi-step operations, break into separate tool calls
+
 ## Examples
 
 See the following example directories:
