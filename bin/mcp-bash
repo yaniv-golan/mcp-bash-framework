@@ -24,7 +24,8 @@ mcp_resolve_script_path() {
 script_path="$(mcp_resolve_script_path)"
 MCPBASH_SCRIPT_PATH="${script_path}"
 script_dir="$(cd -P "$(dirname "${script_path}")" && pwd)"
-MCPBASH_HOME="$(cd -P "${script_dir}/.." && pwd)"
+# Allow MCPBASH_HOME override for development (use installed binary with dev code)
+MCPBASH_HOME="${MCPBASH_HOME:-$(cd -P "${script_dir}/.." && pwd)}"
 
 if [ ! -r "${MCPBASH_HOME}/lib/runtime.sh" ]; then
 	printf '%s\n' "mcp-bash install looks broken: expected ${MCPBASH_HOME}/lib/runtime.sh (resolved from ${script_path})." >&2
@@ -99,7 +100,8 @@ initialize_runtime_paths() {
 	local script_dir=""
 
 	script_dir="$(cd "$(dirname "${resolved}")" && pwd)"
-	MCPBASH_HOME="$(cd "${script_dir}/.." && pwd)"
+	# Allow MCPBASH_HOME override for development (use installed binary with dev code)
+	MCPBASH_HOME="${MCPBASH_HOME:-$(cd "${script_dir}/.." && pwd)}"
 
 	local required_libs="require runtime json hash ids lock io paginate logging auth uri policy tools_policy registry spec tools resources prompts completion timeout rpc core validate"
 	local lib
