@@ -1,5 +1,7 @@
 # UI Templates Reference
 
+> **Note**: Templates are an **mcp-bash convenience feature**, not part of the MCP Apps specification. The spec only requires serving HTML content - templates are our solution for generating HTML from declarative JSON in pure Bash environments.
+
 mcp-bash provides built-in templates for common UI patterns. Templates generate HTML from JSON configuration, eliminating the need to write boilerplate HTML/CSS/JS.
 
 ## Available Templates

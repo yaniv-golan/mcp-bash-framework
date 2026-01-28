@@ -2,12 +2,14 @@
 
 This guide explains how to create and serve UI resources with mcp-bash.
 
+> **Specification**: This implements the [MCP Apps Extension](https://modelcontextprotocol.io/specification/2025-03-26/extensions/apps). The spec defines `ui://` resources, `_meta.ui` metadata, and CSP configuration. mcp-bash adds convenience features like auto-discovery and templates on top.
+
 ## Overview
 
 UI resources are HTML pages that can be rendered in MCP clients that support the MCP Apps extension. mcp-bash supports two approaches:
 
-1. **Static HTML**: Write your own HTML/CSS/JS
-2. **Templates**: Generate HTML from JSON configuration
+1. **Static HTML**: Write your own HTML/CSS/JS (spec-compliant)
+2. **Templates**: Generate HTML from JSON configuration (mcp-bash convenience)
 
 ## Directory Structure
 

@@ -1,6 +1,10 @@
 # MCP Apps Overview
 
-MCP Apps (SEP-1865) is an extension to the Model Context Protocol that enables servers to deliver interactive user interfaces to host applications. This allows tools to return rich UI components—dashboards, forms, visualizations, multi-step workflows—that render directly in conversations.
+MCP Apps is an extension to the Model Context Protocol that enables servers to deliver interactive user interfaces to host applications. This allows tools to return rich UI components—dashboards, forms, visualizations, multi-step workflows—that render directly in conversations.
+
+> **Official Specification**: [MCP Apps Extension (Stable, 2026-01-26)](https://modelcontextprotocol.io/specification/2025-03-26/extensions/apps)
+>
+> This document describes mcp-bash's implementation of the spec, plus convenience features we've added on top.
 
 ## How It Works
 
@@ -223,20 +227,39 @@ UIs can request different display modes:
 
 ## mcp-bash Implementation
 
-mcp-bash supports MCP Apps through:
+### Spec Implementation (Required by MCP Apps)
 
-1. **Auto-Discovery**: UI resources in `tools/*/ui/` and `ui/*/`
-2. **Templates**: Declarative JSON → HTML generation
-3. **SDK Helpers**: Bash functions for UI metadata
-4. **CSP Generation**: Automatic header building from metadata
+These features implement the official specification:
+
+| Feature | Description |
+|---------|-------------|
+| `ui://` resources | Serve HTML via `resources/read` with `text/html;profile=mcp-app` |
+| `_meta.ui` in tools | Tool definitions include `resourceUri` and `visibility` |
+| `_meta.ui` in resources | CSP configuration, permissions, prefersBorder |
+| Capability negotiation | Detect client UI support via `extensions` capability |
+| CSP domains | `connectDomains`, `resourceDomains`, `frameDomains`, `baseUriDomains` |
+
+### mcp-bash Convenience Features (Our Additions)
+
+These features are **not part of the spec** - they're mcp-bash conveniences to make UI development easier in pure Bash:
+
+| Feature | Description |
+|---------|-------------|
+| **Auto-discovery** | Scan `tools/*/ui/` and `ui/*/` directories automatically |
+| **Templates** | Generate HTML from JSON config (`form`, `data-table`, `progress`, etc.) |
+| **ui.meta.json** | Declarative metadata file instead of code |
+| **SDK helpers** | Bash functions like `mcp_ui_get_content()`, `mcp_ui_build_csp()` |
+| **Template caching** | Performance optimization for generated HTML |
+
+The spec only requires serving HTML - how you generate that HTML is up to you. Templates are our solution for Bash environments without JS build tools.
 
 See:
-- [UI Resources Guide](../guides/ui-resources.md)
-- [UI Templates Reference](../reference/ui-templates.md)
-- [UI SDK Reference](../reference/ui-sdk.md)
+- [UI Resources Guide](../guides/ui-resources.md) - How to add UI to tools
+- [UI Templates Reference](../reference/ui-templates.md) - Template configuration (mcp-bash specific)
+- [UI SDK Reference](../reference/ui-sdk.md) - Bash helper functions (mcp-bash specific)
 
 ## References
 
-- [MCP Apps Specification (SEP-1865)](https://github.com/modelcontextprotocol/ext-apps)
-- [MCP Apps SDK](https://www.npmjs.com/package/@modelcontextprotocol/ext-apps)
-- [MCP Protocol Specification](https://modelcontextprotocol.io/specification)
+- [MCP Apps Extension Specification](https://modelcontextprotocol.io/specification/2025-03-26/extensions/apps) - Official stable spec
+- [MCP Apps SDK](https://www.npmjs.com/package/@modelcontextprotocol/ext-apps) - JavaScript SDK for UI ↔ host communication
+- [MCP Protocol Specification](https://modelcontextprotocol.io/specification) - Core MCP spec

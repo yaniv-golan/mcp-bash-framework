@@ -2,6 +2,8 @@
 
 This document covers the Bash SDK functions for working with MCP Apps UI resources in mcp-bash.
 
+> **Note**: These are **mcp-bash helper functions**, not part of the MCP Apps specification. The spec defines the protocol (capability negotiation, `_meta.ui` format, CSP fields) - these functions are our Bash implementation to make it easier to work with.
+
 ## Overview
 
 The UI SDK consists of functions in three main areas:
