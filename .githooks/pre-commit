@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Pre-commit hook: runs pre-commit framework checks.
+# This wrapper allows us to use core.hooksPath while keeping pre-commit working.
+
+set -euo pipefail
+
+# Run pre-commit if available
+if command -v pre-commit >/dev/null 2>&1; then
+	exec pre-commit run --config .pre-commit-config.yaml
+else
+	# Fallback: run checks directly
+	printf 'pre-commit: running lint...\n'
+	./test/lint.sh
+	printf 'pre-commit: checking README...\n'
+	./scripts/render-readme.sh --check || ./scripts/render-readme.sh
+fi

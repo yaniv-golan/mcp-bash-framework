@@ -11,5 +11,5 @@ repos:
         name: Render README.md from template
         entry: scripts/render-readme.sh
         language: system
-        files: ^(README\.md\.tpl|VERSION|bin/mcp-bash)$
+        files: ^(README\.md\.in|VERSION)$
         pass_filenames: false

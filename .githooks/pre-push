@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Pre-push hook: runs unit tests and bundle validation before pushing.
+# Install: git config core.hooksPath .githooks
+# Or: cp .githooks/pre-push .git/hooks/pre-push && chmod +x .git/hooks/pre-push
+
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "${REPO_ROOT}"
+
+# Skip if SKIP_PRE_PUSH is set (for emergencies)
+if [ "${SKIP_PRE_PUSH:-0}" = "1" ]; then
+	printf 'pre-push: skipped (SKIP_PRE_PUSH=1)\n'
+	exit 0
+fi
+
+printf 'pre-push: running unit tests...\n'
+if ! ./test/unit/run.sh; then
+	printf 'pre-push: unit tests failed\n' >&2
+	exit 1
+fi
+
+printf 'pre-push: validating bundle...\n'
+if ! (cd examples/00-hello-tool && ../../bin/mcp-bash bundle --validate >/dev/null); then
+	printf 'pre-push: bundle validation failed\n' >&2
+	exit 1
+fi
+
+printf 'pre-push: all checks passed\n'
