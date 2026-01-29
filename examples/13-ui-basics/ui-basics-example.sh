@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Source shell profiles to get PATH (pyenv, nvm, rbenv, etc.)
 # GUI apps like Claude Desktop do not inherit terminal environment.
 # shellcheck disable=SC1090
-_source_profile() { [ -f "$1" ] && . "$1" >/dev/null 2>&1 || true; }
+_source_profile() { if [ -f "$1" ]; then . "$1" >/dev/null 2>&1 || true; fi; }
 
 _source_profile "${HOME}/.zprofile"
 _source_profile "${HOME}/.zshrc"

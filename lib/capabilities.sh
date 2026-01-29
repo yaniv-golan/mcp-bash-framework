@@ -13,10 +13,15 @@ MCPBASH_CLIENT_SUPPORTS_UI="${MCPBASH_CLIENT_SUPPORTS_UI:-0}"
 declare -gA _MCP_CLIENT_EXTENSIONS 2>/dev/null || true
 
 # UI extension identifier per MCP Apps spec (SEP-1865)
-readonly MCP_UI_EXTENSION_ID="io.modelcontextprotocol/ui"
+# Guard against re-sourcing (readonly fails if already declared)
+if ! declare -p MCP_UI_EXTENSION_ID &>/dev/null; then
+	readonly MCP_UI_EXTENSION_ID="io.modelcontextprotocol/ui"
+fi
 
 # Supported MIME types for UI extension
-readonly MCP_UI_SUPPORTED_MIMETYPES='["text/html;profile=mcp-app"]'
+if ! declare -p MCP_UI_SUPPORTED_MIMETYPES &>/dev/null; then
+	readonly MCP_UI_SUPPORTED_MIMETYPES='["text/html;profile=mcp-app"]'
+fi
 
 # --- State file paths for subprocess access ---
 

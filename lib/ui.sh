@@ -93,7 +93,9 @@ mcp_ui_discover() {
 	fi
 
 	# Restore nullglob state
-	[ "${restore_nullglob}" = "true" ] && shopt -u nullglob 2>/dev/null || true
+	if [ "${restore_nullglob}" = "true" ]; then
+		shopt -u nullglob 2>/dev/null || true
+	fi
 
 	# Build JSON array from resources
 	if [ "${#resources[@]}" -eq 0 ]; then
