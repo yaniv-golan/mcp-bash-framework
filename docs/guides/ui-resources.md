@@ -278,7 +278,9 @@ box-shadow: var(--shadow-sm, 0 1px 2px rgba(0,0,0,0.05));
 
 ## Template-Based UI
 
-For common patterns, use templates instead of writing HTML:
+For common patterns, use templates instead of writing HTML.
+
+> ⚠️ **Note**: Most templates are experimental due to Claude Desktop limitations. Only `data-table` is fully functional. See [UI Templates Reference](../reference/ui-templates.md) for status details.
 
 ### Form Template
 

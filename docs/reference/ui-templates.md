@@ -6,14 +6,26 @@ mcp-bash provides built-in templates for common UI patterns. Templates generate 
 
 ## Available Templates
 
-| Template | Description |
-|----------|-------------|
-| `form` | Input forms with validation |
-| `data-table` | Tabular data display |
-| `progress` | Progress indicators |
-| `diff-viewer` | Side-by-side diff comparison |
-| `tree-view` | Hierarchical tree structures |
-| `kanban` | Kanban board layout |
+| Template | Status | Description |
+|----------|--------|-------------|
+| `data-table` | ✅ Ready | Tabular data display |
+| `form` | ⚠️ Experimental | Input forms - submit blocked by [#386](https://github.com/modelcontextprotocol/ext-apps/issues/386) |
+| `progress` | ⚠️ Experimental | Progress indicators - updates not forwarded to UIs |
+| `diff-viewer` | ⚠️ Experimental | Side-by-side diff comparison |
+| `tree-view` | ⚠️ Experimental | Hierarchical tree structures - selection blocked by [#386](https://github.com/modelcontextprotocol/ext-apps/issues/386) |
+| `kanban` | ⚠️ Experimental | Kanban board - drag-drop blocked by [#386](https://github.com/modelcontextprotocol/ext-apps/issues/386) |
+
+### Why are templates experimental?
+
+Claude Desktop currently has limitations that prevent full interactivity:
+
+1. **`callServerTool()` blocked** ([issue #386](https://github.com/modelcontextprotocol/ext-apps/issues/386)): UIs cannot call server tools, so form submission, tree selection, and kanban drag-drop don't work.
+
+2. **Progress notifications not forwarded**: UIs only receive `ontoolinput` (start) and `ontoolresult` (end) - no real-time progress updates.
+
+**What works today**: Display-only UIs that render tool results (like `data-table`).
+
+**What doesn't work**: Any UI that needs to send data back to the server.
 
 ## Using Templates
 
@@ -34,6 +46,8 @@ When `template` is specified and no `index.html` exists, the template generates 
 ---
 
 ## Form Template
+
+> ⚠️ **Experimental**: Form submission requires `callServerTool()` which is currently blocked by [Claude Desktop bug #386](https://github.com/modelcontextprotocol/ext-apps/issues/386). Forms will render but Submit won't work.
 
 Interactive forms that submit to server tools.
 
@@ -172,6 +186,8 @@ The table expects tool results in this format:
 
 ## Progress Template
 
+> ⚠️ **Experimental**: Real-time progress updates require `notifications/progress` which Claude Desktop does not forward to UIs. This template can only show indeterminate loading states.
+
 Shows operation progress with optional cancellation.
 
 ### Configuration
@@ -217,6 +233,8 @@ Shows operation progress with optional cancellation.
 ---
 
 ## Diff Viewer Template
+
+> ⚠️ **Experimental**: Display works but any interactive features (navigation, actions) are blocked by [#386](https://github.com/modelcontextprotocol/ext-apps/issues/386).
 
 Two-panel diff view with syntax highlighting.
 
@@ -271,6 +289,8 @@ Alternative format:
 ---
 
 ## Tree View Template
+
+> ⚠️ **Experimental**: Display and expand/collapse work (client-side), but `onSelectTool` is blocked by [#386](https://github.com/modelcontextprotocol/ext-apps/issues/386).
 
 Hierarchical tree structure with expand/collapse.
 
@@ -334,6 +354,8 @@ Hierarchical tree structure with expand/collapse.
 ---
 
 ## Kanban Template
+
+> ⚠️ **Experimental**: Display works but `onMoveTool` and `onCardClickTool` are blocked by [#386](https://github.com/modelcontextprotocol/ext-apps/issues/386). Drag-drop will animate but changes won't persist.
 
 Column-based kanban board with drag-drop support.
 
