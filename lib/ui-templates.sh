@@ -5,15 +5,18 @@
 set -euo pipefail
 
 # Available templates
-declare -gA MCP_UI_TEMPLATES 2>/dev/null || true
-MCP_UI_TEMPLATES=(
-	["form"]="mcp_ui_template_form"
-	["data-table"]="mcp_ui_template_data_table"
-	["progress"]="mcp_ui_template_progress"
-	["diff-viewer"]="mcp_ui_template_diff_viewer"
-	["tree-view"]="mcp_ui_template_tree_view"
-	["kanban"]="mcp_ui_template_kanban"
-)
+# Guard against re-sourcing: only initialize if not already declared
+if ! declare -p MCP_UI_TEMPLATES &>/dev/null; then
+	declare -gA MCP_UI_TEMPLATES
+	MCP_UI_TEMPLATES=(
+		["form"]="mcp_ui_template_form"
+		["data-table"]="mcp_ui_template_data_table"
+		["progress"]="mcp_ui_template_progress"
+		["diff-viewer"]="mcp_ui_template_diff_viewer"
+		["tree-view"]="mcp_ui_template_tree_view"
+		["kanban"]="mcp_ui_template_kanban"
+	)
+fi
 
 MCP_UI_TEMPLATES_LOGGER="${MCP_UI_TEMPLATES_LOGGER:-mcp.ui.templates}"
 
