@@ -81,14 +81,15 @@ teardown() {
 	assert_equal "${has_ui}" ""
 }
 
-@test "sdk: mcp_result_with_ui includes _meta.ui when supported" {
+@test "sdk: mcp_result_with_ui includes structuredContent when supported" {
 	MCPBASH_CLIENT_SUPPORTS_UI=1
 
-	result="$(mcp_result_with_ui "ui://server/resource" "Fallback text")"
+	result="$(mcp_result_with_ui "ui://server/resource" "Fallback text" '{"items": 5}')"
 
-	# Should include _meta.ui.resourceUri
-	uri="$("${MCPBASH_JSON_TOOL_BIN}" -r '._meta.ui.resourceUri' <<< "${result}")"
-	assert_equal "${uri}" "ui://server/resource"
+	# Per MCP Apps spec, UI is declared in tool.meta.json, not in results.
+	# Results include structuredContent for UI rendering.
+	items="$("${MCPBASH_JSON_TOOL_BIN}" -r '.structuredContent.items' <<< "${result}")"
+	assert_equal "${items}" "5"
 }
 
 @test "sdk: mcp_result_with_ui includes text content" {
