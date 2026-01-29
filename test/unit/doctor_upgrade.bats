@@ -55,7 +55,7 @@ setup() {
 	archive_sha="$("${TEST_SHA256_CMD[@]}" "${ARCHIVE_PATH}" | awk '{print $1}')"
 	min_version="$(tr -d '[:space:]' <"${MCPBASH_HOME}/VERSION")"
 
-	run "${MANAGED_ROOT}/bin/mcp-bash" doctor --dry-run --json --min-version "${min_version}" --archive "${ARCHIVE_PATH}" --verify "${archive_sha}"
+	run env -u MCPBASH_HOME "${MANAGED_ROOT}/bin/mcp-bash" doctor --dry-run --json --min-version "${min_version}" --archive "${ARCHIVE_PATH}" --verify "${archive_sha}"
 	assert_success
 	printf '%s\n' "${output}" >"${BATS_TEST_TMPDIR}/dry.json"
 	jq -e '.exitCode == 0' "${BATS_TEST_TMPDIR}/dry.json" >/dev/null
@@ -66,7 +66,7 @@ setup() {
 	archive_sha="$("${TEST_SHA256_CMD[@]}" "${ARCHIVE_PATH}" | awk '{print $1}')"
 	min_version="$(tr -d '[:space:]' <"${MCPBASH_HOME}/VERSION")"
 
-	run "${MANAGED_ROOT}/bin/mcp-bash" doctor --fix --json --min-version "${min_version}" --archive "${ARCHIVE_PATH}" --verify "${archive_sha}"
+	run env -u MCPBASH_HOME "${MANAGED_ROOT}/bin/mcp-bash" doctor --fix --json --min-version "${min_version}" --archive "${ARCHIVE_PATH}" --verify "${archive_sha}"
 	assert_success
 	printf '%s\n' "${output}" >"${BATS_TEST_TMPDIR}/fix.json"
 	jq -e '.exitCode == 0' "${BATS_TEST_TMPDIR}/fix.json" >/dev/null
@@ -80,7 +80,7 @@ setup() {
 	archive_sha="$("${TEST_SHA256_CMD[@]}" "${ARCHIVE_PATH}" | awk '{print $1}')"
 
 	printf '%s\n' "9.9.9" >"${MANAGED_ROOT}/VERSION"
-	run "${MANAGED_ROOT}/bin/mcp-bash" doctor --fix --json --archive "${ARCHIVE_PATH}" --verify "${archive_sha}"
+	run env -u MCPBASH_HOME "${MANAGED_ROOT}/bin/mcp-bash" doctor --fix --json --archive "${ARCHIVE_PATH}" --verify "${archive_sha}"
 	assert_equal "${EXIT_POLICY_REFUSAL}" "${status}"
 	printf '%s\n' "${output}" >"${BATS_TEST_TMPDIR}/downgrade_refuse.json"
 	jq -e '.exitCode == 3' "${BATS_TEST_TMPDIR}/downgrade_refuse.json" >/dev/null
@@ -94,7 +94,7 @@ setup() {
 	min_version="$(tr -d '[:space:]' <"${MCPBASH_HOME}/VERSION")"
 
 	printf '%s\n' "9.9.9" >"${MANAGED_ROOT}/VERSION"
-	run "${MANAGED_ROOT}/bin/mcp-bash" doctor --fix --json --allow-downgrade --archive "${ARCHIVE_PATH}" --verify "${archive_sha}"
+	run env -u MCPBASH_HOME "${MANAGED_ROOT}/bin/mcp-bash" doctor --fix --json --allow-downgrade --archive "${ARCHIVE_PATH}" --verify "${archive_sha}"
 	assert_success
 	printf '%s\n' "${output}" >"${BATS_TEST_TMPDIR}/downgrade_allow.json"
 	jq -e '.exitCode == 0' "${BATS_TEST_TMPDIR}/downgrade_allow.json" >/dev/null

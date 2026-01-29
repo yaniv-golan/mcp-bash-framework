@@ -31,7 +31,8 @@ setup() {
 
 	[ ! -e "${HOME}/.local/bin/mcp-bash" ]
 
-	run "${MANAGED_ROOT}/bin/mcp-bash" doctor --dry-run --json
+	# Unset MCPBASH_HOME so the managed install auto-detects its own path
+	run env -u MCPBASH_HOME "${MANAGED_ROOT}/bin/mcp-bash" doctor --dry-run --json
 	assert_success
 	printf '%s\n' "${output}" >"${BATS_TEST_TMPDIR}/doctor_dry.json"
 	jq -e '.exitCode == 0' "${BATS_TEST_TMPDIR}/doctor_dry.json" >/dev/null
@@ -53,7 +54,8 @@ setup() {
 	)
 	printf '%s\n' '{"managed":true}' >"${MANAGED_ROOT}/INSTALLER.json"
 
-	run "${MANAGED_ROOT}/bin/mcp-bash" doctor --fix --json
+	# Unset MCPBASH_HOME so the managed install auto-detects its own path
+	run env -u MCPBASH_HOME "${MANAGED_ROOT}/bin/mcp-bash" doctor --fix --json
 	assert_success
 	printf '%s\n' "${output}" >"${BATS_TEST_TMPDIR}/doctor_fix.json"
 	jq -e '.exitCode == 0' "${BATS_TEST_TMPDIR}/doctor_fix.json" >/dev/null
