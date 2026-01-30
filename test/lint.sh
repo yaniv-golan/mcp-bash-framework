@@ -64,4 +64,35 @@ if [ "${dangerous_pattern_found}" -eq 1 ]; then
 	# Warning only - don't fail the build (too noisy for existing code)
 fi
 
+# Verify core libs can be sourced with /bin/bash (macOS 3.2 compatibility)
+# This is the definitive test - actually try to source the libs with bash 3.2
+if [ -x /bin/bash ]; then
+	printf 'Checking Bash 3.2 compatibility (/bin/bash)...\n'
+	bash32_source_test='
+		set -euo pipefail
+		MCPBASH_HOME="'"${MCPBASH_HOME}"'"
+		MCPBASH_STATE_DIR="/tmp/mcpbash-lint-test.$$"
+		MCPBASH_JSON_TOOL="none"
+		MCPBASH_JSON_TOOL_BIN=""
+		export MCPBASH_HOME MCPBASH_STATE_DIR MCPBASH_JSON_TOOL MCPBASH_JSON_TOOL_BIN
+		mkdir -p "${MCPBASH_STATE_DIR}"
+		trap "rm -rf \"${MCPBASH_STATE_DIR}\"" EXIT
+		# Source core libs that must work with bash 3.2
+		for lib in require runtime json capabilities ui ui-templates; do
+			if [ -f "${MCPBASH_HOME}/lib/${lib}.sh" ]; then
+				source "${MCPBASH_HOME}/lib/${lib}.sh" || {
+					printf "FAIL: lib/%s.sh cannot be sourced with /bin/bash\n" "${lib}" >&2
+					exit 1
+				}
+			fi
+		done
+		printf "OK: Core libs source cleanly with /bin/bash %s\n" "${BASH_VERSION}"
+	'
+	if ! /bin/bash -c "${bash32_source_test}" 2>&1; then
+		test_fail "/bin/bash compatibility check failed - libs cannot be sourced with system bash"
+	fi
+else
+	printf 'Skipping /bin/bash compatibility check (not available)\n'
+fi
+
 printf 'Lint completed successfully.\n'
