@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.1.0] - Unreleased
+## [1.1.0] - 2026-01-30
 
 ### Added
 
@@ -24,6 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **UI Resources Guide**: New documentation at `docs/guides/ui-resources.md` covering static HTML UIs, template-based UIs, auto-linking, CSP configuration, and the MCP Apps SDK.
 
+- **Pre-push hook**: New `.githooks/pre-push` runs unit tests and bundle validation before pushing, catching issues locally before CI.
+
+- **Bash 3.2 lint check**: `test/lint.sh` now sources core libs with `/bin/bash` to catch bash 4+ features (like `declare -gA`) before CI fails on macOS.
+
 ### Fixed
 
 - **`MCPBASH_HOME` override support**: The `bin/mcp-bash` script now respects the `MCPBASH_HOME` environment variable, allowing the installed binary to use development code during testing.
@@ -33,8 +37,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added MCP Apps concepts documentation (`docs/concepts/mcp-apps.md`)
 - Added UI SDK reference (`docs/reference/ui-sdk.md`)
 - Added UI templates reference (`docs/reference/ui-templates.md`)
+- Added known limitations section for Claude Desktop MCP Apps support
 - Updated `docs/PROJECT-STRUCTURE.md` to document the `ui/` directory
 - Updated scaffold READMEs with UI documentation links
+- Added MCP Apps to README feature list and spec compliance table
 
 ## [1.0.0] - 2026-01-26
 
