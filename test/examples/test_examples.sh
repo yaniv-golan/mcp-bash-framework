@@ -16,6 +16,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 test_require_command jq
 
+# Normalize Windows paths for Git Bash compatibility
+if [ -n "${MCPBASH_EXAMPLES_WORKDIR:-}" ] && command -v cygpath >/dev/null 2>&1; then
+	MCPBASH_EXAMPLES_WORKDIR="$(cygpath -u "${MCPBASH_EXAMPLES_WORKDIR}")"
+fi
+
 VERBOSE="${VERBOSE:-0}"
 UNICODE="${UNICODE:-0}"
 
