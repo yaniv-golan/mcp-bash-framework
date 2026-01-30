@@ -4,19 +4,19 @@
 
 set -euo pipefail
 
-# Available templates
-# Guard against re-sourcing: only initialize if not already declared
-if ! declare -p MCP_UI_TEMPLATES &>/dev/null; then
-	declare -gA MCP_UI_TEMPLATES
-	MCP_UI_TEMPLATES=(
-		["form"]="mcp_ui_template_form"
-		["data-table"]="mcp_ui_template_data_table"
-		["progress"]="mcp_ui_template_progress"
-		["diff-viewer"]="mcp_ui_template_diff_viewer"
-		["tree-view"]="mcp_ui_template_tree_view"
-		["kanban"]="mcp_ui_template_kanban"
-	)
-fi
+# Template lookup function (bash 3.2 compatible - no associative arrays)
+# Returns the generator function name for a template, or empty string if not found
+_mcp_ui_get_template_generator() {
+	case "$1" in
+	form) printf 'mcp_ui_template_form' ;;
+	data-table) printf 'mcp_ui_template_data_table' ;;
+	progress) printf 'mcp_ui_template_progress' ;;
+	diff-viewer) printf 'mcp_ui_template_diff_viewer' ;;
+	tree-view) printf 'mcp_ui_template_tree_view' ;;
+	kanban) printf 'mcp_ui_template_kanban' ;;
+	*) printf '' ;;
+	esac
+}
 
 MCP_UI_TEMPLATES_LOGGER="${MCP_UI_TEMPLATES_LOGGER:-mcp.ui.templates}"
 
@@ -28,7 +28,8 @@ mcp_ui_generate_from_template() {
 	local template_name="$1"
 	local config="$2"
 
-	local generator="${MCP_UI_TEMPLATES[${template_name}]:-}"
+	local generator
+	generator="$(_mcp_ui_get_template_generator "${template_name}")"
 	if [ -z "${generator}" ]; then
 		printf '%s\n' "Unknown template: ${template_name}" >&2
 		return 1

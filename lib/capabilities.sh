@@ -8,20 +8,14 @@ set -euo pipefail
 # Using 0/1 instead of true/false for consistency with elicitation.sh
 MCPBASH_CLIENT_SUPPORTS_UI="${MCPBASH_CLIENT_SUPPORTS_UI:-0}"
 
-# Associative array to store extension data (requires bash 4+)
-# Populated during initialize with client-advertised extension capabilities
-declare -gA _MCP_CLIENT_EXTENSIONS 2>/dev/null || true
+# Extension data storage (bash 3.2 compatible - uses state files instead of associative array)
+_MCP_UI_EXTENSION_DATA=""
 
 # UI extension identifier per MCP Apps spec (SEP-1865)
-# Guard against re-sourcing (readonly fails if already declared)
-if ! declare -p MCP_UI_EXTENSION_ID &>/dev/null; then
-	readonly MCP_UI_EXTENSION_ID="io.modelcontextprotocol/ui"
-fi
+MCP_UI_EXTENSION_ID="io.modelcontextprotocol/ui"
 
 # Supported MIME types for UI extension
-if ! declare -p MCP_UI_SUPPORTED_MIMETYPES &>/dev/null; then
-	readonly MCP_UI_SUPPORTED_MIMETYPES='["text/html;profile=mcp-app"]'
-fi
+MCP_UI_SUPPORTED_MIMETYPES='["text/html;profile=mcp-app"]'
 
 # --- State file paths for subprocess access ---
 
@@ -60,7 +54,7 @@ mcp_extensions_init() {
 
 	if [ -n "${ui_ext}" ] && [ "${ui_ext}" != "null" ]; then
 		MCPBASH_CLIENT_SUPPORTS_UI=1
-		_MCP_CLIENT_EXTENSIONS["${MCP_UI_EXTENSION_ID}"]="${ui_ext}"
+		_MCP_UI_EXTENSION_DATA="${ui_ext}"
 
 		# Extract supported MIME types from client (for future use)
 		local client_mimetypes
@@ -104,10 +98,7 @@ mcp_client_supports_extension() {
 		return $?
 		;;
 	*)
-		# Check associative array for other extensions
-		if [ -n "${_MCP_CLIENT_EXTENSIONS[${extension_id}]:-}" ]; then
-			return 0
-		fi
+		# Currently only UI extension is supported
 		return 1
 		;;
 	esac
@@ -117,7 +108,14 @@ mcp_client_supports_extension() {
 # Returns: JSON string of extension capabilities, or empty string
 mcp_client_extension_data() {
 	local extension_id="$1"
-	printf '%s' "${_MCP_CLIENT_EXTENSIONS[${extension_id}]:-}"
+	case "${extension_id}" in
+	"${MCP_UI_EXTENSION_ID}")
+		printf '%s' "${_MCP_UI_EXTENSION_DATA:-}"
+		;;
+	*)
+		printf ''
+		;;
+	esac
 }
 
 # --- Server capability building ---
