@@ -55,7 +55,17 @@ Fixes:
   xattr -r -d com.apple.quarantine /path/to/project
   ```
   Helper: `scripts/macos-dequarantine.sh [path]` clears quarantine for the repo or a custom path. `xattr -cr` removes all extended attributes—only use it on trusted paths.
-- macOS folder permissions: Desktop/Documents/Downloads and similar are TCC-protected. If your server or data lives there, grant Claude Desktop “Full Disk Access” and “Files and Folders” in System Settings (or relocate to a neutral folder) to avoid `Operation not permitted` or silent exits.
+- macOS folder permissions: Desktop/Documents/Downloads and similar are TCC-protected. Files in these folders get `com.apple.macl` extended attributes that restrict which sandboxed apps can access them. Unlike `com.apple.quarantine`, these attributes are protected by the OS and **cannot be removed** with `xattr -d` or `xattr -c`. Options:
+  - **Relocate to a neutral folder** (recommended): Copy your server to `/tmp`, `~/.local/share`, or `/usr/local/share`. Use `cat` to strip attributes:
+    ```bash
+    mkdir -p ~/.local/share/my-server
+    cat ~/Documents/my-server/run.sh > ~/.local/share/my-server/run.sh
+    chmod +x ~/.local/share/my-server/run.sh
+    # Copy other files (cp preserves attributes, but non-script files are usually fine)
+    cp -R ~/Documents/my-server/{tools,server.d} ~/.local/share/my-server/
+    ```
+  - **Grant Full Disk Access**: System Settings → Privacy & Security → Full Disk Access → Add Claude Desktop. This allows Claude to access protected folders but is a broader permission.
+  - **Check for `com.apple.macl`**: `xattr -l /path/to/script` — if you see `com.apple.macl`, the file is TCC-protected.
 - Diagnostics: To see Gatekeeper/TCC blocks while launching a server, run:
   ```bash
   log stream --predicate 'process == "taskgated" OR process == "tccd" OR process == "syspolicyd"' --info
