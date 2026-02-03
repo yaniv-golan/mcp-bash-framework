@@ -946,12 +946,15 @@ mcp_tools_refresh_registry() {
 		return 1
 	fi
 
-	local now
-	now="$(date +%s)"
-
 	if ! mcp_tools_load_cache_if_empty; then
 		return 1
 	fi
+
+	# Capture now AFTER cache load to avoid race condition where LAST_SCAN
+	# (set inside load_cache_if_empty) could be greater than now if second
+	# boundary crosses between two date calls, causing negative age < TTL=0.
+	local now
+	now="$(date +%s)"
 
 	if mcp_tools_cache_fresh "${now}"; then
 		return 0

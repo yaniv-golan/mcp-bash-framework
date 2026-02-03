@@ -10,7 +10,7 @@ Edit README.md.in and run: bash scripts/render-readme.sh
 [![CI](https://img.shields.io/github/actions/workflow/status/yaniv-golan/mcp-bash-framework/ci.yml?branch=main&label=CI)](https://github.com/yaniv-golan/mcp-bash-framework/actions)
 [![License](https://img.shields.io/github/license/yaniv-golan/mcp-bash-framework)](LICENSE)
 [![Bash](https://img.shields.io/badge/bash-%3E%3D3.2-green.svg)](https://www.gnu.org/software/bash/)
-[![MCP Protocol](https://img.shields.io/badge/MCP-2025--11--25-blue)](https://spec.modelcontextprotocol.io/)
+[![MCP Protocol](https://img.shields.io/badge/MCP-2025--11--25-blue)](https://modelcontextprotocol.io/specification)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)](#runtime-requirements)
 
 > **Repository:** [`mcp-bash-framework`](https://github.com/yaniv-golan/mcp-bash-framework) &nbsp;•&nbsp; **CLI/Binary:** `mcp-bash`

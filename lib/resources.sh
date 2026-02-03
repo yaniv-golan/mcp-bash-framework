@@ -432,12 +432,15 @@ mcp_resources_refresh_registry() {
 		mcp_logging_debug "${MCP_RESOURCES_LOGGER}" "Refresh satisfied by manual script"
 		return 0
 	fi
-	local now
-	now="$(date +%s)"
-
 	if ! mcp_resources_load_cache_if_empty; then
 		return 1
 	fi
+
+	# Capture now AFTER cache load to avoid race condition where LAST_SCAN
+	# (set inside load_cache_if_empty) could be greater than now if second
+	# boundary crosses between two date calls, causing negative age < TTL=0.
+	local now
+	now="$(date +%s)"
 	local cache_age ttl="${MCP_RESOURCES_TTL}"
 	if [ -n "${MCP_RESOURCES_REGISTRY_JSON}" ] && [ $((now - MCP_RESOURCES_LAST_SCAN)) -lt "${ttl}" ]; then
 		cache_age=$((now - MCP_RESOURCES_LAST_SCAN))
@@ -1327,8 +1330,7 @@ mcp_resources_templates_refresh_registry() {
 		return 1
 	fi
 
-	local now ttl
-	now="$(date +%s)"
+	local ttl
 	ttl="${MCP_RESOURCES_TEMPLATES_TTL:-5}"
 	case "${ttl}" in
 	'' | *[!0-9]*) ttl=5 ;;
@@ -1338,6 +1340,12 @@ mcp_resources_templates_refresh_registry() {
 	if ! mcp_resources_templates_load_cache_if_empty; then
 		return 1
 	fi
+
+	# Capture now AFTER cache load to avoid race condition where LAST_SCAN
+	# (set inside load_cache_if_empty) could be greater than now if second
+	# boundary crosses between two date calls, causing negative age < TTL=0.
+	local now
+	now="$(date +%s)"
 
 	if [ "${MCP_RESOURCES_TEMPLATES_MANUAL_UPDATED}" != "true" ] && [ -n "${MCP_RESOURCES_TEMPLATES_REGISTRY_JSON}" ] && [ $((now - MCP_RESOURCES_TEMPLATES_LAST_SCAN)) -lt "${ttl}" ]; then
 		return 0
