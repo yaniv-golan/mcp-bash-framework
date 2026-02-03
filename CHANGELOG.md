@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-02-03
+
+### Changed
+
+- **`MCPBASH_LOG_LEVEL` boolean normalization**: Boolean-like values are now normalized to RFC-5424 levels: `true`/`1` → `debug`, `false`/`0` → `info`. This supports UI toggles (like Claude Desktop Extensions settings) that map boolean debug settings to `MCPBASH_LOG_LEVEL`. The normalized value is re-exported so tool subprocesses inherit canonical level names. **Breaking:** Existing deployments setting `MCPBASH_LOG_LEVEL=true` (intending "enable logging") will now get debug-level verbosity instead of info-level.
+
 ## [1.1.0] - 2026-01-30
 
 ### Added

@@ -3,6 +3,8 @@
 ## Logging Basics
 
 - Set level with `MCPBASH_LOG_LEVEL` (`debug`, `info`, `notice`, `warning`, `error`, ...). Default is `info`.
+- Boolean values `true`/`1` are normalized to `debug`, and `false`/`0` to `info`. This supports UI toggles that map boolean debug settings to `MCPBASH_LOG_LEVEL`.
+- The `.debug` file in `server.d/` only takes effect if `MCPBASH_LOG_LEVEL` is unset. If an MCP host passes `MCPBASH_LOG_LEVEL` via manifest (even as `false`), the file is ignored. Use the host's debug toggle instead.
 - Debug logs emit only when `MCPBASH_LOG_LEVEL=debug`. Warning/error logs always emit regardless of level.
 - Argument values are never logged; debug traces focus on flow (method, ids, counts, byte sizes).
 - Startup diagnostics (transport, cwd, project root, JSON tool) are written to stderr only when `MCPBASH_LOG_STARTUP=true` or `MCPBASH_LOG_VERBOSE=true` while running over the stdio transport so stdout stays JSON-only for clients and Inspector.

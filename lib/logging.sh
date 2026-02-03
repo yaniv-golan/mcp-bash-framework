@@ -3,7 +3,32 @@
 
 set -euo pipefail
 
+# Track whether env var was explicitly set (for conditional re-export)
+_MCPBASH_LOG_LEVEL_WAS_SET="${MCPBASH_LOG_LEVEL:+1}"
+
 MCP_LOG_LEVEL_DEFAULT="${MCPBASH_LOG_LEVEL:-${MCPBASH_LOG_LEVEL_DEFAULT:-info}}"
+
+# Normalize to lowercase for case-insensitive boolean matching
+# Bash 3.2 compatible (no ${var,,})
+MCP_LOG_LEVEL_DEFAULT=$(printf '%s' "${MCP_LOG_LEVEL_DEFAULT}" | tr '[:upper:]' '[:lower:]')
+
+# Normalize boolean-like values AND invalid values to canonical level names
+# This ensures re-export always produces a valid RFC-5424 level
+# Supports UI toggles that map boolean debug settings to MCPBASH_LOG_LEVEL
+case "${MCP_LOG_LEVEL_DEFAULT}" in
+true | 1) MCP_LOG_LEVEL_DEFAULT="debug" ;;
+false | 0) MCP_LOG_LEVEL_DEFAULT="info" ;;
+debug | info | notice | warning | error | critical | alert | emergency) ;; # valid, pass through
+*) MCP_LOG_LEVEL_DEFAULT="info" ;;                                         # invalid fallback
+esac
+
+# Re-export normalized value ONLY if originally set
+# This preserves .debug file mechanism when env var is unset
+if [ -n "${_MCPBASH_LOG_LEVEL_WAS_SET}" ]; then
+	export MCPBASH_LOG_LEVEL="${MCP_LOG_LEVEL_DEFAULT}"
+fi
+unset _MCPBASH_LOG_LEVEL_WAS_SET
+
 MCP_LOG_LEVEL_CURRENT="${MCP_LOG_LEVEL_DEFAULT}"
 
 mcp_logging_level_rank() {
@@ -19,12 +44,6 @@ mcp_logging_level_rank() {
 	*) echo 999 ;;
 	esac
 }
-
-# Normalize default level so invalid env values do not disable logging.
-if [ "$(mcp_logging_level_rank "${MCP_LOG_LEVEL_DEFAULT}")" -eq 999 ]; then
-	MCP_LOG_LEVEL_DEFAULT="info"
-	MCP_LOG_LEVEL_CURRENT="${MCP_LOG_LEVEL_DEFAULT}"
-fi
 
 mcp_logging_set_level() {
 	local level="$1"
