@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-03-02
+
+### Fixed
+
+- **Initialize instructions now surfaced to clients**: Added support for `initialize.result.instructions` sourced from `server.d/server.instructions.md`. Instructions are emitted for negotiated protocol versions `2025-03-26` and newer, and omitted for `2024-11-05` for spec-accurate downgrade behavior.
+
 ## [1.1.1] - 2026-02-03
 
 ### Changed

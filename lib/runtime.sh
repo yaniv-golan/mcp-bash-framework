@@ -1056,6 +1056,7 @@ mcp_runtime_signal_group() {
 : "${MCPBASH_SERVER_DESCRIPTION:=}"
 : "${MCPBASH_SERVER_WEBSITE_URL:=}"
 : "${MCPBASH_SERVER_ICONS:=}"
+: "${MCPBASH_SERVER_INSTRUCTIONS:=}"
 
 mcp_runtime_load_server_meta() {
 	# Load server metadata from server.d/server.meta.json with smart defaults.
@@ -1095,6 +1096,12 @@ mcp_runtime_load_server_meta() {
 		fi
 	fi
 
+	# Optional instructions are loaded from server.d/server.instructions.md.
+	local instructions_file="${MCPBASH_SERVER_DIR}/server.instructions.md"
+	if [ -f "${instructions_file}" ]; then
+		MCPBASH_SERVER_INSTRUCTIONS="$(cat "${instructions_file}" 2>/dev/null || true)"
+	fi
+
 	# Apply defaults for required fields if not set
 	[ -z "${MCPBASH_SERVER_NAME}" ] && MCPBASH_SERVER_NAME="${default_name}"
 	[ -z "${MCPBASH_SERVER_VERSION}" ] && MCPBASH_SERVER_VERSION="${default_version}"
@@ -1102,6 +1109,7 @@ mcp_runtime_load_server_meta() {
 
 	export MCPBASH_SERVER_NAME MCPBASH_SERVER_VERSION MCPBASH_SERVER_TITLE
 	export MCPBASH_SERVER_DESCRIPTION MCPBASH_SERVER_WEBSITE_URL MCPBASH_SERVER_ICONS
+	export MCPBASH_SERVER_INSTRUCTIONS
 }
 
 mcp_runtime_titlecase() {

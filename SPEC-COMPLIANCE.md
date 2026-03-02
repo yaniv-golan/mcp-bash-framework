@@ -17,6 +17,7 @@ This table shows when features were introduced in the MCP specification and when
 | Protocol Downgrades | 2024-11-05 | 0.1.0 | ✅ Full | Supports 2025-11-25, 2025-06-18, 2025-03-26, 2024-11-05 |
 | Server Info (name, version, title) | 2024-11-05 | 0.1.0 | ✅ Full | Required fields in initialize response |
 | Server Info (description, websiteUrl, icons) | 2024-11-05 | 0.2.0 | ✅ Full | Optional fields via server.meta.json |
+| Initialize Instructions (`result.instructions`) | 2025-03-26 | 1.1.2 | ✅ Full | Optional text loaded from `server.d/server.instructions.md` (omitted for 2024-11-05) |
 | **Transport** | | | | |
 | Stdio Transport | 2024-11-05 | 0.1.0 | ✅ Full | Standard input/output |
 | HTTP/SSE Transport | 2024-11-05 | ❌ Not supported | ❌ Not supported | Stdio-only design; see REMOTE.md for proxy options |
@@ -165,6 +166,7 @@ The following MCP features are currently not implemented:
 - Elicitation: Implemented when clients advertise support; tools can pause and request additional user input.
 - Resource templates: Auto-discovery scans `resources/*.meta.json` for `uriTemplate`, merges manual registrations (manual wins), enforces name collision guard against resources, and shares the `notifications/resources/list_changed` surface. Responses include `limit` and expose `total` via `result._meta["mcpbash/total"]` as an extension for strict-client compatibility. Note: MCP server capabilities do not include a dedicated “templates supported” flag; clients should probe `resources/templates/list` and treat `-32601` as “unsupported”.
 - Completions: Capability is advertised only for protocol versions `2025-06-18` and newer; older protocol downgrades omit completion.
+- Initialize instructions: `result.instructions` is emitted only for negotiated protocol versions `2025-03-26` and newer, and only when `server.d/server.instructions.md` exists and is non-empty.
 - List pagination: `tools/list`, `resources/list`, and `prompts/list` expose `total` via `result._meta["mcpbash/total"]` (not as a top-level result field). This keeps the extension available while staying compatible with strict clients that validate list result schemas.
 - “Partial” surfaces (e.g., older protocol versions without `listChanged`) are intentionally reduced per back-compat behavior.
 
