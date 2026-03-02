@@ -634,6 +634,10 @@ Example `server.d/server.meta.json`:
 
 If no `server.meta.json` exists, the server uses smart defaults based on your project directory name.
 
+Optional initialize guidance can be defined in `server.d/server.instructions.md`.
+When present and non-empty, its contents are returned in `initialize.result.instructions`
+for protocol versions `2025-03-26` and newer (omitted for `2024-11-05`).
+
 ### Tool SDK environment
 - `MCPBASH_JSON_TOOL` and `MCPBASH_JSON_TOOL_BIN` point to the detected JSON processor (`gojq`/`jq`) and are injected into tool processes when available.
 - `MCPBASH_MODE` is `full` when JSON tooling is present and `minimal` otherwise; SDK helpers warn and downgrade behaviour when running in minimal mode.

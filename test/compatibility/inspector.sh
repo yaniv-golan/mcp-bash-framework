@@ -66,6 +66,11 @@ export WORKSPACE
 					exit 1
 				fi
 			done
+			if echo "${line}" | jq -e '.result | has("instructions")' >/dev/null; then
+				echo "unexpected instructions without server.d/server.instructions.md" >&2
+				kill "${PID}"
+				exit 1
+			fi
 			got_init=true
 			break
 		fi

@@ -80,11 +80,19 @@ mcp_spec_build_initialize_response() {
 	local server_info
 	server_info="$(mcp_spec_build_server_info)"
 
-	printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":"%s","capabilities":%s,"serverInfo":%s}}' \
+	local instructions_field=""
+	if [ "${protocol}" != "2024-11-05" ] && [ -n "${MCPBASH_SERVER_INSTRUCTIONS:-}" ]; then
+		local instructions_json
+		instructions_json="$(mcp_json_quote_text "${MCPBASH_SERVER_INSTRUCTIONS}")"
+		instructions_field="$(printf ',"instructions":%s' "${instructions_json}")"
+	fi
+
+	printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":"%s","capabilities":%s,"serverInfo":%s%s}}' \
 		"${id_json}" \
 		"${protocol}" \
 		"${capabilities_json}" \
-		"${server_info}"
+		"${server_info}" \
+		"${instructions_field}"
 }
 
 mcp_spec_build_server_info() {

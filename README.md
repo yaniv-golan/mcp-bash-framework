@@ -118,13 +118,13 @@ command -v jq >/dev/null 2>&1 || command -v gojq >/dev/null 2>&1 || printf '%s\n
 Quick install (good for local dev / trusted networks):
 
 ```bash
-curl -fsSL "https://raw.githubusercontent.com/yaniv-golan/mcp-bash-framework/v1.1.1/install.sh" | bash -s -- --yes --version "v1.1.1"
+curl -fsSL "https://raw.githubusercontent.com/yaniv-golan/mcp-bash-framework/v1.1.2/install.sh" | bash -s -- --yes --version "v1.1.2"
 ```
 
 Verified install (recommended for production / security-sensitive environments):
 
 ```bash
-version="v1.1.1"
+version="v1.1.2"
 file="mcp-bash-${version}.tar.gz"
 curl -fsSLO "https://github.com/yaniv-golan/mcp-bash-framework/releases/download/${version}/${file}"
 curl -fsSLO "https://github.com/yaniv-golan/mcp-bash-framework/releases/download/${version}/SHA256SUMS"
@@ -153,7 +153,7 @@ echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc  # or ~/.zshrc (if not 
 Pin a release with the installer (auto-prefixes `v` for bare versions):
 
 ```bash
-bash install.sh --verify <sha256-from-SHA256SUMS> --version 1.1.1
+bash install.sh --verify <sha256-from-SHA256SUMS> --version 1.1.2
 ```
 
 ### 1.5 Verify It Works (30 seconds)
@@ -633,6 +633,10 @@ Example `server.d/server.meta.json`:
 ```
 
 If no `server.meta.json` exists, the server uses smart defaults based on your project directory name.
+
+Optional initialize guidance can be defined in `server.d/server.instructions.md`.
+When present and non-empty, its contents are returned in `initialize.result.instructions`
+for protocol versions `2025-03-26` and newer (omitted for `2024-11-05`).
 
 ### Tool SDK environment
 - `MCPBASH_JSON_TOOL` and `MCPBASH_JSON_TOOL_BIN` point to the detected JSON processor (`gojq`/`jq`) and are injected into tool processes when available.
