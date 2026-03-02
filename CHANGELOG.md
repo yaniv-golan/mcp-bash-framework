@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.3] - 2026-03-02
+
+### Fixed
+
+- **Resource annotations now preserved in `resources/list`**: Regular resources discovered via `*.meta.json`, inline `# mcp:` headers, or manual registration (`register.sh`) now expose optional `annotations` (e.g., `audience`, `priority`) through `resources/list`. Previously, annotations were only surfaced for resource templates; they were silently dropped for regular resources.
+
 ## [1.1.2] - 2026-03-02
 
 ### Fixed

@@ -64,6 +64,7 @@ TESTS=(
 	"test_project_hooks_disabled.sh"
 	"test_register_json.sh"
 	"test_resources.sh"
+	"test_resource_annotations.sh"
 	"test_resource_templates.sh"
 	"test_lifecycle_gating.sh"
 	"test_resources_providers.sh"

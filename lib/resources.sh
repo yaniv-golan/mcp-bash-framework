@@ -87,9 +87,11 @@ mcp_resources_manual_finalize() {
 			)),
 			mimeType: (.mimeType // "text/plain"),
 			path: (.path // ""),
-			icons: (.icons // null)
+			icons: (.icons // null),
+			annotations: (.annotations // null)
 		}) |
 		map(if .icons == null then del(.icons) else . end) |
+		map(if .annotations == null then del(.annotations) else . end) |
 		sort_by(.name) |
 		{
 			version: 1,
@@ -543,10 +545,11 @@ mcp_resources_scan() {
 			local mime="text/plain"
 			local provider=""
 			local icons="null"
+			local annotations="null"
 
 			if [ -f "${meta_json}" ]; then
 				# Read each field individually to handle multi-line descriptions correctly
-				local meta_name meta_desc meta_uri meta_uri_template meta_mime meta_provider meta_icons
+				local meta_name meta_desc meta_uri meta_uri_template meta_mime meta_provider meta_icons meta_annotations
 				meta_name="$("${MCPBASH_JSON_TOOL_BIN}" -r '.name // ""' "${meta_json}" 2>/dev/null | tr -d '\r' || true)"
 				meta_desc="$("${MCPBASH_JSON_TOOL_BIN}" -r '.description // ""' "${meta_json}" 2>/dev/null | tr -d '\r' || true)"
 				meta_uri="$("${MCPBASH_JSON_TOOL_BIN}" -r '.uri // ""' "${meta_json}" 2>/dev/null | tr -d '\r' || true)"
@@ -554,6 +557,7 @@ mcp_resources_scan() {
 				meta_mime="$("${MCPBASH_JSON_TOOL_BIN}" -r '.mimeType // "text/plain"' "${meta_json}" 2>/dev/null | tr -d '\r' || true)"
 				meta_provider="$("${MCPBASH_JSON_TOOL_BIN}" -r '.provider // ""' "${meta_json}" 2>/dev/null | tr -d '\r' || true)"
 				meta_icons="$("${MCPBASH_JSON_TOOL_BIN}" -c '.icons // null' "${meta_json}" 2>/dev/null || echo 'null')"
+				meta_annotations="$("${MCPBASH_JSON_TOOL_BIN}" -c '.annotations // null' "${meta_json}" 2>/dev/null || echo 'null')"
 
 				# Skip resources with uriTemplate - they belong in resource-templates.json only
 				if [ -n "${meta_uri_template}" ]; then
@@ -567,6 +571,7 @@ mcp_resources_scan() {
 					mime="${meta_mime:-${mime}}"
 					provider="${meta_provider:-${provider}}"
 					icons="${meta_icons:-${icons}}"
+					annotations="${meta_annotations:-${annotations}}"
 				fi
 
 				# Convert local file paths to data URIs
@@ -590,19 +595,22 @@ mcp_resources_scan() {
 							(.name // ""),
 							(.uri // ""),
 							(.description // ""),
-							(.icons // null | @json)
+							(.icons // null | @json),
+							(.annotations // null | @json)
 						] | @tsv
 					' 2>/dev/null)"; then
-						local h_name h_uri h_desc h_icons
-						IFS=$'\t' read -r h_name h_uri h_desc h_icons <<<"${extraction}"
+						local h_name h_uri h_desc h_icons h_annotations
+						IFS=$'\t' read -r h_name h_uri h_desc h_icons h_annotations <<<"${extraction}"
 						[ -n "${h_name}" ] && name="${h_name}"
 						[ -n "${h_uri}" ] && uri="${h_uri}"
 						[ -n "${h_desc}" ] && description="${h_desc}"
 						if [ -n "${h_icons}" ] && [ "${h_icons}" != "null" ]; then
-							# Convert local file paths to data URIs
 							local script_dir
 							script_dir="$(dirname "${path}")"
 							icons="$(mcp_json_icons_to_data_uris "${h_icons}" "${script_dir}")"
+						fi
+						if [ -n "${h_annotations}" ] && [ "${h_annotations}" != "null" ]; then
+							annotations="${h_annotations}"
 						fi
 					fi
 				fi
@@ -633,8 +641,9 @@ mcp_resources_scan() {
 			fi
 			printf '%s\n' "${name}" >>"${names_seen_file}"
 
-			# Ensure icons is valid JSON (fallback to null if empty)
+			# Ensure icons/annotations are valid JSON (fallback to null if empty)
 			[ -z "${icons}" ] && icons='null'
+			[ -z "${annotations}" ] && annotations='null'
 
 			"${MCPBASH_JSON_TOOL_BIN}" -n \
 				--arg name "$name" \
@@ -644,8 +653,10 @@ mcp_resources_scan() {
 				--arg mime "$mime" \
 				--arg provider "$provider" \
 				--argjson icons "$icons" \
+				--argjson annotations "$annotations" \
 				'{name: $name, description: $desc, path: $path, uri: $uri, mimeType: $mime, provider: $provider}
-				+ (if $icons != null then {icons: $icons} else {} end)' >>"${items_file}"
+				+ (if $icons != null then {icons: $icons} else {} end)
+				+ (if $annotations != null then {annotations: $annotations} else {} end)' >>"${items_file}"
 		done < <(find "${resources_dir}" -type f ! -name ".*" ! -name "*.meta.json" -print0 2>/dev/null)
 	fi
 
