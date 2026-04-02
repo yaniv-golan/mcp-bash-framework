@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Static `tools` array in MCPB manifest**: The bundler now scans `tools/*/tool.meta.json` at bundle time and emits a `tools` array of `{name, description}` objects in `manifest.json`. This enables pre-install discovery in extension stores — clients can show what an extension offers before downloading. Emitted alongside the existing `tools_generated` flag.
+- **Static `prompts` array in MCPB manifest**: Same pattern for prompts — scans `prompts/*.meta.json` and `prompts/*/prompt.meta.json`, extracts `name`, `description`, and `arguments` (property names from the JSON schema). Emitted alongside `prompts_generated`.
+- **`icons` array passthrough in MCPB manifest**: When `server.meta.json` defines an `icons` array (with `{src, size, theme}` objects for light/dark and multi-size variants), the bundler passes it through to `manifest.json` and copies referenced local files into the bundle. Supports the MCPB spec's themed icon feature for proper dark mode rendering in extension stores.
+- **`screenshots` passthrough in MCPB manifest**: When `server.meta.json` defines a `screenshots` array, the bundler passes it through and copies referenced local files into the bundle for extension store listings.
+- **`platform_overrides` passthrough in MCPB manifest**: When `server.meta.json` defines `platform_overrides`, the bundler merges it into `server.mcp_config.platform_overrides` in the manifest. Enables per-platform command, args, and env overrides for cross-platform bundles (e.g., `.exe` suffix on Windows, `DYLD_LIBRARY_PATH` on macOS).
+- **`_meta` passthrough in MCPB manifest**: When `server.meta.json` defines `_meta`, the bundler passes it through as a top-level manifest field. Supports platform-specific client integration metadata (e.g., Windows Store `package_family_name`, static `initialize`/`tools/list` responses).
+- **`localization` passthrough in MCPB manifest**: When `server.meta.json` defines `localization` (with `resources` path template and `default_locale`), the bundler passes it through for i18n of user-facing fields.
+
 ## [1.1.4] - 2026-04-02
 
 ### Fixed

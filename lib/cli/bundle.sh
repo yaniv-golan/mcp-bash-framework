@@ -738,12 +738,37 @@ mcp_bundle_resolve_metadata() {
 	RESOLVED_RUNTIME_PYTHON="${MCPB_RUNTIME_PYTHON:-}"
 	RESOLVED_RUNTIME_NODE="${MCPB_RUNTIME_NODE:-}"
 
+	# JSON passthroughs from server.meta.json (single jq call per json-handling.mdc)
+	RESOLVED_ICONS="null"
+	RESOLVED_SCREENSHOTS="null"
+	RESOLVED_PLATFORM_OVERRIDES="null"
+	RESOLVED_META="null"
+	RESOLVED_LOCALIZATION="null"
+	if [[ "${MCPBASH_JSON_TOOL:-none}" != "none" ]] && [[ -f "${project_root}/server.d/server.meta.json" ]]; then
+		local passthrough_result
+		passthrough_result="$("${MCPBASH_JSON_TOOL_BIN}" -c '[
+			(.icons // null),
+			(.screenshots // null),
+			(.server.mcp_config.platform_overrides // .platform_overrides // null),
+			(._meta // null),
+			(.localization // null)
+		]' "${project_root}/server.d/server.meta.json" 2>/dev/null || printf '[null,null,null,null,null]')"
+		local pt_val
+		pt_val="$(printf '%s' "${passthrough_result}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.[0] // null')" && [[ "${pt_val}" != "null" ]] && RESOLVED_ICONS="${pt_val}"
+		pt_val="$(printf '%s' "${passthrough_result}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.[1] // null')" && [[ "${pt_val}" != "null" ]] && RESOLVED_SCREENSHOTS="${pt_val}"
+		pt_val="$(printf '%s' "${passthrough_result}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.[2] // null')" && [[ "${pt_val}" != "null" ]] && RESOLVED_PLATFORM_OVERRIDES="${pt_val}"
+		pt_val="$(printf '%s' "${passthrough_result}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.[3] // null')" && [[ "${pt_val}" != "null" ]] && RESOLVED_META="${pt_val}"
+		pt_val="$(printf '%s' "${passthrough_result}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.[4] // null')" && [[ "${pt_val}" != "null" ]] && RESOLVED_LOCALIZATION="${pt_val}"
+	fi
+
 	export RESOLVED_NAME RESOLVED_VERSION RESOLVED_TITLE RESOLVED_DESCRIPTION
 	export RESOLVED_AUTHOR_NAME RESOLVED_AUTHOR_EMAIL RESOLVED_AUTHOR_URL RESOLVED_REPOSITORY
 	export RESOLVED_LONG_DESCRIPTION
 	export RESOLVED_LICENSE RESOLVED_HOMEPAGE RESOLVED_DOCUMENTATION RESOLVED_SUPPORT
 	export RESOLVED_KEYWORDS RESOLVED_PRIVACY_POLICIES
 	export RESOLVED_COMPAT_CLAUDE_DESKTOP RESOLVED_RUNTIME_PYTHON RESOLVED_RUNTIME_NODE
+	export RESOLVED_ICONS RESOLVED_SCREENSHOTS
+	export RESOLVED_PLATFORM_OVERRIDES RESOLVED_META RESOLVED_LOCALIZATION
 }
 
 mcp_bundle_copy_project() {
@@ -848,6 +873,47 @@ mcp_bundle_copy_project() {
 			break
 		fi
 	done
+
+	# Copy files referenced in icons array (themed/multi-size variants)
+	if [[ "${RESOLVED_ICONS:-null}" != "null" && "${MCPBASH_JSON_TOOL:-none}" != "none" ]]; then
+		local icon_src
+		while IFS= read -r icon_src; do
+			[[ -z "${icon_src}" ]] && continue
+			# Only copy local paths (skip https:// URLs)
+			[[ "${icon_src}" == https://* ]] && continue
+			if [[ -f "${project_root}/${icon_src}" ]]; then
+				local icon_dir
+				icon_dir="$(dirname "${staging_server}/../${icon_src}")"
+				mkdir -p "${icon_dir}"
+				cp "${project_root}/${icon_src}" "${staging_server}/../${icon_src}"
+				if [ "${verbose}" = "true" ]; then
+					printf '    Copied icon variant: %s\n' "${icon_src}"
+				fi
+			else
+				printf '  \342\232\240 Warning: icons src not found: %s\n' "${icon_src}" >&2
+			fi
+		done < <(printf '%s' "${RESOLVED_ICONS}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.[].src // empty' 2>/dev/null)
+	fi
+
+	# Copy files referenced in screenshots array
+	if [[ "${RESOLVED_SCREENSHOTS:-null}" != "null" && "${MCPBASH_JSON_TOOL:-none}" != "none" ]]; then
+		local screenshot_path
+		while IFS= read -r screenshot_path; do
+			[[ -z "${screenshot_path}" ]] && continue
+			[[ "${screenshot_path}" == https://* ]] && continue
+			if [[ -f "${project_root}/${screenshot_path}" ]]; then
+				local ss_dir
+				ss_dir="$(dirname "${staging_server}/../${screenshot_path}")"
+				mkdir -p "${ss_dir}"
+				cp "${project_root}/${screenshot_path}" "${staging_server}/../${screenshot_path}"
+				if [ "${verbose}" = "true" ]; then
+					printf '    Copied screenshot: %s\n' "${screenshot_path}"
+				fi
+			else
+				printf '  \342\232\240 Warning: screenshot not found: %s\n' "${screenshot_path}" >&2
+			fi
+		done < <(printf '%s' "${RESOLVED_SCREENSHOTS}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.[] // empty' 2>/dev/null)
+	fi
 }
 
 mcp_bundle_embed_framework() {
@@ -944,6 +1010,62 @@ WRAPPER
 	chmod +x "${output}"
 }
 
+mcp_bundle_scan_tools_array() {
+	local project_root="$1"
+	local tools_json="[]"
+
+	if [[ "${MCPBASH_JSON_TOOL:-none}" == "none" ]]; then
+		printf '%s' "${tools_json}"
+		return 0
+	fi
+
+	if [[ ! -d "${project_root}/tools" ]]; then
+		printf '%s' "${tools_json}"
+		return 0
+	fi
+
+	local meta_file
+	for meta_file in "${project_root}"/tools/*/tool.meta.json; do
+		[[ -f "${meta_file}" ]] || continue
+		local entry
+		entry="$("${MCPBASH_JSON_TOOL_BIN}" -c '{name: .name, description: .description} | with_entries(select(.value != null))' "${meta_file}" 2>/dev/null)" || continue
+		tools_json="$(printf '%s' "${tools_json}" | "${MCPBASH_JSON_TOOL_BIN}" -c --argjson e "${entry}" '. + [$e]')"
+	done
+
+	printf '%s' "${tools_json}"
+}
+
+mcp_bundle_scan_prompts_array() {
+	local project_root="$1"
+	local prompts_json="[]"
+
+	if [[ "${MCPBASH_JSON_TOOL:-none}" == "none" ]]; then
+		printf '%s' "${prompts_json}"
+		return 0
+	fi
+
+	if [[ ! -d "${project_root}/prompts" ]]; then
+		printf '%s' "${prompts_json}"
+		return 0
+	fi
+
+	local meta_file
+	for meta_file in "${project_root}"/prompts/*.meta.json "${project_root}"/prompts/*/prompt.meta.json; do
+		[[ -f "${meta_file}" ]] || continue
+		local entry
+		entry="$("${MCPBASH_JSON_TOOL_BIN}" -c '
+			{name: .name, description: .description}
+			+ (if (.arguments.properties // null) != null then
+				{arguments: [.arguments.properties | keys[]]}
+			  else {} end)
+			| with_entries(select(.value != null))
+		' "${meta_file}" 2>/dev/null)" || continue
+		prompts_json="$(printf '%s' "${prompts_json}" | "${MCPBASH_JSON_TOOL_BIN}" -c --argjson e "${entry}" '. + [$e]')"
+	done
+
+	printf '%s' "${prompts_json}"
+}
+
 mcp_bundle_generate_manifest() {
 	local staging_dir="$1"
 	local project_root="$2"
@@ -975,6 +1097,16 @@ mcp_bundle_generate_manifest() {
 	fi
 	if [ "${BUNDLE_STATIC_REGISTRY:-}" = "true" ]; then
 		has_static="true"
+	fi
+
+	# Scan static tool/prompt declarations for store listing discovery
+	local tools_array_json="[]"
+	local prompts_array_json="[]"
+	if [[ "${has_tools}" == "true" ]]; then
+		tools_array_json="$(mcp_bundle_scan_tools_array "${project_root}")"
+	fi
+	if [[ "${has_prompts}" == "true" ]]; then
+		prompts_array_json="$(mcp_bundle_scan_prompts_array "${project_root}")"
 	fi
 
 	# Use JSON tool to build manifest if available, otherwise use template
@@ -1010,6 +1142,13 @@ mcp_bundle_generate_manifest() {
 				--argjson platforms "${platforms_json}" \
 				--argjson tools_generated "${has_tools}" \
 				--argjson prompts_generated "${has_prompts}" \
+				--argjson tools_array "${tools_array_json}" \
+				--argjson prompts_array "${prompts_array_json}" \
+				--argjson icons_array "${RESOLVED_ICONS:-null}" \
+				--argjson screenshots_array "${RESOLVED_SCREENSHOTS:-null}" \
+				--argjson platform_overrides "${RESOLVED_PLATFORM_OVERRIDES:-null}" \
+				--argjson mcpb_meta "${RESOLVED_META:-null}" \
+				--argjson localization "${RESOLVED_LOCALIZATION:-null}" \
 				--argjson static_registry "${has_static}" \
 				--argjson user_config "${user_config_arg}" \
 				--arg env_map "${RESOLVED_USER_CONFIG_ENV_MAP:-}" \
@@ -1023,6 +1162,9 @@ mcp_bundle_generate_manifest() {
 			}
 			| if $long_description != "" then . + {long_description: $long_description} else . end
 			| if $icon != "" then . + {icon: $icon} else . end
+			| if $icons_array != null and ($icons_array | length) > 0 then . + {icons: $icons_array} else . end
+			| if $screenshots_array != null and ($screenshots_array | length) > 0 then . + {screenshots: $screenshots_array} else . end
+			| if $localization != null then . + {localization: $localization} else . end
 			| if $license != "" then . + {license: $license} else . end
 			| if $keywords != "" then . + {keywords: ($keywords | split(" ") | map(select(. != "")))} else . end
 			| if $homepage != "" then . + {homepage: $homepage} else . end
@@ -1033,21 +1175,24 @@ mcp_bundle_generate_manifest() {
 			| if $author_email != "" then .author.email = $author_email else . end
 			| if $author_url != "" then .author.url = $author_url else . end
 			| if $repository_url != "" then . + {repository: {type: "git", url: $repository_url}} else . end
+			| if ($tools_array | length) > 0 then . + {tools: $tools_array} else . end
 			| if $tools_generated then . + {tools_generated: true} else . end
+			| if ($prompts_array | length) > 0 then . + {prompts: $prompts_array} else . end
 			| if $prompts_generated then . + {prompts_generated: true} else . end
 			| if $user_config != null then . + {user_config: $user_config} else . end
+			| if $mcpb_meta != null then . + {_meta: $mcpb_meta} else . end
 			| . + {
 				server: {
 					type: "binary",
 					entry_point: "server/run-server.sh",
-					mcp_config: {
+					mcp_config: ({
 						command: "${__dirname}/server/run-server.sh",
 						args: ([] + (if $args_map != "" then ($args_map | split(",") | map(select(. != "")) | map("${user_config.\(.)}")) else [] end)),
 						env: ({
 							MCPBASH_PROJECT_ROOT: "${__dirname}/server",
 							MCPBASH_TOOL_ALLOWLIST: "*"
 						} + (if $static_registry then {MCPBASH_STATIC_REGISTRY: "1"} else {} end) + (if $env_map != "" then ($env_map | split(",") | map(select(. != "")) | map(split("=")) | map({key: .[1], value: ("${user_config." + .[0] + "}")}) | from_entries) else {} end))
-					}
+					} + (if $platform_overrides != null then {platform_overrides: $platform_overrides} else {} end))
 				},
 				compatibility: ({
 					platforms: $platforms

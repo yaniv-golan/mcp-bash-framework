@@ -1214,3 +1214,232 @@ EOF
 	run jq -e '.compatibility.runtimes.python == ">=3.10"' "${EXTRACT_DIR}/manifest.json"
 	[ "$status" -eq 0 ]
 }
+
+# ============================================================================
+# MCPB Manifest - Static tools/prompts arrays (store listing discovery)
+# ============================================================================
+
+@test "bundle: manifest includes static tools array from tool.meta.json" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	# setup already creates tools/hello/tool.meta.json with name=hello, description="Say hello"
+	(cd "${PROJECT_ROOT}" && "${MCPBASH_HOME}/bin/mcp-bash" bundle --output "${OUTPUT_DIR}" >/dev/null)
+	unzip -q "${OUTPUT_DIR}/test-server-1.2.3.mcpb" -d "${EXTRACT_DIR}"
+	# tools array should contain the hello tool entry
+	run jq -e '.tools | length == 1' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+	run jq -e '.tools[0].name == "hello"' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+	run jq -e '.tools[0].description == "Say hello"' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+	# tools_generated should also still be true
+	run jq -e '.tools_generated == true' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+}
+
+@test "bundle: manifest includes multiple tools in static array" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	mkdir -p "${PROJECT_ROOT}/tools/world"
+	cat >"${PROJECT_ROOT}/tools/world/tool.meta.json" <<'EOF'
+{
+  "name": "world",
+  "description": "Show the world"
+}
+EOF
+	cat >"${PROJECT_ROOT}/tools/world/tool.sh" <<'EOF'
+#!/usr/bin/env bash
+echo "World"
+EOF
+	chmod +x "${PROJECT_ROOT}/tools/world/tool.sh"
+	(cd "${PROJECT_ROOT}" && "${MCPBASH_HOME}/bin/mcp-bash" bundle --output "${OUTPUT_DIR}" >/dev/null)
+	unzip -q "${OUTPUT_DIR}/test-server-1.2.3.mcpb" -d "${EXTRACT_DIR}"
+	run jq -e '.tools | length == 2' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+	run jq -e '[.tools[].name] | sort == ["hello", "world"]' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+}
+
+@test "bundle: manifest includes static prompts array from prompt.meta.json" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	mkdir -p "${PROJECT_ROOT}/prompts/review"
+	cat >"${PROJECT_ROOT}/prompts/review/prompt.meta.json" <<'EOF'
+{
+  "name": "code-review",
+  "description": "Review code for quality",
+  "arguments": {
+    "type": "object",
+    "properties": {
+      "language": { "type": "string" },
+      "code": { "type": "string" }
+    }
+  }
+}
+EOF
+	cat >"${PROJECT_ROOT}/prompts/review/review.txt" <<'EOF'
+Review this {{language}} code: {{code}}
+EOF
+	(cd "${PROJECT_ROOT}" && "${MCPBASH_HOME}/bin/mcp-bash" bundle --output "${OUTPUT_DIR}" >/dev/null)
+	unzip -q "${OUTPUT_DIR}/test-server-1.2.3.mcpb" -d "${EXTRACT_DIR}"
+	run jq -e '.prompts | length == 1' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+	run jq -e '.prompts[0].name == "code-review"' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+	run jq -e '.prompts[0].description == "Review code for quality"' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+	# Arguments should be extracted as array of names
+	run jq -e '.prompts[0].arguments | sort == ["code", "language"]' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+	run jq -e '.prompts_generated == true' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+}
+
+@test "bundle: manifest omits tools array when no tool.meta.json files" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	# Remove the tool meta but keep the directory so tools_generated is still true
+	rm -f "${PROJECT_ROOT}/tools/hello/tool.meta.json"
+	(cd "${PROJECT_ROOT}" && "${MCPBASH_HOME}/bin/mcp-bash" bundle --output "${OUTPUT_DIR}" >/dev/null)
+	unzip -q "${OUTPUT_DIR}/test-server-1.2.3.mcpb" -d "${EXTRACT_DIR}"
+	run jq -e 'has("tools") | not' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+	run jq -e '.tools_generated == true' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+}
+
+# ============================================================================
+# MCPB Manifest - Icons array and screenshots passthrough
+# ============================================================================
+
+@test "bundle: manifest includes icons array from server.meta.json" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	mkdir -p "${PROJECT_ROOT}/assets/icons"
+	printf '\x89PNG' >"${PROJECT_ROOT}/assets/icons/icon-16-light.png"
+	printf '\x89PNG' >"${PROJECT_ROOT}/assets/icons/icon-16-dark.png"
+	cat >"${PROJECT_ROOT}/server.d/server.meta.json" <<'EOF'
+{
+  "name": "test-server",
+  "version": "1.2.3",
+  "description": "A test MCP server",
+  "icons": [
+    {"src": "assets/icons/icon-16-light.png", "size": "16x16", "theme": "light"},
+    {"src": "assets/icons/icon-16-dark.png", "size": "16x16", "theme": "dark"}
+  ]
+}
+EOF
+	(cd "${PROJECT_ROOT}" && "${MCPBASH_HOME}/bin/mcp-bash" bundle --output "${OUTPUT_DIR}" >/dev/null)
+	unzip -q "${OUTPUT_DIR}/test-server-1.2.3.mcpb" -d "${EXTRACT_DIR}"
+	run jq -e '.icons | length == 2' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+	run jq -e '.icons[0].theme == "light"' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+	# Icon files should be copied into the bundle
+	assert_file_exist "${EXTRACT_DIR}/assets/icons/icon-16-light.png"
+	assert_file_exist "${EXTRACT_DIR}/assets/icons/icon-16-dark.png"
+}
+
+@test "bundle: manifest includes screenshots from server.meta.json" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	mkdir -p "${PROJECT_ROOT}/assets/screenshots"
+	printf '\x89PNG' >"${PROJECT_ROOT}/assets/screenshots/demo.png"
+	cat >"${PROJECT_ROOT}/server.d/server.meta.json" <<'EOF'
+{
+  "name": "test-server",
+  "version": "1.2.3",
+  "description": "A test MCP server",
+  "screenshots": [
+    "assets/screenshots/demo.png"
+  ]
+}
+EOF
+	(cd "${PROJECT_ROOT}" && "${MCPBASH_HOME}/bin/mcp-bash" bundle --output "${OUTPUT_DIR}" >/dev/null)
+	unzip -q "${OUTPUT_DIR}/test-server-1.2.3.mcpb" -d "${EXTRACT_DIR}"
+	run jq -e '.screenshots == ["assets/screenshots/demo.png"]' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+	assert_file_exist "${EXTRACT_DIR}/assets/screenshots/demo.png"
+}
+
+@test "bundle: manifest omits icons/screenshots when not in server.meta.json" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	(cd "${PROJECT_ROOT}" && "${MCPBASH_HOME}/bin/mcp-bash" bundle --output "${OUTPUT_DIR}" >/dev/null)
+	unzip -q "${OUTPUT_DIR}/test-server-1.2.3.mcpb" -d "${EXTRACT_DIR}"
+	run jq -e 'has("icons") | not' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+	run jq -e 'has("screenshots") | not' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+}
+
+# ============================================================================
+# MCPB Manifest - platform_overrides, _meta, localization passthroughs
+# ============================================================================
+
+@test "bundle: manifest includes platform_overrides from server.meta.json" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	cat >"${PROJECT_ROOT}/server.d/server.meta.json" <<'EOF'
+{
+  "name": "test-server",
+  "version": "1.2.3",
+  "description": "A test MCP server",
+  "platform_overrides": {
+    "win32": {"command": "server/run-server.exe"},
+    "darwin": {"env": {"DYLD_LIBRARY_PATH": "server/lib"}}
+  }
+}
+EOF
+	(cd "${PROJECT_ROOT}" && "${MCPBASH_HOME}/bin/mcp-bash" bundle --output "${OUTPUT_DIR}" >/dev/null)
+	unzip -q "${OUTPUT_DIR}/test-server-1.2.3.mcpb" -d "${EXTRACT_DIR}"
+	run jq -e '.server.mcp_config.platform_overrides.win32.command == "server/run-server.exe"' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+	run jq -e '.server.mcp_config.platform_overrides.darwin.env.DYLD_LIBRARY_PATH == "server/lib"' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+}
+
+@test "bundle: manifest includes _meta from server.meta.json" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	cat >"${PROJECT_ROOT}/server.d/server.meta.json" <<'EOF'
+{
+  "name": "test-server",
+  "version": "1.2.3",
+  "description": "A test MCP server",
+  "_meta": {
+    "com.microsoft.windows": {
+      "package_family_name": "TestPkg_123"
+    }
+  }
+}
+EOF
+	(cd "${PROJECT_ROOT}" && "${MCPBASH_HOME}/bin/mcp-bash" bundle --output "${OUTPUT_DIR}" >/dev/null)
+	unzip -q "${OUTPUT_DIR}/test-server-1.2.3.mcpb" -d "${EXTRACT_DIR}"
+	run jq -e '._meta["com.microsoft.windows"].package_family_name == "TestPkg_123"' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+}
+
+@test "bundle: manifest includes localization from server.meta.json" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	cat >"${PROJECT_ROOT}/server.d/server.meta.json" <<'EOF'
+{
+  "name": "test-server",
+  "version": "1.2.3",
+  "description": "A test MCP server",
+  "localization": {
+    "resources": "mcpb-resources/${locale}.json",
+    "default_locale": "en-US"
+  }
+}
+EOF
+	(cd "${PROJECT_ROOT}" && "${MCPBASH_HOME}/bin/mcp-bash" bundle --output "${OUTPUT_DIR}" >/dev/null)
+	unzip -q "${OUTPUT_DIR}/test-server-1.2.3.mcpb" -d "${EXTRACT_DIR}"
+	run jq -e '.localization.default_locale == "en-US"' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+	run jq -e '.localization.resources == "mcpb-resources/${locale}.json"' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+}
+
+@test "bundle: manifest omits platform_overrides/_meta/localization when absent" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	(cd "${PROJECT_ROOT}" && "${MCPBASH_HOME}/bin/mcp-bash" bundle --output "${OUTPUT_DIR}" >/dev/null)
+	unzip -q "${OUTPUT_DIR}/test-server-1.2.3.mcpb" -d "${EXTRACT_DIR}"
+	run jq -e '.server.mcp_config | has("platform_overrides") | not' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+	run jq -e 'has("_meta") | not' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+	run jq -e 'has("localization") | not' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+}
