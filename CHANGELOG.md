@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.4] - 2026-04-02
+
+### Fixed
+
+- **`mcp-bash config` now includes `MCPBASH_TOOL_ALLOWLIST` in all output modes**: All six output modes (`--json`, `--client claude-desktop`, `--client cursor`, `--client claude-cli`, `--client windsurf`, `--client librechat`, `--wrapper`/`--wrapper-env`, `--inspector`) now emit `MCPBASH_TOOL_ALLOWLIST="*"` in the generated env block. Previously, the allowlist was omitted, causing all tools to be silently blocked by the default-deny policy when users copied config output verbatim.
+
+### Added
+
+- **Per-Client Snippets in README include `MCPBASH_TOOL_ALLOWLIST`**: All six client setup snippets (Claude Desktop, Claude CLI, LibreChat, OpenAI Agents SDK, Clawdbot, Highlight AI) now show `MCPBASH_TOOL_ALLOWLIST="*"` with a security note directing users to narrow it for production.
+- **Agent Quick Start section in `llms.txt` and `llms-full.txt`**: A new "Quick Start for AI Agents Building MCP Servers" section provides step-by-step build instructions, highlights the critical allowlist requirement, and documents CLI wrapper patterns (PATH resolution via `mcp_detect_cli`, `set -uo pipefail` error handling).
+- **New example `examples/15-cli-wrapper`**: Demonstrates the most common real-world MCP server pattern — wrapping an external CLI with `mcp_detect_cli` for PATH resolution, `set -uo pipefail` for error capture, and SDK helpers for MCP-compliant output.
+- **`set -e` + CLI wrapper pitfall documented in `docs/BEST-PRACTICES.md` §4.5**: Documents that `set -euo pipefail` makes error branches unreachable when wrapping CLIs that return non-zero for business errors, with a fix example.
+
 ## [1.1.3] - 2026-03-02
 
 ### Fixed

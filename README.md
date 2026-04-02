@@ -15,6 +15,8 @@ Edit README.md.in and run: bash scripts/render-readme.sh
 
 > **Repository:** [`mcp-bash-framework`](https://github.com/yaniv-golan/mcp-bash-framework) &nbsp;•&nbsp; **CLI/Binary:** `mcp-bash`
 
+> **For AI agents:** Read [`llms.txt`](llms.txt) (compact) or [`llms-full.txt`](llms-full.txt) (detailed) for agent-optimized context — includes a step-by-step Quick Start, critical allowlist requirement, and CLI wrapper patterns.
+
 ## Contents
 
 - [MCP Spec Coverage](#mcp-spec-coverage)
@@ -118,13 +120,13 @@ command -v jq >/dev/null 2>&1 || command -v gojq >/dev/null 2>&1 || printf '%s\n
 Quick install (good for local dev / trusted networks):
 
 ```bash
-curl -fsSL "https://raw.githubusercontent.com/yaniv-golan/mcp-bash-framework/v1.1.3/install.sh" | bash -s -- --yes --version "v1.1.3"
+curl -fsSL "https://raw.githubusercontent.com/yaniv-golan/mcp-bash-framework/v1.1.4/install.sh" | bash -s -- --yes --version "v1.1.4"
 ```
 
 Verified install (recommended for production / security-sensitive environments):
 
 ```bash
-version="v1.1.3"
+version="v1.1.4"
 file="mcp-bash-${version}.tar.gz"
 curl -fsSLO "https://github.com/yaniv-golan/mcp-bash-framework/releases/download/${version}/${file}"
 curl -fsSLO "https://github.com/yaniv-golan/mcp-bash-framework/releases/download/${version}/SHA256SUMS"
@@ -153,7 +155,7 @@ echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc  # or ~/.zshrc (if not 
 Pin a release with the installer (auto-prefixes `v` for bare versions):
 
 ```bash
-bash install.sh --verify <sha256-from-SHA256SUMS> --version 1.1.3
+bash install.sh --verify <sha256-from-SHA256SUMS> --version 1.1.4
 ```
 
 ### 1.5 Verify It Works (30 seconds)
@@ -321,7 +323,10 @@ Picking a wrapper:
   "mcpServers": {
     "mcp-bash": {
       "command": "/Users/you/.local/bin/mcp-bash",
-      "env": {"MCPBASH_PROJECT_ROOT": "/Users/you/my-mcp-server"}
+      "env": {
+        "MCPBASH_PROJECT_ROOT": "/Users/you/my-mcp-server",
+        "MCPBASH_TOOL_ALLOWLIST": "*"
+      }
     }
   }
   ```
@@ -342,6 +347,7 @@ Picking a wrapper:
   ```bash
   claude mcp add --transport stdio mcp-bash \
     --env MCPBASH_PROJECT_ROOT="$HOME/my-mcp-server" \
+    --env MCPBASH_TOOL_ALLOWLIST="*" \
     -- "$HOME/.local/bin/mcp-bash"
   ```
 - **Cursor**: Create `~/.cursor/mcp.json` (or `.cursor/mcp.json` in a project) with the same `mcpServers` JSON as above.
@@ -354,6 +360,7 @@ Picking a wrapper:
       command: /Users/you/.local/bin/mcp-bash
       env:
         MCPBASH_PROJECT_ROOT: /Users/you/my-mcp-server
+        MCPBASH_TOOL_ALLOWLIST: "*"
   ```
 - **OpenAI Agents SDK (Python)**: Use `MCPServerStdio(params=...)`; the constructor does not take a `name` kwarg.
   ```python
@@ -361,6 +368,7 @@ Picking a wrapper:
   from agents.mcp import MCPServerStdio
 
   os.environ["MCPBASH_PROJECT_ROOT"] = "/Users/you/my-mcp-server"
+  os.environ["MCPBASH_TOOL_ALLOWLIST"] = "*"
   async with MCPServerStdio(
       params={
           "command": "/Users/you/.local/bin/mcp-bash",
@@ -376,7 +384,10 @@ Picking a wrapper:
       "mcp-bash": {
         "type": "stdio",
         "command": "/Users/you/.local/bin/mcp-bash",
-        "env": {"MCPBASH_PROJECT_ROOT": "/Users/you/my-mcp-server"}
+        "env": {
+          "MCPBASH_PROJECT_ROOT": "/Users/you/my-mcp-server",
+          "MCPBASH_TOOL_ALLOWLIST": "*"
+        }
       }
     }
   }
@@ -385,8 +396,10 @@ Picking a wrapper:
 - **Highlight AI**: Go to Highlight → Settings → Connections → Add → Custom command:
   - **Connection name**: `mcp-bash`
   - **Command**: `/Users/you/.local/bin/mcp-bash`
-  - **Environment variables**: `MCPBASH_PROJECT_ROOT=/Users/you/my-mcp-server`
+  - **Environment variables**: `MCPBASH_PROJECT_ROOT=/Users/you/my-mcp-server MCPBASH_TOOL_ALLOWLIST=*`
 - **Windows note**: Git Bash (CI-tested) or WSL both work. Git Bash ships with Git for Windows; WSL behaves like Linux. See [Windows Support](docs/WINDOWS.md) for details.
+
+> **Security note:** `MCPBASH_TOOL_ALLOWLIST="*"` allows all registered tools. For production deployments, replace `*` with a comma-separated list of specific tool names (e.g., `"search-notes,get-note"`).
 
 ### Compatibility Notes
 

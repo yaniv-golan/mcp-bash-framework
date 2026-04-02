@@ -1204,6 +1204,29 @@ set -o pipefail
 cmd | grep pattern  # Now fails if cmd fails
 ```
 
+**External CLI error handling under `set -e`:**
+
+```bash
+# ❌ Error branch unreachable — set -e exits on non-zero CLI return
+set -euo pipefail
+source "${MCP_SDK:?}/tool-sdk.sh"
+result=$(mycli get "$id")  # script exits here if mycli returns non-zero
+if [[ -z "$result" ]]; then
+    mcp_result_error "$(mcp_json_obj type "not_found" message "Not found")"  # never reached
+fi
+
+# ✅ Use set -uo pipefail (no -e) when wrapping CLIs with business errors
+set -uo pipefail
+source "${MCP_SDK:?}/tool-sdk.sh"
+result=$(mycli get "$id" 2>&1) || {
+    mcp_result_error "$(mcp_json_obj type "cli_error" message "CLI failed: ${result}")"
+    exit 0
+}
+mcp_result_success "$(printf '%s' "$result" | jq -c '.')"
+```
+
+**Why:** The scaffold default `set -euo pipefail` is correct for tools that only use SDK helpers (which are designed to work under `-e`). But external CLIs often return non-zero exit codes for business logic (e.g., "record not found", "no matches"), not just fatal errors. With `-e`, the script exits before your error handling runs. Drop the `-e` and handle errors explicitly when wrapping CLIs. See [example 15-cli-wrapper](../examples/15-cli-wrapper/) for a complete working example.
+
 ### 4.6 Logging & instrumentation
 - Use `MCPBASH_LOG_LEVEL` for startup defaults, then rely on `logging/setLevel` requests for runtime tuning (§6.2).
 - Enable `MCPBASH_LOG_VERBOSE=true` when debugging path-related issues; paths and manual-registration script output are redacted by default. **Warning**: verbose mode exposes file paths and usernames—disable after troubleshooting. See [docs/LOGGING.md](LOGGING.md).
