@@ -283,6 +283,7 @@ mcp_resources_init() {
 }
 
 mcp_resources_load_cache_if_empty() {
+	local caller_now="${1:-}"
 	if [ -n "${MCP_RESOURCES_REGISTRY_JSON}" ] || [ ! -f "${MCP_RESOURCES_REGISTRY_PATH}" ]; then
 		return 0
 	fi
@@ -296,9 +297,8 @@ mcp_resources_load_cache_if_empty() {
 			if ! mcp_resources_enforce_registry_limits "${MCP_RESOURCES_TOTAL}" "${MCP_RESOURCES_REGISTRY_JSON}"; then
 				return 1
 			fi
-			# Trust pre-generated cache and start TTL window from now (not file mtime, which fails for extracted bundles)
 			if [ -z "${MCP_RESOURCES_LAST_SCAN}" ]; then
-				MCP_RESOURCES_LAST_SCAN="$(date +%s)"
+				MCP_RESOURCES_LAST_SCAN="${caller_now:-$(date +%s)}"
 			fi
 		else
 			mcp_logging_warning "${MCP_RESOURCES_LOGGER}" "Discarding invalid resource registry cache"
@@ -435,7 +435,7 @@ mcp_resources_refresh_registry() {
 	local now
 	now="$(date +%s)"
 
-	if ! mcp_resources_load_cache_if_empty; then
+	if ! mcp_resources_load_cache_if_empty "${now}"; then
 		return 1
 	fi
 	local cache_age ttl="${MCP_RESOURCES_TTL}"
@@ -926,6 +926,7 @@ mcp_resources_templates_init() {
 }
 
 mcp_resources_templates_load_cache_if_empty() {
+	local caller_now="${1:-}"
 	if [ -n "${MCP_RESOURCES_TEMPLATES_REGISTRY_JSON}" ] || [ ! -f "${MCP_RESOURCES_TEMPLATES_REGISTRY_PATH}" ]; then
 		return 0
 	fi
@@ -939,9 +940,8 @@ mcp_resources_templates_load_cache_if_empty() {
 			if ! mcp_resources_templates_enforce_registry_limits "${MCP_RESOURCES_TEMPLATES_TOTAL}" "${MCP_RESOURCES_TEMPLATES_REGISTRY_JSON}"; then
 				return 1
 			fi
-			# Trust pre-generated cache and start TTL window from now (not file mtime, which fails for extracted bundles)
 			if [ -z "${MCP_RESOURCES_TEMPLATES_LAST_SCAN}" ]; then
-				MCP_RESOURCES_TEMPLATES_LAST_SCAN="$(date +%s)"
+				MCP_RESOURCES_TEMPLATES_LAST_SCAN="${caller_now:-$(date +%s)}"
 			fi
 		else
 			mcp_logging_warning "${MCP_RESOURCES_TEMPLATES_LOGGER}" "Discarding invalid resource templates registry cache"
@@ -1335,7 +1335,7 @@ mcp_resources_templates_refresh_registry() {
 	0) ttl=5 ;;
 	esac
 
-	if ! mcp_resources_templates_load_cache_if_empty; then
+	if ! mcp_resources_templates_load_cache_if_empty "${now}"; then
 		return 1
 	fi
 

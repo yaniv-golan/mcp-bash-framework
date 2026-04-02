@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`_meta` passthrough in MCPB manifest**: When `server.meta.json` defines `_meta`, the bundler passes it through as a top-level manifest field. Supports platform-specific client integration metadata (e.g., Windows Store `package_family_name`, static `initialize`/`tools/list` responses).
 - **`localization` passthrough in MCPB manifest**: When `server.meta.json` defines `localization` (with `resources` path template and `default_locale`), the bundler passes it through for i18n of user-facing fields.
 
+### Fixed
+
+- **Registry cache epoch-boundary race**: `load_cache_if_empty` in tools, resources, resource templates, and prompts called `date +%s` independently of the caller's `now` timestamp. When the epoch second rolled over between the two calls, `LAST_SCAN` could exceed `now`, producing a negative cache age that satisfied any TTL check — skipping the disk scan entirely. Each function now accepts the caller's `now` to ensure `LAST_SCAN <= now`.
+
 ## [1.1.4] - 2026-04-02
 
 ### Fixed
