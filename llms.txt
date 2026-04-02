@@ -17,6 +17,51 @@ Key points:
 - **Test harnesses**: `test_run_mcp` (NDJSON batch, preferred) and `test/common/session.sh` (interactive sequential calls; skips notifications, overwrites EXIT traps, no timeout).
 - **Embedded resources**: Use `mcp_result_text_with_resource '{"msg":"done"}' --path /tmp/file.txt --mime text/plain` to add `type:"resource"` content; binary files auto-encode to `blob`, text uses `text`.
 
+## Quick Start for AI Agents Building MCP Servers
+
+If you are an AI agent building an MCP server project, follow these steps:
+
+1. **Create project:** `mcp-bash new my-server && cd my-server`
+2. **Add tools:** `mcp-bash scaffold tool my-tool-name` — this generates `tools/my-tool-name/tool.sh` and `tools/my-tool-name/tool.meta.json` with the correct SDK sourcing and structure. Always use the scaffold instead of writing tool files from scratch.
+3. **Implement logic** in `tools/my-tool-name/tool.sh`. The scaffold already sources the SDK (`source "${MCP_SDK:?}/tool-sdk.sh"`). Use `mcp_args_get`, `mcp_result_success`, `mcp_error` — not raw jq.
+4. **Generate client config:** `mcp-bash config --client claude-desktop`
+   - **CRITICAL:** The config output includes `MCPBASH_TOOL_ALLOWLIST`. Without it, ALL tools are silently blocked (default-deny policy). Do not remove it.
+5. **Test:** `mcp-bash run-tool my-tool-name --allow-self --args '{"key":"value"}'`
+
+### If your tool wraps an external CLI
+
+MCP hosts (Claude Desktop, Cursor) launch servers with a minimal PATH that excludes version manager shims. Your tool's CLI dependency may not be found at runtime even though it's installed.
+
+**Do not** call CLIs as bare commands (e.g., `mycli search ...`). Instead:
+
+```bash
+source "${MCP_SDK:?}/tool-sdk.sh"
+# Copy mcp_detect_cli from docs/BEST-PRACTICES.md §4.4 into your project's lib/
+source "${MCPBASH_PROJECT_ROOT}/lib/cli-detect.sh"
+MYCLI=$(mcp_detect_cli mycli "pip install my-package") || mcp_fail -32603 "mycli not found"
+"${MYCLI}" search "$query"
+```
+
+Or use `BASH_SOURCE` path resolution if the CLI is bundled with your project:
+
+```bash
+MYCLI="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../bin" && pwd)/mycli"
+```
+
+**Error handling for CLI wrappers:** Use `set -uo pipefail` (no `-e`) when your CLI returns non-zero for business errors:
+
+```bash
+set -uo pipefail  # not set -euo — -e would exit before error handling
+source "${MCP_SDK:?}/tool-sdk.sh"
+result=$("${MYCLI}" get "$id" 2>&1) || {
+    mcp_result_error "$(mcp_json_obj type "cli_error" message "CLI failed: ${result}")"
+    exit 0
+}
+mcp_result_success "$(printf '%s' "$result" | jq -c '.')"
+```
+
+Note: `mcp_result_error` expects a JSON object with `type` and `message` fields. Use `mcp_json_obj type "..." message "..."` to build it — do not pass a plain string.
+
 ## Docs
 
 - [README](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/README.md): Quick start (verified-download install path), client recipes (Claude Desktop, Cursor, Windsurf, etc.), configuration reference, and feature overview.
@@ -38,6 +83,7 @@ Key points:
 - [07-prompts-basics](https://github.com/yaniv-golan/mcp-bash-framework/tree/main/examples/07-prompts-basics): Discovering and rendering prompt templates.
 - [08-elicitation](https://github.com/yaniv-golan/mcp-bash-framework/tree/main/examples/08-elicitation): Client-driven elicitation prompts that gate tool execution.
 - [09-registry-overrides](https://github.com/yaniv-golan/mcp-bash-framework/tree/main/examples/09-registry-overrides): Declarative registry overrides, live progress streaming, and custom resource providers.
+- [15-cli-wrapper](https://github.com/yaniv-golan/mcp-bash-framework/tree/main/examples/15-cli-wrapper): Wrapping external CLIs with PATH resolution, error handling, and MCP result formatting. The most common pattern for real-world MCP servers.
 
 ## SDK & Scaffolding
 

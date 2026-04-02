@@ -25,4 +25,5 @@ Highlights:
 - `08-elicitation` — confirm/choice/multi-choice flows when clients advertise elicitation.
 - `11-resource-templates` — auto/manual template discovery, overrides, and client-side expansion.
 - `advanced/register-sh-hooks` — advanced project hooks via `server.d/register.sh` (dynamic registration; opt-in).
+- [15-cli-wrapper](./15-cli-wrapper/) — Wrapping external CLI tools with PATH resolution (`mcp_detect_cli`), error handling (`set -uo pipefail`), and proper MCP result formatting. Start here if your MCP server calls an external CLI.
 - Full ladder lives in the main README table.

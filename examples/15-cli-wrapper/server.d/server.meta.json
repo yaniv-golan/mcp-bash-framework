@@ -1,0 +1,6 @@
+{
+  "name": "cli-wrapper-example",
+  "title": "CLI Wrapper Example",
+  "version": "1.0.0",
+  "description": "Demonstrates wrapping external CLI tools with PATH resolution and error handling"
+}

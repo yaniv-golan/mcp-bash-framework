@@ -1,0 +1,19 @@
+{
+  "name": "system-info",
+  "description": "Get system information by running common CLI tools (uname, sw_vers, etc.). Demonstrates the CLI wrapper pattern: PATH resolution via mcp_detect_cli, error capture, and proper MCP result formatting.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "command": {
+        "type": "string",
+        "description": "Which system info to retrieve: 'os', 'uptime', or 'disk'",
+        "enum": ["os", "uptime", "disk"]
+      }
+    },
+    "required": ["command"]
+  },
+  "annotations": {
+    "readOnlyHint": true
+  },
+  "timeoutSecs": 10
+}

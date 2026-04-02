@@ -34,6 +34,7 @@ show_output="$(
 assert_contains "cfg-demo" "${show_output}" "config --show missing project name"
 assert_contains "# Claude Desktop" "${show_output}" "config --show missing client heading"
 assert_contains "# Cursor" "${show_output}" "config --show missing cursor heading"
+assert_contains "MCPBASH_TOOL_ALLOWLIST" "${show_output}" "config --show missing MCPBASH_TOOL_ALLOWLIST"
 canonical_root="$(cd "${PROJECT_DIR}" && (pwd -P 2>/dev/null || pwd))"
 
 printf ' -> config --json descriptor shape\n'
@@ -56,6 +57,8 @@ fi
 expected_root_basename="$(basename "${canonical_root}")"
 actual_root_basename="$(basename "${env_root}")"
 assert_eq "${expected_root_basename}" "${actual_root_basename}" "config --json project root mismatch"
+json_allowlist="$(printf '%s' "${json_output}" | jq -r '.env.MCPBASH_TOOL_ALLOWLIST')"
+assert_eq "*" "${json_allowlist}" "config --json missing MCPBASH_TOOL_ALLOWLIST"
 
 framework_bin="$(cd "${MCPBASH_TEST_ROOT}" && (pwd -P 2>/dev/null || pwd))/bin/mcp-bash"
 
@@ -72,6 +75,7 @@ fi
 assert_contains "cfg-demo" "${cursor_output}" "config --client cursor missing project name"
 assert_contains "MCPBASH_PROJECT_ROOT" "${cursor_output}" "config --client cursor missing env var"
 assert_contains "mcpServers" "${cursor_output}" "config --client cursor missing mcpServers wrapper"
+assert_contains "MCPBASH_TOOL_ALLOWLIST" "${cursor_output}" "config --client cursor missing MCPBASH_TOOL_ALLOWLIST"
 
 printf ' -> config --client claude-desktop\n'
 desktop_output="$(
@@ -84,6 +88,7 @@ fi
 assert_contains "cfg-demo" "${desktop_output}" "config --client claude-desktop missing project name"
 assert_contains "MCPBASH_PROJECT_ROOT" "${desktop_output}" "config --client claude-desktop missing env var"
 assert_contains "mcpServers" "${desktop_output}" "config --client claude-desktop missing mcpServers wrapper"
+assert_contains "MCPBASH_TOOL_ALLOWLIST" "${desktop_output}" "config --client claude-desktop missing MCPBASH_TOOL_ALLOWLIST"
 
 printf ' -> config --client claude-cli\n'
 cli_output="$(
@@ -95,6 +100,7 @@ if ! printf '%s' "${cli_output}" | jq -e '.' >/dev/null 2>&1; then
 fi
 assert_contains "cfg-demo" "${cli_output}" "config --client claude-cli missing project name"
 assert_contains "MCPBASH_PROJECT_ROOT" "${cli_output}" "config --client claude-cli missing env var"
+assert_contains "MCPBASH_TOOL_ALLOWLIST" "${cli_output}" "config --client claude-cli missing MCPBASH_TOOL_ALLOWLIST"
 
 printf ' -> config --client windsurf\n'
 windsurf_output="$(
@@ -107,6 +113,7 @@ fi
 assert_contains "cfg-demo" "${windsurf_output}" "config --client windsurf missing project name"
 assert_contains "MCPBASH_PROJECT_ROOT" "${windsurf_output}" "config --client windsurf missing env var"
 assert_contains "mcpServers" "${windsurf_output}" "config --client windsurf missing mcpServers wrapper"
+assert_contains "MCPBASH_TOOL_ALLOWLIST" "${windsurf_output}" "config --client windsurf missing MCPBASH_TOOL_ALLOWLIST"
 
 printf ' -> config --client librechat\n'
 librechat_output="$(
@@ -118,6 +125,7 @@ if ! printf '%s' "${librechat_output}" | jq -e '.' >/dev/null 2>&1; then
 fi
 assert_contains "cfg-demo" "${librechat_output}" "config --client librechat missing project name"
 assert_contains "MCPBASH_PROJECT_ROOT" "${librechat_output}" "config --client librechat missing env var"
+assert_contains "MCPBASH_TOOL_ALLOWLIST" "${librechat_output}" "config --client librechat missing MCPBASH_TOOL_ALLOWLIST"
 
 printf ' -> config --inspector helper\n'
 inspector_output="$(
@@ -128,5 +136,13 @@ assert_contains "npx @modelcontextprotocol/inspector" "${inspector_output}" "con
 assert_contains "--transport stdio --" "${inspector_output}" "config --inspector missing transport delimiter"
 assert_contains "MCPBASH_PROJECT_ROOT=${canonical_root}" "${inspector_output}" "config --inspector missing project root env"
 assert_contains "${framework_bin}" "${inspector_output}" "config --inspector missing framework binary path"
+assert_contains "MCPBASH_TOOL_ALLOWLIST=*" "${inspector_output}" "config --inspector missing MCPBASH_TOOL_ALLOWLIST"
+
+printf ' -> config --wrapper includes MCPBASH_TOOL_ALLOWLIST\n'
+wrapper_output="$(
+	cd "${PROJECT_DIR}" || exit 1
+	"${MCPBASH_TEST_ROOT}/bin/mcp-bash" config --wrapper 2>/dev/null
+)"
+assert_contains "MCPBASH_TOOL_ALLOWLIST" "${wrapper_output}" "config --wrapper missing MCPBASH_TOOL_ALLOWLIST"
 
 printf 'CLI config variants test passed.\n'

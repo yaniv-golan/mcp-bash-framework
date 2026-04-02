@@ -98,14 +98,13 @@ EOF
 		printf '{\n'
 		printf '  "name": %s,\n' "${server_name_json}"
 		printf '  "command": %s,\n' "${command_path_json}"
-		printf '  "args": []'
+		printf '  "args": [],\n'
+		printf '  "env": {\n'
 		if [ "${has_project_root}" = "true" ]; then
-			printf ',\n  "env": {\n'
-			printf '    "MCPBASH_PROJECT_ROOT": %s\n' "${project_root_json}"
-			printf '  }\n'
-		else
-			printf '\n'
+			printf '    "MCPBASH_PROJECT_ROOT": %s,\n' "${project_root_json}"
 		fi
+		printf '    "MCPBASH_TOOL_ALLOWLIST": "*"\n'
+		printf '  }\n'
 		printf '}\n'
 		exit 0
 	fi
@@ -158,6 +157,7 @@ if [ -z "${MCP_BASH}" ]; then
 fi
 
 export MCPBASH_PROJECT_ROOT="${SCRIPT_DIR}"
+export MCPBASH_TOOL_ALLOWLIST="${MCPBASH_TOOL_ALLOWLIST:-*}"
 exec "${MCP_BASH}" "$@"
 '
 
@@ -208,9 +208,9 @@ exec "${MCP_BASH}" "$@"
 		command_escaped="$(printf '%q' "${command_path}")"
 
 		if [ -n "${env_arg}" ]; then
-			printf 'npx @modelcontextprotocol/inspector %s --transport stdio -- %s\n' "${env_arg}" "${command_escaped}"
+			printf 'npx @modelcontextprotocol/inspector %s -e MCPBASH_TOOL_ALLOWLIST=* --transport stdio -- %s\n' "${env_arg}" "${command_escaped}"
 		else
-			printf 'npx @modelcontextprotocol/inspector --transport stdio -- %s\n' "${command_escaped}"
+			printf 'npx @modelcontextprotocol/inspector -e MCPBASH_TOOL_ALLOWLIST=* --transport stdio -- %s\n' "${command_escaped}"
 		fi
 		exit 0
 	fi
@@ -233,11 +233,12 @@ exec "${MCP_BASH}" "$@"
 			printf '  "mcpServers": {\n'
 			printf '    %s: {\n' "${server_name_json}"
 			printf '      "command": %s' "${display_command}"
+			printf ',\n      "env": {\n'
 			if [ "${has_project_root}" = "true" ]; then
-				printf ',\n      "env": {\n'
-				printf '        "MCPBASH_PROJECT_ROOT": %s\n' "${project_root_json}"
-				printf '      }'
+				printf '        "MCPBASH_PROJECT_ROOT": %s,\n' "${project_root_json}"
 			fi
+			printf '        "MCPBASH_TOOL_ALLOWLIST": "*"\n'
+			printf '      }'
 			printf '\n    }\n'
 			printf '  }\n'
 			printf '}\n\n'
@@ -251,11 +252,12 @@ exec "${MCP_BASH}" "$@"
 			printf '  "mcpServers": {\n'
 			printf '    %s: {\n' "${server_name_json}"
 			printf '      "command": %s' "${display_command}"
+			printf ',\n      "env": {\n'
 			if [ "${has_project_root}" = "true" ]; then
-				printf ',\n      "env": {\n'
-				printf '        "MCPBASH_PROJECT_ROOT": %s\n' "${project_root_json}"
-				printf '      }'
+				printf '        "MCPBASH_PROJECT_ROOT": %s,\n' "${project_root_json}"
 			fi
+			printf '        "MCPBASH_TOOL_ALLOWLIST": "*"\n'
+			printf '      }'
 			printf '\n    }\n'
 			printf '  }\n'
 			printf '}\n\n'
@@ -268,11 +270,12 @@ exec "${MCP_BASH}" "$@"
 			printf '{\n'
 			printf '  "name": %s,\n' "${server_name_json}"
 			printf '  "command": %s' "${display_command}"
+			printf ',\n  "env": {\n'
 			if [ "${has_project_root}" = "true" ]; then
-				printf ',\n  "env": {\n'
-				printf '    "MCPBASH_PROJECT_ROOT": %s\n' "${project_root_json}"
-				printf '  }'
+				printf '    "MCPBASH_PROJECT_ROOT": %s,\n' "${project_root_json}"
 			fi
+			printf '    "MCPBASH_TOOL_ALLOWLIST": "*"\n'
+			printf '  }'
 			printf '\n}\n\n'
 			;;
 		windsurf)
@@ -284,11 +287,12 @@ exec "${MCP_BASH}" "$@"
 			printf '  "mcpServers": {\n'
 			printf '    %s: {\n' "${server_name_json}"
 			printf '      "command": %s' "${display_command}"
+			printf ',\n      "env": {\n'
 			if [ "${has_project_root}" = "true" ]; then
-				printf ',\n      "env": {\n'
-				printf '        "MCPBASH_PROJECT_ROOT": %s\n' "${project_root_json}"
-				printf '      }'
+				printf '        "MCPBASH_PROJECT_ROOT": %s,\n' "${project_root_json}"
 			fi
+			printf '        "MCPBASH_TOOL_ALLOWLIST": "*"\n'
+			printf '      }'
 			printf '\n    }\n'
 			printf '  }\n'
 			printf '}\n\n'
@@ -301,11 +305,12 @@ exec "${MCP_BASH}" "$@"
 			printf '{\n'
 			printf '  "name": %s,\n' "${server_name_json}"
 			printf '  "command": %s' "${display_command}"
+			printf ',\n  "env": {\n'
 			if [ "${has_project_root}" = "true" ]; then
-				printf ',\n  "env": {\n'
-				printf '    "MCPBASH_PROJECT_ROOT": %s\n' "${project_root_json}"
-				printf '  }'
+				printf '    "MCPBASH_PROJECT_ROOT": %s,\n' "${project_root_json}"
 			fi
+			printf '    "MCPBASH_TOOL_ALLOWLIST": "*"\n'
+			printf '  }'
 			printf '\n}\n\n'
 			;;
 		esac
