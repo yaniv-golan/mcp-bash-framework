@@ -120,13 +120,13 @@ command -v jq >/dev/null 2>&1 || command -v gojq >/dev/null 2>&1 || printf '%s\n
 Quick install (good for local dev / trusted networks):
 
 ```bash
-curl -fsSL "https://raw.githubusercontent.com/yaniv-golan/mcp-bash-framework/v1.1.4/install.sh" | bash -s -- --yes --version "v1.1.4"
+curl -fsSL "https://raw.githubusercontent.com/yaniv-golan/mcp-bash-framework/v1.1.5/install.sh" | bash -s -- --yes --version "v1.1.5"
 ```
 
 Verified install (recommended for production / security-sensitive environments):
 
 ```bash
-version="v1.1.4"
+version="v1.1.5"
 file="mcp-bash-${version}.tar.gz"
 curl -fsSLO "https://github.com/yaniv-golan/mcp-bash-framework/releases/download/${version}/${file}"
 curl -fsSLO "https://github.com/yaniv-golan/mcp-bash-framework/releases/download/${version}/SHA256SUMS"
@@ -155,7 +155,7 @@ echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc  # or ~/.zshrc (if not 
 Pin a release with the installer (auto-prefixes `v` for bare versions):
 
 ```bash
-bash install.sh --verify <sha256-from-SHA256SUMS> --version 1.1.4
+bash install.sh --verify <sha256-from-SHA256SUMS> --version 1.1.5
 ```
 
 ### 1.5 Verify It Works (30 seconds)
