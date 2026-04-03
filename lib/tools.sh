@@ -500,6 +500,7 @@ mcp_tools_apply_manual_registration() {
 }
 
 mcp_tools_load_cache_if_empty() {
+	local caller_now="${1:-}"
 	if [ -n "${MCP_TOOLS_REGISTRY_JSON}" ] || [ ! -f "${MCP_TOOLS_REGISTRY_PATH}" ]; then
 		return 0
 	fi
@@ -513,9 +514,8 @@ mcp_tools_load_cache_if_empty() {
 			if ! mcp_tools_enforce_registry_limits "${MCP_TOOLS_TOTAL}" "${MCP_TOOLS_REGISTRY_JSON}"; then
 				return 1
 			fi
-			# Trust pre-generated cache and start TTL window from now (not file mtime, which fails for extracted bundles)
 			if [ -z "${MCP_TOOLS_LAST_SCAN}" ]; then
-				MCP_TOOLS_LAST_SCAN="$(date +%s)"
+				MCP_TOOLS_LAST_SCAN="${caller_now:-$(date +%s)}"
 			fi
 		else
 			MCP_TOOLS_REGISTRY_JSON=""
@@ -946,15 +946,12 @@ mcp_tools_refresh_registry() {
 		return 1
 	fi
 
-	if ! mcp_tools_load_cache_if_empty; then
-		return 1
-	fi
-
-	# Capture now AFTER cache load to avoid race condition where LAST_SCAN
-	# (set inside load_cache_if_empty) could be greater than now if second
-	# boundary crosses between two date calls, causing negative age < TTL=0.
 	local now
 	now="$(date +%s)"
+
+	if ! mcp_tools_load_cache_if_empty "${now}"; then
+		return 1
+	fi
 
 	if mcp_tools_cache_fresh "${now}"; then
 		return 0

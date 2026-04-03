@@ -139,14 +139,31 @@ The generated `manifest.json` follows MCPB specification v0.3:
     "type": "git",
     "url": "https://github.com/you/my-server"
   },
+  "icon": "icon.png",
+  "icons": [
+    {"src": "assets/icons/icon-16-light.png", "size": "16x16", "theme": "light"},
+    {"src": "assets/icons/icon-16-dark.png", "size": "16x16", "theme": "dark"}
+  ],
+  "screenshots": ["assets/screenshots/demo.png"],
   "license": "MIT",
   "keywords": ["cli", "automation", "mcp"],
   "homepage": "https://example.com/my-server",
   "documentation": "https://docs.example.com/my-server",
   "support": "https://github.com/you/my-server/issues",
   "privacy_policies": ["https://example.com/privacy"],
+  "tools": [
+    {"name": "search_files", "description": "Search for files in a directory"},
+    {"name": "read_file", "description": "Read file contents"}
+  ],
   "tools_generated": true,
+  "prompts": [
+    {"name": "explain_code", "description": "Explain how code works", "arguments": ["code", "language"]}
+  ],
   "prompts_generated": true,
+  "localization": {
+    "resources": "mcpb-resources/${locale}.json",
+    "default_locale": "en-US"
+  },
   "server": {
     "type": "binary",
     "entry_point": "server/run-server.sh",
@@ -156,6 +173,11 @@ The generated `manifest.json` follows MCPB specification v0.3:
       "env": {
         "MCPBASH_PROJECT_ROOT": "${__dirname}/server",
         "MCPBASH_TOOL_ALLOWLIST": "*"
+      },
+      "platform_overrides": {
+        "win32": {
+          "command": "${__dirname}/server/run-server.exe"
+        }
       }
     }
   },
@@ -174,20 +196,28 @@ The generated `manifest.json` follows MCPB specification v0.3:
 
 **Optional fields:**
 - `long_description` - markdown content for extension stores (via `long_description_file`)
+- `icon` - single icon file path (legacy); prefer `icons` array for themed variants
+- `icons` - array of `{src, size, theme}` objects for light/dark and multi-size icon variants (from `server.meta.json`; referenced files are auto-copied into the bundle)
+- `screenshots` - array of screenshot paths for extension stores (from `server.meta.json`; files are auto-copied into the bundle)
 - `license` - SPDX license identifier (e.g., "MIT", "Apache-2.0")
 - `keywords` - array of search terms for discoverability
 - `homepage` - project landing page URL
 - `documentation` - documentation URL
 - `support` - support/issue tracker URL
 - `privacy_policies` - array of privacy policy URLs
-- `tools_generated` - automatically set to `true` when `tools/` directory has content
+- `tools` - static array of `{name, description}` objects auto-generated from `tools/*/tool.meta.json` at bundle time for pre-install discovery in extension stores
+- `tools_generated` - automatically set to `true` when `tools/` directory has content (indicates additional tools may be discovered at runtime)
+- `prompts` - static array of `{name, description, arguments}` objects auto-generated from prompt meta files at bundle time
 - `prompts_generated` - automatically set to `true` when `prompts/` directory has content
 - `compatibility.claude_desktop` - minimum Claude Desktop version (semver constraint)
 - `compatibility.runtimes` - runtime version constraints (`python`, `node`)
+- `localization` - `{resources, default_locale}` for i18n of user-facing fields (from `server.meta.json`; `resources` path must include a `${locale}` placeholder)
+- `_meta` - platform-specific client integration metadata with reverse-DNS keys (from `server.meta.json`; e.g., Windows Store `package_family_name`, static responses for `initialize`/`tools/list`)
+- `server.mcp_config.platform_overrides` - per-platform `{command, args, env}` overrides (from `server.meta.json`; e.g., `.exe` suffix on Windows, `DYLD_LIBRARY_PATH` on macOS)
 
 **Note:** The `author` field is required by the MCPB spec. If not provided via `mcpb.conf` or `server.meta.json`, the bundler falls back to git config.
 
-**Note:** The `*_generated` flags indicate that tools/prompts are discovered dynamically at runtime. Clients should query `tools/list` and `prompts/list` to discover available capabilities.
+**Note:** The `tools` and `prompts` arrays enable pre-install discovery — clients can show what the extension offers before downloading. The `*_generated` flags indicate that additional capabilities may be discovered dynamically at runtime via `tools/list` and `prompts/list`.
 
 ## User Configuration
 

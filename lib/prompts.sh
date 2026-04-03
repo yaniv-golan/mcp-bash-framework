@@ -163,6 +163,7 @@ mcp_prompts_init() {
 }
 
 mcp_prompts_load_cache_if_empty() {
+	local caller_now="${1:-}"
 	if [ -n "${MCP_PROMPTS_REGISTRY_JSON}" ] || [ ! -f "${MCP_PROMPTS_REGISTRY_PATH}" ]; then
 		return 0
 	fi
@@ -176,9 +177,8 @@ mcp_prompts_load_cache_if_empty() {
 			if ! mcp_prompts_enforce_registry_limits "${MCP_PROMPTS_TOTAL}" "${MCP_PROMPTS_REGISTRY_JSON}"; then
 				return 1
 			fi
-			# Trust pre-generated cache and start TTL window from now (not file mtime, which fails for extracted bundles)
 			if [ -z "${MCP_PROMPTS_LAST_SCAN}" ]; then
-				MCP_PROMPTS_LAST_SCAN="$(date +%s)"
+				MCP_PROMPTS_LAST_SCAN="${caller_now:-$(date +%s)}"
 			fi
 		else
 			mcp_logging_warning "${MCP_PROMPTS_LOGGER}" "Discarding invalid prompt registry cache"
@@ -302,15 +302,13 @@ mcp_prompts_refresh_registry() {
 	if [ "${manual_status}" -eq 0 ] && [ "${MCP_REGISTRY_REGISTER_LAST_APPLIED:-false}" = "true" ]; then
 		return 0
 	fi
-	if ! mcp_prompts_load_cache_if_empty; then
+	local now
+	now="$(date +%s)"
+
+	if ! mcp_prompts_load_cache_if_empty "${now}"; then
 		return 1
 	fi
 
-	# Capture now AFTER cache load to avoid race condition where LAST_SCAN
-	# (set inside load_cache_if_empty) could be greater than now if second
-	# boundary crosses between two date calls, causing negative age < TTL=0.
-	local now
-	now="$(date +%s)"
 	local cache_age ttl="${MCP_PROMPTS_TTL}"
 	if [ -n "${MCP_PROMPTS_REGISTRY_JSON}" ] && [ $((now - MCP_PROMPTS_LAST_SCAN)) -lt "${ttl}" ]; then
 		cache_age=$((now - MCP_PROMPTS_LAST_SCAN))
