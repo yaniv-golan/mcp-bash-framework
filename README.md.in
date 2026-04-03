@@ -25,6 +25,7 @@ Edit README.md.in and run: bash scripts/render-readme.sh
 - [Security Model (60 seconds)](#security-model-60-seconds)
 - [Configure Your MCP Client](#configure-your-mcp-client)
 - [MCPB Bundles](#mcpb-bundles)
+- [Vendoring the Runtime](#vendoring-the-runtime)
 - [Project Structure](#project-structure)
 - [Configuration](#configuration)
 - [Learn by Example](#learn-by-example)
@@ -456,6 +457,18 @@ The bundle includes your tools, resources, prompts, and an embedded copy of the 
 
 > [Full bundling guide](docs/MCPB.md)
 
+## Vendoring the Runtime
+
+Embed the mcp-bash runtime directly into your project repository so that no system install is needed at runtime. Useful for dev teams, CI, and MCP clients that don't support MCPB bundles:
+
+```bash
+mcp-bash vendor          # embed .mcp-bash/ into project root
+git add .mcp-bash/       # commit it
+mcp-bash vendor --verify # verify integrity at any time
+```
+
+> [Full vendoring guide](docs/VENDORING.md)
+
 ## Project Structure
 
 ```
@@ -736,6 +749,7 @@ See [docs/WINDOWS.md](docs/WINDOWS.md) for full guidance and workarounds.
 
 ### Feature Guides
 - [**MCPB Bundles**](docs/MCPB.md) - One-click distribution via Claude Desktop and MCP Registry.
+- [**Vendoring**](docs/VENDORING.md) - Embed the runtime in your git repo for CI and non-MCPB clients.
 - [**Elicitation**](docs/ELICITATION.md) - Form and URL modes, SDK helpers, and client capability checks.
 - [**Roots**](docs/ROOTS.md) - Roots/list flow, env wiring, validation, and fallbacks.
 - [**Completions**](docs/COMPLETION.md) - Manual registration, provider types, pagination, and script contracts.

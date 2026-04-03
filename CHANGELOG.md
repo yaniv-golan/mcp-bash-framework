@@ -5,6 +5,20 @@ All notable changes to mcp-bash-framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-04-03
+
+### Added
+
+- **`mcp-bash vendor` command**: Embeds the mcp-bash runtime into a project's `.mcp-bash/` directory for committing to git, eliminating the need for a system-wide install at runtime. Useful for dev teams, CI pipelines, and MCP clients that do not support MCPB bundles. Includes `--verify` for SHA-256 integrity checking, `--upgrade` to update in place, and `--dry-run` to preview. Writes a `vendor.json` lockfile recording version, digest, source, and timestamp. See [docs/VENDORING.md](docs/VENDORING.md).
+
+### Fixed
+
+- **Built-in resource providers now embedded in bundles and vendor trees**: Both `lib/resources.sh` and `sdk/tool-sdk.sh` resolve built-in providers (`file://`, `https://`, `git://`, `echo://`, `ui://`) via `${MCPBASH_HOME}/providers/`. Previously, `mcp-bash bundle` did not copy the framework's `providers/` directory into `.mcp-bash/`, so any server using built-in resource providers would silently fail in bundled deployments unless the project overrode every provider. The `providers/*.sh` files are now always included in the embedded framework tree.
+
+### Changed
+
+- **Shared embed logic extracted to `lib/cli/embed.sh`**: The framework embedding logic previously duplicated between `bundle` and the new `vendor` command is now in a single shared module (`EMBED_REQUIRED_LIBS`, `mcp_embed_framework()`, `mcp_embed_compute_hash()`). `bundle.sh` delegates to it unchanged.
+
 ## [1.1.5] - 2026-04-03
 
 ### Added
