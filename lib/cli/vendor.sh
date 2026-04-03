@@ -279,4 +279,6 @@ EOF
 	printf '  env MCPBASH_PROJECT_ROOT: %s\n' "${output_dir}"
 	printf '  env MCPBASH_TOOL_ALLOWLIST: *\n'
 	printf '\nVerify integrity later with: mcp-bash vendor --verify\n'
+	printf '\nAutomatic upgrades with Renovate:\n'
+	printf '  Add to renovate.json: {"extends": ["github>yaniv-golan/mcp-bash-framework//renovate-preset"]}\n'
 }

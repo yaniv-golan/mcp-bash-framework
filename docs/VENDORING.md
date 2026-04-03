@@ -144,6 +144,26 @@ fi
 
 **Important:** Always run `vendor --verify` from a **system-installed** `mcp-bash` (in your PATH), not from the vendored copy at `.mcp-bash/bin/mcp-bash`. A compromised vendored binary could lie about its own integrity. CI runners and pre-commit hooks naturally use the system install.
 
+### Automatic updates with Renovate
+
+[Renovate](https://docs.renovatebot.com/) can open automatic PRs whenever a new mcp-bash release is published. Add one line to your `renovate.json`:
+
+```json
+{ "extends": ["github>yaniv-golan/mcp-bash-framework//renovate-preset"] }
+```
+
+When a new version is released, Renovate opens a PR that bumps the `"version"` field in `.mcp-bash/vendor.json`. Merging the PR does **not** automatically update the embedded files — it signals that an upgrade is available. After merging, run:
+
+```bash
+mcp-bash vendor --upgrade
+git add .mcp-bash/
+git commit -m "upgrade mcp-bash runtime to $(cat .mcp-bash/VERSION)"
+```
+
+This two-step approach keeps the PR review lightweight (just a version string diff) and lets you audit the actual file changes in a separate commit.
+
+If you do not use Renovate, `mcp-bash doctor` will warn when a newer framework version is available.
+
 ### Security model and limitations
 
 `vendor --verify` protects against **accidental modification** (someone hand-edits a `.sh` file in `.mcp-bash/`, a merge silently changes vendored content) and against **one-file tampering** (an attacker modifies a script but forgets to update `vendor.json`).
