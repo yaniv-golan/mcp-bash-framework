@@ -36,7 +36,19 @@ Follow this checklist to cut a release:
 3. **Create and push the tag** – `git tag vX.Y.Z && git push origin vX.Y.Z`. The CI release workflow triggers on version tags.
 4. **Let CI create the release** – the GitHub Actions workflow creates the GitHub Release, uploads `mcp-bash-vX.Y.Z.tar.gz` and `SHA256SUMS` assets, and populates the release body. **Do not** create the release manually before the workflow runs, or the CI step will fail with `already_exists`.
 5. **Verify** – confirm the release page has both assets and correct release notes: `gh release view vX.Y.Z --json assets,body,url`.
-6. **Backfill assets (if CI release step failed)** – if a race or duplicate prevented asset upload, generate the tarball and checksums locally and upload them:
+6. **Bump the Homebrew formula** – the `bump-homebrew.yml` workflow fires on `release: types: [released]`, but GitHub's `GITHUB_TOKEN` security restriction prevents it from triggering when the release is created by another CI workflow. After step 4, manually trigger it:
+   ```bash
+   gh workflow run bump-homebrew.yml --repo yaniv-golan/mcp-bash-framework \
+     -f tag_name=vX.Y.Z
+   ```
+   Or, if the workflow doesn't accept inputs, update the formula in `yaniv-golan/homebrew-mcp-bash` manually:
+   ```bash
+   # Get the new sha256
+   gh release download vX.Y.Z --pattern SHA256SUMS --output - | grep '\.tar\.gz'
+   # Edit Formula/mcp-bash.rb in the tap repo with the new url + sha256
+   ```
+   Verify with `brew upgrade mcp-bash` on a machine that has the tap installed.
+7. **Backfill assets (if CI release step failed)** – if a race or duplicate prevented asset upload, generate the tarball and checksums locally and upload them:
    ```bash
    git archive --format=tar.gz --prefix="mcp-bash-vX.Y.Z/" "vX.Y.Z" -o "mcp-bash-vX.Y.Z.tar.gz"
    shasum -a 256 "mcp-bash-vX.Y.Z.tar.gz" > SHA256SUMS

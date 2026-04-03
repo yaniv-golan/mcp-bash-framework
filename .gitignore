@@ -16,3 +16,4 @@ node_modules/
 docs/proposals/
 # Claude Code local settings
 .claude/settings.json
+CLAUDE.md
