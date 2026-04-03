@@ -105,13 +105,14 @@ my-server-1.0.0.mcpb
     │   ├── bin/mcp-bash
     │   ├── lib/
     │   ├── sdk/
-    │   └── handlers/
+    │   ├── handlers/
+    │   └── providers/      # Built-in resource providers (file, https, git, echo, ui)
     ├── tools/
     ├── resources/
     ├── prompts/
     ├── completions/
     ├── lib/                # Optional: project shared libraries
-    ├── providers/          # Optional: custom resource providers
+    ├── providers/          # Optional: custom resource providers (override built-ins)
     ├── server.d/
     └── <custom>/           # Optional: directories from MCPB_INCLUDE
 ```
@@ -482,6 +483,18 @@ If tools rely on environment variables from your shell profile, ensure login she
 - Ensure icon is named exactly `icon.png` or `icon.svg`
 - Place in project root (not in subdirectory)
 - PNG should be at least 256x256 pixels
+
+## Vendoring vs. Bundling
+
+MCPB bundles require the host client to support the MCPB format (Claude Desktop, etc.). If you need the runtime embedded in your git repository for use with any MCP client — including CI, dev teams, or clients that don't support MCPB — use `mcp-bash vendor` instead:
+
+```bash
+mcp-bash vendor          # embed .mcp-bash/ into project root
+git add .mcp-bash/       # commit it
+mcp-bash vendor --verify # verify integrity in CI
+```
+
+See [VENDORING.md](VENDORING.md) for full documentation.
 
 ## See Also
 

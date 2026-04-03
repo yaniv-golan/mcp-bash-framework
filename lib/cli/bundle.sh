@@ -8,13 +8,16 @@ if [[ -z "${BASH_VERSION:-}" ]]; then
 	exit 1
 fi
 
-# Source common helpers
+# Source common helpers and shared embed logic
 cli_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=common.sh disable=SC1091
 . "${cli_dir}/common.sh"
+# shellcheck source=embed.sh disable=SC1091
+. "${cli_dir}/embed.sh"
 
-# Required framework files to embed (from bin/mcp-bash line 99 + additional)
-BUNDLE_REQUIRED_LIBS="require runtime json hash ids lock io paginate logging auth uri policy tools_policy registry spec tools resources prompts completion timeout elicitation roots rpc core handler_helpers validate path resource_content resource_providers progress progress-passthrough capabilities ui ui-templates"
+# Alias for backward compatibility (referenced by test/unit/bundle_libs_sync.bats)
+# shellcheck disable=SC2034
+BUNDLE_REQUIRED_LIBS="${EMBED_REQUIRED_LIBS}"
 
 # gojq release version to bundle
 GOJQ_VERSION="0.12.16"
@@ -919,95 +922,12 @@ mcp_bundle_copy_project() {
 mcp_bundle_embed_framework() {
 	local staging_server="$1"
 	local verbose="$2"
-
-	local framework_dir="${staging_server}/.mcp-bash"
-	mkdir -p "${framework_dir}/bin"
-	mkdir -p "${framework_dir}/lib"
-	mkdir -p "${framework_dir}/sdk"
-	mkdir -p "${framework_dir}/handlers"
-
-	# Copy main entry point
-	cp "${MCPBASH_HOME}/bin/mcp-bash" "${framework_dir}/bin/"
-	chmod +x "${framework_dir}/bin/mcp-bash"
-
-	# Copy required libs
-	local lib
-	for lib in ${BUNDLE_REQUIRED_LIBS}; do
-		if [ -f "${MCPBASH_HOME}/lib/${lib}.sh" ]; then
-			cp "${MCPBASH_HOME}/lib/${lib}.sh" "${framework_dir}/lib/"
-		fi
-	done
-
-	# Copy cli helpers needed by embedded mcp-bash
-	mkdir -p "${framework_dir}/lib/cli"
-	cp "${MCPBASH_HOME}/lib/cli/common.sh" "${framework_dir}/lib/cli/"
-	cp "${MCPBASH_HOME}/lib/cli/health.sh" "${framework_dir}/lib/cli/"
-
-	# Copy SDK
-	if [ -f "${MCPBASH_HOME}/sdk/tool-sdk.sh" ]; then
-		cp "${MCPBASH_HOME}/sdk/tool-sdk.sh" "${framework_dir}/sdk/"
-	fi
-
-	# Copy all handlers
-	if [ -d "${MCPBASH_HOME}/handlers" ]; then
-		cp "${MCPBASH_HOME}/handlers/"*.sh "${framework_dir}/handlers/" 2>/dev/null || true
-	fi
-
-	# Copy VERSION
-	if [ -f "${MCPBASH_HOME}/VERSION" ]; then
-		cp "${MCPBASH_HOME}/VERSION" "${framework_dir}/"
-	fi
-
-	if [ "${verbose}" = "true" ]; then
-		local size
-		size="$(du -sh "${framework_dir}" 2>/dev/null | cut -f1)"
-		printf '    Embedded framework (%s)\n' "${size}"
-	fi
+	mcp_embed_framework "${staging_server}" "${verbose}"
 }
 
 mcp_bundle_generate_wrapper() {
 	local staging_server="$1"
-	local template="${MCPBASH_HOME}/scaffold/bundle/run-server.sh.template"
-	local output="${staging_server}/run-server.sh"
-
-	if [ -f "${template}" ]; then
-		cp "${template}" "${output}"
-	else
-		# Inline template if file doesn't exist
-		cat >"${output}" <<'WRAPPER'
-#!/usr/bin/env bash
-set -euo pipefail
-
-# Resolve script directory (works with symlinks)
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-# Source login shell profiles for GUI app compatibility (pyenv, nvm, rbenv, etc.)
-# Set MCPB_SKIP_LOGIN_SHELL=1 to disable this behavior
-if [[ -z "${MCPB_SKIP_LOGIN_SHELL:-}" ]]; then
-  for rc in "$HOME/.bash_profile" "$HOME/.zshrc" "$HOME/.profile" "$HOME/.bashrc"; do
-    if [[ -f "$rc" ]]; then
-      # shellcheck disable=SC1090
-      source "$rc" 2>/dev/null || true
-      break
-    fi
-  done
-fi
-
-# Set project root to this bundle's server directory
-export MCPBASH_PROJECT_ROOT="${SCRIPT_DIR}"
-
-# Use bundled gojq if present (Phase 2)
-if [[ -f "${SCRIPT_DIR}/.mcp-bash/bin/gojq" ]]; then
-  export MCPBASH_JSON_TOOL="gojq"
-  export MCPBASH_JSON_TOOL_BIN="${SCRIPT_DIR}/.mcp-bash/bin/gojq"
-fi
-
-# Execute the embedded framework
-exec "${SCRIPT_DIR}/.mcp-bash/bin/mcp-bash" "$@"
-WRAPPER
-	fi
-
-	chmod +x "${output}"
+	mcp_embed_generate_wrapper "${staging_server}"
 }
 
 mcp_bundle_scan_tools_array() {

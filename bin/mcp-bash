@@ -64,9 +64,11 @@ Usage:
   mcp-bash doctor          # diagnose environment and installation issues
   mcp-bash registry refresh [--project-root DIR] [--no-notify] [--quiet] [--filter PATH]
   mcp-bash registry status [--project-root DIR]
+  mcp-bash vendor [--output DIR] [--upgrade] [--verify] [--dry-run] [--verbose]
+                           # embed runtime into .mcp-bash/ (commit to git)
   mcp-bash bundle [--output DIR] [--name NAME] [--version VERSION]
                   [--platform PLAT] [--include-gojq] [--validate] [--verbose]
-                           # create distributable MCPB bundle
+                           # create distributable MCPB bundle (requires client support)
   mcp-bash publish <bundle.mcpb> [--dry-run] [--token TOKEN] [--verbose]
                            # submit bundle to MCP Registry
 
@@ -329,6 +331,14 @@ if [ "${cli_cmd}" = "scaffold" ]; then
 		exit 1
 		;;
 	esac
+fi
+
+if [ "${cli_cmd}" = "vendor" ]; then
+	shift
+	# shellcheck source=lib/cli/vendor.sh disable=SC1091
+	. "${MCPBASH_HOME}/lib/cli/vendor.sh"
+	mcp_cli_vendor "$@"
+	exit $?
 fi
 
 if [ "${cli_cmd}" = "bundle" ]; then
