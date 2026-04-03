@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **`mcp-bash vendor` command**: Embeds the mcp-bash runtime into a project's `.mcp-bash/` directory for committing to git, eliminating the need for a system-wide install at runtime. Useful for dev teams, CI pipelines, and MCP clients that do not support MCPB bundles. Includes `--verify` for SHA-256 integrity checking, `--upgrade` to update in place, and `--dry-run` to preview. Writes a `vendor.json` lockfile recording version, digest, source, and timestamp. See [docs/VENDORING.md](docs/VENDORING.md).
+- **Homebrew tap**: mcp-bash is now installable via `brew install yaniv-golan/mcp-bash/mcp-bash`. Homebrew handles upgrades (`brew upgrade mcp-bash`) and is the recommended install method on macOS and Linux. The formula is auto-bumped on each release.
+- **Renovate preset for vendored copies**: A `renovate-preset.json` in this repo configures Renovate to track `vendor.json` against GitHub Releases and open automatic upgrade PRs. Users opt in with `{"extends": ["github>yaniv-golan/mcp-bash-framework//renovate-preset"]}` in their `renovate.json`.
 
 ### Fixed
 

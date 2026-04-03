@@ -97,7 +97,7 @@ For a complete feature-by-feature breakdown across all MCP versions, see the [Fe
 | | mcp-bash | TypeScript SDK | Python SDK |
 |---|----------|----------------|------------|
 | Runtime | Bash 3.2+ (pre-installed) | Node.js 18+ | Python 3.10+ |
-| Install | `curl \| bash` or `git clone` | `npm install` | `pip install` |
+| Install | `brew install` or `curl \| bash` | `npm install` | `pip install` |
 | Startup | No VM warmup | Node.js startup | Python startup |
 | Dependencies | jq or gojq | npm packages | pip packages |
 | Best for | Shell automation, existing scripts, air-gapped/minimal environments | Node.js applications | Python applications |
@@ -118,7 +118,15 @@ command -v jq >/dev/null 2>&1 || command -v gojq >/dev/null 2>&1 || printf '%s\n
 
 ### 1. Install the Framework
 
-Quick install (good for local dev / trusted networks):
+**Homebrew** (macOS and Linux — recommended):
+
+```bash
+brew install yaniv-golan/mcp-bash/mcp-bash
+```
+
+Update later with `brew upgrade mcp-bash`.
+
+**curl installer** (CI, Docker, Windows/Git Bash, or environments without Homebrew):
 
 ```bash
 curl -fsSL "https://raw.githubusercontent.com/yaniv-golan/mcp-bash-framework/@VERSION_V@/install.sh" | bash -s -- --yes --version "@VERSION_V@"
