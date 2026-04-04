@@ -800,6 +800,12 @@ See the dedicated example at `examples/06-embedded-resources/` and [BEST-PRACTIC
 
 ## Built with mcp-bash
 
+| Project | Description |
+|---------|-------------|
+| [affinity-sdk](https://github.com/yaniv-golan/affinity-sdk) | Affinity CRM SDK with MCP server support |
+| [claude-familiar](https://github.com/yaniv-golan/claude-familiar) | Companion personality and MCP tools for Claude Code |
+| [git-hex](https://github.com/yaniv-golan/git-hex) | Safe, powerful git refactoring tools for AI assistants |
+
 If you've built an MCP server using this framework, show it off! Add this badge to your project's README:
 
 [![MCP Bash Framework](https://img.shields.io/badge/MCP-MCP_Bash_Framework-green?logo=modelcontextprotocol)](https://github.com/yaniv-golan/mcp-bash-framework)
