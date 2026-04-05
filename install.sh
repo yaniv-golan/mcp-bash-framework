@@ -586,6 +586,8 @@ fi
 printf "\n"
 info "Verifying installation..."
 export PATH="${BIN_DIR}:${PATH}"
+# Unset MCPBASH_HOME so the freshly installed binary resolves its own location
+unset MCPBASH_HOME
 
 if "${INSTALL_DIR}/bin/mcp-bash" --version >/dev/null 2>&1; then
 	VERSION="$("${INSTALL_DIR}/bin/mcp-bash" --version | awk '{print $2}')"
