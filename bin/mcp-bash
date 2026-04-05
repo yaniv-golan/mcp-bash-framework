@@ -226,6 +226,22 @@ esac
 
 cli_cmd="${1-}"
 
+# Early check: CLI commands that need the full install (not available in vendored/embedded runtime)
+case "${cli_cmd}" in
+	init|validate|run-tool|config|doctor|new|registry|scaffold|vendor|bundle|publish)
+		_cli_file="${cli_cmd}"; [ "${_cli_file}" = "run-tool" ] && _cli_file="run_tool"
+		if [ ! -f "${MCPBASH_HOME}/lib/cli/${_cli_file}.sh" ]; then
+			printf 'Error: "%s" is not available in this installation.\n' "${cli_cmd}" >&2
+			if [ -f "${MCPBASH_HOME}/vendor.json" ]; then
+				printf 'This is a vendored runtime — CLI commands require a full mcp-bash install.\n' >&2
+			else
+				printf 'CLI commands require a full mcp-bash install.\n' >&2
+			fi
+			exit 1
+		fi
+		;;
+esac
+
 if [ "${cli_cmd}" = "init" ]; then
 	shift
 	# shellcheck source=lib/cli/init.sh disable=SC1091

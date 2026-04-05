@@ -93,6 +93,8 @@ The vendored tree is the same minimal subset embedded in MCPB bundles:
 
 The full repository (tests, docs, examples, scaffold, scripts) is **not** included.
 
+> **Note:** The vendored runtime does not include CLI commands (`validate`, `bundle`, `doctor`, `scaffold`, `new`, `registry`, `run-tool`, `config`, `vendor`, `publish`). These require a full mcp-bash install. If you need CLI commands in CI alongside a vendored runtime, install mcp-bash separately — the installer will not conflict with the vendored copy.
+
 ## The vendor.json lockfile
 
 After each vendor run, `vendor.json` is written inside `.mcp-bash/`:

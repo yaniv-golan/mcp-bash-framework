@@ -215,11 +215,13 @@ if [ -d "${INSTALL_DIR}" ]; then
 	rm -rf "${INSTALL_DIR}"
 fi
 
-# Check for MCPBASH_HOME override (policy refusal - user manages their own install)
-if [ -n "${MCPBASH_HOME:-}" ]; then
-	error "MCPBASH_HOME is set (${MCPBASH_HOME})"
-	error "This indicates a user-managed installation. The installer will not modify it."
-	error "Unset MCPBASH_HOME to allow the installer to manage the installation."
+# Check for MCPBASH_HOME override — only block if it points to the install target.
+# A vendored runtime (e.g. .mcp-bash/) sets MCPBASH_HOME but should not prevent
+# installing the full CLI to a different path.
+if [ -n "${MCPBASH_HOME:-}" ] && [ "${MCPBASH_HOME}" = "${INSTALL_DIR}" ]; then
+	error "MCPBASH_HOME is set to the install target (${MCPBASH_HOME})"
+	error "This indicates a user-managed installation at the same path. The installer will not modify it."
+	error "Unset MCPBASH_HOME or use --dir to install to a different location."
 	exit 3
 fi
 

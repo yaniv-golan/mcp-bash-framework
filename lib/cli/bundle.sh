@@ -878,42 +878,57 @@ mcp_bundle_copy_project() {
 	done
 
 	# Copy files referenced in icons array (themed/multi-size variants)
+	# Paths may be relative to project root (assets/icons/foo.png) or to
+	# server.d/ (../assets/icons/foo.png). Try project root first, then server.d/.
 	if [[ "${RESOLVED_ICONS:-null}" != "null" && "${MCPBASH_JSON_TOOL:-none}" != "none" ]]; then
-		local icon_src
+		local icon_src icon_resolved
 		while IFS= read -r icon_src; do
 			[[ -z "${icon_src}" ]] && continue
 			# Only copy local paths (skip https:// URLs)
 			[[ "${icon_src}" == https://* ]] && continue
+			icon_resolved=""
 			if [[ -f "${project_root}/${icon_src}" ]]; then
+				icon_resolved="${project_root}/${icon_src}"
+			elif [[ -f "$(cd "${project_root}/server.d" && realpath -m "${icon_src}" 2>/dev/null)" ]]; then
+				icon_resolved="$(cd "${project_root}/server.d" && realpath -m "${icon_src}")"
+			fi
+			if [[ -n "${icon_resolved}" ]]; then
 				local icon_dir
 				icon_dir="$(dirname "${staging_server}/../${icon_src}")"
 				mkdir -p "${icon_dir}"
-				cp "${project_root}/${icon_src}" "${staging_server}/../${icon_src}"
+				cp "${icon_resolved}" "${staging_server}/../${icon_src}"
 				if [ "${verbose}" = "true" ]; then
 					printf '    Copied icon variant: %s\n' "${icon_src}"
 				fi
 			else
-				printf '  \342\232\240 Warning: icons src not found: %s\n' "${icon_src}" >&2
+				printf '  \342\232\240 Warning: icons src not found: %s (referenced in server.meta.json icons array)\n' "${icon_src}" >&2
 			fi
 		done < <(printf '%s' "${RESOLVED_ICONS}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.[].src // empty' 2>/dev/null)
 	fi
 
 	# Copy files referenced in screenshots array
+	# Paths may be relative to project root or to server.d/. Try both.
 	if [[ "${RESOLVED_SCREENSHOTS:-null}" != "null" && "${MCPBASH_JSON_TOOL:-none}" != "none" ]]; then
-		local screenshot_path
+		local screenshot_path screenshot_resolved
 		while IFS= read -r screenshot_path; do
 			[[ -z "${screenshot_path}" ]] && continue
 			[[ "${screenshot_path}" == https://* ]] && continue
+			screenshot_resolved=""
 			if [[ -f "${project_root}/${screenshot_path}" ]]; then
+				screenshot_resolved="${project_root}/${screenshot_path}"
+			elif [[ -f "$(cd "${project_root}/server.d" && realpath -m "${screenshot_path}" 2>/dev/null)" ]]; then
+				screenshot_resolved="$(cd "${project_root}/server.d" && realpath -m "${screenshot_path}")"
+			fi
+			if [[ -n "${screenshot_resolved}" ]]; then
 				local ss_dir
 				ss_dir="$(dirname "${staging_server}/../${screenshot_path}")"
 				mkdir -p "${ss_dir}"
-				cp "${project_root}/${screenshot_path}" "${staging_server}/../${screenshot_path}"
+				cp "${screenshot_resolved}" "${staging_server}/../${screenshot_path}"
 				if [ "${verbose}" = "true" ]; then
 					printf '    Copied screenshot: %s\n' "${screenshot_path}"
 				fi
 			else
-				printf '  \342\232\240 Warning: screenshot not found: %s\n' "${screenshot_path}" >&2
+				printf '  \342\232\240 Warning: screenshot not found: %s (referenced in server.meta.json)\n' "${screenshot_path}" >&2
 			fi
 		done < <(printf '%s' "${RESOLVED_SCREENSHOTS}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.[] // empty' 2>/dev/null)
 	fi

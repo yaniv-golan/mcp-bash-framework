@@ -5,6 +5,15 @@ All notable changes to mcp-bash-framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - 2026-04-04
+
+### Fixed
+
+- **Installer no longer blocks when `MCPBASH_HOME` points to a different path**: Previously, the installer refused to run whenever `MCPBASH_HOME` was set, even if it pointed to a vendored runtime (`.mcp-bash/`) rather than the install target. The check now only blocks when `MCPBASH_HOME` matches the install directory, allowing CI workflows to install the full CLI alongside a vendored runtime.
+- **Vendored runtime gives a clear error for CLI commands**: Running CLI commands (e.g., `validate`, `bundle`, `doctor`) against a vendored or embedded runtime previously failed with a cryptic "No such file or directory". The entrypoint now detects missing CLI modules and prints a helpful message explaining that a full mcp-bash install is required.
+- **Vendor docs now clarify CLI commands are not included**: `docs/VENDORING.md` explicitly lists which commands require a full install and notes that the installer won't conflict with a vendored copy.
+- **Bundle resolves `icons` and `screenshots` paths from both project root and `server.d/`**: Paths in the `server.meta.json` `icons` and `screenshots` arrays can now be relative to either the project root (`assets/icons/foo.png`) or to `server.d/` (`../assets/icons/foo.png`). Previously, only project-root-relative paths worked, so `../` paths from `server.d/` would fail with a spurious warning.
+
 ## [1.2.0] - 2026-04-03
 
 ### Added
