@@ -5,6 +5,12 @@ All notable changes to mcp-bash-framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Bundle icon/screenshot path resolution now works on macOS**: The v1.2.1 fix for resolving `server.d/`-relative paths used `realpath -m` (GNU coreutils), which macOS's BSD `realpath` doesn't support. Replaced with a portable shell-based resolution using `cd` + `pwd`. Also normalizes the destination path in the bundle to avoid `../` escaping the bundle directory.
+
 ## [1.2.1] - 2026-04-04
 
 ### Fixed

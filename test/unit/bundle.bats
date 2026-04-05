@@ -1356,6 +1356,27 @@ EOF
 	assert_file_exist "${EXTRACT_DIR}/assets/screenshots/demo.png"
 }
 
+@test "bundle: icons with server.d-relative paths resolve correctly" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	mkdir -p "${PROJECT_ROOT}/assets/icons"
+	printf '\x89PNG' >"${PROJECT_ROOT}/assets/icons/icon-dark.svg"
+	cat >"${PROJECT_ROOT}/server.d/server.meta.json" <<'EOF'
+{
+  "name": "test-server",
+  "version": "1.2.3",
+  "description": "A test MCP server",
+  "icons": [
+    {"src": "../assets/icons/icon-dark.svg", "theme": "dark"}
+  ]
+}
+EOF
+	(cd "${PROJECT_ROOT}" && "${MCPBASH_HOME}/bin/mcp-bash" bundle --output "${OUTPUT_DIR}" 2>/dev/null)
+	unzip -q "${OUTPUT_DIR}/test-server-1.2.3.mcpb" -d "${EXTRACT_DIR}"
+	run jq -e '.icons[0].theme == "dark"' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+	assert_file_exist "${EXTRACT_DIR}/assets/icons/icon-dark.svg"
+}
+
 @test "bundle: manifest omits icons/screenshots when not in server.meta.json" {
 	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
 	(cd "${PROJECT_ROOT}" && "${MCPBASH_HOME}/bin/mcp-bash" bundle --output "${OUTPUT_DIR}" >/dev/null)
