@@ -96,10 +96,15 @@ assert_eq "3" "${status}" "MCPBASH_HOME matching install dir should exit with co
 
 printf ' -> MCPBASH_HOME pointing elsewhere does not block install\n'
 POLICY_ALLOW_DIR="${TEST_TMPDIR}/policy-allow-install"
+POLICY_ALLOW_LOG="${TEST_TMPDIR}/policy-allow.log"
 set +e
-MCPBASH_HOME="/some/other/path" MCPBASH_INSTALL_LOCAL_SOURCE="${MCPBASH_TEST_ROOT}" "${MCPBASH_TEST_ROOT}/install.sh" --dir "${POLICY_ALLOW_DIR}" --yes >/dev/null 2>&1
+MCPBASH_HOME="/some/other/path" MCPBASH_INSTALL_LOCAL_SOURCE="${MCPBASH_TEST_ROOT}" "${MCPBASH_TEST_ROOT}/install.sh" --dir "${POLICY_ALLOW_DIR}" --yes >"${POLICY_ALLOW_LOG}" 2>&1
 status=$?
 set -e
+if [ "${status}" -ne 0 ]; then
+	printf '  installer output (exit %s):\n' "${status}"
+	cat "${POLICY_ALLOW_LOG}"
+fi
 assert_eq "0" "${status}" "MCPBASH_HOME pointing elsewhere should not block install"
 
 printf ' -> verification error includes filename and expected/actual SHA\n'
