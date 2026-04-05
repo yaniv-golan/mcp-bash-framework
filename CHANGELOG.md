@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Bundle icon/screenshot path resolution now works on macOS**: The v1.2.1 fix for resolving `server.d/`-relative paths used `realpath -m` (GNU coreutils), which macOS's BSD `realpath` doesn't support. Replaced with a portable shell-based resolution using `cd` + `pwd`. Also normalizes the destination path in the bundle to avoid `../` escaping the bundle directory.
+- **Installer warns when another mcp-bash shadows the new install**: After installation, the installer checks if a different `mcp-bash` binary earlier in `PATH` would take precedence over the one just installed (e.g., a stale manual install shadowing a Homebrew install). Prints version and path of the shadowing binary.
 
 ## [1.2.1] - 2026-04-04
 

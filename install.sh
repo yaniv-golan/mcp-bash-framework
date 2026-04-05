@@ -607,6 +607,28 @@ else
 fi
 
 # Success message
+# Warn if another mcp-bash in PATH shadows the one we just installed
+OTHER_MCPBASH="$(command -v mcp-bash 2>/dev/null || true)"
+if [ -n "${OTHER_MCPBASH}" ]; then
+	# Resolve symlinks to compare actual locations
+	OUR_BIN="${BIN_DIR}/mcp-bash"
+	if [ -L "${OUR_BIN}" ]; then
+		OUR_TARGET="$(cd "$(dirname "${OUR_BIN}")" && cd "$(dirname "$(readlink "${OUR_BIN}")")" && pwd)/$(basename "$(readlink "${OUR_BIN}")")"
+	else
+		OUR_TARGET="${OUR_BIN}"
+	fi
+	if [ -L "${OTHER_MCPBASH}" ]; then
+		OTHER_TARGET="$(cd "$(dirname "${OTHER_MCPBASH}")" && cd "$(dirname "$(readlink "${OTHER_MCPBASH}")")" && pwd)/$(basename "$(readlink "${OTHER_MCPBASH}")")"
+	else
+		OTHER_TARGET="${OTHER_MCPBASH}"
+	fi
+	if [ "${OUR_TARGET}" != "${OTHER_TARGET}" ]; then
+		OTHER_VERSION="$("${OTHER_MCPBASH}" --version 2>/dev/null | awk '{print $2}')" || OTHER_VERSION="unknown"
+		warn "Another mcp-bash (${OTHER_VERSION}) exists at ${OTHER_MCPBASH} and takes precedence in PATH"
+		warn "It may shadow the version just installed. To fix, remove it or reorder your PATH."
+	fi
+fi
+
 printf '\n%s\n\n' "${GREEN}Installation complete!${NC}"
 
 if [ "${PATH_NEEDED}" = "true" ] && [ -n "${RC_FILE}" ]; then
