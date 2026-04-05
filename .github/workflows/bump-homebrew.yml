@@ -3,6 +3,11 @@ name: Bump Homebrew Formula
 on:
   release:
     types: [released]
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release tag (e.g. v1.2.1)'
+        required: true
 
 jobs:
   bump:
@@ -12,7 +17,7 @@ jobs:
         with:
           formula-name: mcp-bash
           homebrew-tap: yaniv-golan/homebrew-mcp-bash
-          tag-name: ${{ github.event.release.tag_name }}
-          download-url: https://github.com/yaniv-golan/mcp-bash-framework/releases/download/${{ github.event.release.tag_name }}/mcp-bash-${{ github.event.release.tag_name }}.tar.gz
+          tag-name: ${{ inputs.tag_name || github.event.release.tag_name }}
+          download-url: https://github.com/yaniv-golan/mcp-bash-framework/releases/download/${{ inputs.tag_name || github.event.release.tag_name }}/mcp-bash-${{ inputs.tag_name || github.event.release.tag_name }}.tar.gz
         env:
           COMMITTER_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
