@@ -989,9 +989,17 @@ mcp_bundle_scan_prompts_array() {
 		return 0
 	fi
 
+	local prompts_dir="${project_root}/prompts"
 	local meta_file
-	for meta_file in "${project_root}"/prompts/*.meta.json "${project_root}"/prompts/*/prompt.meta.json; do
+	# Three glob patterns to cover all prompt layouts:
+	#   prompts/*.meta.json          - flat (e.g. greeting.meta.json)
+	#   prompts/*/prompt.meta.json   - nested, canonical name
+	#   prompts/*/*.meta.json        - nested, scaffolded (e.g. review/review.meta.json)
+	for meta_file in "${prompts_dir}"/*.meta.json "${prompts_dir}"/*/prompt.meta.json "${prompts_dir}"/*/*.meta.json; do
 		[[ -f "${meta_file}" ]] || continue
+		local meta_dir
+		meta_dir="$(dirname "${meta_file}")"
+
 		local entry
 		entry="$("${MCPBASH_JSON_TOOL_BIN}" -c '
 			{name: .name, description: .description}
@@ -1000,6 +1008,65 @@ mcp_bundle_scan_prompts_array() {
 			  else {} end)
 			| with_entries(select(.value != null))
 		' "${meta_file}" 2>/dev/null)" || continue
+
+		# Resolve the template .txt file. The "path" field in meta.json may be:
+		#   - relative to prompts dir (runtime convention, e.g. "greeting.txt")
+		#   - relative to project root (scaffold convention, e.g. "prompts/review/review.txt")
+		# Try both, then fall back to a sibling .txt with the same stem.
+		local path_field txt_path=""
+		path_field="$("${MCPBASH_JSON_TOOL_BIN}" -r '.path // empty' "${meta_file}" 2>/dev/null)" || true
+
+		if [[ -n "${path_field}" ]]; then
+			if [[ -f "${prompts_dir}/${path_field}" ]]; then
+				txt_path="${prompts_dir}/${path_field}"
+			elif [[ -f "${project_root}/${path_field}" ]]; then
+				txt_path="${project_root}/${path_field}"
+			elif [[ -f "${meta_dir}/${path_field}" ]]; then
+				txt_path="${meta_dir}/${path_field}"
+			fi
+		fi
+
+		# Fallback: sibling .txt with same stem as the .meta.json
+		if [[ -z "${txt_path}" ]]; then
+			local stem
+			stem="$(basename "${meta_file}" .meta.json)"
+			if [[ -f "${meta_dir}/${stem}.txt" ]]; then
+				txt_path="${meta_dir}/${stem}.txt"
+			fi
+		fi
+
+		# Fallback: sibling .txt named after the parent directory
+		# (e.g. prompts/review/prompt.meta.json -> prompts/review/review.txt)
+		if [[ -z "${txt_path}" ]]; then
+			local dir_stem
+			dir_stem="$(basename "${meta_dir}")"
+			if [[ -f "${meta_dir}/${dir_stem}.txt" ]]; then
+				txt_path="${meta_dir}/${dir_stem}.txt"
+			fi
+		fi
+
+		# v0.3 requires text on every prompt -- skip entries without a template
+		if [[ -z "${txt_path}" ]]; then
+			continue
+		fi
+
+		local text_content
+		text_content="$(cat "${txt_path}")"
+		# Trim trailing newline that cat preserves
+		text_content="${text_content%$'\n'}"
+		entry="$(printf '%s' "${entry}" | "${MCPBASH_JSON_TOOL_BIN}" -c --arg t "${text_content}" '. + {text: $t}')"
+
+		# Deduplicate: the expanded globs may match the same file twice
+		# (e.g. prompts/x/x.meta.json matches both */prompt.meta.json and */*.meta.json
+		# when x.meta.json is named prompt.meta.json). Check by name.
+		local entry_name
+		entry_name="$(printf '%s' "${entry}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.name')"
+		local already
+		already="$(printf '%s' "${prompts_json}" | "${MCPBASH_JSON_TOOL_BIN}" -e --arg n "${entry_name}" 'map(select(.name == $n)) | length > 0' 2>/dev/null)" || already="false"
+		if [[ "${already}" == "true" ]]; then
+			continue
+		fi
+
 		prompts_json="$(printf '%s' "${prompts_json}" | "${MCPBASH_JSON_TOOL_BIN}" -c --argjson e "${entry}" '. + [$e]')"
 	done
 

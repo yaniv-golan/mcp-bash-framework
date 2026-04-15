@@ -203,6 +203,95 @@ EOF
 	jq -e '.prompts_generated == true' "${EXTRACT_DIR}/manifest.json" >/dev/null
 }
 
+@test "bundle: prompts array includes text from flat template file" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	mkdir -p "${PROJECT_ROOT}/prompts"
+	echo 'Hello, ${name}! Welcome.' >"${PROJECT_ROOT}/prompts/greeting.txt"
+	cat >"${PROJECT_ROOT}/prompts/greeting.meta.json" <<'EOF'
+{
+  "name": "greeting",
+  "description": "A greeting prompt",
+  "path": "greeting.txt",
+  "arguments": {
+    "type": "object",
+    "properties": {
+      "name": { "type": "string", "description": "Name to greet" }
+    }
+  }
+}
+EOF
+	(cd "${PROJECT_ROOT}" && "${MCPBASH_HOME}/bin/mcp-bash" bundle --output "${OUTPUT_DIR}" >/dev/null)
+	unzip -q "${OUTPUT_DIR}/test-server-1.2.3.mcpb" -d "${EXTRACT_DIR}"
+	run jq -e '.prompts[0].text == "Hello, ${name}! Welcome."' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+	run jq -e '.prompts[0].name == "greeting"' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+	run jq -e '.prompts[0].arguments == ["name"]' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+}
+
+@test "bundle: prompts array includes text for scaffolded prompt layout" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	mkdir -p "${PROJECT_ROOT}/prompts/review"
+	echo 'Review this: ${code}' >"${PROJECT_ROOT}/prompts/review/review.txt"
+	cat >"${PROJECT_ROOT}/prompts/review/review.meta.json" <<'EOF'
+{
+  "name": "prompt.review",
+  "description": "Code review prompt",
+  "path": "prompts/review/review.txt",
+  "arguments": {
+    "type": "object",
+    "properties": {
+      "code": { "type": "string", "description": "Code to review" }
+    }
+  }
+}
+EOF
+	(cd "${PROJECT_ROOT}" && "${MCPBASH_HOME}/bin/mcp-bash" bundle --output "${OUTPUT_DIR}" >/dev/null)
+	unzip -q "${OUTPUT_DIR}/test-server-1.2.3.mcpb" -d "${EXTRACT_DIR}"
+	run jq -e '.prompts | length > 0' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+	run jq -e '.prompts[0].text == "Review this: ${code}"' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+	run jq -e '.prompts[0].name == "prompt.review"' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+}
+
+@test "bundle: prompts without text file are excluded from manifest" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	mkdir -p "${PROJECT_ROOT}/prompts"
+	cat >"${PROJECT_ROOT}/prompts/nope.meta.json" <<'EOF'
+{"name": "nope", "description": "No template file"}
+EOF
+	(cd "${PROJECT_ROOT}" && "${MCPBASH_HOME}/bin/mcp-bash" bundle --output "${OUTPUT_DIR}" >/dev/null)
+	unzip -q "${OUTPUT_DIR}/test-server-1.2.3.mcpb" -d "${EXTRACT_DIR}"
+	run jq -e '(.prompts // []) | length == 0' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+}
+
+@test "bundle: prompts array text works with nested prompt.meta.json layout" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	mkdir -p "${PROJECT_ROOT}/prompts/summarize"
+	echo 'Summarize: ${topic}' >"${PROJECT_ROOT}/prompts/summarize/summarize.txt"
+	cat >"${PROJECT_ROOT}/prompts/summarize/prompt.meta.json" <<'EOF'
+{
+  "name": "summarize",
+  "description": "Summarize a topic",
+  "path": "summarize.txt",
+  "arguments": {
+    "type": "object",
+    "properties": {
+      "topic": { "type": "string", "description": "Topic" }
+    }
+  }
+}
+EOF
+	(cd "${PROJECT_ROOT}" && "${MCPBASH_HOME}/bin/mcp-bash" bundle --output "${OUTPUT_DIR}" >/dev/null)
+	unzip -q "${OUTPUT_DIR}/test-server-1.2.3.mcpb" -d "${EXTRACT_DIR}"
+	run jq -e '.prompts[0].text == "Summarize: ${topic}"' "${EXTRACT_DIR}/manifest.json"
+	[ "$status" -eq 0 ]
+}
+
 # MCPB_INCLUDE tests
 
 @test "bundle: MCPB_INCLUDE copies custom directory" {
