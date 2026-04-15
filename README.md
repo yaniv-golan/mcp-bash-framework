@@ -129,13 +129,13 @@ Update later with `brew upgrade mcp-bash`.
 **curl installer** (CI, Docker, Windows/Git Bash, or environments without Homebrew):
 
 ```bash
-curl -fsSL "https://raw.githubusercontent.com/yaniv-golan/mcp-bash-framework/v1.2.2/install.sh" | bash -s -- --yes --version "v1.2.2"
+curl -fsSL "https://raw.githubusercontent.com/yaniv-golan/mcp-bash-framework/v1.3.0/install.sh" | bash -s -- --yes --version "v1.3.0"
 ```
 
 Verified install (recommended for production / security-sensitive environments):
 
 ```bash
-version="v1.2.2"
+version="v1.3.0"
 file="mcp-bash-${version}.tar.gz"
 curl -fsSLO "https://github.com/yaniv-golan/mcp-bash-framework/releases/download/${version}/${file}"
 curl -fsSLO "https://github.com/yaniv-golan/mcp-bash-framework/releases/download/${version}/SHA256SUMS"
@@ -164,7 +164,7 @@ echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc  # or ~/.zshrc (if not 
 Pin a release with the installer (auto-prefixes `v` for bare versions):
 
 ```bash
-bash install.sh --verify <sha256-from-SHA256SUMS> --version 1.2.2
+bash install.sh --verify <sha256-from-SHA256SUMS> --version 1.3.0
 ```
 
 ### 1.5 Verify It Works (30 seconds)
