@@ -119,6 +119,12 @@ my-server-1.0.0.mcpb
 
 **Note:** Use `MCPB_INCLUDE` in `mcpb.conf` to bundle additional directories like `.registry`, `data/`, or `config/`. Path traversal (`..`) and absolute paths are rejected for security.
 
+## Manifest Versions
+
+mcp-bash generates bundles with **manifest v0.3**, which is the current stable version accepted by all MCPB-compatible clients.
+
+The upstream MCPB spec also defines **v0.4** (introduced December 2025), which adds a `"uv"` server type for Python extensions using the [UV](https://github.com/astral-sh/uv) runtime. Since mcp-bash bundles always use `"type": "binary"`, this change does not affect generated bundles directly. If you need to produce a v0.4 manifest for a non-mcp-bash server, use the official [MCPB CLI](https://github.com/modelcontextprotocol/mcpb) directly.
+
 ## Manifest Format
 
 The generated `manifest.json` follows MCPB specification v0.3:
@@ -158,7 +164,7 @@ The generated `manifest.json` follows MCPB specification v0.3:
   ],
   "tools_generated": true,
   "prompts": [
-    {"name": "explain_code", "description": "Explain how code works", "arguments": ["code", "language"]}
+    {"name": "explain_code", "description": "Explain how code works", "arguments": ["code", "language"], "text": "Please explain the following ${language} code:\n\n${code}"}
   ],
   "prompts_generated": true,
   "localization": {
@@ -208,13 +214,13 @@ The generated `manifest.json` follows MCPB specification v0.3:
 - `privacy_policies` - array of privacy policy URLs
 - `tools` - static array of `{name, description}` objects auto-generated from `tools/*/tool.meta.json` at bundle time for pre-install discovery in extension stores
 - `tools_generated` - automatically set to `true` when `tools/` directory has content (indicates additional tools may be discovered at runtime)
-- `prompts` - static array of `{name, description, arguments}` objects auto-generated from prompt meta files at bundle time
+- `prompts` - static array of `{name, description, arguments, text}` objects auto-generated from prompt meta files at bundle time. The `text` field contains the raw template content from the prompt's `.txt` file (required by MCPB v0.3 schema). Prompts without a resolvable template file are excluded.
 - `prompts_generated` - automatically set to `true` when `prompts/` directory has content
 - `compatibility.claude_desktop` - minimum Claude Desktop version (semver constraint)
 - `compatibility.runtimes` - runtime version constraints (`python`, `node`)
 - `localization` - `{resources, default_locale}` for i18n of user-facing fields (from `server.meta.json`; `resources` path must include a `${locale}` placeholder)
 - `_meta` - platform-specific client integration metadata with reverse-DNS keys (from `server.meta.json`; e.g., Windows Store `package_family_name`, static responses for `initialize`/`tools/list`)
-- `server.mcp_config.platform_overrides` - per-platform `{command, args, env}` overrides (from `server.meta.json`; e.g., `.exe` suffix on Windows, `DYLD_LIBRARY_PATH` on macOS)
+- `server.mcp_config.platform_overrides` - per-platform `{command, args, env}` overrides (from `server.meta.json`). Environment variables in platform overrides are **merged** with the base `mcp_config.env` (not replaced). For example, a `darwin` override adding `DYLD_LIBRARY_PATH` keeps all base env vars intact. The implementing client performs this merge at install time.
 
 **Note:** The `author` field is required by the MCPB spec. If not provided via `mcpb.conf` or `server.meta.json`, the bundler falls back to git config.
 
@@ -381,6 +387,8 @@ For production distribution, you can sign bundles using the official MCPB CLI to
 ```bash
 npm install -g @anthropic-ai/mcpb
 ```
+
+> **Note:** The MCPB CLI package may be renamed from `@anthropic-ai/mcpb` to `@modelcontextprotocol/mcpb-cli` in a future release. Check the [MCPB repository](https://github.com/modelcontextprotocol/mcpb) for the latest install instructions.
 
 ### Sign Your Bundle
 
