@@ -1581,3 +1581,13 @@ EOF
 		refute_output --partial "not valid semver"
 	done
 }
+
+@test "bundle: entry point and embedded binary are executable after extraction" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	(cd "${PROJECT_ROOT}" && "${MCPBASH_HOME}/bin/mcp-bash" bundle --output "${OUTPUT_DIR}" >/dev/null)
+	unzip -q "${OUTPUT_DIR}/test-server-1.2.3.mcpb" -d "${EXTRACT_DIR}"
+	# run-server.sh (entry point) must be executable
+	[ -x "${EXTRACT_DIR}/server/run-server.sh" ]
+	# Embedded mcp-bash binary must be executable
+	[ -x "${EXTRACT_DIR}/server/.mcp-bash/bin/mcp-bash" ]
+}
