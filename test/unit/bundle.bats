@@ -1553,3 +1553,31 @@ EOF
 	run jq -e 'has("localization") | not' "${EXTRACT_DIR}/manifest.json"
 	[ "$status" -eq 0 ]
 }
+
+@test "bundle: --validate warns on non-semver version" {
+	cat >"${PROJECT_ROOT}/server.d/server.meta.json" <<'EOF'
+{
+  "name": "test-server",
+  "version": "not-a-version",
+  "description": "A test MCP server"
+}
+EOF
+	run bash -c "cd '${PROJECT_ROOT}' && '${MCPBASH_HOME}/bin/mcp-bash' bundle --validate 2>&1"
+	assert_success
+	assert_output --partial "not valid semver"
+}
+
+@test "bundle: --validate accepts valid semver versions" {
+	for ver in "1.0.0" "0.1.0" "12.34.56" "1.0.0-beta.1" "1.0.0+build.123"; do
+		cat >"${PROJECT_ROOT}/server.d/server.meta.json" <<EOF
+{
+  "name": "test-server",
+  "version": "${ver}",
+  "description": "A test MCP server"
+}
+EOF
+		run bash -c "cd '${PROJECT_ROOT}' && '${MCPBASH_HOME}/bin/mcp-bash' bundle --validate 2>&1"
+		assert_success
+		refute_output --partial "not valid semver"
+	done
+}

@@ -324,6 +324,18 @@ mcp_bundle_warn_missing_author() {
 	fi
 }
 
+mcp_bundle_warn_nonsemver_version() {
+	# Validate version is valid semver (warning, not error)
+	# Semver regex: MAJOR.MINOR.PATCH with optional pre-release and build metadata
+	if [[ -n "${RESOLVED_VERSION:-}" ]]; then
+		local semver_re='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
+		if ! [[ "${RESOLVED_VERSION}" =~ ${semver_re} ]]; then
+			printf '  \342\232\240 Version "%s" is not valid semver (expected MAJOR.MINOR.PATCH)\n' "${RESOLVED_VERSION}" >&2
+			printf '    \342\206\222 MCPB clients may reject non-semver versions\n' >&2
+		fi
+	fi
+}
+
 mcp_bundle_load_config() {
 	local project_root="$1"
 	local config_file="${project_root}/mcpb.conf"
@@ -1395,6 +1407,9 @@ mcp_cli_bundle() {
 
 	# Warn if author is missing (required by MCPB spec)
 	mcp_bundle_warn_missing_author
+
+	# Warn if version is not valid semver
+	mcp_bundle_warn_nonsemver_version
 
 	# Static registry mode handling (default: true for zero-config fast cold start)
 	# Bundle creators can opt out with MCPB_STATIC=false in mcpb.conf
