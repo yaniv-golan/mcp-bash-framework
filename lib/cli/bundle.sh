@@ -1064,8 +1064,10 @@ mcp_bundle_scan_prompts_array() {
 
 		local text_content
 		text_content="$(cat "${txt_path}")"
-		# Trim trailing newline that cat preserves
-		text_content="${text_content%$'\n'}"
+		# Skip empty template files (v0.3 requires non-empty text)
+		if [[ -z "${text_content}" ]]; then
+			continue
+		fi
 		entry="$(printf '%s' "${entry}" | "${MCPBASH_JSON_TOOL_BIN}" -c --arg t "${text_content}" '. + {text: $t}')"
 
 		# Deduplicate: the expanded globs may match the same file twice
