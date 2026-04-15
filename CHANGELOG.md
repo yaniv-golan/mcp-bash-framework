@@ -5,6 +5,21 @@ All notable changes to mcp-bash-framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Bundle prompts now include `text` field per MCPB v0.3 schema**: The bundler reads the template `.txt` file for each prompt and embeds its content as the required `text` field in the manifest's `prompts` array. Prompts without a resolvable template file are excluded from the manifest to maintain schema compliance. Previously, prompts only had `name`, `description`, and `arguments`, which failed strict v0.3 validation.
+- **Bundle prompt scan now finds scaffolded prompt layouts**: The glob pattern now matches `prompts/<name>/<name>.meta.json` (created by `mcp-bash scaffold prompt`) in addition to the flat and `prompt.meta.json` nested layouts.
+
+### Added
+
+- **Semver validation warning for bundle version**: `mcp-bash bundle --validate` now warns when the resolved version string is not valid semver (MAJOR.MINOR.PATCH). The upstream MCPB CLI is adding strict semver rejection; this warning gives early feedback. Non-semver versions still produce bundles but may be rejected by future MCPB tooling.
+
+### Changed
+
+- **MCPB documentation updated for upstream spec changes**: `docs/MCPB.md` now documents the `text` field in prompt manifest entries, manifest v0.4 awareness (UV runtime), clarifies that `platform_overrides.env` merges with (not replaces) base env, and notes the potential `@anthropic-ai/mcpb` package rename.
+
 ## [1.2.2] - 2026-04-05
 
 ### Fixed
