@@ -278,17 +278,23 @@ mcp_validate_ui_meta() {
 		return 0
 	fi
 
+	# Single source of truth for the spec-recognized permission keys; the
+	# human-readable CSV is derived from it so the two never drift.
+	local allowed_json='["camera","microphone","geolocation","clipboardWrite"]'
+	local allowed_csv
+	allowed_csv="$("${MCPBASH_JSON_TOOL_BIN}" -r 'join(", ")' <<<"${allowed_json}" 2>/dev/null || printf 'camera, microphone, geolocation, clipboardWrite')"
+
 	local meta_file rel bad
 	_mcp_validate_one_ui_meta() {
 		local f="$1"
 		[ -f "${f}" ] || return 0
 		rel="${f#"${project_root}/"}"
-		bad="$("${MCPBASH_JSON_TOOL_BIN}" -r '
+		bad="$("${MCPBASH_JSON_TOOL_BIN}" -r --argjson allowed "${allowed_json}" '
 			((.meta.permissions // {}) | if type == "object" then keys else [] end)
-			- ["camera", "microphone", "geolocation", "clipboardWrite"] | join(", ")
+			- $allowed | join(", ")
 		' "${f}" 2>/dev/null || printf '')"
 		if [ -n "${bad}" ]; then
-			printf '⚠ %s - unknown permission key(s): %s (allowed: camera, microphone, geolocation, clipboardWrite)\n' "${rel}" "${bad}"
+			printf '⚠ %s - unknown permission key(s): %s (allowed: %s)\n' "${rel}" "${bad}" "${allowed_csv}"
 			warnings=$((warnings + 1))
 		fi
 	}

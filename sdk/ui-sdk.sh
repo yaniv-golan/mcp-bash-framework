@@ -39,6 +39,25 @@ mcp_client_supports_ui() {
 
 # --- Result helpers ---
 
+# Internal: build a UI tool result object (content text + structuredContent +
+# isError, plus an optional widget-only _meta). Shared by mcp_result_with_ui and
+# mcp_result_with_ui_data so the result shape is defined in exactly one place.
+# Usage: _mcp_ui_build_result <text_fallback> <structured_data_json> <widget_meta_json>
+_mcp_ui_build_result() {
+	local text_fallback="$1"
+	local structured_data="${2:-null}"
+	local widget_meta="${3:-null}"
+	"${MCPBASH_JSON_TOOL_BIN}" -n \
+		--arg text "${text_fallback}" \
+		--argjson data "${structured_data}" \
+		--argjson meta "${widget_meta}" \
+		'{
+			content: [{type: "text", text: $text}],
+			structuredContent: (if $data != null then $data else null end),
+			isError: false
+		} + (if $meta != null then {_meta: $meta} else {} end)'
+}
+
 # Emit tool result with structured data for UI rendering
 # Usage: mcp_result_with_ui <resource_uri> <text_fallback> [structured_data]
 #
@@ -70,15 +89,7 @@ mcp_result_with_ui() {
 	fi
 
 	# Return result with structured data (host knows UI from tool definition)
-	"${MCPBASH_JSON_TOOL_BIN}" -n \
-		--arg text "${text_fallback}" \
-		--argjson data "${structured_data}" \
-		--argjson meta "${widget_meta}" \
-		'{
-			content: [{type: "text", text: $text}],
-			structuredContent: (if $data != null then $data else null end),
-			isError: false
-		} + (if $meta != null then {_meta: $meta} else {} end)'
+	_mcp_ui_build_result "${text_fallback}" "${structured_data}" "${widget_meta}"
 }
 
 # Emit tool result with structured data for UI rendering
@@ -111,15 +122,7 @@ mcp_result_with_ui_data() {
 	fi
 
 	# Return result with structured data (host knows UI from tool definition)
-	"${MCPBASH_JSON_TOOL_BIN}" -n \
-		--arg text "${text_fallback}" \
-		--argjson data "${ui_data}" \
-		--argjson meta "${widget_meta}" \
-		'{
-			content: [{type: "text", text: $text}],
-			structuredContent: $data,
-			isError: false
-		} + (if $meta != null then {_meta: $meta} else {} end)'
+	_mcp_ui_build_result "${text_fallback}" "${ui_data}" "${widget_meta}"
 }
 
 # --- Dynamic UI generation ---

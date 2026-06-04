@@ -6,6 +6,8 @@ This document tracks `mcp-bash` compliance with the [Model Context Protocol Spec
 
 This table shows when features were introduced in the MCP specification and when mcp-bash added support.
 
+> **MCP Apps (SEP-1865):** mcp-bash implemented the **2026-01-26 stable** spec in v1.1.0 and tracks the current draft additively (e.g. `_meta.ui.domain`, mimeType-aware gating, `resources/list_changed` on UI changes). See `docs/concepts/mcp-apps.md` for the supported server surface and unsupported content types.
+
 | MCP Feature | MCP Version | mcpbash Version | Status | Notes |
 |-------------|-------------|-----------------|--------|-------|
 | **Core Protocol** | | | | |

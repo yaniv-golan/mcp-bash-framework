@@ -132,6 +132,19 @@ UI resources are delivered via `resources/read`:
 
 `domain` is optional — declare `meta.domain` in `ui.meta.json` to advertise a stable origin for the hosted component (used by hosts for sandbox-origin/CSP). It is omitted when not set.
 
+### Render hint (MCP-UI hosts)
+
+`ui.meta.json` may declare `meta.preferredFrameSize` (an MCP-UI convenience, not part of the MCP Apps MVP). When present it is emitted as a sibling of `_meta.ui` on both `resources/list` and `resources/read`:
+
+```json
+"_meta": {
+  "ui": { "...": "..." },
+  "mcpui.dev/ui-preferred-frame-size": ["600px", "400px"]
+}
+```
+
+MCP-Apps-native hosts ignore the `mcpui.dev/*` key; MCP-UI hosts use it to size the iframe before the first render. It is omitted when not set.
+
 ## Security Model
 
 1. **Iframe Sandboxing**: `allow-scripts allow-same-origin` only

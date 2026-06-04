@@ -68,6 +68,8 @@ TESTS=(
 	"test_resource_templates.sh"
 	"test_lifecycle_gating.sh"
 	"test_resources_providers.sh"
+	"test_ui_e2e.sh"
+	"test_ui_spec_sync.sh"
 	"test_minimal_mode.sh"
 	"test_protocol_reject_unknown.sh"
 	"test_registry_refresh.sh"
