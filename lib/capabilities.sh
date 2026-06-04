@@ -86,6 +86,43 @@ mcp_client_supports_ui() {
 	[ "${flag}" = "1" ]
 }
 
+# Check whether the client's advertised UI mimeTypes include the mcp-app profile.
+# Lenient: an empty/absent mimeTypes list is treated as supported (the client
+# advertised the extension but did not constrain types). Only an explicit,
+# non-empty list that omits "text/html;profile=mcp-app" returns non-zero.
+# Returns: 0 if the profile is acceptable, 1 otherwise.
+mcp_extensions_ui_supports_mcp_app() {
+	# Minimal mode (no JSON tool): cannot inspect the list; be lenient.
+	if [ "${MCPBASH_JSON_TOOL:-none}" = "none" ]; then
+		return 0
+	fi
+
+	local mimetypes=""
+	if [ -n "${_MCP_UI_EXTENSION_DATA:-}" ]; then
+		mimetypes="$(printf '%s' "${_MCP_UI_EXTENSION_DATA}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.mimeTypes // []' 2>/dev/null || printf '[]')"
+	fi
+	# Subprocess context: fall back to the persisted mimetypes state file.
+	if [ -z "${mimetypes}" ] || [ "${mimetypes}" = "null" ]; then
+		mimetypes="$(cat "$(mcp_extensions_ui_mimetypes_path 2>/dev/null)" 2>/dev/null || printf '[]')"
+	fi
+	[ -z "${mimetypes}" ] && mimetypes='[]'
+
+	local decision
+	decision="$(printf '%s' "${mimetypes}" | "${MCPBASH_JSON_TOOL_BIN}" -r '
+		if (type != "array") or (length == 0) then "yes"
+		elif any(.[]; . == "text/html;profile=mcp-app") then "yes"
+		else "no" end' 2>/dev/null || printf 'yes')"
+	[ "${decision}" = "yes" ]
+}
+
+# Combined gate: should the server emit UI metadata (_meta.ui, ui:// linkage)
+# to this client? True iff the client advertised the UI extension AND its
+# mimeTypes accept the mcp-app profile (lenient). Used to degrade to text-only.
+# Returns: 0 if UI emission is allowed, 1 otherwise.
+mcp_ui_emit_allowed() {
+	mcp_client_supports_ui && mcp_extensions_ui_supports_mcp_app
+}
+
 # Check if client supports a specific extension by ID
 # Usage: mcp_client_supports_extension "io.modelcontextprotocol/ui"
 # Returns: 0 if supported, 1 if not

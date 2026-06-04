@@ -51,13 +51,17 @@ mcp_client_supports_ui() {
 #   resource_uri    - DEPRECATED: UI resource is in tool.meta.json, not results
 #   text_fallback   - Plain text for clients without UI support
 #   structured_data - Optional JSON data for UI (default: null)
+#   widget_meta     - Optional JSON object attached as result _meta. Relayed to
+#                     the widget but NOT shown to the model (session ids, locale,
+#                     hydration, secrets). structuredContent is model+widget.
 #
 # Example:
-#   mcp_result_with_ui "" "Dashboard ready" '{"items": 42}'
+#   mcp_result_with_ui "" "Dashboard ready" '{"items": 42}' '{"sessionId":"s1"}'
 mcp_result_with_ui() {
 	local resource_uri="$1" # Ignored per spec - UI declared in tool definition
 	local text_fallback="$2"
 	local structured_data="${3:-null}"
+	local widget_meta="${4:-null}"
 
 	# If client doesn't support UI, return text-only result
 	if ! mcp_client_supports_ui; then
@@ -69,11 +73,12 @@ mcp_result_with_ui() {
 	"${MCPBASH_JSON_TOOL_BIN}" -n \
 		--arg text "${text_fallback}" \
 		--argjson data "${structured_data}" \
+		--argjson meta "${widget_meta}" \
 		'{
 			content: [{type: "text", text: $text}],
 			structuredContent: (if $data != null then $data else null end),
 			isError: false
-		}'
+		} + (if $meta != null then {_meta: $meta} else {} end)'
 }
 
 # Emit tool result with structured data for UI rendering
@@ -88,13 +93,17 @@ mcp_result_with_ui() {
 #   resource_uri  - DEPRECATED: UI resource is in tool.meta.json, not results
 #   text_fallback - Plain text for clients without UI support
 #   ui_data       - JSON data for the UI (required)
+#   widget_meta   - Optional JSON object attached as result _meta. Relayed to the
+#                   widget but NOT shown to the model (session ids, locale,
+#                   hydration, secrets). structuredContent is model+widget.
 #
 # Example:
-#   mcp_result_with_ui_data "" "Query returned 10 rows" "$json_results"
+#   mcp_result_with_ui_data "" "10 rows" "$json" '{"sessionId":"s1"}'
 mcp_result_with_ui_data() {
 	local resource_uri="$1" # Ignored per spec - UI declared in tool definition
 	local text_fallback="$2"
 	local ui_data="$3"
+	local widget_meta="${4:-null}"
 
 	if ! mcp_client_supports_ui; then
 		mcp_result_success "${text_fallback}"
@@ -105,11 +114,12 @@ mcp_result_with_ui_data() {
 	"${MCPBASH_JSON_TOOL_BIN}" -n \
 		--arg text "${text_fallback}" \
 		--argjson data "${ui_data}" \
+		--argjson meta "${widget_meta}" \
 		'{
 			content: [{type: "text", text: $text}],
 			structuredContent: $data,
 			isError: false
-		}'
+		} + (if $meta != null then {_meta: $meta} else {} end)'
 }
 
 # --- Dynamic UI generation ---

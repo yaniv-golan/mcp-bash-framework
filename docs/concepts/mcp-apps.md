@@ -122,12 +122,15 @@ UI resources are delivered via `resources/read`:
           "baseUriDomains": []
         },
         "permissions": {},
-        "prefersBorder": true
+        "prefersBorder": true,
+        "domain": "https://widgets.example.com"
       }
     }
   }]
 }
 ```
+
+`domain` is optional — declare `meta.domain` in `ui.meta.json` to advertise a stable origin for the hosted component (used by hosts for sandbox-origin/CSP). It is omitted when not set.
 
 ## Security Model
 
@@ -248,7 +251,7 @@ These features are **not part of the spec** - they're mcp-bash conveniences to m
 | **Auto-discovery** | Scan `tools/*/ui/` and `ui/*/` directories automatically |
 | **Templates** | Generate HTML from JSON config (`form`, `data-table`, `progress`, etc.) |
 | **ui.meta.json** | Declarative metadata file instead of code |
-| **SDK helpers** | Bash functions like `mcp_ui_get_content()`, `mcp_ui_build_csp()` |
+| **SDK helpers** | Bash functions like `mcp_ui_get_content()`, `mcp_ui_get_metadata()` |
 | **Template caching** | Performance optimization for generated HTML |
 
 The spec only requires serving HTML - how you generate that HTML is up to you. Templates are our solution for Bash environments without JS build tools.
@@ -257,6 +260,28 @@ See:
 - [UI Resources Guide](../guides/ui-resources.md) - How to add UI to tools
 - [UI Templates Reference](../reference/ui-templates.md) - Template configuration (mcp-bash specific)
 - [UI SDK Reference](../reference/ui-sdk.md) - Bash helper functions (mcp-bash specific)
+
+## Spec Coverage Notes
+
+mcp-bash implements the MCP Apps **server** surface. A few spec/cross-library points worth knowing:
+
+### Metadata location (`_meta.ui` on list vs. read)
+
+The draft spec allows `_meta.ui` (`csp`, `permissions`, `domain`, `prefersBorder`) on **both** the `resources/list` entry and each `resources/read` content item; when present on both, the **content-item value takes precedence** and hosts must check both. mcp-bash mirrors the same author-declared metadata (from `ui.meta.json`) to both locations, so the two are always consistent — there is no per-read dynamic divergence to worry about.
+
+### Content types
+
+mcp-bash serves only inline HTML (`text/html;profile=mcp-app`), which is the MCP Apps MVP. The MCP-UI heritage content types are **not supported**:
+
+| Content type | MIME | Status |
+|--------------|------|--------|
+| Inline HTML | `text/html;profile=mcp-app` | ✅ Supported |
+| External URL | `text/uri-list` | ❌ Not supported (out of MVP) |
+| Remote DOM | `application/vnd.mcp-ui.remote-dom` | ❌ Not supported (out of MVP) |
+
+### Long-running / app-delegated calls (MCP Tasks)
+
+The draft notes that app-delegated long-running tool calls **may** use core MCP Tasks (`tasks/*`) so a poll can survive iframe teardown. mcp-bash does **not** implement core MCP Tasks — tools return synchronous results only. App-delegated long-running work is a separate (non-UI) roadmap item; there is currently no UI-specific Tasks behavior to configure.
 
 ## Known Limitations
 
