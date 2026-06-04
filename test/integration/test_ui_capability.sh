@@ -88,9 +88,20 @@ cat <<'JSON' >"${STATE_ROOT}/requests.ndjson"
 {"jsonrpc":"2.0","method":"notifications/initialized"}
 JSON
 
+# Pin the state dir to a known path so we can assert on the persisted
+# extensions.ui.support file, then keep it across shutdown. On exit the server
+# tries to remove both the state dir and the lock root, but only removes paths
+# matching "${MCPBASH_TMP_ROOT}/mcpbash.state.*" / ".../mcpbash.locks*"; a custom
+# path otherwise makes cleanup refuse and the server exit non-zero (tripping this
+# test's `set -e`). So: MCPBASH_KEEP_LOGS=true preserves the custom state dir,
+# and the lock root is pointed at an allowlist-matching path so its removal
+# succeeds. Everything lives under TEST_TMPDIR and is cleaned with the workspace.
 (
 	cd "${STATE_ROOT}" || exit 1
-	MCPBASH_STATE_DIR="${STATE_ROOT}/state" MCPBASH_PROJECT_ROOT="${STATE_ROOT}" ./bin/mcp-bash <"requests.ndjson" >"responses.ndjson"
+	MCPBASH_KEEP_LOGS=true MCPBASH_TMP_ROOT="${STATE_ROOT}" \
+		MCPBASH_STATE_DIR="${STATE_ROOT}/state" \
+		MCPBASH_LOCK_ROOT="${STATE_ROOT}/mcpbash.locks" \
+		MCPBASH_PROJECT_ROOT="${STATE_ROOT}" ./bin/mcp-bash <"requests.ndjson" >"responses.ndjson"
 )
 
 # Check state file was created
