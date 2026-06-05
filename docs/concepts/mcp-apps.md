@@ -292,6 +292,8 @@ mcp-bash serves only inline HTML (`text/html;profile=mcp-app`), which is the MCP
 | External URL | `text/uri-list` | ❌ Not supported (out of MVP) |
 | Remote DOM | `application/vnd.mcp-ui.remote-dom` | ❌ Not supported (out of MVP) |
 
+Need an external-URL or Remote DOM UI for a specific host? Open an issue describing the target host — these can be added as opt-in content types if the spec promotes them or a host requires it.
+
 ### Long-running / app-delegated calls (MCP Tasks)
 
 The draft notes that app-delegated long-running tool calls **may** use core MCP Tasks (`tasks/*`) so a poll can survive iframe teardown. mcp-bash does **not** implement core MCP Tasks — tools return synchronous results only. App-delegated long-running work is a separate (non-UI) roadmap item; there is currently no UI-specific Tasks behavior to configure.
