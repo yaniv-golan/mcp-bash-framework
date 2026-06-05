@@ -6,6 +6,23 @@ MCP Apps is an extension to the Model Context Protocol that enables servers to d
 >
 > This document describes mcp-bash's implementation of the spec, plus convenience features we've added on top.
 
+## Host support
+
+MCP Apps is an **open, cross-host** standard. The MCP-native UI that mcp-bash
+emits (`text/html;profile=mcp-app` + `_meta.ui.resourceUri`) renders in every
+compliant host — **Claude** (web + desktop), **VS Code**, **Goose**, and
+**ChatGPT**.
+
+ChatGPT in particular supports MCP Apps **natively** (per OpenAI's
+[MCP Apps compatibility in ChatGPT](https://developers.openai.com/apps-sdk/mcp-apps-in-chatgpt)
+docs): it loads the `text/html;profile=mcp-app` template linked via
+`_meta.ui.resourceUri` and talks to it over the standard MCP Apps bridge. The
+older OpenAI Apps SDK conventions — `text/html+skybridge`, `_meta["openai/*"]`,
+and `window.openai` — are now **optional extras** for ChatGPT-specific features
+(e.g. Instant Checkout, host modals), not a requirement for a tool to render.
+**mcp-bash needs no ChatGPT-specific adapter** — its standard output works there
+out of the box.
+
 ## How It Works
 
 ```
