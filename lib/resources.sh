@@ -763,23 +763,30 @@ mcp_resources_list() {
 	all_items_json="$(printf '%s' "${MCP_RESOURCES_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.items // []')"
 
 	if [ -n "${MCP_UI_REGISTRY_JSON:-}" ]; then
-		# Convert UI resources to standard resource format and merge
-		# Per MCP Apps spec, UIResource in resources/list MUST include _meta.ui with CSP
+		# Convert UI resources to standard resource format and merge.
+		# Per MCP Apps spec, UIResource in resources/list includes _meta.ui — but
+		# degrade to text-only (omit _meta.ui) for clients that did not advertise
+		# acceptance of the mcp-app profile (gap #5). The resources stay listed.
+		local ui_emit="true"
+		if declare -F mcp_ui_emit_allowed >/dev/null 2>&1 && ! mcp_ui_emit_allowed; then
+			ui_emit="false"
+		fi
 		local ui_resources
-		ui_resources="$(printf '%s' "${MCP_UI_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -c '
+		ui_resources="$(printf '%s' "${MCP_UI_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -c --argjson emit "${ui_emit}" '
 			(.uiResources // []) | map({
 				name: .name,
 				uri: .uri,
 				description: .description,
-				mimeType: .mimeType,
-				_meta: {
-					ui: {
+				mimeType: .mimeType
+			} + (if $emit then {
+				_meta: ({
+					ui: ({
 						csp: (.csp // {}),
 						permissions: (.permissions // {}),
 						prefersBorder: (if .prefersBorder == null then true else .prefersBorder end)
-					}
-				}
-			})
+					} + (if .domain then {domain: .domain} else {} end))
+				} + (if .preferredFrameSize then {"mcpui.dev/ui-preferred-frame-size": .preferredFrameSize} else {} end))
+			} else {} end))
 		' 2>/dev/null || printf '[]')"
 		all_items_json="$(printf '%s\n%s' "${all_items_json}" "${ui_resources}" | "${MCPBASH_JSON_TOOL_BIN}" -s 'add')"
 		total="$(printf '%s' "${all_items_json}" | "${MCPBASH_JSON_TOOL_BIN}" 'length')"
@@ -839,6 +846,11 @@ mcp_resources_poll() {
 		mcp_resources_refresh_registry || true
 	fi
 	mcp_resources_templates_refresh_registry || true
+	# MCP Apps (gap #3): refresh the UI registry on the same poll so a change to
+	# the ui:// set flips MCP_RESOURCES_CHANGED and emits resources/list_changed.
+	if declare -F mcp_ui_refresh_registry >/dev/null 2>&1; then
+		mcp_ui_refresh_registry || true
+	fi
 	return 0
 }
 
@@ -1825,9 +1837,16 @@ mcp_resources_read() {
 		return 1
 	fi
 
-	# For UI resources, add _meta.ui with CSP and permissions if available
-	if [ "${provider}" = "ui" ]; then
+	# For UI resources, add _meta.ui with CSP and permissions if available.
+	# Degrade to text-only (omit _meta.ui) for clients that did not advertise
+	# acceptance of the mcp-app profile (gap #5); the HTML is still served.
+	local ui_emit_meta="true"
+	if declare -F mcp_ui_emit_allowed >/dev/null 2>&1 && ! mcp_ui_emit_allowed; then
+		ui_emit_meta="false"
+	fi
+	if [ "${provider}" = "ui" ] && [ "${ui_emit_meta}" = "true" ]; then
 		local ui_meta="{}"
+		local ui_extras="{}"
 		# Check if mcp_ui_get_metadata exists (loaded from lib/ui.sh in Phase 2)
 		if declare -F mcp_ui_get_metadata >/dev/null 2>&1; then
 			# Extract resource name from UI URI
@@ -1839,9 +1858,12 @@ mcp_resources_read() {
 				resource_name="${without_scheme}"
 			fi
 			ui_meta="$(mcp_ui_get_metadata "${resource_name}")"
+			if declare -F mcp_ui_get_meta_extras >/dev/null 2>&1; then
+				ui_extras="$(mcp_ui_get_meta_extras "${resource_name}")"
+			fi
 		fi
-		# Add _meta.ui to content object
-		content_obj="$("${MCPBASH_JSON_TOOL_BIN}" -c --argjson meta "${ui_meta}" '. + {_meta: {ui: $meta}}' <<<"${content_obj}")"
+		# Add _meta.ui (+ any sibling render hints) to content object
+		content_obj="$("${MCPBASH_JSON_TOOL_BIN}" -c --argjson meta "${ui_meta}" --argjson extras "${ui_extras}" '. + {_meta: ({ui: $meta} + $extras)}' <<<"${content_obj}")"
 	fi
 
 	result="$("${MCPBASH_JSON_TOOL_BIN}" -n -c --argjson content "${content_obj}" '{

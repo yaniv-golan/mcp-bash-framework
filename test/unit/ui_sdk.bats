@@ -131,6 +131,37 @@ teardown() {
 	assert_equal "${visibility}" "app,model"
 }
 
+@test "sdk: mcp_result_with_ui_data accepts widget-only _meta" {
+	MCPBASH_CLIENT_SUPPORTS_UI=1
+
+	result="$(mcp_result_with_ui_data "" "Text" '{"rows": 3}' '{"sessionId": "abc", "locale": "en"}')"
+
+	# structuredContent (model+widget) unchanged
+	rows="$("${MCPBASH_JSON_TOOL_BIN}" -r '.structuredContent.rows' <<< "${result}")"
+	assert_equal "${rows}" "3"
+	# widget-only _meta carried at field level (framework may later merge keys)
+	sid="$("${MCPBASH_JSON_TOOL_BIN}" -r '._meta.sessionId' <<< "${result}")"
+	assert_equal "${sid}" "abc"
+}
+
+@test "sdk: mcp_result_with_ui_data omits _meta when not provided" {
+	MCPBASH_CLIENT_SUPPORTS_UI=1
+
+	result="$(mcp_result_with_ui_data "" "Text" '{"rows": 3}')"
+
+	has_meta="$("${MCPBASH_JSON_TOOL_BIN}" -r 'has("_meta")' <<< "${result}")"
+	assert_equal "${has_meta}" "false"
+}
+
+@test "sdk: mcp_result_with_ui accepts widget-only _meta" {
+	MCPBASH_CLIENT_SUPPORTS_UI=1
+
+	result="$(mcp_result_with_ui "" "Text" '{"items": 5}' '{"token": "xyz"}')"
+
+	tok="$("${MCPBASH_JSON_TOOL_BIN}" -r '._meta.token' <<< "${result}")"
+	assert_equal "${tok}" "xyz"
+}
+
 @test "sdk: mcp_tool_meta_with_ui accepts custom visibility" {
 	meta="$(mcp_tool_meta_with_ui "ui://server/admin" "app")"
 

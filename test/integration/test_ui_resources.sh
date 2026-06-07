@@ -121,8 +121,9 @@ jq -s '
 		err("_meta.ui missing from response")
 	else null end,
 
-	# Check prefersBorder
-	if ($content._meta.ui.prefersBorder // true) != false then
+	# Check prefersBorder. Compare directly: the jq alt operator treats false as
+	# empty, so a default-applying form would collapse a correct false back.
+	if $content._meta.ui.prefersBorder != false then
 		err("prefersBorder should be false")
 	else null end
 ' <"${META_ROOT}/responses.ndjson" >/dev/null

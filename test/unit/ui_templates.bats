@@ -205,3 +205,44 @@ setup() {
 	[[ "${output}" == *'draggable = true'* ]]
 	[[ "${output}" == *'move-card'* ]]
 }
+
+# --- MCP Apps SDK correctness (ext-apps): the SDK exposes callServerTool({name,
+# arguments}); there is no callTool. sendMessage takes {role, content}. These
+# guard against the regression where templates emitted app.callTool(...) /
+# app.sendMessage('string') (which threw at runtime). ---
+
+@test "sdk: interactive templates use app.callServerTool (not app.callTool)" {
+	local form='{"title":"T","fields":[{"name":"x","type":"text"}],"submitTool":"do-it"}'
+	local progress='{"title":"P","cancelTool":"abort"}'
+	local tree='{"title":"Files","onSelectTool":"sel"}'
+	local kanban='{"title":"Board","columns":[{"id":"a","title":"A"}],"onMoveTool":"mv","onCardClickTool":"clk"}'
+
+	run mcp_ui_template_form "${form}"
+	assert_output --partial 'app.callServerTool({'
+	refute_output --partial 'app.callTool('
+
+	run mcp_ui_template_progress "${progress}"
+	assert_output --partial 'app.callServerTool({'
+	refute_output --partial 'app.callTool('
+
+	run mcp_ui_template_tree_view "${tree}"
+	assert_output --partial 'app.callServerTool({'
+	refute_output --partial 'app.callTool('
+
+	run mcp_ui_template_kanban "${kanban}"
+	assert_output --partial 'app.callServerTool({'
+	refute_output --partial 'app.callTool('
+}
+
+@test "sdk: receive-only templates contain no app.callTool" {
+	run mcp_ui_template_data_table '{"title":"R","columns":[{"key":"k","label":"K"}]}'
+	refute_output --partial 'app.callTool('
+	run mcp_ui_template_diff_viewer '{"title":"D","viewMode":"split"}'
+	refute_output --partial 'app.callTool('
+}
+
+@test "sdk: sendMessage uses object form {role, content} not a string" {
+	run mcp_ui_template_form '{"title":"T","fields":[{"name":"x","type":"text"}],"submitTool":"t"}'
+	assert_output --partial 'app.sendMessage({ role:'
+	refute_output --partial "app.sendMessage('"
+}

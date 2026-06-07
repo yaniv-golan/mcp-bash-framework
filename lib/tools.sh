@@ -1296,6 +1296,19 @@ mcp_tools_list() {
 		}
 	')"
 
+	# MCP Apps (gap #5): degrade to text-only for clients that did not advertise
+	# acceptance of the mcp-app profile. Tools remain listed; only the UI linkage
+	# (_meta.ui) is stripped. The registry cache is left untouched.
+	if declare -F mcp_ui_emit_allowed >/dev/null 2>&1 && ! mcp_ui_emit_allowed; then
+		result_json="$(printf '%s' "${result_json}" | "${MCPBASH_JSON_TOOL_BIN}" -c '
+			.tools |= map(
+				if (._meta.ui // null) != null then
+					del(._meta.ui)
+					| (if (._meta | length) == 0 then del(._meta) else . end)
+				else . end)
+		')"
+	fi
+
 	if ! result_json="$(mcp_paginate_attach_next_cursor "${result_json}" "tools" "${offset}" "${numeric_limit}" "${total}" "${MCP_TOOLS_REGISTRY_HASH}")"; then
 		mcp_tools_error -32603 "Unable to encode tools cursor"
 		return 1

@@ -6,6 +6,8 @@ This document tracks `mcp-bash` compliance with the [Model Context Protocol Spec
 
 This table shows when features were introduced in the MCP specification and when mcp-bash added support.
 
+> **MCP Apps (SEP-1865):** mcp-bash implemented the **2026-01-26 stable** spec in v1.1.0 and tracks the current draft additively (e.g. `_meta.ui.domain`, mimeType-aware gating, `resources/list_changed` on UI changes). See `docs/concepts/mcp-apps.md` for the supported server surface and unsupported content types.
+
 | MCP Feature | MCP Version | mcpbash Version | Status | Notes |
 |-------------|-------------|-----------------|--------|-------|
 | **Core Protocol** | | | | |
@@ -77,11 +79,11 @@ This table shows when features were introduced in the MCP specification and when
 | Server Identity Discovery | 2025-11-25 | ❌ Not applicable | ❌ Not applicable | HTTP-only; stdio servers use initialize response |
 | Sampling (sampling/createMessage) | 2025-11-25 | ❌ Not yet | ❌ Not yet | Server-initiated LLM requests with `includeContext` for agent loops |
 | **MCP Apps Extension (SEP-1865)** | | | | |
-| MCP Apps UI Extension | 2026-01-26 | 0.8.0 | ✅ Full | `io.modelcontextprotocol/ui` extension support |
-| UI Resource Discovery | 2026-01-26 | 0.8.0 | ✅ Full | Auto-discovery from tools/*/ui/ and ui/*/ |
-| UI Templates | 2026-01-26 | 0.8.0 | ✅ Full | Form, data-table, progress, diff-viewer, tree-view, kanban |
-| UI CSP Generation | 2026-01-26 | 0.8.0 | ✅ Full | Content Security Policy from metadata |
-| MCP Apps Theming | 2026-01-26 | 0.8.0 | ✅ Full | CSS variables for light/dark mode |
+| MCP Apps UI Extension | 2026-01-26 | 1.1.0 | ✅ Full | `io.modelcontextprotocol/ui` extension support |
+| UI Resource Discovery | 2026-01-26 | 1.1.0 | ✅ Full | Auto-discovery from tools/*/ui/ and ui/*/ |
+| UI Templates | 2026-01-26 | 1.1.0 | ✅ Full | Form, data-table, progress, diff-viewer, tree-view, kanban |
+| UI CSP Generation | 2026-01-26 | 1.1.0 | ✅ Full | Content Security Policy from metadata |
+| MCP Apps Theming | 2026-01-26 | 1.1.0 | ✅ Full | CSS variables for light/dark mode |
 
 ### Legend
 - ✅ Full: Complete implementation

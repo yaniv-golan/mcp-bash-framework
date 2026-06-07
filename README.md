@@ -82,7 +82,7 @@ mcp-bash targets the **2025-11-25** MCP specification with negotiated downgrades
 | Utilities | ✅ Full | Progress, cancellation, logging, completion |
 | Elicitation | ✅ Full | Form, URL, enum, multi-choice modes |
 | Roots | ✅ Full | Server→client request, listChanged |
-| MCP Apps (UI) | ⚠️ Partial | `ui://` resources, templates; interactivity blocked by [host bug](https://github.com/modelcontextprotocol/ext-apps/issues/386) |
+| MCP Apps (UI) | ✅ Full | `ui://` resources, templates, capability negotiation; renders natively in Claude, VS Code, Goose, and ChatGPT |
 
 **Not yet implemented:** Audio content, sampling. Tasks (async job/poll) and server-identity discovery are HTTP-oriented and not applicable to stdio.
 

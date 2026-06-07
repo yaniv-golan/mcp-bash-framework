@@ -1,0 +1,6 @@
+{
+  "name": "ui-interactive-example",
+  "title": "Interactive UI Templates Example",
+  "version": "1.0.0",
+  "description": "Demonstrates interactive MCP Apps templates whose UI calls back into server tools via app.callServerTool()"
+}

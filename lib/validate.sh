@@ -158,6 +158,14 @@ mcp_validate_tools() {
 							errors=$((errors + 1))
 						fi
 
+						# Warn on deprecated flat MCP Apps tool-UI key.
+						local has_flat_ui
+						has_flat_ui="$("${MCPBASH_JSON_TOOL_BIN}" -r 'if (._meta? // {}) | has("ui/resourceUri") then "yes" else "" end' "${meta_path}" 2>/dev/null || printf '')"
+						if [ -n "${has_flat_ui}" ]; then
+							printf '⚠ %s - _meta["ui/resourceUri"] is deprecated; use nested _meta.ui.resourceUri (will be removed before GA)\n' "${rel_meta}"
+							warnings=$((warnings + 1))
+						fi
+
 						if [ -n "${t_name}" ]; then
 							if [[ "${t_name}" != *"-"* && "${t_name}" != *"_"* && "${t_name}" != *"."* ]]; then
 								printf '⚠ %s - namespace recommended (prefix tool name, e.g., myproj-hello)\n' "${rel_meta}"
@@ -248,6 +256,58 @@ mcp_validate_tools() {
 				errors=$((errors + 1))
 			fi
 		done < <(find "${tools_root}" -mindepth 1 -maxdepth 1 -type d -print0 2>/dev/null)
+	fi
+
+	printf '%s %s %s\n' "${errors}" "${warnings}" "${fixes}"
+}
+
+# Validate MCP Apps ui.meta.json files (author-time, non-fatal warnings).
+# Scans tools/<name>/ui/ui.meta.json and ui/<name>/ui.meta.json.
+# Usage: mcp_validate_ui_meta <tools_root> <project_root> <json_tool_available>
+# Returns: "errors warnings fixes" on the last line.
+mcp_validate_ui_meta() {
+	local tools_root="$1"
+	local project_root="$2"
+	local json_tool_available="$3"
+	local errors=0
+	local warnings=0
+	local fixes=0
+
+	if [ "${json_tool_available}" != "true" ]; then
+		printf '%s %s %s\n' "${errors}" "${warnings}" "${fixes}"
+		return 0
+	fi
+
+	# Single source of truth for the spec-recognized permission keys; the
+	# human-readable CSV is derived from it so the two never drift.
+	local allowed_json='["camera","microphone","geolocation","clipboardWrite"]'
+	local allowed_csv
+	allowed_csv="$("${MCPBASH_JSON_TOOL_BIN}" -r 'join(", ")' <<<"${allowed_json}" 2>/dev/null || printf 'camera, microphone, geolocation, clipboardWrite')"
+
+	local meta_file rel bad
+	_mcp_validate_one_ui_meta() {
+		local f="$1"
+		[ -f "${f}" ] || return 0
+		rel="${f#"${project_root}/"}"
+		bad="$("${MCPBASH_JSON_TOOL_BIN}" -r --argjson allowed "${allowed_json}" '
+			((.meta.permissions // {}) | if type == "object" then keys else [] end)
+			- $allowed | join(", ")
+		' "${f}" 2>/dev/null || printf '')"
+		if [ -n "${bad}" ]; then
+			printf '⚠ %s - unknown permission key(s): %s (allowed: %s)\n' "${rel}" "${bad}" "${allowed_csv}"
+			warnings=$((warnings + 1))
+		fi
+	}
+
+	if [ -d "${tools_root}" ]; then
+		while IFS= read -r -d '' meta_file; do
+			_mcp_validate_one_ui_meta "${meta_file}"
+		done < <(find "${tools_root}" -type f -name ui.meta.json -path '*/ui/ui.meta.json' -print0 2>/dev/null)
+	fi
+	if [ -d "${project_root}/ui" ]; then
+		while IFS= read -r -d '' meta_file; do
+			_mcp_validate_one_ui_meta "${meta_file}"
+		done < <(find "${project_root}/ui" -type f -name ui.meta.json -print0 2>/dev/null)
 	fi
 
 	printf '%s %s %s\n' "${errors}" "${warnings}" "${fixes}"

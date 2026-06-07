@@ -1,0 +1,17 @@
+{
+  "description": "Interactive contact form (generated from the built-in 'form' template).",
+  "template": "form",
+  "config": {
+    "title": "New Contact",
+    "fields": [
+      { "name": "name", "type": "text", "label": "Name", "required": true },
+      { "name": "email", "type": "email", "label": "Email", "required": true },
+      { "name": "message", "type": "textarea", "label": "Message" }
+    ],
+    "submitTool": "save-contact"
+  },
+  "meta": {
+    "csp": { "connectDomains": ["https://cdn.jsdelivr.net"], "resourceDomains": ["https://cdn.jsdelivr.net"] },
+    "prefersBorder": true
+  }
+}

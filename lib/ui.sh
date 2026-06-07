@@ -151,7 +151,9 @@ mcp_ui_parse_resource() {
 			csp: ($meta.meta.csp // {}),
 			permissions: ($meta.meta.permissions // {}),
 			prefersBorder: (if $meta.meta.prefersBorder == null then true else $meta.meta.prefersBorder end)
-		}'
+		}
+		+ (if $meta.meta.domain then {domain: $meta.meta.domain} else {} end)
+		+ (if $meta.meta.preferredFrameSize then {preferredFrameSize: $meta.meta.preferredFrameSize} else {} end)'
 }
 
 # --- Registry management ---
@@ -199,12 +201,25 @@ mcp_ui_generate_registry() {
 	printf '%s' "${registry_json}" >"${tmp_file}"
 	mv "${tmp_file}" "${output_file}"
 
+	# MCP Apps (gap #3): UI resources surface in resources/list, so a change to
+	# the ui:// set must trigger notifications/resources/list_changed. Reuse the
+	# resources changed-flag pipeline (single, protocol-gated emission) rather
+	# than a parallel notifier. Only signal on an actual change to a previously
+	# populated registry — not on initial population.
+	local previous_hash="${MCP_UI_REGISTRY_HASH}"
+
 	# Update in-memory cache
 	MCP_UI_REGISTRY_JSON="${registry_json}"
 	MCP_UI_REGISTRY_HASH="${hash}"
 	MCP_UI_REGISTRY_PATH="${output_file}"
 	MCP_UI_TOTAL="$("${MCPBASH_JSON_TOOL_BIN}" -r '.uiResources | length' <<<"${registry_json}" 2>/dev/null || printf '0')"
 	MCP_UI_LAST_SCAN="$(date +%s 2>/dev/null || printf '0')"
+
+	if [ -n "${previous_hash}" ] && [ "${previous_hash}" != "${hash}" ]; then
+		if declare -p MCP_RESOURCES_CHANGED >/dev/null 2>&1; then
+			MCP_RESOURCES_CHANGED=true
+		fi
+	fi
 
 	if declare -F mcp_logging_is_enabled >/dev/null 2>&1 && mcp_logging_is_enabled "debug"; then
 		mcp_logging_debug "${MCP_UI_LOGGER}" "Generated UI registry: ${MCP_UI_TOTAL} resources, hash=${hash:0:8}"
@@ -270,13 +285,36 @@ mcp_ui_get_metadata() {
 
 	local result
 	result="$("${MCPBASH_JSON_TOOL_BIN}" --arg name "${name}" \
-		'.uiResources[] | select(.name == $name) | {
+		'.uiResources[] | select(.name == $name) | ({
 			csp: .csp,
 			permissions: .permissions,
 			prefersBorder: .prefersBorder
-		}' <<<"${MCP_UI_REGISTRY_JSON}" 2>/dev/null || true)"
+		} + (if .domain then {domain: .domain} else {} end))' <<<"${MCP_UI_REGISTRY_JSON}" 2>/dev/null || true)"
 
 	# Return empty object if not found (use variable to avoid bash brace parsing issue)
+	local empty_json='{}'
+	printf '%s' "${result:-$empty_json}"
+}
+
+# Get sibling _meta keys for a UI resource that live alongside `_meta.ui`
+# (currently the MCP-UI render hint "mcpui.dev/ui-preferred-frame-size").
+# Returns: JSON object (possibly empty {}).
+mcp_ui_get_meta_extras() {
+	local name="$1"
+
+	mcp_ui_refresh_registry
+
+	if [ -z "${MCP_UI_REGISTRY_JSON}" ]; then
+		printf '{}'
+		return
+	fi
+
+	local result
+	result="$("${MCPBASH_JSON_TOOL_BIN}" --arg name "${name}" \
+		'.uiResources[] | select(.name == $name)
+			| (if .preferredFrameSize then {"mcpui.dev/ui-preferred-frame-size": .preferredFrameSize} else {} end)' \
+		<<<"${MCP_UI_REGISTRY_JSON}" 2>/dev/null || true)"
+
 	local empty_json='{}'
 	printf '%s' "${result:-$empty_json}"
 }
@@ -385,131 +423,11 @@ mcp_ui_get_content() {
 	return 1
 }
 
-# --- CSP Header Generation ---
-
-# Generate Content-Security-Policy header string from UI resource metadata
-# Usage: mcp_ui_get_csp_header <resource_name>
-# Returns: CSP header string on stdout
-# If no metadata found or no CSP configured, returns a restrictive default
-mcp_ui_get_csp_header() {
-	local name="$1"
-
-	# Default restrictive CSP
-	local default_csp="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'"
-
-	mcp_ui_refresh_registry
-
-	if [ -z "${MCP_UI_REGISTRY_JSON}" ]; then
-		printf '%s' "${default_csp}"
-		return 0
-	fi
-
-	local entry
-	entry="$("${MCPBASH_JSON_TOOL_BIN}" --arg name "${name}" \
-		'.uiResources[] | select(.name == $name)' <<<"${MCP_UI_REGISTRY_JSON}" 2>/dev/null || true)"
-
-	if [ -z "${entry}" ]; then
-		printf '%s' "${default_csp}"
-		return 0
-	fi
-
-	local csp
-	csp="$("${MCPBASH_JSON_TOOL_BIN}" -c '.csp // {}' <<<"${entry}" 2>/dev/null || printf '{}')"
-
-	# Check if CSP is empty
-	local csp_empty
-	csp_empty="$("${MCPBASH_JSON_TOOL_BIN}" -r 'if . == {} then "true" else "false" end' <<<"${csp}" 2>/dev/null || printf 'true')"
-
-	if [ "${csp_empty}" = "true" ]; then
-		printf '%s' "${default_csp}"
-		return 0
-	fi
-
-	# Build CSP from metadata
-	local csp_parts=()
-
-	# Default directives
-	csp_parts+=("default-src 'self'")
-	csp_parts+=("script-src 'self' https://cdn.jsdelivr.net")
-	csp_parts+=("style-src 'self' 'unsafe-inline'")
-	csp_parts+=("img-src 'self' data:")
-
-	# connectDomains → connect-src
-	local connect_domains
-	connect_domains="$("${MCPBASH_JSON_TOOL_BIN}" -r '.connectDomains // [] | if length > 0 then join(" ") else empty end' <<<"${csp}" 2>/dev/null || true)"
-	if [ -n "${connect_domains}" ]; then
-		csp_parts+=("connect-src 'self' ${connect_domains}")
-	else
-		csp_parts+=("connect-src 'self'")
-	fi
-
-	# resourceDomains → font-src, media-src
-	local resource_domains
-	resource_domains="$("${MCPBASH_JSON_TOOL_BIN}" -r '.resourceDomains // [] | if length > 0 then join(" ") else empty end' <<<"${csp}" 2>/dev/null || true)"
-	if [ -n "${resource_domains}" ]; then
-		csp_parts+=("font-src 'self' ${resource_domains}")
-		csp_parts+=("media-src 'self' ${resource_domains}")
-	fi
-
-	# frameDomains → frame-src
-	local frame_domains
-	frame_domains="$("${MCPBASH_JSON_TOOL_BIN}" -r '.frameDomains // [] | if length > 0 then join(" ") else empty end' <<<"${csp}" 2>/dev/null || true)"
-	if [ -n "${frame_domains}" ]; then
-		csp_parts+=("frame-src ${frame_domains}")
-	else
-		csp_parts+=("frame-src 'none'")
-	fi
-
-	# baseUriDomains → base-uri
-	local base_uri_domains
-	base_uri_domains="$("${MCPBASH_JSON_TOOL_BIN}" -r '.baseUriDomains // [] | if length > 0 then join(" ") else empty end' <<<"${csp}" 2>/dev/null || true)"
-	if [ -n "${base_uri_domains}" ]; then
-		csp_parts+=("base-uri 'self' ${base_uri_domains}")
-	else
-		csp_parts+=("base-uri 'self'")
-	fi
-
-	# Always include frame-ancestors 'none' for security
-	csp_parts+=("frame-ancestors 'none'")
-
-	# Join parts with semicolon
-	local IFS='; '
-	printf '%s' "${csp_parts[*]}"
-}
-
-# Build CSP meta JSON object from resource metadata
-# Usage: mcp_ui_get_csp_meta <resource_name>
-# Returns: JSON object for _meta.ui.csp
-mcp_ui_get_csp_meta() {
-	local name="$1"
-
-	mcp_ui_refresh_registry
-
-	# Default empty CSP object
-	local default_csp='{"connectDomains":[],"resourceDomains":[],"frameDomains":[],"baseUriDomains":[]}'
-
-	if [ -z "${MCP_UI_REGISTRY_JSON}" ]; then
-		printf '%s' "${default_csp}"
-		return 0
-	fi
-
-	local entry
-	entry="$("${MCPBASH_JSON_TOOL_BIN}" --arg name "${name}" \
-		'.uiResources[] | select(.name == $name)' <<<"${MCP_UI_REGISTRY_JSON}" 2>/dev/null || true)"
-
-	if [ -z "${entry}" ]; then
-		printf '%s' "${default_csp}"
-		return 0
-	fi
-
-	local csp
-	csp="$("${MCPBASH_JSON_TOOL_BIN}" -c '.csp // {}' <<<"${entry}" 2>/dev/null || printf '{}')"
-
-	# Ensure all required fields exist with defaults
-	"${MCPBASH_JSON_TOOL_BIN}" '{
-		connectDomains: (.connectDomains // []),
-		resourceDomains: (.resourceDomains // []),
-		frameDomains: (.frameDomains // []),
-		baseUriDomains: (.baseUriDomains // [])
-	}' <<<"${csp}"
-}
+# --- CSP handling ---
+#
+# The server does NOT compile a CSP policy string. Per the MCP Apps spec, the
+# author-declared `csp` object is passed through verbatim under `_meta.ui.csp`
+# (see mcp_ui_parse_resource / mcp_ui_get_metadata) and the host compiles and
+# enforces the policy. The previous mcp_ui_get_csp_header / mcp_ui_get_csp_meta
+# helpers compiled a (non-spec) policy string that nothing consumed, and were
+# removed in favor of verbatim passthrough.

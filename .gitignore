@@ -17,3 +17,7 @@ docs/proposals/
 # Claude Code local settings
 .claude/settings.json
 CLAUDE.md
+# Stray local artifacts (not part of the framework runtime)
+.claude/scheduled_tasks.lock
+docs/superpowers/
+lib/python3.11/

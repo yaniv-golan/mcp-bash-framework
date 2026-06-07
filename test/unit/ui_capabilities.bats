@@ -134,3 +134,38 @@ teardown() {
 	mime="$("${MCPBASH_JSON_TOOL_BIN}" -r '.["io.modelcontextprotocol/ui"].mimeTypes[0]' <<< "${result}")"
 	assert_equal "${mime}" "text/html;profile=mcp-app"
 }
+
+@test "capabilities: ui_supports_mcp_app true when profile advertised" {
+	mcp_extensions_init '{"extensions":{"io.modelcontextprotocol/ui":{"mimeTypes":["text/html;profile=mcp-app"]}}}'
+	run mcp_extensions_ui_supports_mcp_app
+	assert_success
+}
+
+@test "capabilities: ui_supports_mcp_app lenient when mimeTypes empty/absent" {
+	mcp_extensions_init '{"extensions":{"io.modelcontextprotocol/ui":{}}}'
+	run mcp_extensions_ui_supports_mcp_app
+	assert_success
+}
+
+@test "capabilities: ui_supports_mcp_app false when profile not in non-empty list" {
+	mcp_extensions_init '{"extensions":{"io.modelcontextprotocol/ui":{"mimeTypes":["text/plain"]}}}'
+	run mcp_extensions_ui_supports_mcp_app
+	assert_failure
+}
+
+@test "capabilities: ui_emit_allowed requires both extension and profile" {
+	# No extension at all -> not allowed
+	mcp_extensions_init '{}'
+	run mcp_ui_emit_allowed
+	assert_failure
+
+	# Extension with matching profile -> allowed
+	mcp_extensions_init '{"extensions":{"io.modelcontextprotocol/ui":{"mimeTypes":["text/html;profile=mcp-app"]}}}'
+	run mcp_ui_emit_allowed
+	assert_success
+
+	# Extension advertising a non-matching list -> not allowed (degrade)
+	mcp_extensions_init '{"extensions":{"io.modelcontextprotocol/ui":{"mimeTypes":["text/plain"]}}}'
+	run mcp_ui_emit_allowed
+	assert_failure
+}

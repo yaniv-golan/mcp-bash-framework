@@ -390,9 +390,9 @@ mcp_ui_template_form() {
       const finalArgs = { ...submitArgs, ...data };
 
       try {
-        const result = await app.callTool('${submit_tool}', finalArgs);
+        const result = await app.callServerTool({ name: '${submit_tool}', arguments: finalArgs });
         showMessage('Form submitted successfully');
-        app.sendMessage('Form submitted: ' + JSON.stringify(data));
+        app.sendMessage({ role: 'user', content: { type: 'text', text: 'Form submitted: ' + JSON.stringify(data) } });
       } catch (err) {
         showMessage('Error: ' + (err.message || 'Unknown error'), true);
       } finally {
@@ -403,7 +403,7 @@ mcp_ui_template_form() {
 
     if (cancelBtn) {
       cancelBtn.addEventListener('click', () => {
-        app.sendMessage('Form cancelled');
+        app.sendMessage({ role: 'user', content: { type: 'text', text: 'Form cancelled' } });
       });
     }
   </script>
@@ -596,8 +596,8 @@ mcp_ui_template_progress() {
         const confirmMsg = '${cancel_confirm}';
         if (confirm(confirmMsg)) {
           try {
-            await app.callTool('${cancel_tool}', {});
-            app.sendMessage('Operation cancelled');
+            await app.callServerTool({ name: '${cancel_tool}', arguments: {} });
+            app.sendMessage({ role: 'user', content: { type: 'text', text: 'Operation cancelled' } });
           } catch (err) {
             console.error('Cancel failed:', err);
           }
@@ -1173,9 +1173,9 @@ TREE_STYLES
 
             const nodeId = content.dataset.nodeId;
             if (onSelectTool) {
-              app.callTool(onSelectTool, { nodeId });
+              app.callServerTool({ name: onSelectTool, arguments: { nodeId } }).catch(e => console.error(e));
             }
-            app.sendMessage('Selected: ' + nodeId);
+            app.sendMessage({ role: 'user', content: { type: 'text', text: 'Selected: ' + nodeId } });
           }
         });
       });
@@ -1447,9 +1447,9 @@ KANBAN_STYLES
         card.addEventListener('click', () => {
           const cardId = card.dataset.cardId;
           if (onCardClickTool) {
-            app.callTool(onCardClickTool, { cardId });
+            app.callServerTool({ name: onCardClickTool, arguments: { cardId } }).catch(e => console.error(e));
           }
-          app.sendMessage('Card clicked: ' + cardId);
+          app.sendMessage({ role: 'user', content: { type: 'text', text: 'Card clicked: ' + cardId } });
         });
 
         // Drag events
@@ -1499,9 +1499,9 @@ KANBAN_STYLES
 
                 // Notify server
                 if (onMoveTool) {
-                  app.callTool(onMoveTool, { cardId, fromColumn: oldColumn, toColumn: newColumn });
+                  app.callServerTool({ name: onMoveTool, arguments: { cardId, fromColumn: oldColumn, toColumn: newColumn } }).catch(e => console.error(e));
                 }
-                app.sendMessage('Moved card ' + cardId + ' to ' + newColumn);
+                app.sendMessage({ role: 'user', content: { type: 'text', text: 'Moved card ' + cardId + ' to ' + newColumn } });
 
                 // Re-render
                 renderBoard(cardsData);

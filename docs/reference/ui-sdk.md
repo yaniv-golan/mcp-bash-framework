@@ -288,58 +288,11 @@ echo "Found ${count} UI resources"
 
 ---
 
-## CSP Functions
+## CSP
 
-### mcp_ui_get_csp_header
+The server does **not** compile a Content-Security-Policy string. Per the MCP Apps spec, the `csp` object you declare in `ui.meta.json` (`connectDomains`, `resourceDomains`, `frameDomains`, `baseUriDomains`) is passed through **verbatim** under `_meta.ui.csp`, and the **host** compiles and enforces the policy. There is no SDK helper to call — just declare `meta.csp` in `ui.meta.json` and it is emitted automatically by `mcp_ui_get_metadata` on `resources/read` and in `resources/list`.
 
-Generate CSP header string for a UI resource.
-
-```bash
-csp="$(mcp_ui_get_csp_header "dashboard")"
-# Returns: default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; ...
-```
-
-**Parameters:**
-- `$1` - Resource name
-
-**Returns:**
-- CSP header string ready for HTTP header
-- Default restrictive policy if no metadata
-
-**Default CSP:**
-```
-default-src 'self';
-script-src 'self' https://cdn.jsdelivr.net;
-style-src 'self' 'unsafe-inline';
-img-src 'self' data:;
-connect-src 'self';
-frame-ancestors 'none';
-base-uri 'self'
-```
-
----
-
-### mcp_ui_get_csp_meta
-
-Build CSP meta JSON for resource response.
-
-```bash
-csp_json="$(mcp_ui_get_csp_meta "dashboard")"
-```
-
-**Parameters:**
-- `$1` - Resource name
-
-**Returns:**
-- JSON object for `_meta.ui.csp`:
-```json
-{
-  "connectDomains": ["api.example.com"],
-  "resourceDomains": [],
-  "frameDomains": [],
-  "baseUriDomains": []
-}
-```
+> Earlier versions exposed `mcp_ui_get_csp_header` / `mcp_ui_get_csp_meta`. These compiled a (non-spec) policy string that nothing consumed and were **removed**; use verbatim `meta.csp` passthrough instead.
 
 ---
 
@@ -453,9 +406,7 @@ mcp_provider_ui_read() {
     return
   }
 
-  local csp_meta
-  csp_meta="$(mcp_ui_get_csp_meta "${name}")"
-
+  # metadata carries the verbatim _meta.ui (csp/permissions/prefersBorder)
   local metadata
   metadata="$(mcp_ui_get_metadata "${name}")"
 

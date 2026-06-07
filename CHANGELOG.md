@@ -5,6 +5,32 @@ All notable changes to mcp-bash-framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+MCP Apps (SEP-1865) sync with the current ext-apps draft spec.
+
+### Added
+
+- **`_meta.ui.domain` passthrough**: declare `meta.domain` in `ui.meta.json` to advertise a stable component origin; emitted on both `resources/list` and `resources/read` (omitted when unset).
+- **`resources/list_changed` on UI registry changes**: adding/removing a `ui://` resource now flips the resources changed-flag and emits `notifications/resources/list_changed` on the next poll (reuses the existing protocol-gated pipeline — single notification, no duplicate).
+- **mimeType-aware UI gating**: UI metadata (`_meta.ui`, tool UI linkage) is now emitted only when the client's advertised `io.modelcontextprotocol/ui` `mimeTypes` accept `text/html;profile=mcp-app`. Lenient: an empty/absent list is treated as supported; only an explicit non-matching list degrades to text-only.
+- **Widget-only result `_meta`**: `mcp_result_with_ui` / `mcp_result_with_ui_data` accept an optional trailing JSON `_meta` argument relayed to the widget but hidden from the model (session ids, locale, hydration).
+- **Render hint passthrough**: `meta.preferredFrameSize` in `ui.meta.json` is emitted as `_meta["mcpui.dev/ui-preferred-frame-size"]` for MCP-UI hosts.
+- **Author-time validation warnings**: `mcp-bash validate` now warns on the deprecated flat `_meta["ui/resourceUri"]` tool key (use nested `_meta.ui.resourceUri`) and on unknown `ui.meta.json` permission keys (outside `camera`/`microphone`/`geolocation`/`clipboardWrite`).
+
+### Removed
+
+- **`mcp_ui_get_csp_header` / `mcp_ui_get_csp_meta`** (BREAKING for direct callers): these compiled a non-spec CSP policy string that nothing consumed. The server passes the author-declared `meta.csp` object through verbatim under `_meta.ui.csp`; the host compiles and enforces CSP.
+
+### Fixed
+
+- **UI templates called a non-existent SDK method.** The generated `form`, `progress`, `tree-view`, and `kanban` templates emitted `app.callTool('tool', args)` (positional, no such method) and `app.sendMessage('<string>')`, which threw at runtime — so interactivity never worked. Fixed to the correct MCP Apps SDK API: `app.callServerTool({ name, arguments })` (with `.catch` on fire-and-forget calls) and `app.sendMessage({ role, content })`. This breakage had been misattributed to "Claude Desktop bug #386" in the docs; #386 was actually the same incorrect call signature (closed COMPLETED). Docs (`docs/concepts/mcp-apps.md`, `docs/guides/ui-resources.md`, `docs/reference/ui-templates.md`, `README`) corrected accordingly; receive-only templates (`data-table`, `diff-viewer`) were unaffected.
+- **`SPEC-COMPLIANCE.md`** now reports MCP Apps support as introduced in v1.1.0 (was incorrectly labeled 0.8.0).
+
+### Changed
+
+- **Docs**: `docs/concepts/mcp-apps.md` documents metadata-location precedence, unsupported content types (external-URL / Remote DOM), and that core MCP Tasks are not implemented.
+
 ## [1.3.0] - 2026-04-15
 
 ### Fixed

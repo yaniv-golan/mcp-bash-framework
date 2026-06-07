@@ -6,6 +6,23 @@ MCP Apps is an extension to the Model Context Protocol that enables servers to d
 >
 > This document describes mcp-bash's implementation of the spec, plus convenience features we've added on top.
 
+## Host support
+
+MCP Apps is an **open, cross-host** standard. The MCP-native UI that mcp-bash
+emits (`text/html;profile=mcp-app` + `_meta.ui.resourceUri`) renders in every
+compliant host — **Claude** (web + desktop), **VS Code**, **Goose**, and
+**ChatGPT**.
+
+ChatGPT in particular supports MCP Apps **natively** (per OpenAI's
+[MCP Apps compatibility in ChatGPT](https://developers.openai.com/apps-sdk/mcp-apps-in-chatgpt)
+docs): it loads the `text/html;profile=mcp-app` template linked via
+`_meta.ui.resourceUri` and talks to it over the standard MCP Apps bridge. The
+older OpenAI Apps SDK conventions — `text/html+skybridge`, `_meta["openai/*"]`,
+and `window.openai` — are now **optional extras** for ChatGPT-specific features
+(e.g. Instant Checkout, host modals), not a requirement for a tool to render.
+**mcp-bash needs no ChatGPT-specific adapter** — its standard output works there
+out of the box.
+
 ## How It Works
 
 ```
@@ -122,12 +139,28 @@ UI resources are delivered via `resources/read`:
           "baseUriDomains": []
         },
         "permissions": {},
-        "prefersBorder": true
+        "prefersBorder": true,
+        "domain": "https://widgets.example.com"
       }
     }
   }]
 }
 ```
+
+`domain` is optional — declare `meta.domain` in `ui.meta.json` to advertise a stable origin for the hosted component (used by hosts for sandbox-origin/CSP). It is omitted when not set.
+
+### Render hint (MCP-UI hosts)
+
+`ui.meta.json` may declare `meta.preferredFrameSize` (an MCP-UI convenience, not part of the MCP Apps MVP). When present it is emitted as a sibling of `_meta.ui` on both `resources/list` and `resources/read`:
+
+```json
+"_meta": {
+  "ui": { "...": "..." },
+  "mcpui.dev/ui-preferred-frame-size": ["600px", "400px"]
+}
+```
+
+MCP-Apps-native hosts ignore the `mcpui.dev/*` key; MCP-UI hosts use it to size the iframe before the first render. It is omitted when not set.
 
 ## Security Model
 
@@ -248,7 +281,7 @@ These features are **not part of the spec** - they're mcp-bash conveniences to m
 | **Auto-discovery** | Scan `tools/*/ui/` and `ui/*/` directories automatically |
 | **Templates** | Generate HTML from JSON config (`form`, `data-table`, `progress`, etc.) |
 | **ui.meta.json** | Declarative metadata file instead of code |
-| **SDK helpers** | Bash functions like `mcp_ui_get_content()`, `mcp_ui_build_csp()` |
+| **SDK helpers** | Bash functions like `mcp_ui_get_content()`, `mcp_ui_get_metadata()` |
 | **Template caching** | Performance optimization for generated HTML |
 
 The spec only requires serving HTML - how you generate that HTML is up to you. Templates are our solution for Bash environments without JS build tools.
@@ -258,18 +291,41 @@ See:
 - [UI Templates Reference](../reference/ui-templates.md) - Template configuration (mcp-bash specific)
 - [UI SDK Reference](../reference/ui-sdk.md) - Bash helper functions (mcp-bash specific)
 
-## Known Limitations
+## Spec Coverage Notes
 
-Current Claude Desktop limitations (as of Jan 2026):
+mcp-bash implements the MCP Apps **server** surface. A few spec/cross-library points worth knowing:
+
+### Metadata location (`_meta.ui` on list vs. read)
+
+The draft spec allows `_meta.ui` (`csp`, `permissions`, `domain`, `prefersBorder`) on **both** the `resources/list` entry and each `resources/read` content item; when present on both, the **content-item value takes precedence** and hosts must check both. mcp-bash mirrors the same author-declared metadata (from `ui.meta.json`) to both locations, so the two are always consistent — there is no per-read dynamic divergence to worry about.
+
+### Content types
+
+mcp-bash serves only inline HTML (`text/html;profile=mcp-app`), which is the MCP Apps MVP. The MCP-UI heritage content types are **not supported**:
+
+| Content type | MIME | Status |
+|--------------|------|--------|
+| Inline HTML | `text/html;profile=mcp-app` | ✅ Supported |
+| External URL | `text/uri-list` | ❌ Not supported (out of MVP) |
+| Remote DOM | `application/vnd.mcp-ui.remote-dom` | ❌ Not supported (out of MVP) |
+
+Need an external-URL or Remote DOM UI for a specific host? Open an issue describing the target host — these can be added as opt-in content types if the spec promotes them or a host requires it.
+
+### Long-running / app-delegated calls (MCP Tasks)
+
+The draft notes that app-delegated long-running tool calls **may** use core MCP Tasks (`tasks/*`) so a poll can survive iframe teardown. mcp-bash does **not** implement core MCP Tasks — tools return synchronous results only. App-delegated long-running work is a separate (non-UI) roadmap item; there is currently no UI-specific Tasks behavior to configure.
+
+## Capabilities & caveats
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| Tool result display | ✅ Works | `ontoolresult` receives final result |
-| Real-time progress | ❌ Blocked | `notifications/progress` not forwarded to UIs |
-| UI-initiated tool calls | ❌ Blocked | `callServerTool()` rejected ([bug #386](https://github.com/modelcontextprotocol/ext-apps/issues/386)) |
-| UI resource polling | ❌ Blocked | `resources/read` rejected (same bug) |
+| Tool result display | ✅ Works | `ontoolresult` receives the final result |
+| UI-initiated tool calls | ✅ Works | `app.callServerTool({ name, arguments })` — use the **object** form |
+| UI resource reads | ✅ Works | `app.readResource(...)` |
+| Real-time progress streaming | ⚠️ Host-dependent / unverified | UIs get `ontoolinput` (start) + `ontoolresult` (end); mid-call `notifications/progress` forwarding varies by host |
+| Interactivity verified in a host | ⚠️ Not yet | mcp-bash emits correct SDK calls; not yet confirmed end-to-end in Claude/ChatGPT |
 
-UIs are currently **receive-only** - they can display tool results but cannot initiate requests.
+> **History:** UI-initiated calls were previously documented as "blocked by Claude Desktop bug #386." That was a **misattribution** — [#386](https://github.com/modelcontextprotocol/ext-apps/issues/386) was an incorrect `callServerTool` call signature (positional instead of `{ name, arguments }`), closed *COMPLETED*. mcp-bash's own templates had the same bug (calling a non-existent `app.callTool`), now fixed.
 
 ## References
 

@@ -161,6 +161,23 @@ EOF
 	warnings=$((warnings + $2))
 	fixes_applied=$((fixes_applied + $3))
 
+	output="$(mcp_validate_ui_meta "${tools_root}" "${project_root}" "${json_tool_available}")"
+	local ui_messages
+	ui_messages="$(printf '%s\n' "${output}" | sed '$d')"
+	if [ -n "${ui_messages}" ]; then
+		if [ "${json_mode}" != "true" ]; then
+			printf '%s\n' "${ui_messages}"
+		else
+			messages_json="$(append_messages "ui" "${ui_messages}" "${messages_json}")"
+		fi
+	fi
+	counts="$(printf '%s\n' "${output}" | tail -n 1)"
+	# shellcheck disable=SC2086  # Intentional splitting of counts
+	set -- ${counts}
+	errors=$((errors + $1))
+	warnings=$((warnings + $2))
+	fixes_applied=$((fixes_applied + $3))
+
 	output="$(mcp_validate_prompts "${prompts_root}" "${json_tool_available}" "${fix}")"
 	if [ "${json_mode}" != "true" ]; then
 		printf '%s\n' "${output}" | sed '$d'
