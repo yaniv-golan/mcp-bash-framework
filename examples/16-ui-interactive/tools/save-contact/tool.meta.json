@@ -1,0 +1,13 @@
+{
+  "name": "save-contact",
+  "description": "Save a contact. Normally called by the new-contact form UI via app.callServerTool, but can also be called directly.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "name": { "type": "string" },
+      "email": { "type": "string" },
+      "message": { "type": "string" }
+    },
+    "required": ["name", "email"]
+  }
+}

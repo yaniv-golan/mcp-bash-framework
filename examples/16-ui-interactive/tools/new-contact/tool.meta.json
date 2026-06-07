@@ -1,0 +1,9 @@
+{
+  "name": "new-contact",
+  "description": "Open an interactive contact form. Submitting the form calls the save-contact tool from inside the UI (app.callServerTool).",
+  "inputSchema": {
+    "type": "object",
+    "properties": {},
+    "required": []
+  }
+}
