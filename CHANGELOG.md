@@ -24,6 +24,7 @@ MCP Apps (SEP-1865) sync with the current ext-apps draft spec.
 
 ### Fixed
 
+- **UI templates called a non-existent SDK method.** The generated `form`, `progress`, `tree-view`, and `kanban` templates emitted `app.callTool('tool', args)` (positional, no such method) and `app.sendMessage('<string>')`, which threw at runtime — so interactivity never worked. Fixed to the correct MCP Apps SDK API: `app.callServerTool({ name, arguments })` (with `.catch` on fire-and-forget calls) and `app.sendMessage({ role, content })`. This breakage had been misattributed to "Claude Desktop bug #386" in the docs; #386 was actually the same incorrect call signature (closed COMPLETED). Docs (`docs/concepts/mcp-apps.md`, `docs/guides/ui-resources.md`, `docs/reference/ui-templates.md`, `README`) corrected accordingly; receive-only templates (`data-table`, `diff-viewer`) were unaffected.
 - **`SPEC-COMPLIANCE.md`** now reports MCP Apps support as introduced in v1.1.0 (was incorrectly labeled 0.8.0).
 
 ### Changed

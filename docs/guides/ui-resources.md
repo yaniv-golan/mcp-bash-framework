@@ -534,17 +534,13 @@ See `test/unit/ui_*.bats` for examples.
 3. Ensure `app.ontoolresult` handler is set BEFORE calling `app.connect()`
 4. Delete `.registry/tools.json` cache to regenerate tool definitions
 
-## Known Limitations
+## Notes & caveats
 
-Due to current Claude Desktop implementation limitations:
+- **UI-initiated requests work.** A UI can call server tools and read resources via the MCP Apps SDK: `app.callServerTool({ name, arguments })` and `app.readResource(...)`. (An earlier version of this guide claimed these were "blocked by a Claude Desktop bug" #386 — that was a **misattribution**; #386 was an incorrect `callServerTool` call signature, now closed *COMPLETED*. Use the object form `{ name, arguments }`, not positional arguments.)
 
-- **Real-time progress updates**: UIs cannot receive `notifications/progress` during tool execution. The UI only receives `ontoolinput` when the tool starts and `ontoolresult` when it completes.
+- **Real-time progress streaming is host-dependent and unverified here.** UIs reliably receive `ontoolinput` (start) and `ontoolresult` (end); whether `notifications/progress` is forwarded to the UI mid-call depends on the host. If you need progress, show an indeterminate spinner until `ontoolresult`.
 
-- **UI-initiated requests**: The MCP Apps SDK methods `callServerTool()` and `resources/read` are blocked by a [Claude Desktop bug](https://github.com/modelcontextprotocol/ext-apps/issues/386). UIs cannot poll for data or call other tools.
-
-**Workarounds**:
-- Use indeterminate progress (spinner) while waiting for results
-- For multi-step operations, break into separate tool calls
+- **End-to-end host verification:** mcp-bash emits the correct MCP Apps SDK calls, but interactivity has not been verified inside a host (Claude/ChatGPT) from this repo — treat interactive flows as beta.
 
 ## Examples
 

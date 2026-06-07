@@ -315,18 +315,17 @@ Need an external-URL or Remote DOM UI for a specific host? Open an issue describ
 
 The draft notes that app-delegated long-running tool calls **may** use core MCP Tasks (`tasks/*`) so a poll can survive iframe teardown. mcp-bash does **not** implement core MCP Tasks — tools return synchronous results only. App-delegated long-running work is a separate (non-UI) roadmap item; there is currently no UI-specific Tasks behavior to configure.
 
-## Known Limitations
-
-Current Claude Desktop limitations (as of Jan 2026):
+## Capabilities & caveats
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| Tool result display | ✅ Works | `ontoolresult` receives final result |
-| Real-time progress | ❌ Blocked | `notifications/progress` not forwarded to UIs |
-| UI-initiated tool calls | ❌ Blocked | `callServerTool()` rejected ([bug #386](https://github.com/modelcontextprotocol/ext-apps/issues/386)) |
-| UI resource polling | ❌ Blocked | `resources/read` rejected (same bug) |
+| Tool result display | ✅ Works | `ontoolresult` receives the final result |
+| UI-initiated tool calls | ✅ Works | `app.callServerTool({ name, arguments })` — use the **object** form |
+| UI resource reads | ✅ Works | `app.readResource(...)` |
+| Real-time progress streaming | ⚠️ Host-dependent / unverified | UIs get `ontoolinput` (start) + `ontoolresult` (end); mid-call `notifications/progress` forwarding varies by host |
+| Interactivity verified in a host | ⚠️ Not yet | mcp-bash emits correct SDK calls; not yet confirmed end-to-end in Claude/ChatGPT |
 
-UIs are currently **receive-only** - they can display tool results but cannot initiate requests.
+> **History:** UI-initiated calls were previously documented as "blocked by Claude Desktop bug #386." That was a **misattribution** — [#386](https://github.com/modelcontextprotocol/ext-apps/issues/386) was an incorrect `callServerTool` call signature (positional instead of `{ name, arguments }`), closed *COMPLETED*. mcp-bash's own templates had the same bug (calling a non-existent `app.callTool`), now fixed.
 
 ## References
 
