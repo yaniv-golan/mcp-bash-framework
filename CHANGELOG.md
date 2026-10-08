@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **`resources/read` and `resources/subscribe` reject a `name` and `uri` that refer to different resources**: The `name` parameter (an mcp-bash extension; MCP addresses reads by `uri`) selected the provider, while the client's `uri` was passed to it unchecked. Any client could therefore send an arbitrary URI to any registered resource's provider. Such requests now fail with `-32602`. Requests with only `name`, only `uri`, or a matching pair are unaffected.
 - **Provider scripts must validate their URI argument**: A provider receives any URI in its declared scheme, not only the URIs the project lists. Check `$1` and exit 3 or 4 for URIs the provider does not serve. See [docs/SECURITY.md](docs/SECURITY.md).
 
 ## [1.3.0] - 2026-04-15

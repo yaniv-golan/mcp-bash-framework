@@ -124,6 +124,9 @@ cat <<'JSON' >"${WORKSPACE}/requests.ndjson"
 {"jsonrpc":"2.0","id":"read-bar","method":"resources/read","params":{"uri":"bar://y"}}
 {"jsonrpc":"2.0","id":"read-upper","method":"resources/read","params":{"uri":"MYAPI://items/1"}}
 {"jsonrpc":"2.0","id":"read-svc-sibling","method":"resources/read","params":{"uri":"svc://other"}}
+{"jsonrpc":"2.0","id":"read-name-only","method":"resources/read","params":{"name":"api-status"}}
+{"jsonrpc":"2.0","id":"read-name-match","method":"resources/read","params":{"name":"api-status","uri":"myapi://status"}}
+{"jsonrpc":"2.0","id":"read-name-mismatch","method":"resources/read","params":{"name":"api-status","uri":"myapi://items/7"}}
 {"jsonrpc":"2.0","id":"shutdown","method":"shutdown"}
 {"jsonrpc":"2.0","id":"exit","method":"exit"}
 JSON
@@ -167,5 +170,13 @@ done
 # A static resource bound to its scheme's provider declares the scheme
 svc_content="$(jq -r 'select(.id=="read-svc-sibling") | .result.contents[0].text // .error.message // empty' "${WORKSPACE}/responses.ndjson")"
 test_assert_eq "${svc_content}" 'svc got svc://other'
+
+# name and uri must refer to the same resource
+name_only="$(jq -r 'select(.id=="read-name-only") | .result.contents[0].text // .error.message // empty' "${WORKSPACE}/responses.ndjson")"
+test_assert_eq "${name_only}" '{"status":"ok","version":"1.0"}'
+name_match="$(jq -r 'select(.id=="read-name-match") | .result.contents[0].text // .error.message // empty' "${WORKSPACE}/responses.ndjson")"
+test_assert_eq "${name_match}" '{"status":"ok","version":"1.0"}'
+mismatch_code="$(jq -r 'select(.id=="read-name-mismatch") | .error.code // empty' "${WORKSPACE}/responses.ndjson")"
+test_assert_eq "${mismatch_code}" '-32602'
 
 printf 'Project-level provider integration test passed.\n'

@@ -1791,6 +1791,16 @@ mcp_resources_read() {
 	}
 	local metadata
 	metadata="$(mcp_resources_metadata_for_name "${name}" 2>/dev/null || echo "{}")"
+	if [ -n "${metadata}" ] && [ "${metadata}" != "{}" ] && [ -n "${explicit_uri}" ]; then
+		# The name selects the provider, so the uri must be that resource's
+		# own; otherwise a client could feed any URI to any provider.
+		local registered_uri
+		registered_uri="$(printf '%s' "${metadata}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.uri // ""')"
+		if [ "${explicit_uri}" != "${registered_uri}" ]; then
+			mcp_resources_error -32602 "Resource uri does not match resource name"
+			return 1
+		fi
+	fi
 	if [ -z "${metadata}" ] || [ "${metadata}" = "{}" ]; then
 		if [ -z "${explicit_uri}" ]; then
 			mcp_resources_error -32002 "Resource not found"
