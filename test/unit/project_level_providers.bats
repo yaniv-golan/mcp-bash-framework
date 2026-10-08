@@ -91,3 +91,77 @@ EOF
 	run mcp_resources_read_via_provider "nonexistent" "nonexistent://test"
 	assert_failure
 }
+
+@test "project_level_providers: provider_from_uri keeps built-in schemes" {
+	assert_equal "$(mcp_resources_provider_from_uri "file:///tmp/x")" "file"
+	assert_equal "$(mcp_resources_provider_from_uri "git+https://example.com/r.git#main:a")" "git"
+	assert_equal "$(mcp_resources_provider_from_uri "https://example.com/x")" "https"
+	assert_equal "$(mcp_resources_provider_from_uri "ui://tool/view")" "ui"
+}
+
+@test "project_level_providers: provider_from_uri maps custom scheme to matching project provider" {
+	printf '#!/usr/bin/env bash\n' >"${MCPBASH_PROVIDERS_DIR}/custom.sh"
+	assert_equal "$(mcp_resources_provider_from_uri "custom://items/123")" "custom"
+}
+
+@test "project_level_providers: provider_from_uri returns empty for custom scheme without provider" {
+	assert_equal "$(mcp_resources_provider_from_uri "custom://items/123")" ""
+}
+
+@test "project_level_providers: provider_from_uri ignores framework-only providers for custom schemes" {
+	printf '#!/usr/bin/env bash\n' >"${MCPBASH_HOME}/providers/custom.sh"
+	assert_equal "$(mcp_resources_provider_from_uri "custom://items/123")" ""
+}
+
+@test "project_level_providers: provider_from_uri rejects schemes with path characters" {
+	mkdir -p "${MCPBASH_PROJECT_ROOT}/evil"
+	printf '#!/usr/bin/env bash\n' >"${MCPBASH_PROJECT_ROOT}/evil/x.sh"
+	assert_equal "$(mcp_resources_provider_from_uri "../evil/x://foo")" ""
+	assert_equal "$(mcp_resources_provider_from_uri "no-scheme-here")" ""
+	assert_equal "$(mcp_resources_provider_from_uri "1bad://foo")" ""
+}
+
+@test "project_level_providers: builtin_provider_for_uri matches only the literal built-in patterns" {
+	assert_equal "$(mcp_resources_builtin_provider_for_uri "git+https://example.com/r.git")" "git"
+	assert_equal "$(mcp_resources_builtin_provider_for_uri "git://example.com/r.git")" ""
+	assert_equal "$(mcp_resources_builtin_provider_for_uri "ui:view")" ""
+	assert_equal "$(mcp_resources_builtin_provider_for_uri "https:x")" ""
+}
+
+_scheme_gate_stubs() {
+	MCPBASH_JSON_TOOL_BIN="$(command -v jq)"
+	MCP_RESOURCES_REGISTRY_JSON='{"items":[{"name":"s","uri":"svc://status","provider":"svc"},{"name":"b","uri":"bar://x","provider":"svc"}]}'
+	mcp_resources_templates_refresh_registry() {
+		MCP_RESOURCES_TEMPLATES_REGISTRY_JSON='{"items":[{"name":"t","uriTemplate":"custom://items/{id}"},{"name":"e","uriTemplate":"{scheme}://x"}]}'
+	}
+}
+
+@test "project_level_providers: scheme_declared accepts template and self-bound static schemes" {
+	_scheme_gate_stubs
+	run mcp_resources_scheme_declared "custom"
+	assert_success
+	run mcp_resources_scheme_declared "svc"
+	assert_success
+}
+
+@test "project_level_providers: scheme_declared rejects undeclared, other-bound and case-variant schemes" {
+	_scheme_gate_stubs
+	run mcp_resources_scheme_declared "stray"
+	assert_failure
+	run mcp_resources_scheme_declared "bar"
+	assert_failure
+	run mcp_resources_scheme_declared "CUSTOM"
+	assert_failure
+	run mcp_resources_scheme_declared "{scheme}"
+	assert_failure
+}
+
+@test "project_level_providers: scheme_declared fails closed when templates registry cannot load" {
+	_scheme_gate_stubs
+	mcp_resources_templates_refresh_registry() {
+		MCP_RESOURCES_TEMPLATES_REGISTRY_JSON='{"items":[{"name":"t","uriTemplate":"custom://items/{id}"}]}'
+		return 1
+	}
+	run mcp_resources_scheme_declared "custom"
+	assert_failure
+}

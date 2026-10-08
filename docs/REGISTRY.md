@@ -128,7 +128,7 @@ Entries describe resources and providers. Paths are relative to `MCPBASH_RESOURC
 ```
 
 - Metadata that cannot be parsed (missing `uri` or `uriTemplate`, unsupported `provider`, non-object `arguments`, unreadable `.meta.json`) is skipped and logged as a warning through the structured logging subsystem.
-- When no `provider` is specified, the scanner infers one from the URI scheme (`file://`, `git+https://`, `https://`); unrecognised schemes default to `file` and are rejected if the provider script is unavailable.
+- When no `provider` is specified, the scanner infers one from the URI scheme (`file://`, `git+https://`, `https://`, `ui://`). Any other scheme maps to a project provider of the same name when `${MCPBASH_PROVIDERS_DIR}/<scheme>.sh` exists (e.g., `myapi://status` → `providers/myapi.sh`); otherwise it defaults to `file` and is rejected if the provider script is unavailable. The file name must match the scheme exactly, including case. Manual registration (`register.sh` / `register.json`) does not infer custom providers: set `provider` explicitly.
 - Discovery records `name`, `description`, `path`, `uri`, `mimeType`, and `provider`; argument/template schemas are not persisted today.
 - The `file` provider fails closed if no resource roots are configured; missing/non-existent roots are ignored, so ensure allowed roots exist before use.
 - Subscription notifications (`notifications/resources/updated`) are spec-shaped and only include `params.uri`; clients should call `resources/read` to fetch the updated content.
@@ -157,7 +157,7 @@ my-project/
 
 Project providers follow the same contract as framework providers:
 
-**Arguments**: Provider receives the full URI as `$1`
+**Arguments**: Provider receives the full URI as `$1`. This can be any URI in the provider's scheme, not only the URIs the project registers, so validate it and exit `3` or `4` for URIs the provider does not serve.
 
 **Exit codes**:
 - `0`: Success (content on stdout)

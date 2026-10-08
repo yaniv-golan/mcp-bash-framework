@@ -5,6 +5,16 @@ All notable changes to mcp-bash-framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **`resources/read` of a templated resource with a custom URI scheme now reaches the project provider**: Template metadata never enters the static resource registry, so reading a URI expanded from a template such as `myapi://items/{id}` found no `provider` and fell back to `file`, which returned `-32002 Resource not found`. Provider inference now maps an unrecognised scheme to `${MCPBASH_PROVIDERS_DIR}/<scheme>.sh` when that script exists. Statically discovered resources with a custom scheme and no `provider` field use the same inference. For a client-supplied URI this routing applies only to schemes the project declares, through a resource template or a static resource bound to that provider. A script in `providers/` is not reachable by naming its scheme alone. Schemes are matched case-sensitively. The scanner change also means a statically discovered `ui://` resource with no `provider` field now uses the `ui` provider, not `file` (which could not serve it).
+
+### Security
+
+- **Provider scripts must validate their URI argument**: A provider receives any URI in its declared scheme, not only the URIs the project lists. Check `$1` and exit 3 or 4 for URIs the provider does not serve. See [docs/SECURITY.md](docs/SECURITY.md).
+
 ## [1.3.0] - 2026-04-15
 
 ### Fixed

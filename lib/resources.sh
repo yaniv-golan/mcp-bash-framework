@@ -626,11 +626,8 @@ mcp_resources_scan() {
 			fi
 
 			if [ -z "${provider}" ]; then
-				provider="file"
-				case "${uri}" in
-				https://*) provider="https" ;;
-				git+https://*) provider="git" ;;
-				esac
+				provider="$(mcp_resources_provider_from_uri "${uri}")"
+				provider="${provider:-file}"
 			fi
 
 			if grep -Fxq "${name}" "${names_seen_file}"; then
@@ -1537,7 +1534,7 @@ mcp_resources_templates_list() {
 	printf '%s' "${result_json}"
 }
 
-mcp_resources_provider_from_uri() {
+mcp_resources_builtin_provider_for_uri() {
 	local uri="$1"
 	case "${uri}" in
 	file://*) echo "file" ;;
@@ -1546,6 +1543,51 @@ mcp_resources_provider_from_uri() {
 	ui://*) echo "ui" ;;
 	*) echo "" ;;
 	esac
+}
+
+mcp_resources_provider_from_uri() {
+	local uri="$1"
+	local builtin_provider
+	builtin_provider="$(mcp_resources_builtin_provider_for_uri "${uri}")"
+	case "${builtin_provider}" in
+	"")
+		# Custom schemes map to a project provider of the same name
+		# (xyz://... -> providers/xyz.sh). The scheme grammar (RFC 3986)
+		# excludes "/", so the lookup cannot leave the providers dir.
+		# Callers handling client-supplied URIs must also check
+		# mcp_resources_scheme_declared before using the result.
+		local scheme="${uri%%:*}"
+		if [ "${scheme}" != "${uri}" ] && [[ "${scheme}" =~ ^[A-Za-z][A-Za-z0-9+.-]*$ ]] \
+			&& [ -n "${MCPBASH_PROVIDERS_DIR:-}" ] && [ -f "${MCPBASH_PROVIDERS_DIR}/${scheme}.sh" ]; then
+			echo "${scheme}"
+		else
+			echo ""
+		fi
+		;;
+	*) echo "${builtin_provider}" ;;
+	esac
+}
+
+# Succeeds when the project declares <scheme> for its same-named provider:
+# a resource template with that literal scheme, or a static resource with
+# that scheme bound to provider <scheme>. Comparison is exact (case-sensitive)
+# so the result does not depend on filesystem case folding. Fails closed when
+# the templates registry cannot be loaded.
+mcp_resources_scheme_declared() {
+	local scheme="$1"
+	[ -n "${scheme}" ] || return 1
+	if [ -n "${MCP_RESOURCES_REGISTRY_JSON:-}" ] && printf '%s' "${MCP_RESOURCES_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -e --arg s "${scheme}" '
+		any(.items[]?; (.uri // "" | split(":")[0]) == $s and .provider == $s)
+	' >/dev/null 2>&1; then
+		return 0
+	fi
+	if ! mcp_resources_templates_refresh_registry; then
+		return 1
+	fi
+	[ -n "${MCP_RESOURCES_TEMPLATES_REGISTRY_JSON:-}" ] || return 1
+	printf '%s' "${MCP_RESOURCES_TEMPLATES_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -e --arg s "${scheme}" '
+		any(.items[]?.uriTemplate // ""; test("^[A-Za-z][A-Za-z0-9+.-]*:") and split(":")[0] == $s)
+	' >/dev/null 2>&1
 }
 
 mcp_resources_read_file() {
@@ -1778,12 +1820,17 @@ mcp_resources_read() {
 	fi
 	if [ -z "${provider}" ]; then
 		local inferred
-		inferred="$(mcp_resources_provider_from_uri "${uri}")"
-		if [ -n "${inferred}" ]; then
-			provider="${inferred}"
-		else
-			provider="file"
+		inferred="$(mcp_resources_builtin_provider_for_uri "${uri}")"
+		if [ -z "${inferred}" ]; then
+			# The URI is client-supplied: only route it to a project provider
+			# whose scheme the project declares.
+			inferred="$(mcp_resources_provider_from_uri "${uri}")"
+			if [ -n "${inferred}" ] && ! mcp_resources_scheme_declared "${inferred}"; then
+				mcp_logging_debug "${MCP_RESOURCES_LOGGER}" "Scheme '${inferred}' has a provider script but no declared resource or template"
+				inferred=""
+			fi
 		fi
+		provider="${inferred:-file}"
 	fi
 	if mcp_logging_is_enabled "debug"; then
 		if mcp_logging_verbose_enabled; then
