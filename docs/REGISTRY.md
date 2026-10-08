@@ -172,6 +172,7 @@ Project providers follow the same contract as framework providers:
 - `MCPBASH_PROJECT_ROOT` - Project root directory
 - `MCPBASH_PROVIDERS_DIR` - Providers directory
 - `MCP_RESOURCES_ROOTS` - Allowed resource roots (colon-separated)
+- `MCPBASH_JSON_TOOL_BIN` / `MCPBASH_JSON_TOOL` - The JSON tool the server selected (jq or gojq)
 - Standard paths: `PATH`, `HOME`, `TMPDIR`, `LANG`, `LC_*`
 
 ### Example Provider

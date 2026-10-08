@@ -1698,6 +1698,9 @@ mcp_resources_read_via_provider() {
 				"MCPBASH_PROVIDERS_DIR=${MCPBASH_PROVIDERS_DIR:-}"
 				"MCP_RESOURCES_ROOTS=${MCP_RESOURCES_ROOTS:-${MCPBASH_RESOURCES_DIR}}"
 			)
+			# Every provider gets the JSON tool selection, as completion providers do.
+			if [ -n "${MCPBASH_JSON_TOOL_BIN-}" ]; then env_pairs+=("MCPBASH_JSON_TOOL_BIN=${MCPBASH_JSON_TOOL_BIN-}"); fi
+			if [ -n "${MCPBASH_JSON_TOOL-}" ]; then env_pairs+=("MCPBASH_JSON_TOOL=${MCPBASH_JSON_TOOL-}"); fi
 			case "${provider}" in
 			git)
 				if [ -n "${SSH_AUTH_SOCK-}" ]; then env_pairs+=("SSH_AUTH_SOCK=${SSH_AUTH_SOCK-}"); fi
@@ -1710,9 +1713,6 @@ mcp_resources_read_via_provider() {
 				if [ -n "${CURL_CA_BUNDLE-}" ]; then env_pairs+=("CURL_CA_BUNDLE=${CURL_CA_BUNDLE-}"); fi
 				;;
 			ui)
-				# UI provider needs JSON tooling for template generation
-				if [ -n "${MCPBASH_JSON_TOOL_BIN-}" ]; then env_pairs+=("MCPBASH_JSON_TOOL_BIN=${MCPBASH_JSON_TOOL_BIN-}"); fi
-				if [ -n "${MCPBASH_JSON_TOOL-}" ]; then env_pairs+=("MCPBASH_JSON_TOOL=${MCPBASH_JSON_TOOL-}"); fi
 				if [ -n "${MCPBASH_STATE_DIR-}" ]; then env_pairs+=("MCPBASH_STATE_DIR=${MCPBASH_STATE_DIR-}"); fi
 				if [ -n "${MCPBASH_REGISTRY_DIR-}" ]; then env_pairs+=("MCPBASH_REGISTRY_DIR=${MCPBASH_REGISTRY_DIR-}"); fi
 				if [ -n "${MCPBASH_TOOLS_DIR-}" ]; then env_pairs+=("MCPBASH_TOOLS_DIR=${MCPBASH_TOOLS_DIR-}"); fi

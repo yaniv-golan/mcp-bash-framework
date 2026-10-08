@@ -32,6 +32,9 @@ myapi://status)
 myapi://items/*)
     printf '{"item":"%s"}' "${uri#myapi://items/}"
     ;;
+myapi://env)
+    printf 'json_tool_bin=%s' "${MCPBASH_JSON_TOOL_BIN:+set}"
+    ;;
 myapi://*)
     printf 'Unknown resource\n' >&2
     exit 3
@@ -119,6 +122,7 @@ cat <<'JSON' >"${WORKSPACE}/requests.ndjson"
 {"jsonrpc":"2.0","id":"list","method":"resources/list","params":{}}
 {"jsonrpc":"2.0","id":"read","method":"resources/read","params":{"uri":"myapi://status"}}
 {"jsonrpc":"2.0","id":"read-templated","method":"resources/read","params":{"uri":"myapi://items/42"}}
+{"jsonrpc":"2.0","id":"read-env","method":"resources/read","params":{"uri":"myapi://env"}}
 {"jsonrpc":"2.0","id":"read-stray","method":"resources/read","params":{"uri":"stray://x"}}
 {"jsonrpc":"2.0","id":"read-git-plain","method":"resources/read","params":{"uri":"git://example.com/repo"}}
 {"jsonrpc":"2.0","id":"read-bar","method":"resources/read","params":{"uri":"bar://y"}}
@@ -155,6 +159,10 @@ test_assert_eq "${read_content}" '{"status":"ok","version":"1.0"}'
 # Verify a URI expanded from a custom-scheme template routes to the project provider
 templated_content="$(jq -r 'select(.id=="read-templated") | .result.contents[0].text // .error.message // empty' "${WORKSPACE}/responses.ndjson")"
 test_assert_eq "${templated_content}" '{"item":"42"}'
+
+# Every provider receives the JSON tool selection, not only the ui provider
+env_content="$(jq -r 'select(.id=="read-env") | .result.contents[0].text // .error.message // empty' "${WORKSPACE}/responses.ndjson")"
+test_assert_eq "${env_content}" 'json_tool_bin=set'
 
 # Undeclared schemes never reach their provider script
 for case_id in read-stray read-git-plain read-bar read-upper; do

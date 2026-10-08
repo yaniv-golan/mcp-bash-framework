@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **`resources/read` of a templated resource with a custom URI scheme now reaches the project provider**: Template metadata never enters the static resource registry, so reading a URI expanded from a template such as `myapi://items/{id}` found no `provider` and fell back to `file`, which returned `-32002 Resource not found`. Provider inference now maps an unrecognised scheme to `${MCPBASH_PROVIDERS_DIR}/<scheme>.sh` when that script exists. Statically discovered resources with a custom scheme and no `provider` field use the same inference. For a client-supplied URI this routing applies only to schemes the project declares, through a resource template or a static resource bound to that provider. A script in `providers/` is not reachable by naming its scheme alone. Schemes are matched case-sensitively. The scanner change also means a statically discovered `ui://` resource with no `provider` field now uses the `ui` provider, not `file` (which could not serve it).
+- **Resource providers now receive `MCPBASH_JSON_TOOL_BIN` and `MCPBASH_JSON_TOOL`**: Previously only the `ui` provider got them, so provider scripts using `${MCPBASH_JSON_TOOL_BIN:-jq}` ran with them unset. Completion providers already received both.
 
 ### Security
 
