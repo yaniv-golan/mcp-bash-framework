@@ -901,6 +901,13 @@ mcp_core_dispatch_object() {
 	if [ "${method}" = "resources/subscribe" ]; then
 		MCPBASH_RESOURCE_POLL_WANTED=true
 	fi
+	case "${method}" in
+	resources/subscribe | resources/unsubscribe)
+		# Runs here, in request order, before either worker starts; see
+		# mcp_resources_subscription_note_dispatch.
+		mcp_resources_subscription_note_dispatch "${method}" "${json_line}" "${id_json}" || true
+		;;
+	esac
 
 	if [ "${async}" = "true" ]; then
 		mcp_core_spawn_worker "${handler}" "${method}" "${json_line}" "${id_json}"

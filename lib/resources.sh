@@ -298,6 +298,82 @@ mcp_resources_subscription_remove_by_uri() {
 	printf '%s' "${removed}"
 }
 
+# Subscribe and unsubscribe run in separate workers, and a subscribe stores its
+# record only after its initial read. An unsubscribe {uri} sent right after a
+# subscribe can therefore finish first, find no record, and leave the
+# subscription live. The main shell sees requests in order, so it settles the
+# order here, at dispatch, before either worker starts:
+# - subscribe: note it as pending (resource_subscription_pending.<request key>,
+#   holding the requested uri);
+# - unsubscribe {uri}: mark every pending subscribe to that uri as revoked
+#   (resource_subscription_revoked.<request key>).
+# The subscribe worker stores its record, then removes it again if it was
+# revoked (mcp_resources_subscription_settle_pending). Storing before checking
+# leaves no gap: a record stored before the unsubscribe was dispatched is found
+# by the unsubscribe worker's removal by uri; one stored after it sees the mark.
+# A subscribe by name only has no requested uri to match and is not noted.
+mcp_resources_subscription_pending_path() {
+	printf '%s/resource_subscription_pending.%s' "${MCPBASH_STATE_DIR}" "$1"
+}
+
+mcp_resources_subscription_revoked_path() {
+	printf '%s/resource_subscription_revoked.%s' "${MCPBASH_STATE_DIR}" "$1"
+}
+
+# Main shell only. Args: method json_line id_json
+mcp_resources_subscription_note_dispatch() {
+	local method="$1"
+	local json_line="$2"
+	local id_json="$3"
+	local key uri path pending_key
+
+	[ -n "${MCPBASH_STATE_DIR:-}" ] || return 0
+	if mcp_runtime_is_minimal_mode; then
+		return 0
+	fi
+	uri="$(mcp_json_extract_resource_uri "${json_line}" 2>/dev/null)" || uri=""
+	[ -n "${uri}" ] || return 0
+
+	case "${method}" in
+	resources/subscribe)
+		key="$(mcp_ids_key_from_json "${id_json}")"
+		[ -n "${key}" ] || return 0
+		# A request id can be reused; drop a mark left by an earlier request.
+		rm -f "$(mcp_resources_subscription_revoked_path "${key}")"
+		printf '%s' "${uri}" >"$(mcp_resources_subscription_pending_path "${key}")"
+		;;
+	resources/unsubscribe)
+		for path in "${MCPBASH_STATE_DIR}"/resource_subscription_pending.*; do
+			[ -f "${path}" ] || continue
+			if printf '%s' "${uri}" | cmp -s - "${path}"; then
+				pending_key="${path#"${MCPBASH_STATE_DIR}/resource_subscription_pending."}"
+				: >"$(mcp_resources_subscription_revoked_path "${pending_key}")"
+			fi
+		done
+		;;
+	esac
+	return 0
+}
+
+# Subscribe worker, after its record is stored (or the subscribe failed).
+# Removes the record when an unsubscribe for its uri was dispatched while it
+# was pending, then clears the markers. Returns 0 when the record was revoked.
+# Args: request_key [subscription_id]
+mcp_resources_subscription_settle_pending() {
+	local key="$1"
+	local subscription_id="${2:-}"
+	local revoked=1
+	[ -n "${key}" ] && [ -n "${MCPBASH_STATE_DIR:-}" ] || return 1
+	if [ -f "$(mcp_resources_subscription_revoked_path "${key}")" ]; then
+		revoked=0
+		if [ -n "${subscription_id}" ]; then
+			mcp_resources_subscription_remove "${subscription_id}" || true
+		fi
+	fi
+	rm -f "$(mcp_resources_subscription_pending_path "${key}")" "$(mcp_resources_subscription_revoked_path "${key}")"
+	return "${revoked}"
+}
+
 mcp_resources_subscription_store_payload() {
 	local subscription_id="$1"
 	local name="$2"

@@ -37,6 +37,23 @@ POLL_SECS=1
 for f in live sub2 sub3 nl other; do
 	printf 'v1\n' >"${RES}/${f}.txt"
 done
+
+# A provider whose reads take a while, so a subscribe's initial read is still
+# running when a following unsubscribe arrives.
+SLOW_URI="slow://item"
+SLOW_DATA="${WORKSPACE}/slow.data"
+printf 'v1\n' >"${SLOW_DATA}"
+mkdir -p "${WORKSPACE}/providers"
+cat >"${WORKSPACE}/providers/slow.sh" <<EOF
+#!/usr/bin/env bash
+sleep 2
+cat "${SLOW_DATA}"
+EOF
+chmod +x "${WORKSPACE}/providers/slow.sh"
+printf 'placeholder for the slow provider\n' >"${RES}/slow.txt"
+cat >"${RES}/slow.meta.json" <<EOF
+{"name": "slow-item", "uri": "${SLOW_URI}", "mimeType": "text/plain", "provider": "slow"}
+EOF
 uri_of() { printf 'file://%s/%s.txt' "${RES}" "$1"; }
 
 PIPE_IN="${WORKSPACE}/pipe_in"
@@ -173,6 +190,26 @@ if jq -e -s 'any(.[]; .id == "sub-nl" and has("result"))' "${RESPONSES}" >/dev/n
 	if [ "$(updates_for "${OTHER_URI}")" != "0" ]; then
 		fail "a newline in the subscribe name redirected the subscription to another uri"
 	fi
+fi
+
+# --- 4. An unsubscribe sent right after a subscribe wins. ---
+# Requests run in parallel workers, so the unsubscribe finishes while the
+# subscribe's initial read is still running. The subscription must still end
+# up removed: no record is left and no update is sent.
+send "{\"jsonrpc\":\"2.0\",\"id\":\"sub-race\",\"method\":\"resources/subscribe\",\"params\":{\"uri\":\"${SLOW_URI}\"}}"
+send "{\"jsonrpc\":\"2.0\",\"id\":\"unsub-race\",\"method\":\"resources/unsubscribe\",\"params\":{\"uri\":\"${SLOW_URI}\"}}"
+wait_for '.id == "unsub-race"' 10 || fail "unsubscribe after subscribe: no response"
+wait_for '.id == "sub-race"' 15 || fail "subscribe before unsubscribe: no response"
+jq -e -s 'any(.[]; .id == "sub-race" and has("result"))' "${RESPONSES}" >/dev/null \
+	|| fail "subscribe before unsubscribe must still succeed"
+slow_records="$(cat "${STATE_DIR}"/resource_subscription.* 2>/dev/null | jq -s --arg u "${SLOW_URI}" '[.[] | select(.uri == $u or .requested_uri == $u)] | length')"
+if [ "${slow_records}" != "0" ]; then
+	fail "a subscribe overtaken by its unsubscribe left ${slow_records} live subscription(s)"
+fi
+printf 'v2\n' >"${SLOW_DATA}"
+sleep $((POLL_SECS * 3 + 4))
+if [ "$(updates_for "${SLOW_URI}")" != "0" ]; then
+	fail "update sent for a subscription that was unsubscribed right after subscribing"
 fi
 
 # --- Every update names a resource. ---

@@ -93,7 +93,10 @@ mcp_handle_resources() {
 			return 0
 		fi
 		subscription_id="$(mcp_resources_generate_subscription_id)"
+		local key
+		key="$(mcp_ids_key_from_json "${id}")"
 		if ! mcp_resources_read "${name}" "${uri}"; then
+			mcp_resources_subscription_settle_pending "${key}" || true
 			mcp_logging_error "${logger}" "Initial read failed code=${_MCP_RESOURCES_ERROR_CODE:-?} msg=${_MCP_RESOURCES_ERROR_MESSAGE:-?}"
 			local code
 			code="$(mcp_handler_normalize_error_code "${_MCP_RESOURCES_ERROR_CODE:-}")"
@@ -115,8 +118,11 @@ mcp_handle_resources() {
 		# The requested uri is kept too, so resources/unsubscribe {uri} matches
 		# even when the provider reports a different (canonical) uri.
 		mcp_resources_subscription_store_payload "${subscription_id}" "${name}" "${effective_uri}" "${result_json}" "${uri}"
-		local key
-		key="$(mcp_ids_key_from_json "${id}")"
+		# An unsubscribe for this uri dispatched after this subscribe may have
+		# finished before the record existed; it marked this request revoked.
+		if mcp_resources_subscription_settle_pending "${key}" "${subscription_id}"; then
+			mcp_logging_debug "${logger}" "Subscribe overtaken by unsubscribe subscription=${subscription_id}"
+		fi
 		if [ -n "${key}" ] && mcp_ids_is_cancelled_key "${key}"; then
 			mcp_logging_debug "${logger}" "Subscribe cancelled before response subscription=${subscription_id}"
 			if [ -n "${MCPBASH_STATE_DIR:-}" ]; then

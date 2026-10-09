@@ -140,3 +140,48 @@ stub_read_ok() {
 	run cat "${SENT}"
 	assert_output ""
 }
+
+# Dispatch-order markers: the main shell notes subscribes and unsubscribes in
+# request order, before their workers run in parallel.
+load_dispatch_helpers() {
+	# shellcheck source=lib/ids.sh
+	# shellcheck disable=SC1091
+	. "${MCPBASH_HOME}/lib/ids.sh"
+	# shellcheck source=lib/json.sh
+	# shellcheck disable=SC1091
+	. "${MCPBASH_HOME}/lib/json.sh"
+	mcp_runtime_is_minimal_mode() { return 1; }
+}
+
+@test "subscriptions: an unsubscribe dispatched after a pending subscribe removes its later record" {
+	load_dispatch_helpers
+	mcp_resources_subscription_note_dispatch resources/subscribe \
+		'{"jsonrpc":"2.0","id":"s1","method":"resources/subscribe","params":{"uri":"file:///a.txt"}}' '"s1"'
+	mcp_resources_subscription_note_dispatch resources/unsubscribe \
+		'{"jsonrpc":"2.0","id":"u1","method":"resources/unsubscribe","params":{"uri":"file:///a.txt"}}' '"u1"'
+	# The subscribe worker stores its record only now, after the unsubscribe.
+	mcp_resources_subscription_store "sub-a" "" "file:///a.txt" "fp" "file:///a.txt"
+
+	run mcp_resources_subscription_settle_pending "$(mcp_ids_key_from_json '"s1"')" "sub-a"
+	assert_success
+	assert [ ! -e "$(record_path sub-a)" ]
+	run ls "${MCPBASH_STATE_DIR}"
+	assert_output ""
+}
+
+@test "subscriptions: an unsubscribe for another uri or dispatched earlier leaves a subscribe alone" {
+	load_dispatch_helpers
+	mcp_resources_subscription_note_dispatch resources/unsubscribe \
+		'{"jsonrpc":"2.0","id":"u0","method":"resources/unsubscribe","params":{"uri":"file:///a.txt"}}' '"u0"'
+	mcp_resources_subscription_note_dispatch resources/subscribe \
+		'{"jsonrpc":"2.0","id":"s1","method":"resources/subscribe","params":{"uri":"file:///a.txt"}}' '"s1"'
+	mcp_resources_subscription_note_dispatch resources/unsubscribe \
+		'{"jsonrpc":"2.0","id":"u1","method":"resources/unsubscribe","params":{"uri":"file:///b.txt"}}' '"u1"'
+	mcp_resources_subscription_store "sub-a" "" "file:///a.txt" "fp" "file:///a.txt"
+
+	run mcp_resources_subscription_settle_pending "$(mcp_ids_key_from_json '"s1"')" "sub-a"
+	assert_failure
+	assert [ -f "$(record_path sub-a)" ]
+	run ls "${MCPBASH_STATE_DIR}"
+	assert_output "resource_subscription.sub-a"
+}
