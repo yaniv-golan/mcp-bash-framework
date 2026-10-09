@@ -143,9 +143,16 @@ mcp_tools_policy_check() {
 mcp_tools_policy_hook_bypasses_default() {
 	local policy_path="$1"
 	[ -f "${policy_path}" ] || return 1
+	# Heuristic: drop comments first so a mention in a comment does not count
+	# as a call. Full-line comments and "#" after whitespace are stripped;
+	# "$#" and "${#x}" survive (no whitespace before "#"). A "#" inside a
+	# quoted string after whitespace is also cut, which can only cause a
+	# spurious warning, never hide one.
+	local code=""
+	code="$(sed -e 's/^[[:space:]]*#.*//' -e 's/[[:space:]]#.*//' "${policy_path}")" || return 1
 	# `mcp_tools_policy_check_default()` does not match: "_" follows "check".
-	grep -Eq '^[[:space:]]*(function[[:space:]]+)?mcp_tools_policy_check[[:space:]]*(\(\)|\{|$)' "${policy_path}" || return 1
-	if grep -q 'mcp_tools_policy_check_default' "${policy_path}"; then
+	printf '%s\n' "${code}" | grep -Eq '^[[:space:]]*(function[[:space:]]+)?mcp_tools_policy_check[[:space:]]*(\(\)|\{|$)' || return 1
+	if printf '%s\n' "${code}" | grep -q 'mcp_tools_policy_check_default'; then
 		return 1
 	fi
 	return 0

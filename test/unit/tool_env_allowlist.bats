@@ -236,3 +236,43 @@ EOF2
 	run "${MCPBASH_HOME}/bin/mcp-bash" doctor
 	refute_output --partial "policy.sh replaces the default tool policy"
 }
+
+@test "tool_env_allowlist: a policy.sh that only mentions the default in comments still warns" {
+	cd "${PROJECT_ROOT}"
+	cat >"${PROJECT_ROOT}/server.d/policy.sh" <<'EOF2'
+# Remember to call mcp_tools_policy_check_default here eventually
+mcp_tools_policy_check() {
+	return 0
+}
+EOF2
+	run "${MCPBASH_HOME}/bin/mcp-bash" validate
+	assert_output --partial "policy.sh replaces the default tool policy"
+	run "${MCPBASH_HOME}/bin/mcp-bash" doctor
+	assert_output --partial "policy.sh replaces the default tool policy"
+
+	cat >"${PROJECT_ROOT}/server.d/policy.sh" <<'EOF2'
+mcp_tools_policy_check() {
+	return 0 # TODO: mcp_tools_policy_check_default "$@" || return 1
+}
+EOF2
+	run "${MCPBASH_HOME}/bin/mcp-bash" validate
+	assert_output --partial "policy.sh replaces the default tool policy"
+	run "${MCPBASH_HOME}/bin/mcp-bash" doctor
+	assert_output --partial "policy.sh replaces the default tool policy"
+}
+
+@test "tool_env_allowlist: a real default call with a trailing comment does not warn" {
+	cd "${PROJECT_ROOT}"
+	cat >"${PROJECT_ROOT}/server.d/policy.sh" <<'EOF2'
+# Project policy: default checks first, then read-only mode.
+mcp_tools_policy_check() { # layered on the default
+	mcp_tools_policy_check_default "$@" || return 1 # keep this first
+	[ "$#" -ge 1 ] || return 1
+	return 0
+}
+EOF2
+	run "${MCPBASH_HOME}/bin/mcp-bash" validate
+	refute_output --partial "policy.sh replaces the default tool policy"
+	run "${MCPBASH_HOME}/bin/mcp-bash" doctor
+	refute_output --partial "policy.sh replaces the default tool policy"
+}
