@@ -80,6 +80,24 @@ setup() {
 	assert_equal "/usr/bin:/bin|C|C|" "${out}"
 }
 
+@test "env_curated: provider env never keeps MCPBASH_REMOTE_TOKEN*, even when allowlisted" {
+	local mode
+	for mode in isolate allowlist; do
+		out="$(
+			(
+				export MCPBASH_PROVIDER_ENV_MODE="${mode}"
+				export MCPBASH_PROVIDER_ENV_ALLOWLIST="MCPBASH_REMOTE_TOKEN,MCPBASH_REMOTE_TOKEN_KEY,MCPBASH_REMOTE_TOKEN_FALLBACK_KEY"
+				export MCPBASH_REMOTE_TOKEN="dummy-test-token-0123456789abcdef"
+				export MCPBASH_REMOTE_TOKEN_KEY="custom/tok"
+				export MCPBASH_REMOTE_TOKEN_FALLBACK_KEY="legacy"
+				mcp_env_apply_curated_policy provider
+				printf '%s|%s|%s' "${MCPBASH_REMOTE_TOKEN+set}" "${MCPBASH_REMOTE_TOKEN_KEY+set}" "${MCPBASH_REMOTE_TOKEN_FALLBACK_KEY+set}"
+			)
+		)"
+		assert_equal "||" "${out}"
+	done
+}
+
 @test "env_curated: mcp_env_run_curated injects vars and execs target" {
 	out="$(mcp_env_run_curated provider "FOO=bar" -- bash -c 'printf "%s" "${FOO-}"')"
 	assert_equal "bar" "${out}"

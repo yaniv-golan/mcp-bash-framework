@@ -58,7 +58,7 @@ Authoritative list of supported environment variables. Defaults shown are the sh
 | `MCPBASH_DEBUG` | `false` | Enable debug EXIT trap that logs exit location and call stack on non-zero exits; helps diagnose `set -e` failures. |
 | `MCPBASH_DEBUG_ALL_EXITS` | `false` | With `MCPBASH_DEBUG=true`, log all exits (not just failures). |
 | `MCPBASH_PRESERVE_STATE` | (unset) | Preserve state dir after exit (useful with `MCPBASH_DEBUG_PAYLOADS`; includes per-request `stderr.*.log` worker captures). |
-| `MCPBASH_REMOTE_TOKEN` | (unset) | Shared secret for proxied deployments (minimum 32 characters). |
+| `MCPBASH_REMOTE_TOKEN` | (unset) | Shared secret for proxied deployments (minimum 32 characters). `MCPBASH_REMOTE_TOKEN*` is removed from tool and provider environments (except `inherit` mode), and the token keys are deleted from the `_meta` passed to tools. |
 | `MCPBASH_REMOTE_TOKEN_KEY` | `mcpbash/remoteToken` | JSON path for token lookup. |
 | `MCPBASH_REMOTE_TOKEN_FALLBACK_KEY` | `remoteToken` | Alternate JSON path for token lookup. |
 | `MCPBASH_REMOTE_TOKEN_MAX_FAILURES_PER_MIN` | `10` | Max failed remote-token attempts per minute before throttling responses. |

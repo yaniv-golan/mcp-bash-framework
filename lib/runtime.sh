@@ -653,6 +653,10 @@ mcp_env_apply_curated_policy() {
 		provider:MCP_*) ;;
 		provider:MCPBASH_HOME | provider:MCPBASH_PROJECT_ROOT | provider:MCPBASH_RESOURCES_DIR | provider:MCPBASH_PROMPTS_DIR) ;;
 		provider:MCPBASH_ENABLE_GIT_PROVIDER | provider:MCPBASH_GIT_* | provider:MCPBASH_HTTPS_*) ;;
+		# The remote-access secret and its keys: never passed, even if allowlisted.
+		provider:MCPBASH_REMOTE_TOKEN*)
+			to_unset+=("${env_key}")
+			;;
 		provider:*)
 			if [ "${env_mode}" = "allowlist" ]; then
 				case "${allowlist_names}" in

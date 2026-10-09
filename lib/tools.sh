@@ -1479,6 +1479,31 @@ mcp_tools_append_failure_summary() {
 	} >>"${summary_file}" 2>/dev/null || true
 }
 
+# The remote-access token travels in each request's _meta (lib/auth.sh, primary
+# and fallback keys). Delete both keys before _meta is handed to a tool as
+# MCP_TOOL_META_JSON/_FILE. Unparseable _meta is dropped rather than passed on.
+mcp_tools_strip_remote_token_meta() {
+	local meta_json="${1:-}"
+	case "${meta_json}" in
+	"" | "{}")
+		printf '%s' "{}"
+		return 0
+		;;
+	esac
+	if [ "${MCPBASH_JSON_TOOL:-none}" = "none" ] || [ -z "${MCPBASH_JSON_TOOL_BIN:-}" ]; then
+		printf '%s' "{}"
+		return 0
+	fi
+	local stripped
+	if ! stripped="$(printf '%s' "${meta_json}" | "${MCPBASH_JSON_TOOL_BIN}" -c \
+		--arg k "${MCPBASH_REMOTE_TOKEN_KEY:-mcpbash/remoteToken}" \
+		--arg fb "${MCPBASH_REMOTE_TOKEN_FALLBACK_KEY:-remoteToken}" \
+		'if type == "object" then del(.[$k], .[$fb]) else {} end' 2>/dev/null)" || [ -z "${stripped}" ]; then
+		stripped="{}"
+	fi
+	printf '%s' "${stripped}"
+}
+
 # shellcheck disable=SC2031  # Subshell env exports are deliberate; parent values remain unchanged.
 mcp_tools_call() {
 	local name="$1"
@@ -1498,6 +1523,8 @@ mcp_tools_call() {
 	_MCP_TOOLS_ERROR_DATA=""
 	# shellcheck disable=SC2034
 	_MCP_TOOLS_RESULT=""
+
+	request_meta="$(mcp_tools_strip_remote_token_meta "${request_meta}")"
 
 	local metadata
 	if ! metadata="$(mcp_tools_metadata_for_name "${name}")"; then
@@ -1911,6 +1938,14 @@ mcp_tools_call() {
 					export "${allowlist_var}"
 				done
 			fi
+
+			# The remote-access secret and its lookup keys never reach tools outside
+			# inherit mode, even when an allowlist names them. Runs after the
+			# allowlist export above so nothing can re-add them.
+			local remote_token_var
+			for remote_token_var in $(compgen -v MCPBASH_REMOTE_TOKEN); do
+				unset "${remote_token_var}" 2>/dev/null || true
+			done
 
 			mcp_tools_apply_common_tool_env
 		else
