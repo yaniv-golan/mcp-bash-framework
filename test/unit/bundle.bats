@@ -230,6 +230,20 @@ EOF
 	[ "$status" -eq 0 ]
 }
 
+@test "bundle: prompt text over the 128 KiB argument limit reaches the manifest whole" {
+	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
+	mkdir -p "${PROJECT_ROOT}/prompts"
+	head -c 307200 /dev/zero | tr '\0' 'p' >"${PROJECT_ROOT}/prompts/big.txt"
+	cat >"${PROJECT_ROOT}/prompts/big.meta.json" <<'EOF'
+{"name": "big", "description": "A large prompt", "path": "big.txt"}
+EOF
+	(cd "${PROJECT_ROOT}" && "${MCPBASH_HOME}/bin/mcp-bash" bundle --output "${OUTPUT_DIR}" >/dev/null)
+	unzip -q "${OUTPUT_DIR}/test-server-1.2.3.mcpb" -d "${EXTRACT_DIR}"
+	run jq -r '.prompts[] | select(.name == "big") | .text | length' "${EXTRACT_DIR}/manifest.json"
+	assert_success
+	assert_output "307200"
+}
+
 @test "bundle: prompts array includes text for scaffolded prompt layout" {
 	rm -rf "${OUTPUT_DIR}"/* "${EXTRACT_DIR}"/*
 	mkdir -p "${PROJECT_ROOT}/prompts/review"

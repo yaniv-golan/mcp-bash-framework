@@ -81,6 +81,7 @@ TESTS=(
 	"test_resource_mime_declared.sh"
 	"test_resource_templates.sh"
 	"test_resource_template_read.sh"
+	"test_large_payloads.sh"
 	"test_lifecycle_gating.sh"
 	"test_resources_providers.sh"
 	"test_minimal_mode.sh"
