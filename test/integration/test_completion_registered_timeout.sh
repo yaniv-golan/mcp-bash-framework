@@ -28,15 +28,19 @@ printf '["${name}-ok"]'
 SH
 	chmod +x "${WS}/completions/${name}.sh"
 }
+# Default timeout is 5s (set below). Each case sits at least 4s away from the
+# limit that decides it, so a loaded machine cannot flip the result: "explicit"
+# and "zero" sleep 7s, which only succeeds if their own setting replaces the
+# 5s default; "negative" sleeps 1s under that default; "hang" never finishes.
 make_script hang 60
-make_script explicit 1
-make_script zero 2
+make_script explicit 7
+make_script zero 7
 make_script negative 1
 
 cat >"${WS}/server.d/register.json" <<'JSON'
 {"version": 1, "completions": [
   {"name": "hang", "path": "completions/hang.sh"},
-  {"name": "explicit", "path": "completions/explicit.sh", "timeoutSecs": 3},
+  {"name": "explicit", "path": "completions/explicit.sh", "timeoutSecs": 20},
   {"name": "zero", "path": "completions/zero.sh", "timeoutSecs": 0},
   {"name": "negative", "path": "completions/negative.sh", "timeoutSecs": -5}
 ]}
@@ -55,16 +59,16 @@ req() {
 } >"${WS}/requests.ndjson"
 
 start=$(date +%s)
-MCPBASH_COMPLETION_REGISTERED_TIMEOUT_SECS=2 test_run_mcp "${WS}" "${WS}/requests.ndjson" "${WS}/responses.ndjson" || true
+MCPBASH_COMPLETION_REGISTERED_TIMEOUT_SECS=5 test_run_mcp "${WS}" "${WS}/requests.ndjson" "${WS}/responses.ndjson" || true
 elapsed=$(($(date +%s) - start))
 
 val() { jq -c --arg id "$1" 'select(.id==$id) | (.result.completion.values // "ERR")' "${WS}/responses.ndjson"; }
 
 assert_eq "true" "$(jq -r 'select(.id=="hang") | has("error")' "${WS}/responses.ndjson")" "registered completion without timeoutSecs is cut off"
-assert_eq '["explicit-ok"]' "$(val explicit)" "explicit timeoutSecs: 3 on a 1s script succeeds"
-assert_eq '["zero-ok"]' "$(val zero)" "explicit timeoutSecs: 0 means no timeout"
+assert_eq '["explicit-ok"]' "$(val explicit)" "explicit timeoutSecs: 20 lets a 7s script outlive the 5s default"
+assert_eq '["zero-ok"]' "$(val zero)" "explicit timeoutSecs: 0 lets a 7s script outlive the 5s default"
 assert_eq '["negative-ok"]' "$(val negative)" "negative timeoutSecs is ignored (falls back to default)"
-if [ "${elapsed}" -ge 30 ]; then
+if [ "${elapsed}" -ge 45 ]; then
 	test_fail "hung registered completion was not timed out (took ${elapsed}s)"
 fi
 
