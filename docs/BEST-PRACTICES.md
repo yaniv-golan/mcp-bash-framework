@@ -129,7 +129,7 @@ This guide distils hands-on recommendations for designing, building, and operati
   - *Auto-discovery* – Default path scanning populates `.registry/*.json` (see [docs/REGISTRY.md](REGISTRY.md)). Metadata is sourced from `.meta.json` then inline `# mcp:` annotations, falling back to defaults.
   - *Declarative registration* – Prefer `server.d/register.json` for deterministic overrides/disablement without executing shell code (see [docs/REGISTRY.md](REGISTRY.md)). Use `[]` to explicitly disable a kind, or omit/null a key to fall through to auto-discovery.
   - *Hook registration* – Use `server.d/register.sh` only for dynamic/imperative cases; it executes shell code and is opt-in (`MCPBASH_ALLOW_PROJECT_HOOKS=true`). See `examples/advanced/register-sh-hooks/`.
-- **Environment staging** – Use `server.d/env.sh` to inject operator-specific configuration without editing tracked files. Document each variable inline for future maintainers.
+- **Environment staging** – Use `server.d/env.sh` to stage operator-specific configuration for CLI testing without editing tracked files. Document each variable inline for future maintainers. The server does not source it at startup, and neither does an MCPB bundle's `run-server.sh`: it is only sourced by `mcp-bash run-tool --with-server-env` (or `MCPBASH_RUN_TOOL_SOURCE_SERVER_ENV=true`). For a running server, set variables in the launch environment (client config, your own launcher script, or for bundles `user_config_env_map` / `platform_overrides.env` in `server.meta.json`).
 
 ## 4. MCP server development best practices
 
@@ -1694,7 +1694,7 @@ Cache results by exporting `MCP_TESTS_SKIP_REMOTE=1` when remote fixtures are un
 
 ### 6.1 Configuration hierarchy
 1. Launch-time environment variables (`MCPBASH_*`, `MCP_*`)
-2. `server.d/env.sh` exports
+2. `server.d/env.sh` exports (`mcp-bash run-tool --with-server-env` only; not applied to a running server)
 3. Manual registration inputs (`server.d/register.json` / `server.d/register.sh`) overriding discovery output
 4. Client-initiated negotiation (capabilities, logging)
 

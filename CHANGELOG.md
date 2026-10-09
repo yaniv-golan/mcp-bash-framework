@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **File URIs no longer fail intermittently under bash 5.3**: `mcp_uri_url_encode` declared `local LC_ALL=C`. Under bash 5.3 with `LC_CTYPE=UTF-8` (the macOS Terminal default) that made calls in `$(...)` report failure about 1 time in 16, so resources without an explicit `uri` could drop out of `resources/list`. The function now runs in a subshell and sets `LC_ALL=C` there.
 - **Resource providers now receive `MCPBASH_JSON_TOOL_BIN` and `MCPBASH_JSON_TOOL`**: Previously only the `ui` provider got them, so provider scripts using `${MCPBASH_JSON_TOOL_BIN:-jq}` ran with them unset. Completion providers already received both.
 
+### Changed
+
+- **Docs no longer claim `server.d/env.sh` runs at server startup**: `docs/PROJECT-STRUCTURE.md`, `docs/ARCHITECTURE.md` and the configuration hierarchy in `docs/BEST-PRACTICES.md` described it as applied at startup. The server has never sourced it, and neither does an MCPB bundle's `run-server.sh`; only `mcp-bash run-tool --with-server-env` does. The docs now say so and point to where a running server's environment should be set.
+
 ### Security
 
 - **`resources/read` and `resources/subscribe` reject a `name` and `uri` that refer to different resources**: The `name` parameter (an mcp-bash extension; MCP addresses reads by `uri`) selected the provider, while the client's `uri` was passed to it unchecked. Any client could therefore send an arbitrary URI to any registered resource's provider. Such requests now fail with `-32602`. Requests with only `name`, only `uri`, or a matching pair are unaffected.
