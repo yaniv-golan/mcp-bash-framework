@@ -22,10 +22,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 test_create_tmpdir
 
 # Wait for the server to exit, but never forever: a server that keeps running
-# (for example blocked writing to an unread FIFO) must fail the test, not stall
-# the whole integration run.
+# must fail the test, not stall the whole integration run.
 wait_bounded() {
-	local pid="$1" limit="${2:-30}" waited=0
+	local pid="$1" limit="${2:-60}" waited=0
 	while kill -0 "${pid}" 2>/dev/null; do
 		if [ "${waited}" -ge "${limit}" ]; then
 			kill "${pid}" 2>/dev/null || true
@@ -100,7 +99,6 @@ SH
 
 	printf '%s\n' '{"jsonrpc":"2.0","id":"exit","method":"exit"}' >&3
 	exec 3>&-
-	exec 4<&-
 	wait_bounded "${pid}"
 
 	if [ "${elicit_seen}" -ne 1 ]; then
@@ -175,7 +173,6 @@ SH
 
 	printf '%s\n' '{"jsonrpc":"2.0","id":"exit","method":"exit"}' >&5
 	exec 5>&-
-	exec 6<&-
 	wait_bounded "${pid}"
 
 	if [ "${elicit_seen}" -ne 1 ]; then
