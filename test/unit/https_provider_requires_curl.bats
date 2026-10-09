@@ -12,22 +12,13 @@ setup() {
 	mkdir -p "${FAKE_HOME}/lib"
 
 	# Minimal policy shim so the provider doesn't depend on system DNS tools.
-	cat >"${FAKE_HOME}/lib/policy.sh" <<'EOF'
+	# The real library, with the resolver replaced by a stub.
+	cat >"${FAKE_HOME}/lib/policy.sh" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
-mcp_policy_normalize_host() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
-mcp_policy_extract_host_from_url() {
-	local url="$1"
-	local authority="${url#*://}"
-	authority="${authority%%/*}"
-	authority="${authority%%\?*}"
-	authority="${authority%%\#*}"
-	authority="${authority##*@}"
-	local host="${authority%%:*}"
-	printf '%s' "${host}" | tr '[:upper:]' '[:lower:]'
-}
-mcp_policy_host_is_private() { return 1; }
-mcp_policy_host_allowed() { return 0; }
+. '${MCPBASH_HOME}/lib/policy.sh'
+EOF
+	cat >>"${FAKE_HOME}/lib/policy.sh" <<'EOF'
 mcp_policy_resolve_ips() { printf '%s\n' "203.0.113.10"; }
 EOF
 

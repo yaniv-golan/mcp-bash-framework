@@ -1,7 +1,17 @@
 #!/usr/bin/env bash
 # Resource provider: fetch files from git+https:// repositories.
+#
+# Address checks live in lib/policy.sh (the single private-range list). The
+# provider refuses to fetch if that library cannot be loaded. Hostnames are
+# resolved once, every answer is vetted, and git's libcurl is pinned to the
+# vetted addresses with http.curloptResolve (git >= 2.37); redirects are off.
 
 set -euo pipefail
+
+MCP_GIT_POLICY_FUNCS="mcp_policy_extract_host_from_url mcp_policy_extract_port_from_url mcp_policy_host_is_noncanonical_ip_literal mcp_policy_ip_is_private mcp_policy_host_is_ip_literal mcp_policy_hostname_is_valid mcp_policy_resolve_vetted_ips mcp_policy_host_allowed"
+# First git release with http.curloptResolve.
+MCP_GIT_PIN_MIN_MAJOR=2
+MCP_GIT_PIN_MIN_MINOR=37
 
 mcp_git_log_block() {
 	local host="$1"
@@ -13,11 +23,12 @@ mcp_git_log_block() {
 }
 
 mcp_git_load_policy() {
-	# Prefer shared policy helpers. If unavailable, fall back to local versions
-	# that STILL enforce allow/deny lists (never fail-open).
+	# Source the shared policy helpers. There is deliberately no local fallback
+	# copy: a second range list is how the copies diverged. Returns 1 if any
+	# required helper is missing, and the caller refuses to fetch.
 	local sourced="false"
 	if [ -n "${MCPBASH_HOME:-}" ] && [ -f "${MCPBASH_HOME}/lib/policy.sh" ]; then
-		# shellcheck disable=SC1090
+		# shellcheck disable=SC1090,SC1091
 		if . "${MCPBASH_HOME}/lib/policy.sh"; then sourced="true"; fi
 	fi
 	if [ "${sourced}" != "true" ]; then
@@ -25,55 +36,30 @@ mcp_git_load_policy() {
 		self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P 2>/dev/null)" || true
 		if [ -n "${self_dir}" ] && [ -f "${self_dir%/}/../lib/policy.sh" ]; then
 			# shellcheck disable=SC1090,SC1091
-			if . "${self_dir%/}/../lib/policy.sh"; then sourced="true"; fi
+			. "${self_dir%/}/../lib/policy.sh" || true
 		fi
 	fi
+	local fn
+	for fn in ${MCP_GIT_POLICY_FUNCS}; do
+		command -v "${fn}" >/dev/null 2>&1 || return 1
+	done
+	return 0
+}
 
-	if ! command -v mcp_policy_normalize_host >/dev/null 2>&1; then
-		mcp_policy_normalize_host() {
-			local host="$1"
-			if [ -z "${host}" ]; then
-				return 1
-			fi
-			if [ "${host#\[}" != "${host}" ]; then
-				host="${host#[}"
-				host="${host%]}"
-			fi
-			printf '%s' "${host}" | tr '[:upper:]' '[:lower:]'
-		}
+mcp_git_supports_pinning() {
+	# True when the installed git understands http.curloptResolve.
+	local version major minor rest
+	version="$(git --version 2>/dev/null)" || return 1
+	version="${version#git version }"
+	major="${version%%.*}"
+	rest="${version#*.}"
+	minor="${rest%%[!0-9]*}"
+	case "${major}" in '' | *[!0-9]*) return 1 ;; esac
+	case "${minor}" in '' | *[!0-9]*) return 1 ;; esac
+	if [ "${major}" -gt "${MCP_GIT_PIN_MIN_MAJOR}" ]; then
+		return 0
 	fi
-
-	if ! command -v mcp_policy_host_allowed >/dev/null 2>&1; then
-		mcp_policy_host_match_list() {
-			local host="$1"
-			local list="$2"
-			local token
-			list="${list//,/ }"
-			for token in ${list}; do
-				[ -z "${token}" ] && continue
-				if [ "${host}" = "$(mcp_policy_normalize_host "${token}")" ]; then
-					return 0
-				fi
-			done
-			return 1
-		}
-
-		mcp_policy_host_allowed() {
-			local host="$1"
-			local allow_list="$2"
-			local deny_list="$3"
-			if [ -n "${deny_list}" ] && mcp_policy_host_match_list "${host}" "${deny_list}"; then
-				return 1
-			fi
-			if [ -n "${allow_list}" ]; then
-				if mcp_policy_host_match_list "${host}" "${allow_list}"; then
-					return 0
-				fi
-				return 1
-			fi
-			return 0
-		}
-	fi
+	[ "${major}" -eq "${MCP_GIT_PIN_MIN_MAJOR}" ] && [ "${minor}" -ge "${MCP_GIT_PIN_MIN_MINOR}" ]
 }
 
 mcp_git_normalize_path() {
@@ -121,88 +107,9 @@ if [ "${MCPBASH_ENABLE_GIT_PROVIDER:-false}" != "true" ]; then
 	exit 4
 fi
 
-mcp_git_load_policy
-if ! command -v mcp_policy_extract_host_from_url >/dev/null 2>&1; then
-	mcp_policy_extract_host_from_url() {
-		local url="$1"
-		# Best-effort URL host extraction for fallback mode. This must strip
-		# userinfo (user:pass@) to avoid SSRF bypasses.
-		local authority="${url#*://}"
-		authority="${authority%%/*}"
-		authority="${authority%%\?*}"
-		authority="${authority%%\#*}"
-		authority="${authority##*@}"
-		local host=""
-		case "${authority}" in
-		\[*\]*)
-			host="${authority#\[}"
-			host="${host%%\]*}"
-			;;
-		*)
-			host="${authority%%:*}"
-			;;
-		esac
-		printf '%s' "${host}" | tr '[:upper:]' '[:lower:]'
-	}
-	mcp_policy_resolve_ips() {
-		local host="$1"
-		local resolved=""
-		if command -v getent >/dev/null 2>&1; then
-			resolved="$(getent ahosts "${host}" 2>/dev/null | awk '{print $1}')"
-		fi
-		if [ -z "${resolved}" ] && command -v dig >/dev/null 2>&1; then
-			resolved="$(dig +short "${host}" A AAAA 2>/dev/null | sed '/^$/d')"
-		fi
-		if [ -z "${resolved}" ] && command -v host >/dev/null 2>&1; then
-			resolved="$(host "${host}" 2>/dev/null | awk '/has address/{print $4}/IPv6 address/{print $5}')"
-		fi
-		if [ -z "${resolved}" ] && command -v nslookup >/dev/null 2>&1; then
-			resolved="$(nslookup "${host}" 2>/dev/null | awk '/^Address: /{print $2}' | tail -n +2)"
-		fi
-		resolved="$(printf '%s\n' "${resolved}" | sed '/^$/d' | sort -u)"
-		if [ -z "${resolved}" ]; then
-			return 1
-		fi
-		printf '%s\n' "${resolved}"
-	}
-	mcp_policy_host_is_private() {
-		local host="$1"
-		local resolved_ips
-		case "${host}" in
-		"" | localhost | 127.* | 0.0.0.0 | ::1 | "[::1]" | 10.* | 192.168.* | 172.1[6-9].* | 172.2[0-9].* | 172.3[0-1].* | 169.254.*)
-			return 0
-			;;
-		esac
-		if resolved_ips="$(mcp_policy_resolve_ips "${host}")"; then
-			while IFS= read -r ip; do
-				[ -z "${ip}" ] && continue
-				case "${ip}" in
-				10.* | 192.168.* | 172.1[6-9].* | 172.2[0-9].* | 172.3[0-1].* | 127.* | 169.254.* | ::1 | fe80:* | fc??:* | fd??:* | ::ffff:127.* | ::ffff:10.* | ::ffff:192.168.* | ::ffff:172.1[6-9].* | ::ffff:172.2[0-9].* | ::ffff:172.3[0-1].* | ::ffff:169.254.* | ::ffff:0:0:127.* | ::ffff:0:0:10.* | ::ffff:0:0:192.168.* | ::ffff:0:0:172.1[6-9].* | ::ffff:0:0:172.2[0-9].* | ::ffff:0:0:172.3[0-1].* | ::ffff:0:0:169.254.*)
-					return 0
-					;;
-				esac
-			done <<EOF
-${resolved_ips}
-EOF
-		fi
-		return 1
-	}
-	mcp_policy_host_allowed() {
-		# Enforce allow/deny even in fallback mode (never fail-open).
-		local host="$1"
-		local allow_list="$2"
-		local deny_list="$3"
-		if [ -n "${deny_list}" ] && mcp_policy_host_match_list "${host}" "${deny_list}"; then
-			return 1
-		fi
-		if [ -n "${allow_list}" ]; then
-			if mcp_policy_host_match_list "${host}" "${allow_list}"; then
-				return 0
-			fi
-			return 1
-		fi
-		return 0
-	}
+if ! mcp_git_load_policy; then
+	printf '%s\n' "git provider requires lib/policy.sh (set MCPBASH_HOME); refusing to fetch" >&2
+	exit 4
 fi
 
 uri="${1:-}"
@@ -223,13 +130,22 @@ if [[ "${authority}" == *"@"* ]]; then
 	exit 4
 fi
 
-host="$(mcp_policy_extract_host_from_url "${uri}")"
+host="$(mcp_policy_extract_host_from_url "${uri}")" || host=""
+port="$(mcp_policy_extract_port_from_url "${uri}" 443)"
 if [ -z "${host}" ]; then
 	mcp_git_log_block "<empty>"
 	exit 4
 fi
-if mcp_policy_host_is_private "${host}"; then
+if mcp_policy_host_is_noncanonical_ip_literal "${host}" || mcp_policy_ip_is_private "${host}"; then
 	mcp_git_log_block "${host}"
+	exit 4
+fi
+host_is_literal="false"
+if mcp_policy_host_is_ip_literal "${host}"; then
+	host_is_literal="true"
+elif ! mcp_policy_hostname_is_valid "${host}"; then
+	mcp_git_log_block "${host}"
+	printf '%s\n' "git provider requires an ASCII hostname without a trailing dot or percent-encoding" >&2
 	exit 4
 fi
 if [ -z "${MCPBASH_GIT_ALLOW_HOSTS:-}" ] && [ "${MCPBASH_GIT_ALLOW_ALL:-false}" != "true" ]; then
@@ -241,22 +157,48 @@ if ! mcp_policy_host_allowed "${host}" "${MCPBASH_GIT_ALLOW_HOSTS:-}" "${MCPBASH
 	mcp_git_log_block "${host}"
 	exit 4
 fi
-if command -v getent >/dev/null 2>&1 && getent ahosts "${host}" >/dev/null 2>&1; then
-	while read -r ip _; do
-		case "${ip}" in
-		10.* | 192.168.* | 172.1[6-9].* | 172.2[0-9].* | 172.3[0-1].* | 127.* | 169.254.* | ::1 | fe80:* | fc??:* | fd??:*)
-			mcp_git_log_block "${host}"
-			exit 4
-			;;
-		esac
-	done <<EOF
-$(getent ahosts "${host}" | awk '{print $1}')
-EOF
-fi
 
 if ! command -v git >/dev/null 2>&1; then
 	printf '%s\n' "git command not available" >&2
 	exit 4
+fi
+
+# Config passed to every git invocation. Redirects are never followed: a
+# redirect target would not have been vetted or pinned.
+git_cfg=(-c http.followRedirects=false)
+if [ "${host_is_literal}" != "true" ]; then
+	if ! mcp_git_supports_pinning; then
+		printf '%s\n' "git provider requires git >= ${MCP_GIT_PIN_MIN_MAJOR}.${MCP_GIT_PIN_MIN_MINOR} (http.curloptResolve) to pin DNS; refusing to fetch" >&2
+		exit 4
+	fi
+	vet_rc=0
+	vetted="$(mcp_policy_resolve_vetted_ips "${host}")" || vet_rc=$?
+	case "${vet_rc}" in
+	0) ;;
+	2)
+		mcp_git_log_block "${host}"
+		exit 4
+		;;
+	*)
+		printf '%s\n' "git provider: unable to resolve ${host}; refusing an unpinned fetch" >&2
+		exit 5
+		;;
+	esac
+	pin_addrs=""
+	while IFS= read -r ip; do
+		[ -n "${ip}" ] || continue
+		case "${ip}" in *:*) ip="[${ip}]" ;; esac
+		pin_addrs="${pin_addrs:+${pin_addrs},}${ip}"
+	done <<EOF
+${vetted}
+EOF
+	if [ -z "${pin_addrs}" ]; then
+		printf '%s\n' "git provider: unable to resolve ${host}; refusing an unpinned fetch" >&2
+		exit 5
+	fi
+	# The host:port entry pins the name git's libcurl looks up; "*:port" also
+	# catches any spelling of the host libcurl might derive differently.
+	git_cfg+=(-c "http.curloptResolve=${host}:${port}:${pin_addrs}" -c "http.curloptResolve=*:${port}:${pin_addrs}")
 fi
 
 export GIT_TERMINAL_PROMPT=0
@@ -330,24 +272,24 @@ run_git() {
 }
 
 if [[ "${ref}" =~ ${sha_regex} ]]; then
-	if ! run_git git init -q "${repo_dir}" >/dev/null 2>&1; then
+	if ! run_git git "${git_cfg[@]}" init -q "${repo_dir}" >/dev/null 2>&1; then
 		printf '%s\n' "Failed to initialize git repository" >&2
 		exit 5
 	fi
-	if ! run_git git -C "${repo_dir}" remote add origin "${repo}" >/dev/null 2>&1; then
+	if ! run_git git "${git_cfg[@]}" -C "${repo_dir}" remote add origin "${repo}" >/dev/null 2>&1; then
 		printf '%s\n' "Failed to add remote ${repo}" >&2
 		exit 5
 	fi
-	if ! run_git git -C "${repo_dir}" fetch --quiet --depth 1 origin "${ref}" >/dev/null 2>&1; then
+	if ! run_git git "${git_cfg[@]}" -C "${repo_dir}" fetch --quiet --depth 1 origin "${ref}" >/dev/null 2>&1; then
 		printf '%s\n' "Failed to fetch commit ${ref}" >&2
 		exit 5
 	fi
-	if ! run_git git -C "${repo_dir}" checkout --quiet FETCH_HEAD >/dev/null 2>&1; then
+	if ! run_git git "${git_cfg[@]}" -C "${repo_dir}" checkout --quiet FETCH_HEAD >/dev/null 2>&1; then
 		printf '%s\n' "Failed to checkout commit ${ref}" >&2
 		exit 5
 	fi
 else
-	if ! run_git git clone --depth 1 --shallow-submodules --branch "${ref}" "${repo}" "${repo_dir}" >/dev/null 2>&1; then
+	if ! run_git git "${git_cfg[@]}" clone --depth 1 --shallow-submodules --branch "${ref}" "${repo}" "${repo_dir}" >/dev/null 2>&1; then
 		printf '%s\n' "Failed to clone ${repo} @ ${ref}" >&2
 		exit 5
 	fi
