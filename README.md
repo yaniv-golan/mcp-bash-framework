@@ -270,7 +270,7 @@ mcp-bash is **secure by default**. Here's what that means:
 | Layer | Default | What it does |
 |-------|---------|--------------|
 | **Tool allowlist** | Deny all | Tools won't run unless explicitly listed in `MCPBASH_TOOL_ALLOWLIST` |
-| **Hooks** | Disabled | `server.d/register.sh` is not executed unless `MCPBASH_ALLOW_PROJECT_HOOKS=true`. `server.d/policy.sh` is always sourced, so treat it as trusted code; `server.d/env.sh` is only sourced by `run-tool --with-server-env` |
+| **Hooks** | Disabled | `server.d/register.sh` is not executed unless `MCPBASH_ALLOW_PROJECT_HOOKS=true`. `server.d/policy.sh` is always sourced, so treat it as trusted code; `server.d/health-checks.sh` runs only under `mcp-bash --health`; `server.d/env.sh` is only sourced by `run-tool --with-server-env` |
 | **Tool environment** | Minimal | Tools inherit only essential vars (`PATH`, `HOME`, `TMPDIR`, `LANG`, Windows system vars, and `MCP_*`/`MCPBASH_*`). Use `MCPBASH_TOOL_ENV_MODE` to change, or declare it in `server.meta.json` `"env"` |
 
 ### Quick reference
