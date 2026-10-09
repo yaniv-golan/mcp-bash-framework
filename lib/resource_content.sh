@@ -16,20 +16,53 @@ mcp_resource_detect_mime() {
 		;;
 	esac
 
-	if command -v file >/dev/null 2>&1; then
-		local detected
-		# --brief keeps output compact; --mime returns mime + charset where available.
-		if detected="$(file --mime --brief -- "${path}" 2>/dev/null || true)"; then
-			detected="${detected%%;*}"
-			detected="$(printf '%s' "${detected}" | tr '[:upper:]' '[:lower:]' | awk '{$1=$1};1')"
-			if [ -n "${detected}" ]; then
-				printf '%s' "${detected}"
-				return 0
-			fi
-		fi
+	local detected
+	detected="$(mcp_resource_detect_mime_raw "${path}")"
+	if [ -n "${detected}" ]; then
+		printf '%s' "${detected}"
+		return 0
 	fi
 
 	printf '%s' "${fallback}"
+}
+
+# Print what `file --mime` reports for PATH, lowercased and trimmed, with its
+# parameters (e.g. "text/plain; charset=us-ascii"), or nothing when `file` is
+# unavailable or reports nothing.
+mcp_resource_detect_mime_full() {
+	local path="$1"
+	if ! command -v file >/dev/null 2>&1; then
+		return 0
+	fi
+	local detected
+	# --brief keeps output compact; --mime returns mime + charset where available.
+	detected="$(file --mime --brief -- "${path}" 2>/dev/null || true)"
+	printf '%s' "${detected}" | tr '[:upper:]' '[:lower:]' | awk '{$1=$1};1'
+}
+
+# Like mcp_resource_detect_mime_full, without the parameters.
+mcp_resource_detect_mime_raw() {
+	local detected
+	detected="$(mcp_resource_detect_mime_full "$1")"
+	detected="${detected%%;*}"
+	printf '%s' "${detected}" | awk '{$1=$1};1'
+}
+
+# True when a DECLARED mime type names a known binary class. Unlike
+# mcp_resource_is_binary_mime there is no "unknown means binary" default, so a
+# declared text-ish type such as application/toml never forces base64.
+mcp_resource_declared_mime_is_binary() {
+	local lower
+	lower="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+	lower="${lower%%;*}"
+	lower="$(printf '%s' "${lower}" | awk '{$1=$1};1')"
+	case "${lower}" in
+	image/* | audio/* | video/*) return 0 ;;
+	application/pdf | application/octet-stream) return 0 ;;
+	application/zip | application/gzip | application/x-gzip) return 0 ;;
+	application/x-bzip2 | application/x-xz) return 0 ;;
+	esac
+	return 1
 }
 
 mcp_resource_is_binary_mime() {
@@ -72,20 +105,44 @@ mcp_resource_should_base64() {
 	return 1
 }
 
+# mcp_resource_content_object_from_file PATH HINT URI [DECLARED]
+#   DECLARED=true: HINT is the reported mimeType exactly as given (the label).
+#   DECLARED absent/false: `file --mime` overrides HINT (except `;profile=` hints).
+# Either way detection decides text vs base64: base64 when the detected type is
+# binary, when the first 1 KB holds a NUL byte, or when a declared HINT names a
+# known binary class.
 mcp_resource_content_object_from_file() {
 	local path="$1"
 	local mime_hint="${2:-text/plain}"
 	local uri="${3:-}"
+	local declared="${4:-false}"
 
 	if [ ! -r "${path}" ]; then
 		return 1
 	fi
 
-	local mime
-	mime="$(mcp_resource_detect_mime "${path}" "${mime_hint}")"
+	local mime detected
+	if [ "${declared}" = "true" ]; then
+		mime="${mime_hint}"
+		detected="$(mcp_resource_detect_mime_full "${path}")"
+		case "${detected}" in
+		# Bytes `file` cannot read as text in any charset: keep them intact.
+		*charset=binary* | *charset=unknown-8bit*) detected="application/octet-stream" ;;
+		*) detected="$(printf '%s' "${detected%%;*}" | awk '{$1=$1};1')" ;;
+		esac
+		# Without `file`, use text/plain so only the NUL sniff and the
+		# declared binary class decide (no "unknown means binary" default).
+		[ -n "${detected}" ] || detected="text/plain"
+	else
+		mime="$(mcp_resource_detect_mime "${path}" "${mime_hint}")"
+		# Undeclared: encoding follows the reported type, as before.
+		detected="${mime}"
+	fi
 
 	local base64_mode=1
-	if mcp_resource_should_base64 "${path}" "${mime}"; then
+	if mcp_resource_should_base64 "${path}" "${detected}"; then
+		base64_mode=0
+	elif [ "${declared}" = "true" ] && mcp_resource_declared_mime_is_binary "${mime}"; then
 		base64_mode=0
 	fi
 
