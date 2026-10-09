@@ -277,10 +277,12 @@ mcp_core_read_loop() {
 		use_timeout="false"
 	fi
 
-	# Set up signal traps to distinguish signals from timeout/EOF
-	# (portable across bash 3.2+ since we can't rely on exit code 142)
-	trap '_MCPBASH_SIGNAL_RECEIVED=INT' INT
-	trap '_MCPBASH_SIGNAL_RECEIVED=TERM' TERM
+	# Exit straight from the signal trap. A trap that only records the signal
+	# runs after the pending `read` returns, so TERM/INT waited out the full
+	# read timeout (or, with a blocking read, the next input line). Exiting
+	# here still runs the EXIT trap (_mcp_exit_handler) for cleanup.
+	trap 'exit 130' INT
+	trap 'exit 143' TERM
 
 	# Track idle time using wall clock for accuracy
 	local idle_start
