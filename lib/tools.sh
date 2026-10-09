@@ -1864,6 +1864,10 @@ mcp_tools_call() {
 			for env_key in $(compgen -e); do
 				case "${env_key}" in
 				PATH | HOME | TMPDIR | LANG) ;;
+				# Windows system variables (kept for providers too). Without SYSTEMROOT,
+				# for example, Python cannot initialise sockets (WinError 10106).
+				SYSTEMROOT | SYSTEMDRIVE | WINDIR | windir | COMSPEC | PATHEXT) ;;
+				USERPROFILE | APPDATA | LOCALAPPDATA | TEMP | TMP | MSYSTEM | MSYS2_ARG_CONV_EXCL) ;;
 				MCP_* | MCPBASH_*) ;;
 				*)
 					if [ "${tool_env_mode}" = "allowlist" ]; then

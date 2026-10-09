@@ -79,3 +79,19 @@ EOF2
 	assert_success
 	assert_output --partial "FOO=blocked"
 }
+
+@test "tool_env_allowlist: Windows system variables reach tools in minimal mode" {
+	cat >"${PROJECT_ROOT}/tools/echo-env/tool.sh" <<'EOF2'
+#!/usr/bin/env bash
+set -euo pipefail
+source "${MCP_SDK}/tool-sdk.sh"
+mcp_emit_json "$(mcp_json_obj message "SYSTEMROOT=${SYSTEMROOT:-missing} USERPROFILE=${USERPROFILE:-missing} TMP=${TMP:-missing} OTHER=${OTHER:-blocked}")"
+EOF2
+	SYSTEMROOT='C:\Windows' USERPROFILE='C:\Users\u' TMP='C:\t' OTHER="x" MCPBASH_TOOL_ENV_MODE=minimal \
+		run "${MCPBASH_HOME}/bin/mcp-bash" run-tool echo-env --allow-self
+	assert_success
+	assert_output --partial 'SYSTEMROOT=C:\\Windows'
+	assert_output --partial 'USERPROFILE=C:\\Users\\u'
+	assert_output --partial 'TMP=C:\\t'
+	assert_output --partial "OTHER=blocked"
+}
