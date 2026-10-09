@@ -193,6 +193,59 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: test/conformance/run.sh
 
+  # Integration suite on the code path real users run. MCPBASH_CI_MODE turns
+  # off the idle/orphan checks, which switches the server to blocking reads; the
+  # timed-read loop (default for users) is only exercised without it. Runs under
+  # bash 5 on both platforms, with a per-test deadline so a hang fails fast.
+  integration-real-mode:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use bash 5 (macOS ships bash 3.2)
+        if: runner.os == 'macOS'
+        run: |
+          set -euo pipefail
+          brew list bash >/dev/null 2>&1 || brew install bash
+          echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
+      - name: Install jq
+        if: runner.os == 'Linux'
+        run: command -v jq >/dev/null || sudo apt-get install -y jq
+      - name: Check bash version
+        run: |
+          set -euo pipefail
+          bash --version | head -1
+          major="$(bash -c 'echo ${BASH_VERSINFO[0]}')"
+          if [ "${major}" -lt 4 ]; then
+            echo "::error::expected bash >= 4 on PATH for this job, got ${major}"
+            exit 1
+          fi
+      - name: Integration suite (CI mode off)
+        env:
+          MCPBASH_INTEGRATION_TEST_TIMEOUT_SECONDS: "300"
+          MCPBASH_LOG_DIR: ${{ runner.temp }}/mcpbash-logs
+          MCPBASH_LOG_TIMESTAMP: "true"
+          MCPBASH_KEEP_LOGS: "true"
+          MCPBASH_INTEGRATION_TMP: ${{ runner.temp }}/mcpbash-integration
+        run: |
+          set -euo pipefail
+          unset MCPBASH_CI_MODE
+          test/integration/run.sh
+      - name: Upload integration logs on failure
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-real-mode-logs-${{ matrix.os }}
+          path: |
+            ${{ runner.temp }}/mcpbash-integration/logs/
+            ${{ runner.temp }}/mcpbash-logs
+          retention-days: 7
+
   # Windows integration tests - runs in parallel but does not block release
   integration-windows:
     runs-on: windows-latest
@@ -407,7 +460,7 @@ jobs:
   release:
     # Only run on version tags, after all tests pass
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [lint, unit, integration, bundle-sanity, compatibility]
+    needs: [lint, unit, integration, integration-real-mode, bundle-sanity, compatibility]
     runs-on: ubuntu-latest
     permissions:
       contents: write
