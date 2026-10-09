@@ -87,10 +87,12 @@ mcp_resources_manual_finalize() {
 				else "file" end
 			)),
 			mimeType: (.mimeType // "text/plain"),
+			mimeTypeDeclared: ((.mimeType | type) == "string" and (.mimeType | length) > 0),
 			path: (.path // ""),
 			icons: (.icons // null),
 			annotations: (.annotations // null)
 		}) |
+		map(if .mimeTypeDeclared then . else del(.mimeTypeDeclared) end) |
 		map(if .icons == null then del(.icons) else . end) |
 		map(if .annotations == null then del(.annotations) else . end) |
 		sort_by(.name) |
@@ -331,13 +333,22 @@ mcp_resources_apply_manual_json() {
 	local timestamp
 	timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-	# Construct registry structure
-	registry_json="$(printf '%s' "${manual_json}" | "${MCPBASH_JSON_TOOL_BIN}" --arg ts "${timestamp}" '{
-		version: 1,
-		generatedAt: $ts,
-		items: .resources,
-		total: (.resources | length)
-	}')"
+	# Construct registry structure. mimeTypeDeclared is framework-owned: it is
+	# recomputed from mimeType, overwriting any value the file supplies.
+	registry_json="$(printf '%s' "${manual_json}" | "${MCPBASH_JSON_TOOL_BIN}" --arg ts "${timestamp}" '
+		(.resources | map(
+			if type == "object" then
+				del(.mimeTypeDeclared)
+				+ (if (.mimeType | type) == "string" and (.mimeType | length) > 0
+					then {mimeTypeDeclared: true} else {} end)
+			else . end
+		)) as $items
+		| {
+			version: 1,
+			generatedAt: $ts,
+			items: $items,
+			total: ($items | length)
+		}')"
 
 	# Calculate hash of items
 	local items_json
@@ -542,6 +553,7 @@ mcp_resources_scan() {
 			local description=""
 			local uri=""
 			local mime="text/plain"
+			local mime_declared="false"
 			local provider=""
 			local icons="null"
 			local annotations="null"
@@ -553,7 +565,8 @@ mcp_resources_scan() {
 				meta_desc="$("${MCPBASH_JSON_TOOL_BIN}" -r '.description // ""' "${meta_json}" 2>/dev/null | tr -d '\r' || true)"
 				meta_uri="$("${MCPBASH_JSON_TOOL_BIN}" -r '.uri // ""' "${meta_json}" 2>/dev/null | tr -d '\r' || true)"
 				meta_uri_template="$("${MCPBASH_JSON_TOOL_BIN}" -r '.uriTemplate // ""' "${meta_json}" 2>/dev/null | tr -d '\r' || true)"
-				meta_mime="$("${MCPBASH_JSON_TOOL_BIN}" -r '.mimeType // "text/plain"' "${meta_json}" 2>/dev/null | tr -d '\r' || true)"
+				# Only a non-empty string mimeType counts as declared.
+				meta_mime="$("${MCPBASH_JSON_TOOL_BIN}" -r 'if (.mimeType | type) == "string" then .mimeType else "" end' "${meta_json}" 2>/dev/null | tr -d '\r' || true)"
 				meta_provider="$("${MCPBASH_JSON_TOOL_BIN}" -r '.provider // ""' "${meta_json}" 2>/dev/null | tr -d '\r' || true)"
 				meta_icons="$("${MCPBASH_JSON_TOOL_BIN}" -c '.icons // null' "${meta_json}" 2>/dev/null || echo 'null')"
 				meta_annotations="$("${MCPBASH_JSON_TOOL_BIN}" -c '.annotations // null' "${meta_json}" 2>/dev/null || echo 'null')"
@@ -567,7 +580,10 @@ mcp_resources_scan() {
 					[ -n "${meta_name}" ] && name="${meta_name}"
 					description="${meta_desc:-${description}}"
 					uri="${meta_uri:-${uri}}"
-					mime="${meta_mime:-${mime}}"
+					if [ -n "${meta_mime}" ]; then
+						mime="${meta_mime}"
+						mime_declared="true"
+					fi
 					provider="${meta_provider:-${provider}}"
 					icons="${meta_icons:-${icons}}"
 					annotations="${meta_annotations:-${annotations}}"
@@ -647,10 +663,12 @@ mcp_resources_scan() {
 				--arg path "$rel_path" \
 				--arg uri "$uri" \
 				--arg mime "$mime" \
+				--arg mime_declared "$mime_declared" \
 				--arg provider "$provider" \
 				--argjson icons "$icons" \
 				--argjson annotations "$annotations" \
 				'{name: $name, description: $desc, path: $path, uri: $uri, mimeType: $mime, provider: $provider}
+				+ (if $mime_declared == "true" then {mimeTypeDeclared: true} else {} end)
 				+ (if $icons != null then {icons: $icons} else {} end)
 				+ (if $annotations != null then {annotations: $annotations} else {} end)' >>"${items_file}"
 		done < <(find "${resources_dir}" -type f ! -name ".*" ! -name "*.meta.json" ! -name "*.completion.sh" ! -name "*.completion" -print0 2>/dev/null)
@@ -760,7 +778,8 @@ mcp_resources_list() {
 
 	# Merge UI resources if available (from lib/ui.sh)
 	local all_items_json
-	all_items_json="$(printf '%s' "${MCP_RESOURCES_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.items // []')"
+	# mimeTypeDeclared is internal (read-path only); keep it off the wire.
+	all_items_json="$(printf '%s' "${MCP_RESOURCES_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -c '(.items // []) | map(if type == "object" then del(.mimeTypeDeclared) else . end)')"
 
 	if [ -n "${MCP_UI_REGISTRY_JSON:-}" ]; then
 		# Convert UI resources to standard resource format and merge
@@ -1869,11 +1888,15 @@ mcp_resources_read() {
 		fi
 	fi
 
-	local uri provider mime
+	local uri provider mime mime_declared
 	uri="$(printf '%s' "${metadata}" | "${MCPBASH_JSON_TOOL_BIN}" -r --arg explicit "${explicit_uri}" 'if $explicit != "" then $explicit else .uri // "" end')"
 	provider="$(printf '%s' "${metadata}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.provider // ""')"
 	mime="$(printf '%s' "${metadata}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.mimeType // "text/plain"')"
-	local mime_declared="false"
+	# A declared mimeType is the reported label; caches without the flag
+	# count as undeclared (detection labels the content).
+	mime_declared="$(printf '%s' "${metadata}" | "${MCPBASH_JSON_TOOL_BIN}" -r 'if .mimeTypeDeclared == true then "true" else "false" end')"
+	# A matched resource template's mimeType is declared too (only reached when
+	# no static resource matched).
 	if [ -n "${template_mime}" ]; then
 		mime="${template_mime}"
 		mime_declared="true"
@@ -1929,6 +1952,7 @@ mcp_resources_read() {
 	# For UI resources, override MIME type to spec-defined value
 	if [ "${provider}" = "ui" ]; then
 		mime="text/html;profile=mcp-app"
+		mime_declared="false"
 	fi
 
 	if ! content_obj="$(mcp_resource_content_object_from_file "${content_file}" "${mime}" "${uri}" "${mime_declared}")"; then
