@@ -50,6 +50,7 @@ TESTS=(
 	"test_initialize_instructions.sh"
 	"test_core_errors.sh"
 	"test_completion.sh"
+	"test_completion_prompt_script.sh"
 	"test_conformance_strict_shapes.sh"
 	"test_installer.sh"
 	"test_tools.sh"
