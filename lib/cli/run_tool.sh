@@ -287,6 +287,9 @@ EOF
 	fi
 	mcp_runtime_init_paths "cli"
 	mcp_runtime_detect_json_tool
+	# Same declarative env policy as the server, so local runs match production.
+	mcp_require meta_env mcp_meta_env_apply
+	mcp_meta_env_apply
 
 	if [ "${no_refresh}" = "true" ]; then
 		mcp_cli_run_tool_load_cache || exit 1

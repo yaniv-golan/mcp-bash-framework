@@ -1,0 +1,128 @@
+#!/usr/bin/env bash
+# Declarative env policy from server.d/server.meta.json ("env" object).
+#
+# Only the tool/provider env-policy keys may be set this way. Operator opt-ins
+# (MCPBASH_*_INHERIT_ALLOW, MCPBASH_ALLOW_PROJECT_HOOKS, ...) and arbitrary
+# variables are refused. Values are validated inside the JSON tool against a
+# strict character set before they reach the shell, and values are never
+# printed: warnings name keys only.
+
+set -euo pipefail
+
+MCP_META_ENV_KEYS="MCPBASH_TOOL_ENV_MODE MCPBASH_TOOL_ENV_ALLOWLIST MCPBASH_PROVIDER_ENV_MODE MCPBASH_PROVIDER_ENV_ALLOWLIST"
+
+mcp_meta_env_file() {
+	printf '%s' "${MCPBASH_SERVER_DIR:-${MCPBASH_PROJECT_ROOT:-.}/server.d}/server.meta.json"
+}
+
+_mcp_meta_env_warn() {
+	if declare -F mcp_logging_warning >/dev/null 2>&1; then
+		mcp_logging_warning "mcp.meta_env" "$1"
+	else
+		printf 'mcp-bash: %s\n' "$1" >&2
+	fi
+}
+
+# Classify every entry of the "env" object. Prints one TAB-separated line per
+# entry: <status> <key> [<value>]
+#   apply    KEY VALUE   valid; VALUE matches a strict charset (no TAB/CR/LF)
+#   refused  KEY         key not settable from server.meta.json
+#   invalid  KEY REASON  allowed key with an unusable value
+#   error    env REASON  the "env" member itself is unusable
+# Refused/invalid keys are reduced to [A-Za-z0-9_] (others become "?") and
+# truncated, so key names cannot inject control characters into logs.
+# Returns 0 with no output when there is no file, no "env", or no JSON tool.
+mcp_meta_env_check() {
+	local meta_file="${1:-$(mcp_meta_env_file)}"
+	[ -f "${meta_file}" ] || return 0
+	if [ "${MCPBASH_JSON_TOOL:-none}" = "none" ] || [ -z "${MCPBASH_JSON_TOOL_BIN:-}" ]; then
+		return 0
+	fi
+	"${MCPBASH_JSON_TOOL_BIN}" -r '
+		def safe_key: gsub("[^A-Za-z0-9_]"; "?") | .[0:64];
+		def name_ok: test("^[A-Za-z_][A-Za-z0-9_]*$");
+		def name_dangerous:
+			test("^(SHELLOPTS|BASHOPTS|PS4|BASH_ENV|ENV|BASH_XTRACEFD|IFS)$")
+			or test("^(LD_|DYLD_|BASH_FUNC_|_MCP|MCPBASH_|MCP_)");
+		def modes($k):
+			if $k == "MCPBASH_TOOL_ENV_MODE" then ["minimal", "allowlist", "inherit"]
+			else ["isolate", "allowlist", "inherit"] end;
+		if (type != "object") or (has("env") | not) or (.env == null) then empty
+		elif (.env | type) != "object" then "error\tenv\tenv must be an object"
+		else .env | to_entries[] |
+			.key as $k | .value as $v |
+			if ($k | IN("MCPBASH_TOOL_ENV_MODE", "MCPBASH_TOOL_ENV_ALLOWLIST",
+				"MCPBASH_PROVIDER_ENV_MODE", "MCPBASH_PROVIDER_ENV_ALLOWLIST") | not)
+			then "refused\t\($k | safe_key)"
+			elif ($v | type) != "string" then "invalid\t\($k)\tvalue must be a string"
+			elif ($v | length) > 4096 then "invalid\t\($k)\tvalue longer than 4096 characters"
+			elif ($k | endswith("_MODE")) then
+				if ($v | IN(modes($k)[])) then "apply\t\($k)\t\($v)"
+				else "invalid\t\($k)\tmode must be one of: \(modes($k) | join(", "))" end
+			else
+				($v | [splits("[, ]+")] | map(select(. != ""))) as $names |
+				if ($v | test("^[A-Za-z0-9_, ]*$") | not) or any($names[]; name_ok | not) then
+					"invalid\t\($k)\tnames must match [A-Za-z_][A-Za-z0-9_]*, separated by commas"
+				elif any($names[]; name_dangerous) then
+					"invalid\t\($k)\tlists a reserved or shell-control variable name"
+				else "apply\t\($k)\t\($names | join(","))" end
+			end
+		end
+	' "${meta_file}" 2>/dev/null || printf 'error\tenv\tserver.meta.json is not valid JSON\n'
+}
+
+# A launch-env value counts as unset when empty or when it is an unexpanded
+# MCPB placeholder (Claude Desktop leaves ${user_config.x} literal when the
+# setting has no value and no default).
+_mcp_meta_env_launch_set() {
+	local value="${1-}"
+	[ -n "${value}" ] || return 1
+	case "${value}" in
+	'${user_config.'*) return 1 ;;
+	esac
+	return 0
+}
+
+# Scope ("TOOL" or "PROVIDER") is operator-controlled when the launch env sets
+# either variable of its MODE/ALLOWLIST pair; meta values for it are ignored.
+mcp_meta_env_scope_from_launch() {
+	local scope="$1"
+	local mode_var="MCPBASH_${scope}_ENV_MODE"
+	local list_var="MCPBASH_${scope}_ENV_ALLOWLIST"
+	_mcp_meta_env_launch_set "${!mode_var-}" || _mcp_meta_env_launch_set "${!list_var-}"
+}
+
+# Apply the "env" object to the current process. Call once, after JSON tool
+# detection and before any tool or provider is spawned.
+mcp_meta_env_apply() {
+	case "${MCPBASH_IGNORE_META_ENV:-false}" in
+	true | 1) return 0 ;;
+	esac
+	local tool_from_launch=false provider_from_launch=false
+	mcp_meta_env_scope_from_launch TOOL && tool_from_launch=true
+	mcp_meta_env_scope_from_launch PROVIDER && provider_from_launch=true
+
+	local status key value
+	while IFS=$'\t' read -r status key value; do
+		case "${status}" in
+		apply)
+			case "${key}" in
+			MCPBASH_TOOL_*) [ "${tool_from_launch}" = "true" ] && continue ;;
+			MCPBASH_PROVIDER_*) [ "${provider_from_launch}" = "true" ] && continue ;;
+			*) continue ;;
+			esac
+			export "${key}=${value}"
+			;;
+		refused)
+			_mcp_meta_env_warn "server.meta.json env: ignoring ${key} (only ${MCP_META_ENV_KEYS// /, } may be set there; set others in the launch environment)"
+			;;
+		invalid)
+			_mcp_meta_env_warn "server.meta.json env: ignoring ${key}: ${value}"
+			;;
+		error)
+			_mcp_meta_env_warn "server.meta.json env: ${value}"
+			;;
+		esac
+	done < <(mcp_meta_env_check)
+	return 0
+}

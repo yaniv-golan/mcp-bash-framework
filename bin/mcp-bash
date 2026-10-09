@@ -107,7 +107,7 @@ initialize_runtime_paths() {
 	# Allow MCPBASH_HOME override for development (use installed binary with dev code)
 	MCPBASH_HOME="${MCPBASH_HOME:-$(cd "${script_dir}/.." && pwd)}"
 
-	local required_libs="require runtime json hash ids lock io paginate logging auth uri policy tools_policy registry spec tools resources prompts completion timeout rpc core validate"
+	local required_libs="require runtime meta_env json hash ids lock io paginate logging auth uri policy tools_policy registry spec tools resources prompts completion timeout rpc core validate"
 	local lib
 
 	for lib in ${required_libs}; do
@@ -121,6 +121,8 @@ initialize_runtime_paths() {
 	. "${MCPBASH_HOME}/lib/require.sh"
 	# shellcheck disable=SC1090
 	. "${MCPBASH_HOME}/lib/runtime.sh"
+	# shellcheck disable=SC1090
+	. "${MCPBASH_HOME}/lib/meta_env.sh"
 	# shellcheck disable=SC1090
 	. "${MCPBASH_HOME}/lib/json.sh"
 	# shellcheck disable=SC1090

@@ -66,3 +66,16 @@ EOF2
 	assert_success
 	assert_output --partial "FOO=host-secret"
 }
+
+@test "tool_env_allowlist: run-tool applies the server.meta.json env policy" {
+	cat >"${PROJECT_ROOT}/server.d/server.meta.json" <<'EOF2'
+{"name":"allowlist-test","env":{"MCPBASH_TOOL_ENV_MODE":"allowlist","MCPBASH_TOOL_ENV_ALLOWLIST":"FOO"}}
+EOF2
+	FOO="via-meta" run "${MCPBASH_HOME}/bin/mcp-bash" run-tool echo-env --allow-self
+	assert_success
+	assert_output --partial "FOO=via-meta"
+
+	FOO="via-meta" MCPBASH_IGNORE_META_ENV=true run "${MCPBASH_HOME}/bin/mcp-bash" run-tool echo-env --allow-self
+	assert_success
+	assert_output --partial "FOO=blocked"
+}

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Declarative env policy in `server.d/server.meta.json`**: An optional `"env"` object can set `MCPBASH_TOOL_ENV_MODE`, `MCPBASH_TOOL_ENV_ALLOWLIST`, `MCPBASH_PROVIDER_ENV_MODE` and `MCPBASH_PROVIDER_ENV_ALLOWLIST`, so a project (including an installed MCPB bundle) can pass host-injected secrets such as an API key on to its tools and providers. The server applies it at startup and `mcp-bash run-tool` applies it too.
+  - Only those four keys are accepted. Operator opt-ins (`*_INHERIT_ALLOW`, `MCPBASH_ALLOW_PROJECT_HOOKS`, ...) and any other variable are refused with a warning that names the key, never the value.
+  - Values are validated before use: modes must be valid for their key, and allowlists may only name plain variables (no shell-control or reserved names such as `LD_PRELOAD`, `BASH_ENV` or `MCPBASH_*`).
+  - The launch environment wins. If it sets either the mode or the allowlist for tools (or for providers), both meta values for that scope are ignored. An empty value, or an unexpanded `${user_config.*}` placeholder, counts as unset. `MCPBASH_IGNORE_META_ENV=true` ignores the section entirely.
+  - `inherit` still requires the operator's `*_INHERIT_ALLOW`.
+  - `mcp-bash validate` reports problems in the section, and `mcp-bash bundle` refuses a bundle whose section contains a disallowed key, because its value would ship.
+
 ### Fixed
 
 - **The tool inherit-mode gate now also applies to a mode set by `server.d/policy.sh`**: `MCPBASH_TOOL_ENV_MODE=inherit` requires `MCPBASH_TOOL_ENV_INHERIT_ALLOW=true`, but the check ran before `policy.sh` was sourced, so a mode exported there skipped it. The check now runs after the policy hook. `policy.sh` is project code and can still set anything, so this guards against accidental configuration, not a hostile project.

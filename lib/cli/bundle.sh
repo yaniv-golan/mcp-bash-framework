@@ -313,7 +313,35 @@ mcp_bundle_validate_project() {
 		fi
 	fi
 
+	if ! mcp_bundle_validate_meta_env "${project_root}"; then
+		errors=$((errors + 1))
+	fi
+
 	return "${errors}"
+}
+
+# The server.meta.json "env" object ships inside the bundle. Keys it may not
+# set are errors here (not warnings, as in `mcp-bash validate`): they never take
+# effect, and a value in them would be published. Prints key names only.
+mcp_bundle_validate_meta_env() {
+	local project_root="$1"
+	local meta_file="${project_root}/server.d/server.meta.json"
+	[ -f "${meta_file}" ] || return 0
+	command -v mcp_meta_env_check >/dev/null 2>&1 || . "${MCPBASH_HOME}/lib/meta_env.sh"
+	local failed=0 status key detail
+	while IFS=$'\t' read -r status key detail; do
+		case "${status}" in
+		refused)
+			printf '  \342\234\227 server.meta.json env.%s is not allowed (only %s) and would ship in the bundle\n' "${key}" "${MCP_META_ENV_KEYS// /, }" >&2
+			failed=1
+			;;
+		invalid | error)
+			printf '  \342\234\227 server.meta.json env.%s: %s\n' "${key}" "${detail}" >&2
+			failed=1
+			;;
+		esac
+	done < <(mcp_meta_env_check "${meta_file}")
+	[ "${failed}" -eq 0 ]
 }
 
 mcp_bundle_warn_missing_author() {

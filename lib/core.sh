@@ -94,6 +94,7 @@ mcp_core_bootstrap_state() {
 		exit 1
 	fi
 	mcp_runtime_load_server_meta
+	mcp_meta_env_apply
 	mcp_ids_init_state
 	mcp_lock_init
 	mcp_io_init

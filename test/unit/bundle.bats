@@ -1591,3 +1591,14 @@ EOF
 	# Embedded mcp-bash binary must be executable
 	[ -x "${EXTRACT_DIR}/server/.mcp-bash/bin/mcp-bash" ]
 }
+
+@test "bundle: disallowed server.meta.json env keys fail validation without printing values" {
+	cat >"${PROJECT_ROOT}/server.d/server.meta.json" <<'EOF2'
+{"name": "test-server", "version": "1.2.3", "env": {"MCPBASH_TOOL_ENV_MODE": "allowlist", "API_KEY": "sk-sentinel-42"}}
+EOF2
+	run bash -c "cd '${PROJECT_ROOT}' && '${MCPBASH_HOME}/bin/mcp-bash' bundle --validate"
+	assert_failure
+	assert_output --partial "env.API_KEY is not allowed"
+	refute_output --partial "sk-sentinel-42"
+}
+

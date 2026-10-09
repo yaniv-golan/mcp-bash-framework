@@ -86,7 +86,24 @@ mcp_validate_server_meta() {
 					errors=$((errors + 1))
 				fi
 
-				if [ -n "${srv_name}" ] && [ "${icons_result}" = "ok" ]; then
+				# Validate the declarative env policy ("env"); key names only, never values.
+				local env_errors=0 env_status env_key env_detail
+				command -v mcp_meta_env_check >/dev/null 2>&1 || . "${MCPBASH_HOME}/lib/meta_env.sh"
+				while IFS=$'\t' read -r env_status env_key env_detail; do
+					case "${env_status}" in
+					error | invalid)
+						printf '✗ server.d/server.meta.json - env.%s: %s\n' "${env_key}" "${env_detail}"
+						env_errors=$((env_errors + 1))
+						;;
+					refused)
+						printf '⚠ server.d/server.meta.json - env.%s is ignored: only %s may be set there\n' "${env_key}" "${MCP_META_ENV_KEYS// /, }"
+						warnings=$((warnings + 1))
+						;;
+					esac
+				done < <(mcp_meta_env_check "${server_meta}")
+				errors=$((errors + env_errors))
+
+				if [ -n "${srv_name}" ] && [ "${icons_result}" = "ok" ] && [ "${env_errors}" -eq 0 ]; then
 					printf '✓ server.d/server.meta.json - valid\n'
 				fi
 			fi
