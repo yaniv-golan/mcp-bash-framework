@@ -61,6 +61,7 @@ TESTS=(
 	"test_core_errors.sh"
 	"test_completion.sh"
 	"test_completion_prompt_script.sh"
+	"test_completion_resource_template.sh"
 	"test_discovery_skips_completion_scripts.sh"
 	"test_stdin_eof_shutdown.sh"
 	"test_background_loops_exit.sh"

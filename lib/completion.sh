@@ -447,6 +447,24 @@ mcp_completion_resource_script() {
 	return 1
 }
 
+# Resource templates have no content path, so their completion script is found
+# by template name: resources/<name>.completion[.sh] or
+# resources/<name>/<name>.completion[.sh] (the scaffold's directory layout).
+mcp_completion_template_script() {
+	local name="$1"
+	case "${name}" in
+	'' | .* | */* | *..*) return 1 ;;
+	esac
+	local candidate
+	for candidate in "${name}.completion.sh" "${name}.completion" "${name}/${name}.completion.sh" "${name}/${name}.completion"; do
+		if [ -x "${MCPBASH_RESOURCES_DIR}/${candidate}" ]; then
+			printf '%s' "${candidate}"
+			return 0
+		fi
+	done
+	return 1
+}
+
 # Timeout for per-prompt and per-resource completion scripts, which have no
 # registration entry to carry timeoutSecs. Completions run on every keystroke,
 # so a hung script must not hold a worker. Operators can change it with
@@ -534,6 +552,18 @@ mcp_completion_select_provider() {
 			MCP_COMPLETION_PROVIDER_RESOURCE_PATH="$(printf '%s' "${metadata}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.path // ""' 2>/dev/null)"
 			MCP_COMPLETION_PROVIDER_RESOURCE_URI="$(printf '%s' "${metadata}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.uri // ""' 2>/dev/null)"
 			MCP_COMPLETION_PROVIDER_RESOURCE_PROVIDER="$(printf '%s' "${metadata}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.provider // ""' 2>/dev/null)"
+			MCP_COMPLETION_PROVIDER_SCRIPT_KEY="resource:${script_rel}"
+			MCP_COMPLETION_PROVIDER_TIMEOUT="$(mcp_completion_default_timeout)"
+			return 0
+		fi
+	fi
+
+	if metadata="$(mcp_resources_template_metadata_for_name "${name}")"; then
+		if script_rel="$(mcp_completion_template_script "${name}")"; then
+			MCP_COMPLETION_PROVIDER_TYPE="resource"
+			MCP_COMPLETION_PROVIDER_METADATA="${metadata}"
+			MCP_COMPLETION_PROVIDER_SCRIPT="${script_rel}"
+			MCP_COMPLETION_PROVIDER_RESOURCE_URI="$(printf '%s' "${metadata}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.uriTemplate // ""' 2>/dev/null)"
 			MCP_COMPLETION_PROVIDER_SCRIPT_KEY="resource:${script_rel}"
 			MCP_COMPLETION_PROVIDER_TIMEOUT="$(mcp_completion_default_timeout)"
 			return 0

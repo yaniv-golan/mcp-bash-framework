@@ -52,6 +52,7 @@ Details are in the entries below.
 
 ### Added
 
+- **Per-resource completion scripts work for resource templates**: A `completion/complete` with `ref/resource` was matched only against static resources by exact URI, so a template's completion script was never run and the server returned values built from the URI string. Claude Desktop sends `ref/resource` only for template arguments, so per-resource completions did nothing there. The URI is now also matched against the templates (exactly by `uriTemplate`, or as a concrete URI), and the script is found by template name: `resources/<name>.completion.sh` or `resources/<name>/<name>.completion.sh`. `MCP_RESOURCE_URI` is the `uriTemplate`, and `MCP_COMPLETION_ARGS_JSON` `.argument.name` names the variable being completed.
 - **`mcp-bash doctor` warns when the git provider can't pin**: With `MCPBASH_ENABLE_GIT_PROVIDER=true` and git older than 2.37, doctor warns (`git.version_unpinnable` in `--json`) that fetches by hostname will be refused.
 - **`resources/read` matches resource templates**: When no resource has the requested name or exact URI, the URI is matched against the registered resource templates.
   - **Syntax:** a subset of RFC 6570: `{v}` (stops at `/`, `?`, `#`), `{+v}` and `{#v}`. Templates using other operators, comma lists, modifiers, adjacent or repeated expressions keep their previous read behaviour.

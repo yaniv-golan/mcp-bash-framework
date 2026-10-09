@@ -1088,6 +1088,34 @@ mcp_resources_metadata_for_uri() {
 	printf '%s' "${metadata}"
 }
 
+# mcp_resources_template_name_for_ref URI
+# Resolves a completion ref/resource URI to a resource template name: first a
+# template whose uriTemplate is exactly URI (what clients send for template
+# arguments), then a template matching URI as a concrete URI.
+mcp_resources_template_name_for_ref() {
+	local uri="$1"
+	[ -n "${uri}" ] || return 1
+	mcp_resources_templates_refresh_registry || return 1
+	[ -n "${MCP_RESOURCES_TEMPLATES_REGISTRY_JSON:-}" ] || return 1
+	local name
+	name="$(printf '%s' "${MCP_RESOURCES_TEMPLATES_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -r --arg uri "${uri}" '[.items[] | select(.uriTemplate == $uri) | .name] | first // ""' 2>/dev/null)" || name=""
+	if [ -z "${name}" ]; then
+		name="$(printf '%s' "${MCP_RESOURCES_TEMPLATES_REGISTRY_JSON}" | mcp_resource_template_match "${uri}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.name // ""' 2>/dev/null)" || name=""
+	fi
+	[ -n "${name}" ] || return 1
+	printf '%s' "${name}"
+}
+
+mcp_resources_template_metadata_for_name() {
+	local name="$1"
+	mcp_resources_templates_refresh_registry || return 1
+	[ -n "${MCP_RESOURCES_TEMPLATES_REGISTRY_JSON:-}" ] || return 1
+	local metadata
+	metadata="$(printf '%s' "${MCP_RESOURCES_TEMPLATES_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -c --arg name "${name}" '[.items[] | select(.name == $name)] | first // empty' 2>/dev/null)" || return 1
+	[ -n "${metadata}" ] || return 1
+	printf '%s' "${metadata}"
+}
+
 mcp_resources_templates_has_variable() {
 	local template="$1"
 	printf '%s' "${template}" | grep -q '{[^}]*[^[:space:]][^}]*}'

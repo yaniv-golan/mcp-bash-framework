@@ -48,6 +48,11 @@ mcp_handle_completion() {
 				if [ -n "${metadata}" ]; then
 					resolved="$(printf '%s' "${metadata}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.name // ""' 2>/dev/null || true)"
 				fi
+				if [ -z "${resolved}" ]; then
+					# Not a static resource: try the resource templates, so a
+					# template's completion script can serve its arguments.
+					resolved="$(mcp_resources_template_name_for_ref "${ref_uri}" 2>/dev/null || true)"
+				fi
 				if [ -n "${resolved}" ]; then
 					name="${resolved}"
 				else
