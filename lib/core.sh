@@ -13,6 +13,8 @@ MCPBASH_SHUTDOWN_WATCHDOG_CANCEL=""
 MCPBASH_EXIT_REQUESTED=false
 MCPBASH_PROGRESS_FLUSHER_PID=""
 MCPBASH_RESOURCE_POLL_PID=""
+# Set when a resources/subscribe is dispatched; see mcp_core_maybe_start_background_workers.
+MCPBASH_RESOURCE_POLL_WANTED=false
 MCPBASH_LAST_REGISTRY_POLL=""
 
 # Zombie process mitigation (idle timeout + orphan detection)
@@ -148,8 +150,11 @@ mcp_core_maybe_start_background_workers() {
 		fi
 	fi
 
-	# Start resource subscription polling only when there are subscriptions.
-	if mcp_core_has_resource_subscriptions; then
+	# Start resource subscription polling once a subscribe has been dispatched
+	# or a subscription record exists. resources/subscribe runs in a worker, so
+	# its record usually does not exist yet when this runs right after dispatch;
+	# waiting for the record would delay polling until the next client message.
+	if [ "${MCPBASH_RESOURCE_POLL_WANTED}" = "true" ] || mcp_core_has_resource_subscriptions; then
 		mcp_core_start_resource_poll
 	fi
 }
@@ -889,6 +894,10 @@ mcp_core_dispatch_object() {
 
 	handler="${MCPBASH_RESOLVED_HANDLER}"
 	async="${MCPBASH_RESOLVED_ASYNC}"
+
+	if [ "${method}" = "resources/subscribe" ]; then
+		MCPBASH_RESOURCE_POLL_WANTED=true
+	fi
 
 	if [ "${async}" = "true" ]; then
 		mcp_core_spawn_worker "${handler}" "${method}" "${json_line}" "${id_json}"
