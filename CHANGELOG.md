@@ -5,6 +5,12 @@ All notable changes to mcp-bash-framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Security
+
+- **`MCPBASH_TOOL_ENV_ALLOWLIST` names are validated with an anchored pattern**: The name check used a shell glob that only anchored the first two characters, so an entry such as `xx[$(command)]` was accepted, and reading it with indirect expansion ran the embedded command in the server's tool subshell. Names must now match `^[A-Za-z_][A-Za-z0-9_]*$` exactly; anything else is skipped. The value is set by whoever configures the server, so this was not reachable by MCP clients, but configuration data must never execute code.
+
 ## [1.4.0] - 2026-10-09
 
 ### Fixed

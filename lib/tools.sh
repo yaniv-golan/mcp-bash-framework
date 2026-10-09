@@ -1891,10 +1891,11 @@ mcp_tools_call() {
 				local allowlist_var allowlist_value
 				for allowlist_var in ${allowlist_raw}; do
 					[ -n "${allowlist_var}" ] || continue
-					case "${allowlist_var}" in
-					[A-Za-z_][A-Za-z0-9_]*) ;;
-					*) continue ;;
-					esac
+					# Anchored regex, not a case glob: a glob's trailing `*` would accept
+					# names like `xx[$(cmd)]`, whose subscript ${!name} then evaluates.
+					if ! [[ "${allowlist_var}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+						continue
+					fi
 					allowlist_value="${!allowlist_var:-}"
 					[ -n "${allowlist_value}" ] || continue
 					# shellcheck disable=SC2163  # Intentional: export var by name stored in allowlist_var
