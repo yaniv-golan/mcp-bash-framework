@@ -5,6 +5,9 @@ load '../../node_modules/bats-support/load'
 load '../../node_modules/bats-assert/load'
 load '../common/fixtures'
 
+# run --separate-stderr needs bats >= 1.5.0.
+bats_require_minimum_version 1.5.0
+
 setup() {
 	PROJECT_ROOT="${BATS_TEST_TMPDIR}/proj"
 	export MCPBASH_PROJECT_ROOT="${PROJECT_ROOT}"
