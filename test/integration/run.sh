@@ -78,6 +78,7 @@ TESTS=(
 	"test_resources.sh"
 	"test_resource_annotations.sh"
 	"test_resource_templates.sh"
+	"test_resource_template_read.sh"
 	"test_lifecycle_gating.sh"
 	"test_resources_providers.sh"
 	"test_minimal_mode.sh"

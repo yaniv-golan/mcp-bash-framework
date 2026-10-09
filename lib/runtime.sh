@@ -290,6 +290,11 @@ mcp_runtime_init_paths() {
 	local mode="${1:-server}"
 	local allow_bootstrap="${2:-}"
 
+	# Set only by resources/read on a template match (via the provider's
+	# env_pairs). Drop host values before any child starts: MCP_RESOURCE_* passes
+	# the curated provider/tool env, and inherit mode keeps everything.
+	unset MCP_RESOURCE_TEMPLATE_NAME MCP_RESOURCE_TEMPLATE_VARS 2>/dev/null || true
+
 	# CI mode: set safe defaults only when unset.
 	if [ "${MCPBASH_CI_MODE:-false}" = "true" ]; then
 		if [ -z "${MCPBASH_TMP_ROOT:-}" ]; then

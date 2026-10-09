@@ -46,6 +46,7 @@ mcp_require uri mcp_uri_file_uri_from_path
 mcp_require registry mcp_registry_resolve_scan_root
 mcp_require paginate mcp_paginate_decode
 mcp_require resource_content mcp_resource_content_object_from_file
+mcp_require resource_match mcp_resource_template_match
 mcp_require runtime mcp_env_run_curated
 
 mcp_resources_file_uri_from_path() {
@@ -1575,17 +1576,27 @@ mcp_resources_provider_from_uri() {
 # that scheme bound to provider <scheme>. Comparison is exact (case-sensitive)
 # so the result does not depend on filesystem case folding. Fails closed when
 # the templates registry cannot be loaded.
+# Optional <templates>: "ready" when the caller has just refreshed the
+# templates registry, "unavailable" when that refresh failed; either way the
+# registry is not refreshed again.
 mcp_resources_scheme_declared() {
 	local scheme="$1"
+	local templates="${2:-}"
 	[ -n "${scheme}" ] || return 1
 	if [ -n "${MCP_RESOURCES_REGISTRY_JSON:-}" ] && printf '%s' "${MCP_RESOURCES_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -e --arg s "${scheme}" '
 		any(.items[]?; (.uri // "" | split(":")[0]) == $s and .provider == $s)
 	' >/dev/null 2>&1; then
 		return 0
 	fi
-	if ! mcp_resources_templates_refresh_registry; then
-		return 1
-	fi
+	case "${templates}" in
+	ready) ;;
+	unavailable) return 1 ;;
+	*)
+		if ! mcp_resources_templates_refresh_registry; then
+			return 1
+		fi
+		;;
+	esac
 	[ -n "${MCP_RESOURCES_TEMPLATES_REGISTRY_JSON:-}" ] || return 1
 	printf '%s' "${MCP_RESOURCES_TEMPLATES_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -e --arg s "${scheme}" '
 		any(.items[]?.uriTemplate // ""; test("^[A-Za-z][A-Za-z0-9+.-]*:") and split(":")[0] == $s)
@@ -1594,6 +1605,8 @@ mcp_resources_scheme_declared() {
 
 mcp_resources_read_file() {
 	local uri="$1"
+	local template_name="${2:-}"
+	local template_vars="${3:-}"
 	local script="${MCPBASH_HOME}/providers/file.sh"
 	local tmp_err
 	tmp_err="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-resource-file.XXXXXX")"
@@ -1604,6 +1617,9 @@ mcp_resources_read_file() {
 				"MCPBASH_HOME=${MCPBASH_HOME}"
 				"MCP_RESOURCES_ROOTS=${MCP_RESOURCES_ROOTS:-${MCPBASH_RESOURCES_DIR}}"
 			)
+			if [ -n "${template_name}" ]; then
+				env_pairs+=("MCP_RESOURCE_TEMPLATE_NAME=${template_name}" "MCP_RESOURCE_TEMPLATE_VARS=${template_vars}")
+			fi
 			mcp_env_run_curated provider "${env_pairs[@]}" -- "${script}" "${uri}"
 		) 2>"${tmp_err}"
 	)"; then
@@ -1629,9 +1645,15 @@ mcp_resources_read_file() {
 	return 1
 }
 
+# mcp_resources_read_via_provider PROVIDER URI [TEMPLATE_NAME TEMPLATE_VARS]
+# With a template name, the provider gets MCP_RESOURCE_TEMPLATE_NAME and
+# MCP_RESOURCE_TEMPLATE_VARS; otherwise neither is set (both are unset at
+# startup, so a host value cannot leak in).
 mcp_resources_read_via_provider() {
 	local provider="$1"
 	local uri="$2"
+	local template_name="${3:-}"
+	local template_vars="${4:-}"
 	local script=""
 
 	# Check project-level providers first (if directory exists)
@@ -1727,6 +1749,9 @@ mcp_resources_read_via_provider() {
 			if [ -n "${HTTP_PROXY-}" ]; then env_pairs+=("HTTP_PROXY=${HTTP_PROXY-}"); fi
 			if [ -n "${HTTPS_PROXY-}" ]; then env_pairs+=("HTTPS_PROXY=${HTTPS_PROXY-}"); fi
 			if [ -n "${NO_PROXY-}" ]; then env_pairs+=("NO_PROXY=${NO_PROXY-}"); fi
+			if [ -n "${template_name}" ]; then
+				env_pairs+=("MCP_RESOURCE_TEMPLATE_NAME=${template_name}" "MCP_RESOURCE_TEMPLATE_VARS=${template_vars}")
+			fi
 
 			# Bash 3.2 + `set -u`: expanding an empty array triggers "unbound variable".
 			mcp_env_run_curated provider ${env_pairs[@]:+"${env_pairs[@]}"} -- "${provider_runner[@]}" "${uri}"
@@ -1769,7 +1794,7 @@ mcp_resources_read_via_provider() {
 
 	case "${provider}" in
 	file)
-		mcp_resources_read_file "${uri}"
+		mcp_resources_read_file "${uri}" "${template_name}" "${template_vars}"
 		;;
 	*)
 		mcp_resources_error -32603 "Unsupported resource provider"
@@ -1812,6 +1837,29 @@ mcp_resources_read() {
 		metadata="$(mcp_resources_metadata_for_uri "${explicit_uri}" 2>/dev/null || echo "{}")"
 	fi
 
+	# No resource by name or exact URI: try the resource templates. A match
+	# supplies the template name and raw variables (provider env) and its
+	# declared mimeType; it never changes which provider runs. The refresh
+	# done here is shared with the scheme gate below.
+	local template_name="" template_vars="" template_mime="" templates_state=""
+	if [ -n "${explicit_uri}" ] && { [ -z "${metadata}" ] || [ "${metadata}" = "{}" ]; }; then
+		if mcp_resources_templates_refresh_registry; then
+			templates_state="ready"
+			local template_match=""
+			if [ -n "${MCP_RESOURCES_TEMPLATES_REGISTRY_JSON:-}" ]; then
+				template_match="$(printf '%s' "${MCP_RESOURCES_TEMPLATES_REGISTRY_JSON}" | mcp_resource_template_match "${explicit_uri}")"
+			fi
+			if [ -n "${template_match}" ]; then
+				template_name="$(printf '%s' "${template_match}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.name // ""')"
+				template_vars="$(printf '%s' "${template_match}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.vars // {}')"
+				template_mime="$(printf '%s' "${template_match}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.mimeType // ""')"
+				mcp_logging_debug "${MCP_RESOURCES_LOGGER}" "Resource template matched: ${template_name}"
+			fi
+		else
+			templates_state="unavailable"
+		fi
+	fi
+
 	if mcp_logging_is_enabled "debug"; then
 		if mcp_logging_verbose_enabled; then
 			mcp_logging_debug "${MCP_RESOURCES_LOGGER}" "Metadata resolved for name=${name:-<direct>} uri=${explicit_uri}"
@@ -1825,6 +1873,11 @@ mcp_resources_read() {
 	uri="$(printf '%s' "${metadata}" | "${MCPBASH_JSON_TOOL_BIN}" -r --arg explicit "${explicit_uri}" 'if $explicit != "" then $explicit else .uri // "" end')"
 	provider="$(printf '%s' "${metadata}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.provider // ""')"
 	mime="$(printf '%s' "${metadata}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.mimeType // "text/plain"')"
+	local mime_declared="false"
+	if [ -n "${template_mime}" ]; then
+		mime="${template_mime}"
+		mime_declared="true"
+	fi
 
 	if [ -z "${uri}" ]; then
 		mcp_resources_error -32602 "Resource URI missing"
@@ -1837,7 +1890,7 @@ mcp_resources_read() {
 			# The URI is client-supplied: only route it to a project provider
 			# whose scheme the project declares.
 			inferred="$(mcp_resources_provider_from_uri "${uri}")"
-			if [ -n "${inferred}" ] && ! mcp_resources_scheme_declared "${inferred}"; then
+			if [ -n "${inferred}" ] && ! mcp_resources_scheme_declared "${inferred}" "${templates_state}"; then
 				mcp_logging_debug "${MCP_RESOURCES_LOGGER}" "Scheme '${inferred}' has a provider script but no declared resource or template"
 				inferred=""
 			fi
@@ -1853,7 +1906,7 @@ mcp_resources_read() {
 	fi
 	local content_file
 	content_file="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-resource-read.XXXXXX")"
-	if ! mcp_resources_read_via_provider "${provider}" "${uri}" >"${content_file}"; then
+	if ! mcp_resources_read_via_provider "${provider}" "${uri}" "${template_name}" "${template_vars}" >"${content_file}"; then
 		rm -f "${content_file}"
 		return 1
 	fi
@@ -1878,7 +1931,7 @@ mcp_resources_read() {
 		mime="text/html;profile=mcp-app"
 	fi
 
-	if ! content_obj="$(mcp_resource_content_object_from_file "${content_file}" "${mime}" "${uri}")"; then
+	if ! content_obj="$(mcp_resource_content_object_from_file "${content_file}" "${mime}" "${uri}" "${mime_declared}")"; then
 		rm -f "${content_file}"
 		mcp_resources_error -32603 "Unable to encode resource content"
 		return 1
