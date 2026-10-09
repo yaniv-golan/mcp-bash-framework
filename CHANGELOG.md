@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **A declared resource `mimeType` is the reported label again**: `resources/read` reports a static resource's `mimeType` (from `.meta.json`, `register.sh` or `register.json`) as written. Since 0.x's binary detection, `file --mime` overrode it, so a `.md` declared `text/markdown` was reported as `text/plain`. This restores the pre-detection labels.
+  - Detection still decides whether content is sent as `text` or a base64 `blob`: a `text/plain` label on a PDF is still a blob, and a declared `application/toml` stays text.
+  - Resources without `mimeType` are labelled by detection, as before.
+  - **Projects created with `mcp-bash scaffold resource` have `"mimeType": "text/plain"`** in their `.meta.json` and will now report `text/plain` even if the file holds JSON, Markdown, HTML or binary content. Remove the field or set the right type; `mcp-bash validate` warns when a declared type clearly disagrees with the file. New scaffolds no longer write `mimeType`.
+  - `mcp_result_text_with_resource` without `--mime` no longer guesses a type (it fell back to `application/octet-stream`); the server detects it. With `--mime`, the value is reported as given.
+  - After upgrading, registry hashes change for resources that declare `mimeType`: clients see one `notifications/resources/list_changed`, and earlier `resources/list` cursors become invalid.
+
 ### Security
 
 - **Tools and providers no longer receive the remote-access secret**: Outside `inherit` mode, `MCPBASH_REMOTE_TOKEN*` is removed from tool and provider environments, even when an allowlist names it. The token's request `_meta` keys (`MCPBASH_REMOTE_TOKEN_KEY`, default `mcpbash/remoteToken`, and the fallback key) are deleted from the `_meta` passed to tools (`MCP_TOOL_META_JSON`/`MCP_TOOL_META_FILE`) in every mode. A `_meta` that is not a JSON object becomes `{}`. Behaviour change: a tool that read the token must get it another way.
@@ -14,6 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`resources/read` matches resource templates**: When no resource has the requested name or exact URI, the URI is matched against the registered resource templates.
+  - **Syntax:** a subset of RFC 6570: `{v}` (stops at `/`, `?`, `#`), `{+v}` and `{#v}`. Templates using other operators, comma lists, modifiers, adjacent or repeated expressions keep their previous read behaviour.
+  - **Ties:** the template with the most literal characters wins, then the fewest expressions, then the template name.
+  - **What a match supplies:** the template's `mimeType` is reported as a declared label, and the provider receives `MCP_RESOURCE_TEMPLATE_NAME` and `MCP_RESOURCE_TEMPLATE_VARS` (compact JSON of the raw, not percent-decoded, values). Both variables are cleared at startup, so a host-set value never reaches other reads, tools or completion providers.
+  - **Unchanged:** matching never changes which provider runs, and the `resources/templates/list` shape is unchanged.
 - **`mcp-bash run-tool --print-env` shows the env policy**: It now prints the effective tool and provider env policy (mode and source per scope, allowlisted names and whether each is set) and never values. It covers the launch environment plus `server.meta.json` only, not `--with-server-env`/`--source` files or `server.d/policy.sh`, and says so.
 - **Bundles log cleared placeholders at debug level**: With `MCPBASH_LOG_LEVEL=debug`, a bundle's `run-server.sh` writes the names (never values) of variables it unset because they still held an unexpanded `${user_config.*}` placeholder.
 
@@ -23,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Embedded resources with a URI but no mime type**: A `MCP_TOOL_RESOURCES_FILE` TSV line with an empty mime column (`path<TAB><TAB>uri`) used the URI as the mime type, because tab is an IFS whitespace character.
 - **URL-mode elicitation is detected again**: Client capabilities were read with a `"${1:-{}}"` default, which bash ends at the first `}` and so appends a stray `}` to a set value. The capabilities then failed to parse, the server fell back to a string match that enables form mode only, and every `mcp_elicit_url` call was declined. The same pattern affected UI extension detection (which worked by accident), `mcp_config_get`'s reading of `MCP_CONFIG_JSON`, and `mcp-bash validate`'s defaults output.
 - **The `policy.sh` examples no longer turn off deny-by-default**: The README described the built-in tool policy as "default: allow all" (it denies unless allowlisted), and the README and `docs/BEST-PRACTICES.md` showed a `server.d/policy.sh` that redefined `mcp_tools_policy_check` without the built-in checks. A project copying it ran every tool regardless of `MCPBASH_TOOL_ALLOWLIST`. The built-in policy is now also available as `mcp_tools_policy_check_default`, the examples call it first, and `mcp-bash validate` and `doctor` warn when a `policy.sh` redefines the check without calling it. Existing `policy.sh` files behave as before.
 - **Early `tools/call` refusals report their own code and message**: Inherit mode without `MCPBASH_TOOL_ENV_INHERIT_ALLOW`, a tool path rejected at call time, and a missing executable returned `-32603 Tool execution failed`. They now return `-32602` with the specific message (no values or paths), and `mcp-bash run-tool` prints the same messages.
