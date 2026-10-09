@@ -153,7 +153,7 @@
     // Load MCP Apps SDK and connect
     let App;
     try {
-      const module = await import('https://cdn.jsdelivr.net/npm/@modelcontextprotocol/ext-apps/+esm');
+      const module = await import('https://cdn.jsdelivr.net/npm/@modelcontextprotocol/ext-apps@2.0.3/+esm');
       App = module.App;
     } catch (e) {
       content.innerHTML = `<p class="error">Failed to load SDK: ${e.message}</p>`;

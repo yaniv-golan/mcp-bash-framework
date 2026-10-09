@@ -75,7 +75,7 @@ This is the recommended pattern for mcp-bash:
 The UI uses the MCP Apps SDK to receive tool results:
 
 ```javascript
-import { App } from 'https://cdn.jsdelivr.net/npm/@modelcontextprotocol/ext-apps/+esm';
+import { App } from 'https://cdn.jsdelivr.net/npm/@modelcontextprotocol/ext-apps@2.0.3/+esm';
 
 const app = new App({ name: "System Dashboard", version: "1.0.0" });
 

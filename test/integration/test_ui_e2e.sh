@@ -67,7 +67,7 @@ cat <<'HTML' >"${E2E_ROOT}/tools/query/ui/index.html"
   <h2>Query Results</h2>
   <div id="results">Loading...</div>
   <script type="module">
-    import { App } from 'https://cdn.jsdelivr.net/npm/@modelcontextprotocol/ext-apps/+esm';
+    import { App } from 'https://cdn.jsdelivr.net/npm/@modelcontextprotocol/ext-apps@2.0.3/+esm';
     const app = new App({ name: "Query Results", version: "1.0.0" });
     // Set handler BEFORE connect per MCP Apps spec
     app.ontoolresult = (result) => {

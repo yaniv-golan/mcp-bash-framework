@@ -205,3 +205,30 @@ setup() {
 	[[ "${output}" == *'draggable = true'* ]]
 	[[ "${output}" == *'move-card'* ]]
 }
+
+# ext-apps App has no callTool(); UI-initiated calls use callServerTool({name, arguments}).
+@test "templates: interactive templates use callServerTool, not callTool" {
+	local out
+	for out in \
+		"$(mcp_ui_template_form '{"title":"T","fields":[],"submitTool":"s","cancelTool":"c"}')" \
+		"$(mcp_ui_template_progress '{"title":"P","cancelTool":"abort-operation"}')" \
+		"$(mcp_ui_template_tree_view '{"title":"T","selectable":true,"onSelectTool":"select-node"}')" \
+		"$(mcp_ui_template_kanban '{"title":"K","draggable":true,"onMoveTool":"move-card","onCardClickTool":"open-card"}')"; do
+		[[ "${out}" == *'callServerTool('* ]]
+		[[ "${out}" != *'.callTool('* ]]
+	done
+}
+
+@test "templates: every template pins the ext-apps import to 2.0.3" {
+	local out
+	for out in \
+		"$(mcp_ui_template_form '{"title":"T","fields":[]}')" \
+		"$(mcp_ui_template_data_table '{"title":"T","columns":[]}')" \
+		"$(mcp_ui_template_progress '{"title":"P"}')" \
+		"$(mcp_ui_template_diff_viewer '{"title":"D"}')" \
+		"$(mcp_ui_template_tree_view '{"title":"T"}')" \
+		"$(mcp_ui_template_kanban '{"title":"K"}')"; do
+		[[ "${out}" == *'ext-apps@2.0.3/+esm'* ]]
+		[[ "${out}" != *'ext-apps/+esm'* ]]
+	done
+}

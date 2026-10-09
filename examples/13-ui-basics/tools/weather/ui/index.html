@@ -100,7 +100,7 @@
     let App;
     try {
       // Try jsdelivr first (more compatible bundling)
-      const module = await import('https://cdn.jsdelivr.net/npm/@modelcontextprotocol/ext-apps/+esm');
+      const module = await import('https://cdn.jsdelivr.net/npm/@modelcontextprotocol/ext-apps@2.0.3/+esm');
       App = module.App;
       console.log('SDK loaded successfully from jsdelivr, App:', App);
     } catch (e) {
