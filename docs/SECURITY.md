@@ -65,6 +65,7 @@ mcp-bash keeps the attack surface small: every tool is a subprocess with a contr
 >
 > **Operator responsibilities:**
 > - Review `policy.sh` contents before deployment (treat as privileged code)
+> - Defining `mcp_tools_policy_check` there **replaces** the default deny-by-default allowlist and tool path checks. Start it with `mcp_tools_policy_check_default "$@" || return 1`; `mcp-bash validate`/`doctor` warn when it doesn't.
 > - Set restrictive permissions: `chmod 600 server.d/policy.sh`
 > - Do not deploy in directories writable by untrusted users
 > - Consider using environment-only policy (`MCPBASH_TOOL_ALLOWLIST`) instead of `policy.sh` when possible

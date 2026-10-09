@@ -568,11 +568,13 @@ Paths are resolved relative to `MCPBASH_PROJECT_ROOT`, and registry refreshes pi
 
 ## Tool Policy Hook (optional)
 
-Projects can gate tool execution centrally by adding `server.d/policy.sh` with `mcp_tools_policy_check()`. The framework calls this before every tool run (default: allow all).
+Projects can gate tool execution centrally by adding `server.d/policy.sh` with `mcp_tools_policy_check()`. The framework calls this before every tool run. The built-in policy denies every tool unless it is allowlisted (`MCPBASH_TOOL_ALLOWLIST`, or `--allow-self` for `run-tool`).
 
 ```bash
 # server.d/policy.sh
 mcp_tools_policy_check() {
+	# Keep the default policy (deny-by-default allowlist, tool path checks).
+	mcp_tools_policy_check_default "$@" || return 1
 	local tool_name="$1"
 	if [ "${MYPROJECT_READ_ONLY:-0}" = "1" ] && [[ "${tool_name}" != myProj.get* ]]; then
 		mcp_tools_error -32602 "Read-only mode: ${tool_name} disabled"
@@ -581,6 +583,8 @@ mcp_tools_policy_check() {
 	return 0
 }
 ```
+
+Defining `mcp_tools_policy_check` **replaces** the built-in policy, including the deny-by-default allowlist (`MCPBASH_TOOL_ALLOWLIST`) and tool path checks, so start it with `mcp_tools_policy_check_default "$@" || return 1` and add your rules after it; `mcp-bash validate` and `doctor` warn when it doesn't. This guards against accidentally widening access, not against a hostile project: `policy.sh` is trusted shell code sourced at startup and can redefine anything.
 
 Use `-32602` for policy/invalid-params blocks, `-32600` for capability/auth failures. Keep logic lightweight; the hook runs on every invocation.
 

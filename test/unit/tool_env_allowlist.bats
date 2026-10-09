@@ -183,3 +183,53 @@ EOF2
 		assert_output $'apply\tMCPBASH_TOOL_ENV_ALLOWLIST\t'"${n}"
 	done
 }
+
+@test "tool_env_allowlist: policy.sh can layer rules on top of the default policy" {
+	cat >"${PROJECT_ROOT}/server.d/policy.sh" <<'EOF2'
+mcp_tools_policy_check() {
+	mcp_tools_policy_check_default "$@" || return 1
+	if [ "${READ_ONLY:-0}" = "1" ]; then
+		mcp_tools_error -32602 "Read-only mode: $1 disabled"
+		return 1
+	fi
+	return 0
+}
+EOF2
+	# No allowlist and no --allow-self: the default deny still applies.
+	unset MCPBASH_TOOL_ALLOWLIST
+	run "${MCPBASH_HOME}/bin/mcp-bash" run-tool echo-env
+	assert_failure
+	assert_output --partial "blocked by policy"
+	# Allowlisted: the project's own rule applies on top.
+	MCPBASH_TOOL_ALLOWLIST="echo-env" READ_ONLY=1 run "${MCPBASH_HOME}/bin/mcp-bash" run-tool echo-env
+	assert_failure
+	assert_output --partial "Read-only mode"
+	MCPBASH_TOOL_ALLOWLIST="echo-env" run "${MCPBASH_HOME}/bin/mcp-bash" run-tool echo-env
+	assert_success
+}
+
+@test "tool_env_allowlist: validate and doctor warn when policy.sh replaces the default policy" {
+	cat >"${PROJECT_ROOT}/server.d/policy.sh" <<'EOF2'
+mcp_tools_policy_check() {
+	return 0
+}
+EOF2
+	cd "${PROJECT_ROOT}"
+	run "${MCPBASH_HOME}/bin/mcp-bash" validate
+	assert_output --partial "policy.sh replaces the default tool policy"
+	run "${MCPBASH_HOME}/bin/mcp-bash" doctor
+	assert_output --partial "policy.sh replaces the default tool policy"
+	run "${MCPBASH_HOME}/bin/mcp-bash" doctor --json
+	assert_output --partial "project.policy_hook_replaces_default"
+
+	cat >"${PROJECT_ROOT}/server.d/policy.sh" <<'EOF2'
+mcp_tools_policy_check() {
+	mcp_tools_policy_check_default "$@" || return 1
+	return 0
+}
+EOF2
+	run "${MCPBASH_HOME}/bin/mcp-bash" validate
+	refute_output --partial "policy.sh replaces the default tool policy"
+	run "${MCPBASH_HOME}/bin/mcp-bash" doctor
+	refute_output --partial "policy.sh replaces the default tool policy"
+}

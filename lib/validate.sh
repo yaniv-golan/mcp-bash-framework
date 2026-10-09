@@ -120,6 +120,14 @@ mcp_validate_server_meta() {
 		warnings=$((warnings + 1))
 	fi
 
+	# A policy.sh that redefines mcp_tools_policy_check without calling the
+	# default silently drops the deny-by-default allowlist.
+	command -v mcp_tools_policy_hook_bypasses_default >/dev/null 2>&1 || . "${MCPBASH_HOME}/lib/tools_policy.sh"
+	if mcp_tools_policy_hook_bypasses_default "${MCPBASH_SERVER_DIR}/policy.sh"; then
+		printf '⚠ %s/%s\n' "${meta_label}" 'policy.sh replaces the default tool policy (deny-by-default allowlist and tool path checks); start mcp_tools_policy_check with: mcp_tools_policy_check_default "$@" || return 1'
+		warnings=$((warnings + 1))
+	fi
+
 	printf '%s %s\n' "${errors}" "${warnings}"
 }
 

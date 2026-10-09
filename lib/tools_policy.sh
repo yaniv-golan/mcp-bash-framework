@@ -127,10 +127,31 @@ mcp_tools_policy_init() {
 }
 
 # Default policy: deny unless explicitly allowed via MCPBASH_TOOL_ALLOWLIST or
-# MCPBASH_TOOL_ALLOW_DEFAULT=allow|all (see docs/ENV_REFERENCE.md). Projects can
-# override by defining the same function in server.d/policy.sh (sourced by
-# mcp_tools_policy_init()).
+# MCPBASH_TOOL_ALLOW_DEFAULT=allow|all (see docs/ENV_REFERENCE.md), plus tool
+# path validation. server.d/policy.sh may redefine mcp_tools_policy_check(); a
+# redefinition REPLACES this check, so it should call
+# `mcp_tools_policy_check_default "$@" || return 1` first and add its own rules.
 mcp_tools_policy_check() {
+	mcp_tools_policy_check_default "$@"
+}
+
+# Static check (never sources the file): does this policy.sh redefine
+# mcp_tools_policy_check without calling mcp_tools_policy_check_default? Such a
+# hook replaces the default deny-by-default allowlist and tool path checks.
+# Returns 0 when that is the case. Used by validate and doctor; kept as one
+# reusable detector.
+mcp_tools_policy_hook_bypasses_default() {
+	local policy_path="$1"
+	[ -f "${policy_path}" ] || return 1
+	# `mcp_tools_policy_check_default()` does not match: "_" follows "check".
+	grep -Eq '^[[:space:]]*(function[[:space:]]+)?mcp_tools_policy_check[[:space:]]*(\(\)|\{|$)' "${policy_path}" || return 1
+	if grep -q 'mcp_tools_policy_check_default' "${policy_path}"; then
+		return 1
+	fi
+	return 0
+}
+
+mcp_tools_policy_check_default() {
 	# $1: tool name; $2: tool metadata JSON string
 	local name="$1"
 	local metadata="$2"
