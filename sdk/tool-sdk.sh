@@ -67,13 +67,15 @@ __mcp_sdk_json_escape() {
 	# best-effort manual escape (ASCII control chars + quotes + backslashes).
 	local value="${1-}"
 
+	# The value goes on stdin, not as an argument, so its length is not capped
+	# by argv limits (128 KiB per argument on Linux).
 	if [ -n "${MCPBASH_JSON_TOOL_BIN:-}" ] && command -v "${MCPBASH_JSON_TOOL_BIN}" >/dev/null 2>&1; then
-		"${MCPBASH_JSON_TOOL_BIN}" -n --arg val "${value}" '$val'
+		printf '%s' "${value}" | "${MCPBASH_JSON_TOOL_BIN}" -R -s '.'
 		return 0
 	fi
 
 	if command -v jq >/dev/null 2>&1; then
-		jq -n --arg val "${value}" '$val'
+		printf '%s' "${value}" | jq -R -s '.'
 		return 0
 	fi
 
@@ -1300,15 +1302,18 @@ mcp_error() {
 				: # valid JSON, data_json now holds normalized form
 			else
 				# Invalid JSON - wrap raw value for debugging
-				data_json=$("${MCPBASH_JSON_TOOL_BIN}" -n -c --arg raw "$data" '{"_invalid_json": $raw}')
+				data_json=$(printf '%s' "$data" | "${MCPBASH_JSON_TOOL_BIN}" -c -R -s '{"_invalid_json": .}')
 			fi
 		fi
-		error_json=$("${MCPBASH_JSON_TOOL_BIN}" -n -c \
+		# Message and data go on stdin: either can outgrow one argument.
+		error_json=$({
+			printf '%s' "$message" | "${MCPBASH_JSON_TOOL_BIN}" -R -s '.'
+			printf '\n%s' "$data_json"
+		} | "${MCPBASH_JSON_TOOL_BIN}" -c -s \
 			--arg type "$error_type" \
-			--arg message "$message" \
 			--arg hint "$hint" \
-			--argjson data "$data_json" \
-			'{type: $type, message: $message} +
+			'.[0] as $message | .[1] as $data
+       | {type: $type, message: $message} +
        (if $hint != "" then {hint: $hint} else {} end) +
        (if $data != null then {data: $data} else {} end)')
 	else

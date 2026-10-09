@@ -99,7 +99,9 @@ mcp_spec_build_initialize_response() {
 	local instructions_field=""
 	if [ "${protocol}" != "2024-11-05" ] && [ -n "${MCPBASH_SERVER_INSTRUCTIONS:-}" ]; then
 		local instructions_json
-		instructions_json="$(mcp_json_quote_text "${MCPBASH_SERVER_INSTRUCTIONS}")"
+		# Uses jq when present: the pure-bash quoter walks one character at a
+		# time and takes minutes on a long instructions file.
+		instructions_json="$(mcp_json_escape_string "${MCPBASH_SERVER_INSTRUCTIONS}")"
 		instructions_field="$(printf ',"instructions":%s' "${instructions_json}")"
 	fi
 
@@ -136,8 +138,9 @@ mcp_spec_build_server_info() {
 		fi
 
 		if [ -n "${MCPBASH_SERVER_ICONS:-}" ]; then
-			jq_args+=(--argjson icons "${MCPBASH_SERVER_ICONS}")
-			jq_filter="${jq_filter} + {icons: \$icons}"
+			# Icons go on stdin: inline data URIs can outgrow one argument.
+			printf '%s' "${MCPBASH_SERVER_ICONS}" | "${MCPBASH_JSON_TOOL_BIN}" -c "${jq_args[@]}" ". as \$icons | ${jq_filter} + {icons: \$icons}"
+			return
 		fi
 
 		"${MCPBASH_JSON_TOOL_BIN}" -c -n "${jq_args[@]}" "${jq_filter}"

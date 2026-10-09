@@ -1227,8 +1227,12 @@ mcp_runtime_load_server_meta() {
 	[ -z "${MCPBASH_SERVER_TITLE}" ] && MCPBASH_SERVER_TITLE="${default_title}"
 
 	export MCPBASH_SERVER_NAME MCPBASH_SERVER_VERSION MCPBASH_SERVER_TITLE
-	export MCPBASH_SERVER_DESCRIPTION MCPBASH_SERVER_WEBSITE_URL MCPBASH_SERVER_ICONS
-	export MCPBASH_SERVER_INSTRUCTIONS
+	export MCPBASH_SERVER_DESCRIPTION MCPBASH_SERVER_WEBSITE_URL
+	# Icons and instructions stay unexported: only this process reads them, and
+	# an exported value is copied into every child. Linux refuses to start any
+	# program when one environment string exceeds 128 KiB, so a long
+	# server.instructions.md would stop the server from running anything.
+	export -n MCPBASH_SERVER_ICONS MCPBASH_SERVER_INSTRUCTIONS 2>/dev/null || true
 }
 
 mcp_runtime_titlecase() {

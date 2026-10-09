@@ -177,11 +177,12 @@ mcp_ui_generate_registry() {
 	timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%S)"
 
 	local registry_json
-	registry_json="$("${MCPBASH_JSON_TOOL_BIN}" -n \
-		--argjson resources "${resources}" \
+	# The resource list goes on stdin: it grows with the number of UIs.
+	registry_json="$(printf '%s' "${resources}" | "${MCPBASH_JSON_TOOL_BIN}" \
 		--arg hash "${hash}" \
 		--arg timestamp "${timestamp}" \
-		'{
+		'. as $resources
+		| {
 			version: 1,
 			hash: $hash,
 			timestamp: $timestamp,

@@ -657,7 +657,8 @@ mcp_resources_scan() {
 			[ -z "${icons}" ] && icons='null'
 			[ -z "${annotations}" ] && annotations='null'
 
-			"${MCPBASH_JSON_TOOL_BIN}" -n \
+			# Icons hold inlined data URIs, so they go on stdin, not as arguments.
+			printf '%s\n%s' "${icons}" "${annotations}" | "${MCPBASH_JSON_TOOL_BIN}" -s \
 				--arg name "$name" \
 				--arg desc "$description" \
 				--arg path "$rel_path" \
@@ -665,9 +666,8 @@ mcp_resources_scan() {
 				--arg mime "$mime" \
 				--arg mime_declared "$mime_declared" \
 				--arg provider "$provider" \
-				--argjson icons "$icons" \
-				--argjson annotations "$annotations" \
-				'{name: $name, description: $desc, path: $path, uri: $uri, mimeType: $mime, provider: $provider}
+				'.[0] as $icons | .[1] as $annotations
+				| {name: $name, description: $desc, path: $path, uri: $uri, mimeType: $mime, provider: $provider}
 				+ (if $mime_declared == "true" then {mimeTypeDeclared: true} else {} end)
 				+ (if $icons != null then {icons: $icons} else {} end)
 				+ (if $annotations != null then {annotations: $annotations} else {} end)' >>"${items_file}"
@@ -1437,9 +1437,9 @@ mcp_resources_templates_refresh_registry() {
 	done < <(printf '%s' "${manual_items_json}" | "${MCPBASH_JSON_TOOL_BIN}" -r '(. // []) | .[].name // empty' 2>/dev/null)
 	rm -f "${auto_names_file}"
 
-	merged_items_json="$("${MCPBASH_JSON_TOOL_BIN}" -n -c \
-		--argjson auto "${auto_items_json:-[]}" \
-		--argjson manual "${manual_items_json:-[]}" '
+	# Both item lists go on stdin: together they can outgrow one argument.
+	merged_items_json="$(printf '%s\n%s' "${auto_items_json:-[]}" "${manual_items_json:-[]}" | "${MCPBASH_JSON_TOOL_BIN}" -s -c '
+			.[0] as $auto | .[1] as $manual |
 			($auto // []) as $a |
 			($manual // []) as $m |
 			($a | reduce .[] as $item ({}; .[$item.name] = $item)) as $auto_map |
@@ -1980,8 +1980,9 @@ mcp_resources_read() {
 		content_obj="$("${MCPBASH_JSON_TOOL_BIN}" -c --argjson meta "${ui_meta}" '. + {_meta: {ui: $meta}}' <<<"${content_obj}")"
 	fi
 
-	result="$("${MCPBASH_JSON_TOOL_BIN}" -n -c --argjson content "${content_obj}" '{
-		contents: [$content]
+	# Pipe the content: it can exceed what one argument may hold.
+	result="$(printf '%s' "${content_obj}" | "${MCPBASH_JSON_TOOL_BIN}" -c '{
+		contents: [.]
 	}')" || result=""
 	rm -f "${content_file}"
 	if [ -z "${result}" ]; then

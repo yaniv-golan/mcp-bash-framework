@@ -151,29 +151,31 @@ mcp_resource_content_object_from_file() {
 		if ! command -v base64 >/dev/null 2>&1; then
 			return 1
 		fi
-		local blob
-		blob="$(LC_ALL=C base64 <"${path}" | tr -d '\r\n')"
-		payload="$("${MCPBASH_JSON_TOOL_BIN}" -n -c \
+		# The content goes to jq on stdin, never as an argument: Linux caps one
+		# argument at 128 KiB (MAX_ARG_STRLEN) and macOS caps all of them at 1 MiB.
+		if ! payload="$(LC_ALL=C base64 <"${path}" | tr -d '\r\n' | "${MCPBASH_JSON_TOOL_BIN}" -c -R -s \
 			--arg uri "${uri}" \
 			--arg mime "${mime}" \
-			--arg blob "${blob}" \
 			'{
 				uri: $uri,
 				mimeType: $mime,
-				blob: $blob
-			} | del(.uri | select(.==""))' 2>/dev/null || true)"
+				blob: .
+			} | del(.uri | select(.==""))')"; then
+			return 1
+		fi
 	else
 		local text_content
 		text_content="$(cat -- "${path}")"
-		payload="$("${MCPBASH_JSON_TOOL_BIN}" -n -c \
+		if ! payload="$(printf '%s' "${text_content}" | "${MCPBASH_JSON_TOOL_BIN}" -c -R -s \
 			--arg uri "${uri}" \
 			--arg mime "${mime}" \
-			--arg text "${text_content}" \
 			'{
 				uri: $uri,
 				mimeType: $mime,
-				text: $text
-			} | del(.uri | select(.==""))' 2>/dev/null || true)"
+				text: .
+			} | del(.uri | select(.==""))')"; then
+			return 1
+		fi
 	fi
 
 	if [ -z "${payload}" ]; then

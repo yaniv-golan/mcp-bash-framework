@@ -434,15 +434,15 @@ mcp_prompts_scan() {
 			[ -z "${metadata}" ] && metadata='null'
 			[ -z "${icons}" ] && icons='null'
 
-			"${MCPBASH_JSON_TOOL_BIN}" -n \
+			# The JSON values go on stdin: icons hold inlined data URIs and can
+			# outgrow what one argument may hold.
+			printf '%s\n%s\n%s' "$arguments" "$metadata" "$icons" | "${MCPBASH_JSON_TOOL_BIN}" -s \
 				--arg name "$name" \
 				--arg desc "$description" \
 				--arg path "$rel_path" \
 				--arg role "$role" \
-				--argjson args "$arguments" \
-				--argjson meta "$metadata" \
-				--argjson icons "$icons" \
-				'{
+				'.[0] as $args | .[1] as $meta | .[2] as $icons
+				| {
 					name: $name,
 					description: $desc,
 					path: $path,
@@ -669,6 +669,10 @@ mcp_prompts_render() {
 
 	# Support {{var}} placeholders using the allowed key/value pairs.
 	if [ -n "${export_pairs}" ]; then
+		# The sed program goes in a file: a client-supplied value can outgrow
+		# what one argument may hold.
+		local sed_script
+		sed_script="$(mktemp "${MCPBASH_TMP_ROOT:-${TMPDIR:-/tmp}}/mcp-prompt-subst.XXXXXX")"
 		while IFS=$'\t' read -r export_key export_value; do
 			[ -n "${export_key}" ] || continue
 			case "${export_value}" in
@@ -678,8 +682,10 @@ mcp_prompts_render() {
 			esac
 			local escaped_value
 			escaped_value="$(printf '%s' "${export_value}" | sed -e 's/[\\&|]/\\&/g')"
-			text="$(printf '%s' "${text}" | sed -e "s|{{${export_key}}}|${escaped_value}|g")"
+			printf 's|{{%s}}|%s|g\n' "${export_key}" "${escaped_value}" >"${sed_script}"
+			text="$(printf '%s' "${text}" | sed -f "${sed_script}")"
 		done <<<"${export_pairs}"
+		rm -f "${sed_script}"
 	fi
 
 	mcp_prompts_emit_render_result "${text}" "${normalized_args}" "${role}" "${description}" "${metadata_value}"
@@ -701,13 +707,16 @@ mcp_prompts_emit_render_result() {
 		normalized_meta="null"
 	fi
 
-	_MCP_PROMPTS_RESULT="$("${MCPBASH_JSON_TOOL_BIN}" -n -c \
-		--arg text "${text}" \
+	# The prompt text and the client's arguments go on stdin: either can
+	# outgrow what one argument may hold.
+	_MCP_PROMPTS_RESULT="$({
+		printf '%s' "${text}" | "${MCPBASH_JSON_TOOL_BIN}" -R -s '.'
+		printf '\n%s\n%s' "${normalized_args}" "${normalized_meta}"
+	} | "${MCPBASH_JSON_TOOL_BIN}" -c -s \
 		--arg role "${role}" \
 		--arg desc "${description}" \
-		--argjson args "${normalized_args}" \
-		--argjson meta "${normalized_meta}" \
-		'{
+		'.[0] as $text | .[1] as $args | .[2] as $meta
+		| {
 			text: $text,
 			arguments: $args,
 			messages: [

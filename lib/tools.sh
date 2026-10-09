@@ -383,6 +383,7 @@ mcp_tools_embed_resource_from_path() {
 
 	local content_obj
 	if ! content_obj="$(mcp_resource_content_object_from_file "${abs}" "${mime_hint}" "${uri}" "${mime_declared}")"; then
+		mcp_logging_warning "${MCP_TOOLS_LOGGER}" "Embedded resource could not be encoded: $(basename "${abs}")"
 		return 1
 	fi
 	printf '%s' "${content_obj}"
@@ -1130,20 +1131,18 @@ mcp_tools_scan() {
 			fi
 
 			# Construct item object
-			"${MCPBASH_JSON_TOOL_BIN}" -n \
+			# The JSON values go on stdin: icons hold inlined data URIs and can
+			# outgrow what one argument may hold.
+			printf '%s\n%s\n%s\n%s\n%s' "$arguments" "$output_schema" "$icons" "$annotations" "$tool_meta" | "${MCPBASH_JSON_TOOL_BIN}" -s \
 				--arg name "$name" \
 				--arg desc "$description" \
 				--arg path "$rel_path" \
-				--argjson args "$arguments" \
 				--arg timeout "$timeout" \
 				--arg timeout_hint "$timeout_hint" \
 				--arg progress_extends "$progress_extends" \
 				--arg max_timeout_secs "$max_timeout_secs" \
-				--argjson out "$output_schema" \
-				--argjson icons "$icons" \
-				--argjson annotations "$annotations" \
-				--argjson tool_meta "$tool_meta" \
-				'{
+				'.[0] as $args | .[1] as $out | .[2] as $icons | .[3] as $annotations | .[4] as $tool_meta
+				| {
 					name: $name,
 					description: $desc,
 					path: $path,
@@ -2412,11 +2411,20 @@ mcp_tools_call() {
 		embedded_resources="$(mcp_tools_collect_embedded_resources "${tool_resources_file}" 2>/dev/null || true)"
 	fi
 	if [ -n "${embedded_resources}" ]; then
-		result_json="$(
-			printf '%s' "${result_json}" | "${MCPBASH_JSON_TOOL_BIN}" -c --argjson embeds "${embedded_resources}" '
-				.content += ($embeds // [])
+		# Embedded resources carry whole file contents, so both documents go on
+		# stdin. A failed merge is an error, never an empty result.
+		local merged_json
+		if ! merged_json="$(
+			printf '%s\n%s' "${result_json}" "${embedded_resources}" | "${MCPBASH_JSON_TOOL_BIN}" -c -s '
+				.[1] as $embeds | .[0] | .content += ($embeds // [])
 			'
-		)" || result_json=""
+		)" || [ -z "${merged_json}" ]; then
+			mcp_logging_error "${MCP_TOOLS_LOGGER}" "Tool ${name}: could not attach embedded resources" || true
+			_mcp_tools_emit_error -32603 "Unable to attach embedded resources to tool result" "null"
+			cleanup_tool_temp_files
+			return 1
+		fi
+		result_json="${merged_json}"
 	fi
 
 	cleanup_tool_temp_files

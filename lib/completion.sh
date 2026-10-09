@@ -551,9 +551,9 @@ mcp_completion_normalize_output() {
 	local limit="${2:-5}"
 	local start="${3:-0}"
 	local out=""
+	# The script output goes on stdin: it can outgrow what one argument may hold.
 	if ! out="$(
-		"${MCPBASH_JSON_TOOL_BIN}" -n -c \
-			--arg raw "${script_output}" \
+		printf '%s' "${script_output}" | "${MCPBASH_JSON_TOOL_BIN}" -c -R -s \
 			--argjson limit "${limit}" \
 			--argjson start "${start}" '
 				def parse($text):
@@ -570,7 +570,8 @@ mcp_completion_normalize_output() {
 					else error("suggestions must be string[]")
 					end;
 
-				(parse($raw)) as $payload
+				. as $raw
+				| (parse($raw)) as $payload
 				| if $payload == null then
 					{suggestions: [], hasMore: false, next: null, cursor: ""}
 				elif ($payload | type) == "array" then
@@ -620,17 +621,15 @@ mcp_completion_builtin_generate() {
 	fi
 	base="${base_candidate}"
 
+	# The client's query goes on stdin: it can outgrow what one argument may hold.
 	printf '%s' "$(
-		"${MCPBASH_JSON_TOOL_BIN}" -n -c \
-			--arg base "${base}" \
-			--arg base_snippet "${base} snippet" \
-			--arg base_example "${base} example" \
+		printf '%s' "${base}" | "${MCPBASH_JSON_TOOL_BIN}" -c -R -s \
 			--argjson limit "${limit}" \
 			--argjson offset "${offset}" '
 				[
-					$base,
-					$base_snippet,
-					$base_example
+					.,
+					. + " snippet",
+					. + " example"
 				] as $candidates
 				| ($candidates[$offset:$offset+$limit]) as $limited
 				| ($limited | length) as $count
@@ -866,7 +865,11 @@ mcp_completion_add_text() {
 		mcp_completion_has_more=true
 		return 1
 	fi
-	if ! mcp_completion_suggestions="$(printf '%s' "${mcp_completion_suggestions}" | "${MCPBASH_JSON_TOOL_BIN}" -c --arg text "${text}" '. + [$text]' 2>/dev/null)"; then
+	# Both go on stdin: the list can outgrow what one argument may hold.
+	if ! mcp_completion_suggestions="$({
+		printf '%s\n' "${mcp_completion_suggestions}"
+		printf '%s' "${text}" | "${MCPBASH_JSON_TOOL_BIN}" -R -s '.'
+	} | "${MCPBASH_JSON_TOOL_BIN}" -c -s '.[0] + [.[1]]' 2>/dev/null)"; then
 		mcp_completion_suggestions="[]"
 		return 1
 	fi
@@ -883,11 +886,14 @@ mcp_completion_add_json() {
 	fi
 	# Legacy internal completion items were content objects; completions are now string-only.
 	# Accept only JSON strings here (callers should use mcp_completion_add_text for plain strings).
+	# Both go on stdin: the list can outgrow what one argument may hold.
 	if ! mcp_completion_suggestions="$(
-		"${MCPBASH_JSON_TOOL_BIN}" -n -c \
-			--argjson list "${mcp_completion_suggestions}" \
-			--arg raw "${json_payload:-""}" '
-				(try ($raw | fromjson) catch null) as $payload
+		{
+			printf '%s\n' "${mcp_completion_suggestions}"
+			printf '%s' "${json_payload:-""}" | "${MCPBASH_JSON_TOOL_BIN}" -R -s '.'
+		} | "${MCPBASH_JSON_TOOL_BIN}" -c -s '
+				.[0] as $list | .[1] as $raw
+				| (try ($raw | fromjson) catch null) as $payload
 				| if $payload == null then error("invalid json") else . end
 				| if ($payload | type) != "string" then error("completion items must be strings") else . end
 				| ($list // []) + [$payload]
@@ -906,12 +912,13 @@ mcp_completion_finalize() {
 	fi
 	local cursor="${mcp_completion_cursor}"
 	local out=""
+	# The suggestions go on stdin: they can outgrow what one argument may hold.
 	if ! out="$(
-		"${MCPBASH_JSON_TOOL_BIN}" -n -c \
-			--argjson suggestions "${mcp_completion_suggestions}" \
+		printf '%s' "${mcp_completion_suggestions}" | "${MCPBASH_JSON_TOOL_BIN}" -c \
 			--argjson has_more "${has_more_json}" \
 			--arg cursor "${cursor}" '
-				def base:
+				. as $suggestions
+				| def base:
 					{completion: {values: $suggestions, hasMore: ($has_more == true)}};
 				if $cursor == "" then
 					base

@@ -71,7 +71,8 @@ mcp_json_escape_string() {
 	local value="$1"
 
 	if [ "${MCPBASH_JSON_TOOL:-none}" != "none" ]; then
-		"${MCPBASH_JSON_TOOL_BIN}" -n --arg v "${value}" '$v'
+		# On stdin, not as an argument, so length is not capped by argv limits.
+		printf '%s' "${value}" | "${MCPBASH_JSON_TOOL_BIN}" -R -s '.'
 		return 0
 	fi
 
@@ -1384,8 +1385,14 @@ mcp_json_icons_resolve_local_files() {
 				fi
 
 				# Build icon object with data URI
-				icon="$(printf '%s' "${icon}" | "${MCPBASH_JSON_TOOL_BIN}" -c --arg src "${data_uri}" --arg mime "${mime_type}" '
-					del(._local, ._base) | .src = $src | if .mimeType then . else .mimeType = $mime end
+				# The data URI goes on stdin (as a JSON string): it can outgrow
+				# what one argument may hold.
+				icon="$({
+					printf '%s\n' "${icon}"
+					printf '%s' "${data_uri}" | "${MCPBASH_JSON_TOOL_BIN}" -R -s '.'
+				} | "${MCPBASH_JSON_TOOL_BIN}" -c -s --arg mime "${mime_type}" '
+					.[1] as $src | .[0]
+					| del(._local, ._base) | .src = $src | if .mimeType then . else .mimeType = $mime end
 				')"
 			else
 				# File not found - keep original src, remove markers
