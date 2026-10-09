@@ -40,7 +40,9 @@ pids=""
 for i in $(seq 1 "${SERVERS}"); do
 	(
 		cd "${WORKSPACE}" || exit 1
+		# Clear the debug-retention switches CI jobs set: they keep state dirs on purpose.
 		env -u MCPBASH_TMP_ROOT -u MCPBASH_STATE_DIR -u MCPBASH_LOCK_ROOT \
+			-u MCPBASH_KEEP_LOGS -u MCPBASH_PRESERVE_STATE -u MCPBASH_LOG_DIR \
 			TMPDIR="${SHARED_TMP}" MCPBASH_PROJECT_ROOT="${WORKSPACE}" \
 			./bin/mcp-bash <"${WORKSPACE}/requests.ndjson" >"${WORKSPACE}/responses.${i}.ndjson" 2>"${WORKSPACE}/stderr.${i}.log"
 	) &
