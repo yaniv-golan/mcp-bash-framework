@@ -12,6 +12,7 @@ Place `server.meta.json` in your project's `server.d/` directory to customize se
 | `description` | No | Brief description of the server |
 | `websiteUrl` | No | URL to server homepage or documentation |
 | `icons` | No | Array of icon objects for visual identification |
+| `env` | No | Tool/provider env policy: only `MCPBASH_TOOL_ENV_MODE`, `MCPBASH_TOOL_ENV_ALLOWLIST`, `MCPBASH_PROVIDER_ENV_MODE`, `MCPBASH_PROVIDER_ENV_ALLOWLIST` (declare which variables to pass on; never put secret values here) |
 
 ## Icons Format
 

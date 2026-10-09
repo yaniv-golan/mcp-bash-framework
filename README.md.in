@@ -271,7 +271,7 @@ mcp-bash is **secure by default**. Here's what that means:
 |-------|---------|--------------|
 | **Tool allowlist** | Deny all | Tools won't run unless explicitly listed in `MCPBASH_TOOL_ALLOWLIST` |
 | **Hooks** | Disabled | Project hooks (`server.d/*.sh`) are ignored unless `MCPBASH_ALLOW_PROJECT_HOOKS=true` |
-| **Tool environment** | Minimal | Tools inherit only essential vars (`PATH`, `HOME`, `TERM`). Use `MCPBASH_TOOL_ENV_MODE` to change |
+| **Tool environment** | Minimal | Tools inherit only essential vars (`PATH`, `HOME`, `TMPDIR`, `LANG`, Windows system vars, and `MCP_*`/`MCPBASH_*`). Use `MCPBASH_TOOL_ENV_MODE` to change, or declare it in `server.meta.json` `"env"` |
 
 ### Quick reference
 
@@ -289,9 +289,15 @@ MCPBASH_TOOL_ALLOWLIST="*"
 MCPBASH_ALLOW_PROJECT_HOOKS=true
 
 # Tool environment modes
-MCPBASH_TOOL_ENV_MODE=minimal    # default: PATH, HOME, TERM only
-MCPBASH_TOOL_ENV_MODE=inherit    # pass through parent environment
+MCPBASH_TOOL_ENV_MODE=minimal    # default: PATH, HOME, TMPDIR, LANG (+ Windows system vars)
+MCPBASH_TOOL_ENV_MODE=inherit    # pass through parent environment (needs MCPBASH_TOOL_ENV_INHERIT_ALLOW=true)
 MCPBASH_TOOL_ENV_MODE=allowlist  # minimal + MCPBASH_TOOL_ENV_ALLOWLIST vars
+```
+
+To pass a host-injected secret (such as an MCPB `user_config` API key) to tools and providers, declare the policy in `server.d/server.meta.json` instead of a launcher script; the launch environment still wins:
+
+```json
+"env": {"MCPBASH_TOOL_ENV_MODE": "allowlist", "MCPBASH_TOOL_ENV_ALLOWLIST": "MY_API_KEY"}
 ```
 
 **Demo tip:** For local testing, use `--allow-self` (CLI) or `MCPBASH_TOOL_ALLOWLIST=*` (MCP clients). For production, allowlist only the tools you need.
@@ -547,7 +553,7 @@ If the SDK can’t be resolved, the script exits with a clear error.
 
 ## Completions
 
-Completions are manually registered (they are not auto-discovered). Prefer declarative registration via `server.d/register.json`:
+Register completions declaratively in `server.d/register.json`, or place a script next to a prompt or resource (for example `prompts/<name>/<name>.completion.sh`; see [docs/COMPLETION.md](docs/COMPLETION.md)):
 
 ```json
 {
@@ -651,6 +657,7 @@ Server identity is configured via `server.d/server.meta.json`. All fields are op
 | `description` | (omitted) | Brief description of the server |
 | `websiteUrl` | (omitted) | URL to server homepage or documentation |
 | `icons` | (omitted) | Array of icon objects for visual identification |
+| `env` | (omitted) | Tool/provider env policy: only `MCPBASH_TOOL_ENV_MODE`, `MCPBASH_TOOL_ENV_ALLOWLIST`, `MCPBASH_PROVIDER_ENV_MODE`, `MCPBASH_PROVIDER_ENV_ALLOWLIST`. Never put secret values here. See [docs/MCPB.md](docs/MCPB.md#passing-secrets-to-tools) |
 
 Example `server.d/server.meta.json`:
 ```json

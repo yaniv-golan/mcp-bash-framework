@@ -78,7 +78,7 @@ if [ -x /bin/bash ]; then
 		mkdir -p "${MCPBASH_STATE_DIR}"
 		trap "rm -rf \"${MCPBASH_STATE_DIR}\"" EXIT
 		# Source core libs that must work with bash 3.2
-		for lib in require runtime json capabilities ui ui-templates; do
+		for lib in require runtime meta_env json capabilities ui ui-templates; do
 			if [ -f "${MCPBASH_HOME}/lib/${lib}.sh" ]; then
 				source "${MCPBASH_HOME}/lib/${lib}.sh" || {
 					printf "FAIL: lib/%s.sh cannot be sourced with /bin/bash\n" "${lib}" >&2

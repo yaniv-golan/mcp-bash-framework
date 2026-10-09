@@ -444,6 +444,19 @@ mcp_completion_resource_script() {
 	return 1
 }
 
+# Timeout for per-prompt and per-resource completion scripts, which have no
+# registration entry to carry timeoutSecs. Completions run on every keystroke,
+# so a hung script must not hold a worker. Operators can change it with
+# MCPBASH_COMPLETION_TIMEOUT_SECS (whole seconds; 0 disables).
+mcp_completion_default_timeout() {
+	local value="${MCPBASH_COMPLETION_TIMEOUT_SECS:-5}"
+	case "${value}" in
+	'' | *[!0-9]* | ???????*) value=5 ;; # not a number, or more than 6 digits
+	esac
+	[ "${value}" -eq 0 ] && value=""
+	printf '%s' "${value}"
+}
+
 mcp_completion_select_provider() {
 	local name="$1"
 	local args_json="$2"
@@ -481,6 +494,7 @@ mcp_completion_select_provider() {
 			MCP_COMPLETION_PROVIDER_SCRIPT="${script_rel}"
 			MCP_COMPLETION_PROVIDER_PROMPT_TEMPLATE="$(printf '%s' "${metadata}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.path // ""' 2>/dev/null)"
 			MCP_COMPLETION_PROVIDER_SCRIPT_KEY="prompt:${script_rel}"
+			MCP_COMPLETION_PROVIDER_TIMEOUT="$(mcp_completion_default_timeout)"
 			return 0
 		fi
 	fi
@@ -494,6 +508,7 @@ mcp_completion_select_provider() {
 			MCP_COMPLETION_PROVIDER_RESOURCE_URI="$(printf '%s' "${metadata}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.uri // ""' 2>/dev/null)"
 			MCP_COMPLETION_PROVIDER_RESOURCE_PROVIDER="$(printf '%s' "${metadata}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.provider // ""' 2>/dev/null)"
 			MCP_COMPLETION_PROVIDER_SCRIPT_KEY="resource:${script_rel}"
+			MCP_COMPLETION_PROVIDER_TIMEOUT="$(mcp_completion_default_timeout)"
 			return 0
 		fi
 	fi

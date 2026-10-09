@@ -220,7 +220,7 @@ The generated `manifest.json` follows MCPB specification v0.3:
 - `compatibility.runtimes` - runtime version constraints (`python`, `node`)
 - `localization` - `{resources, default_locale}` for i18n of user-facing fields (from `server.meta.json`; `resources` path must include a `${locale}` placeholder)
 - `_meta` - platform-specific client integration metadata with reverse-DNS keys (from `server.meta.json`; e.g., Windows Store `package_family_name`, static responses for `initialize`/`tools/list`)
-- `server.mcp_config.platform_overrides` - per-platform `{command, args, env}` overrides (from `server.meta.json`). Environment variables in platform overrides are **merged** with the base `mcp_config.env` (not replaced). For example, a `darwin` override adding `DYLD_LIBRARY_PATH` keeps all base env vars intact. The implementing client performs this merge at install time.
+- `server.mcp_config.platform_overrides` - per-platform `{command, args, env}` overrides (from `server.meta.json`). Claude Desktop **replaces** each of `command`, `args` and `env` with the override's value when the override sets it; it does not merge them. Because a replaced `env` would drop `MCPBASH_PROJECT_ROOT` and every `user_config` variable, the bundler copies the base `mcp_config.env` into each override's `env` (override keys win), so an override only needs the variables it adds or changes. The runtime is chosen from the base `command`, so overriding `command` does not change it.
 
 **Note:** The `author` field is required by the MCPB spec. If not provided via `mcpb.conf` or `server.meta.json`, the bundler falls back to git config.
 
@@ -302,6 +302,11 @@ The manifest supports these variables in env/args and user_config defaults:
 - `${DOWNLOADS}` - User's Downloads folder
 - `${pathSeparator}` or `${/}` - Platform path separator (`:` or `;`)
 
+How Claude Desktop applies these (read from Desktop 2.31226.0):
+- **Unset optional settings stay literal.** A `${user_config.KEY}` with no saved value and no `default` is left as the literal text `${user_config.KEY}`. The generated `run-server.sh` unsets any variable whose value is such a placeholder, so tools see it as unset rather than as a bogus value. Give a `default` when you need a known value.
+- **`$` sequences in values are altered.** Substitution does not escape `$$`, `$&`, `` $` `` or `$'` in a value, so a secret containing `$$` arrives with a single `$`. Avoid these sequences in values that must arrive verbatim.
+- **The server gets a small environment.** Besides `mcp_config.env`, Desktop passes only a short list of host variables: HOME, LOGNAME, PATH, SHELL, TERM and USER on macOS and Linux; on Windows, APPDATA, HOMEDRIVE, HOMEPATH, LOCALAPPDATA, PATH, PROCESSOR_ARCHITECTURE, SYSTEMDRIVE, SYSTEMROOT, TEMP, USERNAME, USERPROFILE and PROGRAMFILES. PATH includes the login-shell PATH. Windows does not pass TMP, so `run-server.sh` sets TMP from TEMP when it is missing.
+
 ### Generated Manifest Example
 
 ```json
@@ -320,6 +325,31 @@ The manifest supports these variables in env/args and user_config defaults:
   }
 }
 ```
+
+### Passing secrets to tools
+
+A value from `user_config` reaches the **server** process through `user_config_env_map`. Tools and providers do not see it yet, because they run with a curated environment: tools default to `MCPBASH_TOOL_ENV_MODE=minimal`, and resource and completion providers default to `MCPBASH_PROVIDER_ENV_MODE=isolate`. Declare which variables to pass on in `server.d/server.meta.json`:
+
+```json
+{
+  "name": "my-server",
+  "user_config": {
+    "api_key": { "type": "string", "title": "API Key", "sensitive": true, "required": true }
+  },
+  "user_config_env_map": { "api_key": "MY_API_KEY" },
+  "env": {
+    "MCPBASH_TOOL_ENV_MODE": "allowlist",
+    "MCPBASH_TOOL_ENV_ALLOWLIST": "MY_API_KEY",
+    "MCPBASH_PROVIDER_ENV_MODE": "allowlist",
+    "MCPBASH_PROVIDER_ENV_ALLOWLIST": "MY_API_KEY"
+  }
+}
+```
+
+- `"env"` declares the policy, never the value. Only these four keys are accepted; anything else is refused (and makes `mcp-bash bundle` fail, since the value would ship).
+- The launch environment wins: if it sets either the mode or the allowlist for tools (or for providers), the `"env"` values for that scope are ignored. Operators can ignore the section entirely with `MCPBASH_IGNORE_META_ENV=true`.
+- `mcp-bash doctor` shows the effective policy and whether each allowlisted variable is set in the current shell.
+- Before 1.5.0 the only way to do this in a bundle was `platform_overrides.<platform>.env`, repeated per platform. That still works (and the bundler now keeps the base env in each override), but `"env"` is simpler and applies on every platform and to `mcp-bash run-tool`.
 
 ## Platform Compatibility
 

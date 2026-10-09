@@ -14,7 +14,7 @@ fi
 # Required framework lib files to embed.
 # Must stay in sync with the direct '. "${MCPBASH_HOME}/lib/..."' sources in bin/mcp-bash.
 # Enforced by test/unit/bundle_libs_sync.bats.
-EMBED_REQUIRED_LIBS="require runtime json hash ids lock io paginate logging auth uri policy tools_policy registry spec tools resources prompts completion timeout elicitation roots rpc core handler_helpers validate path resource_content resource_providers progress progress-passthrough capabilities ui ui-templates"
+EMBED_REQUIRED_LIBS="require runtime meta_env json hash ids lock io paginate logging auth uri policy tools_policy registry spec tools resources prompts completion timeout elicitation roots rpc core handler_helpers validate path resource_content resource_providers progress progress-passthrough capabilities ui ui-templates"
 
 # mcp_embed_framework <dest_dir> <verbose>
 #
@@ -114,6 +114,21 @@ if [[ -z "${MCPB_SKIP_LOGIN_SHELL:-}" ]]; then
       break
     fi
   done
+fi
+
+# Claude Desktop leaves "${user_config.<key>}" as literal text when an optional
+# setting has no value and no default. Unset such variables so tools never see
+# the placeholder as a real value (for example as an API key).
+for _mcpb_var in $(compgen -e); do
+  case "${!_mcpb_var-}" in
+  '${user_config.'*) unset "${_mcpb_var}" 2>/dev/null || true ;;
+  esac
+done
+unset _mcpb_var
+
+# Windows hosts pass TEMP but not TMP; many tools read TMP.
+if [[ -z "${TMP:-}" && -n "${TEMP:-}" ]]; then
+  export TMP="${TEMP}"
 fi
 
 # Set project root to this server's directory

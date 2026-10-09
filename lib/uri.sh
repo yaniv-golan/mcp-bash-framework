@@ -9,7 +9,7 @@ set -euo pipefail
 mcp_uri_url_encode() (
 	local value="$1"
 	local output=""
-	local i char hex
+	local i char code hex
 	LC_ALL=C
 	for ((i = 0; i < ${#value}; i++)); do
 		char="${value:i:1}"
@@ -18,7 +18,10 @@ mcp_uri_url_encode() (
 			output+="${char}"
 			;;
 		*)
-			printf -v hex '%02X' "'${char}"
+			# Mask to one byte: bash 3.2 reads bytes >= 0x80 as negative
+			# (signed char), which %02X would print as FFFFFFFFFFFFFFC3.
+			printf -v code '%d' "'${char}"
+			printf -v hex '%02X' "$((code & 255))"
 			output+="%${hex}"
 			;;
 		esac

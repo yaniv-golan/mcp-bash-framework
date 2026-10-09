@@ -1,6 +1,6 @@
 # Completion Support
 
-`completion/complete` is available in full mode (disabled in minimal mode). Completions are manually registered (there is no auto-discovery). Prefer declarative registration via `server.d/register.json`; hook-based registration via `server.d/register.sh` is still supported but executes shell code and is opt-in (`MCPBASH_ALLOW_PROJECT_HOOKS=true` plus safe ownership/permissions).
+`completion/complete` is available in full mode (disabled in minimal mode). Completions are either registered (prefer declarative registration via `server.d/register.json`) or picked up from a script placed next to a prompt or resource (see [Per-prompt and per-resource scripts](#per-prompt-and-per-resource-scripts)); hook-based registration via `server.d/register.sh` is still supported but executes shell code and is opt-in (`MCPBASH_ALLOW_PROJECT_HOOKS=true` plus safe ownership/permissions).
 
 ## Registering Completions
 
@@ -46,6 +46,22 @@ Notes:
 - **manual**: executable script under project root (most common).
 - **prompt**: script under `prompts/` (receives prompt metadata via env).
 - **resource**: script under `resources/` (receives resource metadata via env).
+
+## Per-prompt and per-resource scripts
+
+A completion script can sit next to a prompt or resource instead of being registered in `server.d/register.json`. For a prompt whose meta `path` is `pick/pick.txt` (the `mcp-bash scaffold prompt` layout `prompts/pick/pick.meta.json` + `pick.txt`), the framework looks for these executables, in order:
+
+1. `prompts/pick/pick.txt.completion.sh`
+2. `prompts/pick/pick.txt.completion`
+3. `prompts/pick/pick.completion.sh`
+4. `prompts/pick/pick.completion`
+
+Resources work the same way, relative to `resources/`. A `register.json` entry with the same name takes precedence.
+
+- The request's `ref.name` is the prompt (or resource) name.
+- Scripts run from the project root, under the provider env policy (`MCPBASH_PROVIDER_ENV_*`). To read a secret such as an API key, allowlist it, for example with `MCPBASH_PROVIDER_ENV_ALLOWLIST` in `server.meta.json` `"env"`.
+- They receive the manual-provider variables below plus, for prompts, `MCP_PROMPT_REL_PATH`, `MCP_PROMPT_PATH` and `MCP_PROMPT_METADATA`; for resources, `MCP_RESOURCE_REL_PATH`, `MCP_RESOURCE_PATH`, `MCP_RESOURCE_URI`, `MCP_RESOURCE_PROVIDER` and `MCP_RESOURCE_METADATA`.
+- They time out after `MCPBASH_COMPLETION_TIMEOUT_SECS` seconds (default 5; `0` disables). Completions run on every keystroke, so keep them fast. A timed-out script returns an error to the client.
 
 ## Script Contract (manual provider)
 

@@ -375,6 +375,12 @@ EOF
 		done
 	fi
 
+	# Same declarative env policy as the server, so local runs match production.
+	# Applied after sourced env files, which count as launch env (they win per
+	# scope, exactly like variables set before launching the server).
+	mcp_require meta_env mcp_meta_env_apply
+	mcp_meta_env_apply
+
 	if ! printf '%s' "${args_json}" | "${MCPBASH_JSON_TOOL_BIN}" -e 'type=="object"' >/dev/null 2>&1; then
 		printf 'run-tool: --args must be a JSON object\n' >&2
 		exit 1

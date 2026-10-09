@@ -5,6 +5,40 @@ All notable changes to mcp-bash-framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Declarative env policy in `server.d/server.meta.json`**: An optional `"env"` object can set `MCPBASH_TOOL_ENV_MODE`, `MCPBASH_TOOL_ENV_ALLOWLIST`, `MCPBASH_PROVIDER_ENV_MODE` and `MCPBASH_PROVIDER_ENV_ALLOWLIST`, so a project (including an installed MCPB bundle) can pass host-injected secrets such as an API key on to its tools and providers. The server applies it at startup, and `mcp-bash run-tool` applies it too, after any `--with-server-env`/`--source` files, which count as launch env.
+  - Only those four keys are accepted. Operator opt-ins (`*_INHERIT_ALLOW`, `MCPBASH_ALLOW_PROJECT_HOOKS`, ...) and any other variable are refused with a warning that names the key, never the value.
+  - Values are validated before use: modes must be valid for their key, allowlists may only name plain variables (no shell-control or reserved names such as `LD_PRELOAD`, `BASH_ENV` or `MCPBASH_*`), and values with control characters are refused. A `server.meta.json` holding more than one JSON document applies nothing. Warnings go to stderr.
+  - The launch environment wins. If it sets either the mode or the allowlist for tools (or for providers), both meta values for that scope are ignored. An empty value, or an unexpanded `${user_config.*}` placeholder, counts as unset. `MCPBASH_IGNORE_META_ENV=true` ignores the section entirely.
+  - `inherit` still requires the operator's `*_INHERIT_ALLOW`.
+  - `mcp-bash validate` reports problems in the section, and `mcp-bash bundle` refuses a bundle whose section contains a disallowed key, because its value would ship.
+- **`mcp-bash doctor` shows the tool and provider env policy**: For tools and providers it shows the effective mode and where it came from (launch env, `server.meta.json` or default), and whether each allowlisted variable is set, empty, an unexpanded placeholder or not set in the current shell. It also flags refused or invalid `server.meta.json` env keys, invalid allowlist names, and `inherit` without the operator opt-in. Values are never printed. `doctor --json` adds an `envPolicy` object and matching findings.
+
+### Fixed
+
+- **Refused `register.json` / `register.sh` now say why and how to fix it**: When the file, `server.d/` or the project root is group- or world-writable, a symlink, or owned by another user, the registry is refused and every tools/resources/prompts list fails. The error said only "permissions/ownership invalid". It now names the path (relative to the project, since the message can reach clients) and the fix, for example `server.d is group- or world-writable (fix: chmod g-w,o-w server.d)`. `mcp-bash doctor` checks this up front, and `mcp-bash health` explains a skipped `health-checks.sh` the same way.
+- **Non-ASCII file URIs are encoded correctly on bash 3.2**: `mcp_uri_url_encode` printed bytes >= 0x80 as sign-extended values under bash 3.2 (the macOS `/bin/bash`), so `é` became `%FFFFFFFFFFFFFFC3%FFFFFFFFFFFFFFA9` instead of `%C3%A9`. Resources without an explicit `uri` whose path contains non-ASCII characters got broken `file://` URIs.
+- **Per-prompt and per-resource completion scripts now time out**: Scripts found next to a prompt or resource (for example `prompts/<name>/<name>.completion.sh`) had no timeout, so a hung script held a worker on every keystroke. They now time out after `MCPBASH_COMPLETION_TIMEOUT_SECS` (default 5 seconds). These scripts are now covered by an integration test, and their file lookup and environment are documented in `docs/COMPLETION.md`.
+- **Tools on Windows keep the system variables they need**: In `minimal` and `allowlist` tool env modes, tools received only `PATH`, `HOME`, `TMPDIR` and `LANG` (plus `MCP_*`/`MCPBASH_*`), while providers also kept the Windows system variables. Without `SYSTEMROOT`, Python on Windows cannot open sockets (WinError 10106). Tools now also keep `SYSTEMROOT`, `SYSTEMDRIVE`, `WINDIR`, `COMSPEC`, `PATHEXT`, `USERPROFILE`, `APPDATA`, `LOCALAPPDATA`, `TEMP`, `TMP`, `MSYSTEM` and `MSYS2_ARG_CONV_EXCL`.
+- **Bundles keep their base env on platforms with an override**: Claude Desktop replaces `mcp_config.env` with a `platform_overrides.<platform>.env` rather than merging, so an override dropped `MCPBASH_PROJECT_ROOT`, `MCPBASH_TOOL_ALLOWLIST` and every `user_config` variable on that platform. The bundler now copies the base env into each override env, and `docs/MCPB.md` no longer says the env is merged. `mcp-bash bundle` also warns when override env turns on an operator opt-in such as `MCPBASH_TOOL_ENV_INHERIT_ALLOW`.
+- **Bundles no longer pass unexpanded `${user_config.*}` placeholders to tools**: Claude Desktop leaves the literal placeholder text when an optional setting has no value and no default. `run-server.sh` now unsets such variables. On Windows, where the host passes TEMP but not TMP, it also sets TMP from TEMP.
+- **The tool inherit-mode gate now also applies to a mode set by `server.d/policy.sh`**: `MCPBASH_TOOL_ENV_MODE=inherit` requires `MCPBASH_TOOL_ENV_INHERIT_ALLOW=true`, but the check ran before `policy.sh` was sourced, so a mode exported there skipped it. The check now runs after the policy hook. `policy.sh` is project code and can still set anything, so this guards against accidental configuration, not a hostile project.
+
+### Changed
+
+- **Documentation**:
+  - `docs/MCPB.md` gains a "Passing secrets to tools" section and describes how Claude Desktop substitutes `user_config` values and what environment it passes.
+  - `docs/BEST-PRACTICES.md` warns against splicing untrusted input into jq programs.
+  - `docs/COMPLETION.md` documents per-prompt and per-resource completion scripts.
+  - `README.md`, `llms.txt`, `llms-full.txt`, `docs/LLM-CONTEXT.md` and the scaffolded `server.d/README.md` are updated for the env policy, resource templates and project providers, completions, and the tool environment. The README listed the minimal tool environment as `PATH`, `HOME`, `TERM`.
+
+### Security
+
+- **`MCPBASH_TOOL_ENV_ALLOWLIST` names are validated with an anchored pattern**: The name check used a shell glob that only anchored the first two characters, so an entry such as `xx[$(command)]` was accepted, and reading it with indirect expansion ran the embedded command in the server's tool subshell. Names must now match `^[A-Za-z_][A-Za-z0-9_]*$` exactly; anything else is skipped. The value is set by whoever configures the server, so this was not reachable by MCP clients, but configuration data must never execute code.
+
 ## [1.4.0] - 2026-10-09
 
 ### Fixed

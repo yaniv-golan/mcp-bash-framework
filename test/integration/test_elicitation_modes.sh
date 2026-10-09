@@ -21,6 +21,22 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 test_create_tmpdir
 
+# Wait for the server to exit, but never forever: a server that keeps running
+# must fail the test, not stall the whole integration run.
+wait_bounded() {
+	local pid="$1" limit="${2:-60}" waited=0
+	while kill -0 "${pid}" 2>/dev/null; do
+		if [ "${waited}" -ge "${limit}" ]; then
+			kill "${pid}" 2>/dev/null || true
+			wait "${pid}" 2>/dev/null || true
+			test_fail "server did not exit within ${limit}s after exit request"
+		fi
+		sleep 1
+		waited=$((waited + 1))
+	done
+	wait "${pid}" 2>/dev/null || true
+}
+
 # --- Test 1: Legacy capability format (should imply form mode) ---
 test_legacy_format() {
 	local workroot="${TEST_TMPDIR}/legacy"
@@ -83,7 +99,7 @@ SH
 
 	printf '%s\n' '{"jsonrpc":"2.0","id":"exit","method":"exit"}' >&3
 	exec 3>&-
-	wait "${pid}" || true
+	wait_bounded "${pid}"
 
 	if [ "${elicit_seen}" -ne 1 ]; then
 		test_fail "legacy format: elicitation/create not seen"
@@ -157,7 +173,7 @@ SH
 
 	printf '%s\n' '{"jsonrpc":"2.0","id":"exit","method":"exit"}' >&5
 	exec 5>&-
-	wait "${pid}" || true
+	wait_bounded "${pid}"
 
 	if [ "${elicit_seen}" -ne 1 ]; then
 		test_fail "new form format: elicitation/create not seen"

@@ -251,7 +251,12 @@ All commands use: `--filter 'field operator "value"'`
 
 ### Dynamic Domain Resources
 
-Use a project-level provider for dynamic documentation:
+Use a project-level provider for dynamic documentation. A client-supplied `help://...` URI reaches `providers/help.sh` only when the project declares the `help:` scheme, for example with a resource template:
+
+**File:** `resources/help-fields.meta.json`
+```json
+{"name": "help-fields", "uriTemplate": "help://fields/{list_id}", "mimeType": "text/markdown"}
+```
 
 **File:** `providers/help.sh`
 ```bash
@@ -266,6 +271,8 @@ case "${uri}" in
     ;;
   help://fields/*)
     list_id="${uri#help://fields/}"
+    # The URI comes from the client: accept only the shape you serve.
+    [[ "${list_id}" =~ ^[0-9]+$ ]] || { echo "Invalid list id" >&2; exit 4; }
     # Show available fields for a specific list
     my-cli field list --list-id "$list_id" --format markdown
     ;;

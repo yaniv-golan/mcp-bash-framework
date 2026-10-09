@@ -1535,20 +1535,6 @@ mcp_tools_call() {
 		return 1
 	fi
 
-	# Warn once per process when running in inherit mode, since tools then
-	# receive the full host environment including any secrets present.
-	local env_mode_raw="${MCPBASH_TOOL_ENV_MODE:-minimal}"
-	local env_mode_lc
-	env_mode_lc="$(printf '%s' "${env_mode_raw}" | tr '[:upper:]' '[:lower:]')"
-	if [ "${env_mode_lc}" = "inherit" ] && [ "${MCPBASH_TOOL_ENV_INHERIT_WARNED}" != "true" ]; then
-		MCPBASH_TOOL_ENV_INHERIT_WARNED="true"
-		mcp_logging_warning "${MCP_TOOLS_LOGGER}" "MCPBASH_TOOL_ENV_MODE=inherit; tools receive the full host environment"
-	fi
-	if [ "${env_mode_lc}" = "inherit" ] && [ "${MCPBASH_TOOL_ENV_INHERIT_ALLOW:-false}" != "true" ]; then
-		mcp_tools_error -32602 "MCPBASH_TOOL_ENV_MODE=inherit requires MCPBASH_TOOL_ENV_INHERIT_ALLOW=true"
-		return 1
-	fi
-
 	# Initialize and enforce project policy (server.d/policy.sh can override).
 	mcp_tools_policy_init
 	if ! mcp_tools_policy_check "${name}" "${metadata}"; then
@@ -1558,6 +1544,21 @@ mcp_tools_call() {
 		local policy_data="${_MCP_TOOLS_ERROR_DATA:-null}"
 		[ -z "${policy_data}" ] && policy_data="null"
 		_mcp_tools_emit_error "${_MCP_TOOLS_ERROR_CODE}" "${_MCP_TOOLS_ERROR_MESSAGE}" "${policy_data}"
+		return 1
+	fi
+
+	# Checked after policy.sh has run, so a mode it sets is gated too. Warn once
+	# per process in inherit mode, since tools then receive the full host
+	# environment including any secrets present.
+	local env_mode_raw="${MCPBASH_TOOL_ENV_MODE:-minimal}"
+	local env_mode_lc
+	env_mode_lc="$(printf '%s' "${env_mode_raw}" | tr '[:upper:]' '[:lower:]')"
+	if [ "${env_mode_lc}" = "inherit" ] && [ "${MCPBASH_TOOL_ENV_INHERIT_WARNED}" != "true" ]; then
+		MCPBASH_TOOL_ENV_INHERIT_WARNED="true"
+		mcp_logging_warning "${MCP_TOOLS_LOGGER}" "MCPBASH_TOOL_ENV_MODE=inherit; tools receive the full host environment"
+	fi
+	if [ "${env_mode_lc}" = "inherit" ] && [ "${MCPBASH_TOOL_ENV_INHERIT_ALLOW:-false}" != "true" ]; then
+		mcp_tools_error -32602 "MCPBASH_TOOL_ENV_MODE=inherit requires MCPBASH_TOOL_ENV_INHERIT_ALLOW=true"
 		return 1
 	fi
 
@@ -1863,6 +1864,10 @@ mcp_tools_call() {
 			for env_key in $(compgen -e); do
 				case "${env_key}" in
 				PATH | HOME | TMPDIR | LANG) ;;
+				# Windows system variables (the provider env keeps a subset of these).
+				# Without SYSTEMROOT, Python cannot initialise sockets (WinError 10106).
+				SYSTEMROOT | SYSTEMDRIVE | WINDIR | windir | COMSPEC | PATHEXT) ;;
+				USERPROFILE | APPDATA | LOCALAPPDATA | TEMP | TMP | MSYSTEM | MSYS2_ARG_CONV_EXCL) ;;
 				MCP_* | MCPBASH_*) ;;
 				*)
 					if [ "${tool_env_mode}" = "allowlist" ]; then
@@ -1889,12 +1894,17 @@ mcp_tools_call() {
 			# operators who set variables without `export`.
 			if [ "${tool_env_mode}" = "allowlist" ]; then
 				local allowlist_var allowlist_value
-				for allowlist_var in ${allowlist_raw}; do
+				# read -a, not an unquoted for-list: an entry such as `*` must not
+				# glob-expand to file names in the working directory.
+				local -a allowlist_entries=()
+				read -r -a allowlist_entries <<<"${allowlist_raw}"
+				for allowlist_var in ${allowlist_entries[@]+"${allowlist_entries[@]}"}; do
 					[ -n "${allowlist_var}" ] || continue
-					case "${allowlist_var}" in
-					[A-Za-z_][A-Za-z0-9_]*) ;;
-					*) continue ;;
-					esac
+					# Anchored regex, not a case glob: a glob's trailing `*` would accept
+					# names like `xx[$(cmd)]`, whose subscript ${!name} then evaluates.
+					if ! [[ "${allowlist_var}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+						continue
+					fi
 					allowlist_value="${!allowlist_var:-}"
 					[ -n "${allowlist_value}" ] || continue
 					# shellcheck disable=SC2163  # Intentional: export var by name stored in allowlist_var

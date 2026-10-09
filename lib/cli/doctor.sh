@@ -10,6 +10,63 @@ fi
 
 # Globals: MCPBASH_HOME, MCPBASH_PROJECT_ROOT (optional), usage() from bin, runtime globals from initialize_runtime_paths.
 
+# Check the registration file the server will actually use, the way it uses
+# it (mcp_registry_register_apply): register.json when it is a file; otherwise
+# register.sh, only with project hooks enabled and when it is executable or
+# has a shebang. Prints one TAB-separated line per refusal: <file> <message>.
+mcp_doctor_register_permission_issues() {
+	local project_root="$1"
+	command -v mcp_registry_register_check_permissions >/dev/null 2>&1 || . "${MCPBASH_HOME}/lib/registry.sh"
+	local server_dir="${project_root}/server.d"
+	local file=""
+	if [ -f "${server_dir}/register.json" ]; then
+		file="register.json"
+	elif [ -f "${server_dir}/register.sh" ] && mcp_registry_register_hooks_allowed; then
+		if [ -x "${server_dir}/register.sh" ] || head -n1 "${server_dir}/register.sh" 2>/dev/null | grep -q '^#!'; then
+			file="register.sh"
+		fi
+	fi
+	[ -n "${file}" ] || return 0
+	if ! MCPBASH_PROJECT_ROOT="${project_root}" mcp_registry_register_check_permissions "${server_dir}/${file}"; then
+		printf '%s\t%s\n' "${file}" "$(MCPBASH_PROJECT_ROOT="${project_root}" mcp_registry_register_permission_message "server.d/${file}")"
+	fi
+}
+
+# Render the tool/provider env policy (text mode). Names and states only; values
+# are never printed. Results describe this shell, not the host that launches the
+# server (for example Claude Desktop, which injects its own variables).
+mcp_doctor_print_env_policy() {
+	local meta_file="$1"
+	local json_tool_bin="$2"
+	command -v mcp_meta_env_report >/dev/null 2>&1 || . "${MCPBASH_HOME}/lib/meta_env.sh"
+	local json_tool="none"
+	[ -n "${json_tool_bin}" ] && json_tool="$(basename "${json_tool_bin}")"
+	printf '\nTool/provider environment policy (in this shell):\n'
+	local kind a b c scope_label
+	while IFS=$'\t' read -r kind a b c; do
+		case "${a}" in
+		TOOL) scope_label="tools" ;;
+		PROVIDER) scope_label="providers" ;;
+		*) scope_label="${a}" ;;
+		esac
+		case "${kind}" in
+		switch) printf '  ⚠ MCPBASH_IGNORE_META_ENV is set: server.meta.json env is ignored\n' ;;
+		policy) printf '  ✓ %s: mode %s (from %s)\n' "${scope_label}" "${b}" "${c}" ;;
+		name)
+			case "${c}" in
+			set) printf '      ✓ %s: set\n' "${b}" ;;
+			*) printf '      · %s: %s here (a host such as Claude Desktop may inject it at launch)\n' "${b}" "${c}" ;;
+			esac
+			;;
+		badname) printf '      ✗ %s: allowlist entry %s is not a valid variable name and is skipped\n' "${scope_label}" "${b}" ;;
+		inherit) printf '  ⚠ %s: inherit mode without MCPBASH_%s_ENV_INHERIT_ALLOW=true will be refused\n' "${scope_label}" "${a}" ;;
+		refused) printf '  ⚠ server.meta.json env.%s is ignored (not settable there)\n' "${a}" ;;
+		invalid | error) printf '  ⚠ server.meta.json env.%s: %s\n' "${a}" "${b}" ;;
+		esac
+	done < <(MCPBASH_JSON_TOOL="${json_tool}" MCPBASH_JSON_TOOL_BIN="${json_tool_bin}" mcp_meta_env_report "${meta_file}")
+	printf '  · A login profile exporting MCPBASH_*_ENV_* overrides server.meta.json for bundles too (run-server.sh sources it).\n'
+}
+
 mcp_cli_doctor() {
 	local json_mode="false"
 	local fix_mode="false"
@@ -420,7 +477,7 @@ EOF
 		local jq_path gojq_path json_tool="none"
 		local tmp_root="${MCPBASH_TMP_ROOT:-}"
 		local tmp_root_writable="false"
-		local project_root="" server_meta_valid="null" tools_count=0 registry_exists="false"
+		local project_root="" server_meta_valid="null" tools_count=0 registry_exists="false" env_policy_json="null"
 		local is_darwin="false" quarantine_supported="false"
 		local framework_quarantine="null" project_quarantine="null"
 		local is_msys="false" msys_hint=""
@@ -525,6 +582,56 @@ EOF
 			else
 				warnings=$((warnings + 1))
 				add_finding "project.registry_missing" "warning" ".registry/ does not exist (will be created on demand)" "false" ""
+			fi
+
+			local reg_file reg_message
+			while IFS=$'\t' read -r reg_file reg_message; do
+				[ -n "${reg_file}" ] || continue
+				errors=$((errors + 1))
+				add_finding "project.register_permissions" "error" "${reg_message}" "false" ""
+			done < <(mcp_doctor_register_permission_issues "${project_root}")
+
+			# Tool/provider env policy, as seen from this shell. Names and states
+			# only; values are never included.
+			local env_json_tool="${gojq_path:-${jq_path}}"
+			if [ -n "${env_json_tool}" ]; then
+				command -v mcp_meta_env_report >/dev/null 2>&1 || . "${MCPBASH_HOME}/lib/meta_env.sh"
+				local env_report
+				env_report="$(MCPBASH_JSON_TOOL="$(basename "${env_json_tool}")" MCPBASH_JSON_TOOL_BIN="${env_json_tool}" mcp_meta_env_report "${project_root}/server.d/server.meta.json")"
+				env_policy_json="$(printf '%s\n' "${env_report}" | "${env_json_tool}" -R -s -c '
+					[split("\n")[] | select(length > 0) | split("\t")] as $l
+					| def scope($s):
+						($l | map(select(.[0] == "policy" and .[1] == $s)) | .[0]) as $p
+						| {mode: $p[2], source: $p[3],
+							allowlist: [$l[] | select(.[0] == "name" and .[1] == $s) | {name: .[2], state: .[3]}],
+							invalidNames: [$l[] | select(.[0] == "badname" and .[1] == $s) | .[2]],
+							inheritBlocked: any($l[]; .[0] == "inherit" and .[1] == $s)};
+					{scope: "this shell", metaIgnored: any($l[]; .[0] == "switch"),
+						tool: scope("TOOL"), provider: scope("PROVIDER"),
+						refusedKeys: [$l[] | select(.[0] == "refused") | .[1]],
+						invalidKeys: [$l[] | select(.[0] == "invalid" or .[0] == "error") | {key: .[1], reason: .[2]}]}
+				' 2>/dev/null || printf 'null')"
+				local env_kind env_a env_b
+				while IFS=$'\t' read -r env_kind env_a env_b _; do
+					case "${env_kind}" in
+					refused)
+						warnings=$((warnings + 1))
+						add_finding "project.env_key_refused" "warning" "server.meta.json env.${env_a} is ignored (only the tool/provider env-policy keys may be set there)" "false" ""
+						;;
+					invalid | error)
+						warnings=$((warnings + 1))
+						add_finding "project.env_key_invalid" "warning" "server.meta.json env.${env_a}: ${env_b}" "false" ""
+						;;
+					inherit)
+						warnings=$((warnings + 1))
+						add_finding "project.env_inherit_blocked" "warning" "${env_a} env mode is inherit but MCPBASH_${env_a}_ENV_INHERIT_ALLOW is not true; it will be refused" "false" ""
+						;;
+					badname)
+						warnings=$((warnings + 1))
+						add_finding "project.env_allowlist_invalid_name" "warning" "${env_a} env allowlist entry ${env_b} is not a valid variable name and is skipped" "false" ""
+						;;
+					esac
+				done <<<"${env_report}"
 			fi
 		fi
 
@@ -1044,6 +1151,7 @@ EOF
     "toolsCount": ${tools_count},
     "registryExists": ${registry_exists}
   },
+  "envPolicy": ${env_policy_json},
   "errors": ${errors},
   "warnings": ${warnings}
 }
@@ -1596,6 +1704,15 @@ EOF
 			printf '  ⚠ Registry: .registry/ does not exist (will be created on demand)\n'
 			warnings=$((warnings + 1))
 		fi
+
+		local reg_file reg_message
+		while IFS=$'\t' read -r reg_file reg_message; do
+			[ -n "${reg_file}" ] || continue
+			printf '  ✗ %s (every tools/resources/prompts list fails until fixed)\n' "${reg_message}"
+			errors=$((errors + 1))
+		done < <(mcp_doctor_register_permission_issues "${detected_root}")
+
+		mcp_doctor_print_env_policy "${detected_root}/server.d/server.meta.json" "${gojq_path:-${jq_path}}"
 	else
 		printf '  (no project detected in current directory)\n'
 	fi
