@@ -547,6 +547,22 @@ mcp_log_warn "mytool" "Deprecated option used"
 mcp_log_error "mytool" "Failed to connect"
 ```
 
+#### Never splice input into jq programs
+
+Tool arguments, resource URIs (a provider's `$1`), completion queries and environment values are untrusted data. Pass them to jq as data, never as part of the program text:
+
+```bash
+# Wrong: a value containing `") | env | ("` turns into jq code, and jq's `env` exposes
+# every variable the script can see (API keys included).
+jq -r ".items[] | select(.name == \"${name}\")" data.json
+
+# Right: the value stays data.
+jq -r --arg name "${name}" '.items[] | select(.name == $name)' data.json
+jq -n --argjson limit "${limit}" '{limit: $limit}'   # only after checking ${limit} is a number
+```
+
+The same applies to `${MCPBASH_JSON_TOOL_BIN}` and gojq. In providers, validate `$1` against the URI shapes you serve before using it. If it can carry percent-encoded parts, decode them once and treat the result as data too.
+
 #### Secure downloads (mcp_download_safe)
 
 > **When to use:** Use `mcp_download_safe` whenever your tool needs to fetch content from external URLs. It handles SSRF protection, automatic retries with exponential backoff, and returns structured JSON responses. For most cases, prefer `mcp_download_safe_or_fail` which fails the tool on error. Only use raw `curl` when you need features not supported by the helper (e.g., POST requests, custom headers beyond User-Agent).
