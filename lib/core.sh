@@ -450,8 +450,11 @@ mcp_core_wait_for_workers() {
 	fi
 
 	for pid in ${pids}; do
-		wait "${pid}"
-		exit_code=$?
+		# A cancelled or timed-out worker ends with a signal status (143, 137).
+		# Under set -e a bare wait would end the drain there, dropping the
+		# results of the workers still running.
+		exit_code=0
+		wait "${pid}" || exit_code=$?
 		# Ignore normal exits and missing jobs (127) to avoid noisy logs on shells without full job control.
 		if [ "${exit_code}" -ne 0 ] && [ "${exit_code}" -ne 127 ]; then
 			printf '%s\n' "mcp-bash: background worker ${pid} exited with status ${exit_code}" >&2
