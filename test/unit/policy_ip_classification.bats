@@ -156,5 +156,30 @@ MALFORMED_V6="[1::2::3] [:::1] [1:2:3:4:5:6:7:8:9] [1:2:3:4:5:6:7:8:] [:1:2:3:4:
 	assert_equal "$(mcp_policy_extract_port_from_url 'https://[2606:4700::1111]/x')" "443"
 	assert_equal "$(mcp_policy_extract_port_from_url 'https://u:p@example.com:9443/x')" "9443"
 	assert_equal "$(mcp_policy_extract_port_from_url 'git+https://example.com/r#main:a:b')" "443"
-	assert_equal "$(mcp_policy_extract_port_from_url 'https://example.com:99999/')" "443"
+	assert_equal "$(mcp_policy_extract_port_from_url 'https://example.com:65535/')" "65535"
+	assert_equal "$(mcp_policy_extract_port_from_url 'https://example.com:1/')" "1"
+}
+
+# Port spellings that are not canonical decimal 1-65535. curl/git would read
+# some of these as a different port than a lenient parser, so the pin would
+# not match the connection. All must be refused (non-zero, no output).
+NONCANONICAL_PORTS="000080 080 0 00 0000000000443 65536 99999 +80 -1 80:90 0x50 8a :"
+
+@test "policy_ip: extract_port_from_url refuses non-canonical ports" {
+	local p out rc failures=""
+	for p in ${NONCANONICAL_PORTS}; do
+		rc=0
+		out="$(mcp_policy_extract_port_from_url "https://example.com:${p}/x")" || rc=$?
+		if [ "${rc}" -eq 0 ] || [ -n "${out}" ]; then
+			failures="${failures} ${p}(rc=${rc},out=${out})"
+		fi
+	done
+	for p in "https://example.com:/x" "https://[2606:4700::1111]:/x" "https://[2606:4700::1111]:000080/x" "https://[2606:4700::1111]x/"; do
+		rc=0
+		out="$(mcp_policy_extract_port_from_url "${p}")" || rc=$?
+		if [ "${rc}" -eq 0 ] || [ -n "${out}" ]; then
+			failures="${failures} ${p}(rc=${rc},out=${out})"
+		fi
+	done
+	[ -z "${failures}" ] || fail "accepted:${failures}"
 }

@@ -131,7 +131,11 @@ if [[ "${authority}" == *"@"* ]]; then
 fi
 
 host="$(mcp_policy_extract_host_from_url "${uri}")" || host=""
-port="$(mcp_policy_extract_port_from_url "${uri}" 443)"
+if ! port="$(mcp_policy_extract_port_from_url "${uri}" 443)"; then
+	mcp_git_log_block "${host:-<empty>}"
+	printf '%s\n' "git provider requires a decimal port 1-65535 without leading zeros" >&2
+	exit 4
+fi
 if [ -z "${host}" ]; then
 	mcp_git_log_block "<empty>"
 	exit 4

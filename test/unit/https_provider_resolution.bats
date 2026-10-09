@@ -243,3 +243,35 @@ ip_address: 93.184.216.34
 	run cat "${CURL_CALLS}"
 	assert_output --partial "--resolve example.com:443:93.184.216.34"
 }
+
+@test "https_resolution: refuses non-canonical ports before resolving or fetching" {
+	stub_resolvers "93.184.216.34 STREAM example.com
+" ""
+	local p failures=""
+	for p in 000080 080 0 0000000000443 65536 80:90 ""; do
+		: >"${CURL_CALLS}"
+		: >"${RESOLVER_CALLS}"
+		run_provider "https://example.com:${p}/file"
+		if [ "${status}" != "4" ] || [ -s "${CURL_CALLS}" ] || [ -s "${RESOLVER_CALLS}" ]; then
+			failures="${failures} :${p}(rc=${status},curl=$(tr '\n' ' ' <"${CURL_CALLS}"))"
+		fi
+	done
+	[ -z "${failures}" ] || fail "not refused:${failures}"
+	run_provider "https://example.com:000080/file"
+	assert_output --partial "port"
+}
+
+@test "https_resolution: mcp_download_safe refuses a zero-padded port" {
+	stub_resolvers "93.184.216.34 STREAM example.com
+" ""
+	local out="${BATS_TEST_TMPDIR}/dl.out"
+	run env PATH="${BIN_DIR}:${PATH}" \
+		MCPBASH_HOME="${MCPBASH_HOME}" \
+		MCPBASH_JSON_TOOL_BIN="${MCPBASH_JSON_TOOL_BIN:-}" \
+		CURL_CALLS="${CURL_CALLS}" RESOLVER_CALLS="${RESOLVER_CALLS}" \
+		bash -c '. "${MCPBASH_HOME}/sdk/tool-sdk.sh"; mcp_download_safe --url "https://example.com:000080/f" --out "$1" --allow example.com' _ "${out}"
+	assert_success
+	assert_output --partial '"host_blocked"'
+	[ ! -s "${CURL_CALLS}" ] || fail "curl was called: $(cat "${CURL_CALLS}")"
+	[ ! -e "${out}" ] || fail "output written"
+}

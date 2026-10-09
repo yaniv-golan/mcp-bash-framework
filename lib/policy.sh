@@ -326,28 +326,38 @@ mcp_policy_extract_host_from_url() {
 }
 
 mcp_policy_extract_port_from_url() {
-	# Port from the URL authority; the default (443 unless given) when absent
-	# or invalid.
+	# Port from the URL authority; the default (443 unless given) when the URL
+	# has no port. A port that is present must be canonical decimal 1-65535
+	# without leading zeros; anything else returns 1 and prints nothing. The
+	# pin is built from this value, so it must be exactly the port curl/git
+	# will connect to (they read ":000080" as 80 and ":0" as 0; a lenient
+	# parser that fell back to the default left those connections unpinned).
 	local default_port="${2:-443}"
 	local authority port=""
 	authority="$(mcp_policy_extract_authority_from_url "$1")"
 	case "${authority}" in
-	\[*\]*)
-		case "${authority}" in
-		*"]:"*) port="${authority##*]:}" ;;
-		esac
+	\[*\]) ;;
+	\[*\]:*)
+		port="${authority#*]:}"
+		[ -n "${port}" ] || return 1
 		;;
+	\[*) return 1 ;;
 	*:*)
-		port="${authority##*:}"
+		port="${authority#*:}"
+		[ -n "${port}" ] || return 1
 		;;
 	esac
-	case "${port}" in
-	'' | *[!0-9]*) port="${default_port}" ;;
-	esac
-	if [ "${#port}" -gt 5 ] || [ "${port}" -lt 1 ] || [ "${port}" -gt 65535 ]; then
-		port="${default_port}"
+	if [ -z "${port}" ]; then
+		printf '%s' "${default_port}"
+		return 0
 	fi
-	printf '%s' "$((10#${port}))"
+	case "${port}" in
+	*[!0-9]* | 0*) return 1 ;;
+	esac
+	if [ "${#port}" -gt 5 ] || [ "${port}" -gt 65535 ]; then
+		return 1
+	fi
+	printf '%s' "${port}"
 }
 
 mcp_policy_resolve_ips() {

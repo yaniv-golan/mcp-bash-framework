@@ -127,3 +127,20 @@ run_provider() {
 	done
 	[ -z "${failures}" ] || fail "not refused:${failures}"
 }
+
+@test "git_pinning: refuses non-canonical ports before resolving or running git" {
+	stub_resolvers "93.184.216.34 STREAM example.com
+"
+	local p failures=""
+	for p in 000080 080 0 0000000000443 65536 80:90 ""; do
+		: >"${GIT_CALLS}"
+		: >"${RESOLVER_CALLS}"
+		run_provider "git+https://example.com:${p}/repo.git#main:README.md"
+		if [ "${status}" != "4" ] || [ -s "${GIT_CALLS}" ] || [ -s "${RESOLVER_CALLS}" ]; then
+			failures="${failures} :${p}(rc=${status},git=$(tr '\n' ' ' <"${GIT_CALLS}"))"
+		fi
+	done
+	[ -z "${failures}" ] || fail "not refused:${failures}"
+	run_provider "git+https://example.com:000080/repo.git#main:README.md"
+	assert_output --partial "port"
+}

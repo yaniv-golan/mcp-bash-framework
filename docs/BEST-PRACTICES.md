@@ -609,7 +609,7 @@ result=$(mcp_download_safe --url "$url" --out "/tmp/data.json" --allow "example.
 **Error types** (in `.error.type`):
 - `invalid_url` – URL is empty or not https://
 - `invalid_params` – Invalid/missing parameters (e.g., missing --out, non-numeric --timeout)
-- `host_blocked` – Host is private, resolves to a private address, is a non-canonical IP literal, or is not in allowlist
+- `host_blocked` – Host is private, resolves to a private address, is a non-canonical IP literal, is not in allowlist, or the URL port is not a plain decimal 1-65535 without leading zeros
 - `provider_unavailable` – HTTPS provider not found or curl missing
 - `network_error` – Host did not resolve, or connection failed (retries exhausted)
 - `size_exceeded` – Response exceeds --max-bytes limit

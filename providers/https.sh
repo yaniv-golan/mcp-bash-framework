@@ -73,8 +73,12 @@ mcp_https_main() {
 
 	local host
 	host="$(mcp_policy_extract_host_from_url "${uri}")" || host=""
-	local port
-	port="$(mcp_https_extract_port_from_url "${uri}")"
+	local port=""
+	if ! port="$(mcp_https_extract_port_from_url "${uri}")"; then
+		mcp_https_log_block "${host:-<empty>}"
+		printf '%s\n' "HTTPS provider requires a decimal port 1-65535 without leading zeros" >&2
+		return 4
+	fi
 	if [ -z "${host}" ]; then
 		mcp_https_log_block "<empty>"
 		return 4
