@@ -28,7 +28,10 @@ mcp_elicitation_write_modes_flag() {
 }
 
 mcp_elicitation_init() {
-	local client_caps="${1:-{}}"
+	# Default "{}" set separately: written inside the expansion, bash ends it
+	# at the first "}" and appends a stray "}" to a set value.
+	local client_caps="${1:-}"
+	[ -n "${client_caps}" ] || client_caps="{}"
 	MCPBASH_CLIENT_SUPPORTS_ELICITATION=0
 	MCPBASH_CLIENT_ELICIT_FORM=0
 	MCPBASH_CLIENT_ELICIT_URL=0

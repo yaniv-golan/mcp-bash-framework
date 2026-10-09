@@ -217,7 +217,7 @@ EOF
 				--arg warnings "${warnings}" \
 				--arg fixes "${fixes_applied}" \
 				--arg strict "${strict}" \
-				--argjson defaults "${server_defaults:-{}}" \
+				--argjson defaults "${server_defaults:-"{}"}" \
 				--argjson messages "${messages_json}" \
 				'$ARGS.named
 				| .errors = (.errors|tonumber)
@@ -236,7 +236,7 @@ EOF
   "warnings": ${warnings},
   "fixesApplied": ${fixes_applied},
   "strict": ${strict},
-  "defaults": ${server_defaults:-{}},
+  "defaults": ${server_defaults:-"{}"},
   "messages": ${messages_json}
 }
 EOF

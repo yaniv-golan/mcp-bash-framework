@@ -1663,7 +1663,10 @@ mcp_config_get() {
 		return 1
 	fi
 
-	local config="${MCP_CONFIG_JSON:-{}}"
+	# Default "{}" set separately; inside the expansion it would append a
+	# stray "}" to a set value.
+	local config="${MCP_CONFIG_JSON:-}"
+	[[ -n "$config" ]] || config="{}"
 	local json_tool="${MCPBASH_JSON_TOOL_BIN:-}"
 	local result
 
