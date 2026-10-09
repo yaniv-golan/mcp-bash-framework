@@ -605,7 +605,7 @@ The [`examples/`](examples/) directory shows common patterns end-to-end:
 | [**08-elicitation**](examples/08-elicitation/) | Client-driven elicitation prompts that gate tool execution. |
 | [**09-registry-overrides**](examples/09-registry-overrides/) | Declarative registry overrides, live progress streaming, and a custom resource provider. |
 | [**10-completions**](examples/10-completions/) | Completion registration, query filtering, and pagination/hasMore. |
-| [**11-resource-templates**](examples/11-resource-templates/) | Resource template discovery, manual overrides, and client-side expansion. |
+| [**11-resource-templates**](examples/11-resource-templates/) | Resource template discovery, manual overrides, client-side expansion, and template-aware reads. |
 | [**Advanced: ffmpeg-studio**](examples/advanced/ffmpeg-studio/) | Real-world application: video processing pipeline with media inspection (optional, heavy deps). |
 
 ## Features at a Glance
@@ -773,7 +773,7 @@ See [docs/WINDOWS.md](docs/WINDOWS.md) for full guidance and workarounds.
 - [**Roots**](docs/ROOTS.md) - Roots/list flow, env wiring, validation, and fallbacks.
 - [**Completions**](docs/COMPLETION.md) - Manual registration, provider types, pagination, and script contracts.
 - [**Registry**](docs/REGISTRY.md) - Registry envelopes, TTL, manual registration, and cache formats.
-- [**Resource Templates**](docs/RESOURCE-TEMPLATES.md) - Auto/manual discovery, pagination, collisions, and client-side expansion.
+- [**Resource Templates**](docs/RESOURCE-TEMPLATES.md) - Auto/manual discovery, pagination, collisions, client-side expansion, and template-aware `resources/read`.
 - [**Limits & Performance**](docs/LIMITS.md) - Concurrency, payload ceilings, throttling.
 - [**Errors**](docs/ERRORS.md) - Protocol errors vs tool execution errors (SEP-1303).
 - [**Best Practices**](docs/BEST-PRACTICES.md) - Development, testing, operations guidance.

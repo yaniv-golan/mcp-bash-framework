@@ -1,6 +1,6 @@
 # Resource Templates
 
-Resource templates advertise families of resources using RFC 6570 URI templates (e.g., `file:///{path}`, `git+https://{repo}/{ref}/{path}`). The server **does not expand templates**; clients call `resources/templates/list`, expand the template client-side, then pass the concrete URI to `resources/read`.
+Resource templates advertise families of resources using RFC 6570 URI templates (e.g., `file:///{+path}`, `git+https://{repo}/{ref}/{+path}`). Clients call `resources/templates/list`, expand a template themselves, and pass the concrete URI to `resources/read`. The server matches that URI back to its template (see [Reading expanded URIs](#reading-expanded-uris)), so the template's `mimeType` applies and the provider learns which template and values matched. Use `{+path}` for a value that spans `/`: a plain `{path}` stops at the first `/`.
 
 ## Discoverability (capabilities)
 
@@ -18,14 +18,14 @@ Add `uriTemplate` to a resource meta file (omit `uri`):
 {
   "name": "project-files",
   "title": "Project Files",
-  "uriTemplate": "file:///{path}",
+  "uriTemplate": "file:///{+path}",
   "description": "Access any file in the project directory",
   "annotations": {"audience": ["user", "assistant"]}
 }
 ```
 Discovery scans `resources/*.meta.json`, requires `uriTemplate` to be a string with at least one `{variable}`, and skips entries that also set `uri`.
 
-Set `mimeType` on a template only if every match has that type. A catch-all such as `file:///{path}` matches files of every type, so it should leave `mimeType` out.
+Set `mimeType` on a template only if every match has that type. A catch-all such as `file:///{+path}` matches files of every type, so it should leave `mimeType` out.
 
 ## Declarative registration (`server.d/register.json`)
 
@@ -141,5 +141,5 @@ Declarations follow the registry cache. A removed template stops counting after 
 ## Security notes
 
 - Templates do not bypass roots: `resources/read` still enforces configured roots for the expanded URI.
-- Broad templates like `file:///{path}` should be paired with tight roots and reviewed for path traversal and symlink handling in your providers.
+- Broad templates like `file:///{+path}` should be paired with tight roots and reviewed for path traversal and symlink handling in your providers.
 - Treat `MCP_RESOURCE_TEMPLATE_VARS` like `$1`: it is client-supplied. Validate each value after any decoding.

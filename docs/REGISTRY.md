@@ -241,7 +241,7 @@ Entries describe resource template patterns, sorted by `name`, and are refreshed
   "items": [
     {
       "name": "project-files",
-      "uriTemplate": "file:///{path}",
+      "uriTemplate": "file:///{+path}",
       "title": "Project Files",
       "description": "Access any file in the project"
     },
@@ -256,11 +256,11 @@ Entries describe resource template patterns, sorted by `name`, and are refreshed
 }
 ```
 
-Registry fields mirror the MCP `ResourceTemplate` schema, plus `generatedAt`, `hash`, and `total`. Set `mimeType` on a template only if every match has that type; a catch-all such as `file:///{path}` should leave it out.
+Registry fields mirror the MCP `ResourceTemplate` schema, plus `generatedAt`, `hash`, and `total`. Set `mimeType` on a template only if every match has that type; a catch-all such as `file:///{+path}` should leave it out.
 
 ## Resource Templates
 
-The MCP protocol supports **resource templates** — parameterized resources using [RFC 6570 URI templates](https://datatracker.ietf.org/doc/html/rfc6570) (e.g., `file:///{path}`, `logs/{date}.log`). Templates expose families of URIs without enumerating every instance.
+The MCP protocol supports **resource templates** — parameterized resources using [RFC 6570 URI templates](https://datatracker.ietf.org/doc/html/rfc6570) (e.g., `file:///{+path}`, `logs/{date}.log`). Templates expose families of URIs without enumerating every instance.
 
 Key behaviors:
 - Auto-discovery scans `resources/*.meta.json` for `uriTemplate` (string) and ignores entries with `uri` set. If both are present, the entry is skipped with a warning.
