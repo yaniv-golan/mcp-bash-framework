@@ -277,7 +277,7 @@ Note: `mcp_result_error` expects a JSON object with `type` and `message` fields.
   - `-32700` → parse error / invalid JSON normalization.
   - `-32600` → invalid request (missing method, disallowed batch arrays).
   - `-32601` → method not found / unsupported method.
-  - `-32602` → invalid params (bad args, unsupported protocol version, invalid cursor, invalid log level).
+  - `-32602` → invalid params (bad args, invalid cursor, invalid log level).
   - `-32603` → internal error (provider failure, output size limit, registry errors, empty handler response).
   - `-32000` → server not initialized (`initialize` not completed).
   - `-32001` → tool cancelled (SIGTERM/INT).

@@ -179,15 +179,9 @@ It does **not** protect against a determined attacker who has write access to th
 
 ### Source authenticity
 
-`vendor --verify` checks that vendored files match the hash recorded at vendor time — it detects post-vendor drift. To verify the *source* of the framework install before vendoring, use the official release checksums published alongside each GitHub release:
+`vendor --verify` checks that vendored files match the hash recorded at vendor time — it detects post-vendor drift. To verify the *source* of the framework install before vendoring, install from a release tarball checked against the `SHA256SUMS` published with each GitHub release. The steps (with `shasum` for macOS and `sha256sum` for Linux) are in the README under [Verified install](../README.md#1-install-the-framework). Then vendor from the verified install:
 
 ```bash
-version=v1.2.0
-curl -fsSLO "https://github.com/yaniv-golan/mcp-bash-framework/releases/download/${version}/mcp-bash-${version}.tar.gz"
-curl -fsSLO "https://github.com/yaniv-golan/mcp-bash-framework/releases/download/${version}/SHA256SUMS"
-sha256sum -c SHA256SUMS
-bash install.sh --archive "mcp-bash-${version}.tar.gz" --version "${version}"
-# Then vendor from the verified install
 mcp-bash vendor
 ```
 

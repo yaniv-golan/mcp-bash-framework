@@ -9,6 +9,9 @@ Authoritative list of supported environment variables. Defaults shown are the sh
 | `MCPBASH_PROJECT_ROOT` | (required for MCP clients) | Project root containing `tools/`, `resources/`, `prompts/`, `server.d/`. |
 | `MCPBASH_TOOLS_DIR` / `MCPBASH_RESOURCES_DIR` / `MCPBASH_PROMPTS_DIR` / `MCPBASH_SERVER_DIR` | Derived from `MCPBASH_PROJECT_ROOT` | Override content and server hook locations. `doctor`, `run-tool` and `validate` honour `MCPBASH_SERVER_DIR` (output labels stay relative to the project); `bundle` does not (it always packages `server.d/`). |
 | `MCPBASH_PROVIDERS_DIR` | `${MCPBASH_PROJECT_ROOT}/providers` | Directory for project-level resource providers. Scripts here are checked before framework providers. Unlike other content directories, not auto-created. |
+| `MCPBASH_HOME` | (install dir of `bin/mcp-bash`) | Framework install location. Override to run framework code from another checkout (development). |
+| `MCPBASH_ROOTS` | (unset) | Colon-separated fallback roots, used when the client does not provide roots. Each path must exist. |
+| `MCP_TOOLS_TTL` / `MCP_RESOURCES_TTL` / `MCP_PROMPTS_TTL` | `5` | Seconds a discovered registry stays fresh before a list/call rescans. `run-tool` uses a one-year TTL so it never rescans mid-run. |
 | `MCPBASH_REGISTRY_DIR` | `$MCPBASH_PROJECT_ROOT/.registry` | Registry cache location. |
 | `MCPBASH_REGISTRY_MAX_BYTES` | `104857600` | Registry size guard (bytes). |
 | `MCPBASH_REGISTRY_REFRESH_PATH` | (unset) | Limit registry refresh to a subpath (must be a literal subpath of the default scan dir; no glob semantics). |
@@ -18,6 +21,7 @@ Authoritative list of supported environment variables. Defaults shown are the sh
 | `MCPBASH_MAX_TOOL_OUTPUT_SIZE` | `10485760` | Tool stdout limit (bytes). |
 | `MCPBASH_MAX_TOOL_STDERR_SIZE` | `$MCPBASH_MAX_TOOL_OUTPUT_SIZE` | Tool stderr limit (bytes). |
 | `MCPBASH_MAX_RESOURCE_BYTES` | `$MCPBASH_MAX_TOOL_OUTPUT_SIZE` | Resource payload limit (bytes). |
+| `MCPBASH_MAX_UI_RESOURCE_BYTES` | `1048576` | Max size of a `ui://` resource (bytes). |
 | `MCPBASH_MAX_PROGRESS_PER_MIN` | `100` | Progress events per request per minute. |
 | `MCPBASH_MAX_LOGS_PER_MIN` | `$MCPBASH_MAX_PROGRESS_PER_MIN` | Log events per request per minute. |
 | `MCPBASH_DEFAULT_TOOL_TIMEOUT` | `30` | Default tool timeout (seconds). |
@@ -32,6 +36,12 @@ Authoritative list of supported environment variables. Defaults shown are the sh
 | `MCPBASH_LOG_LEVEL` | `info` | RFC-5424 level; `debug` shows discovery traces. Boolean values `true`/`1` are normalized to `debug`, `false`/`0` to `info`. Can also be enabled via `server.d/.debug` file (only when env var is unset; see [DEBUGGING.md](DEBUGGING.md#debug-file-persistent-debug-mode)). |
 | `MCPBASH_LOG_VERBOSE` | (unset) | `true` logs full paths/manual registration output (security risk). |
 | `MCPBASH_CI_MODE` | `false` | CI defaults: safe tmp/log dirs, keep logs, timestamps, failure summary/env snapshot, GH annotations when tracing provides file/line. |
+| `MCPBASH_CI_VERBOSE` | `false` | With `MCPBASH_CI_MODE=true`, default the log level to `debug` instead of `info`. |
+| `MCPBASH_KEEP_LOGS` | `false` (`true` in CI mode) | Keep the state dir (logs, traces) after exit and print its path. |
+| `MCPBASH_LOG_DIR` | (unset; a temp dir in CI mode) | Directory for traces, per-tool debug logs and `failure-summary.jsonl`. Falls back to the state dir. Must not be a symlink. |
+| `MCPBASH_TRACE_TOOLS` | `false` | `true`/`1` runs shell tools under `set -x`, writing the trace to a per-invocation file. |
+| `MCPBASH_TRACE_PS4` | `+ ${BASH_SOURCE[0]##*/}:${LINENO}: ` | `PS4` prefix used for tool traces. |
+| `MCPBASH_TRACE_MAX_BYTES` | `1048576` | Size cap for each tool trace file (bytes). |
 | `MCPBASH_ENABLE_LIVE_PROGRESS` | `false` | Stream progress/logs during tool execution (starts a background flusher); when `false`, progress/logs are emitted at completion. |
 | `MCPBASH_PROGRESS_FLUSH_INTERVAL` | `0.5` | Flush cadence (seconds) when live progress is enabled. |
 | `MCPBASH_RESOURCES_POLL_INTERVAL_SECS` | `2` | Resource subscription polling interval (poller starts after first `resources/subscribe`); `0` to disable polling. |
@@ -91,7 +101,7 @@ MCPBASH_TOOL_ENV_MODE=allowlist MCPBASH_TOOL_ENV_ALLOWLIST=HOME,PATH mcp-bash ..
 
 ## Internal Runtime State (do not override)
 
-Examples: `MCPBASH_STATE_DIR`, `MCPBASH_LOCK_ROOT`, `MCPBASH_TMP_ROOT`, `MCPBASH_STDOUT_LOCK_NAME`, `MCPBASH_INITIALIZED`, `MCPBASH_ROOTS_*`, `MCPBASH_CLIENT_SUPPORTS_*`, `MCPBASH_PROGRESS_FLUSHER_PID`, `MCPBASH_RESOURCE_POLL_PID`, `MCPBASH_NEXT_OUTGOING_ID`, `MCPBASH_HANDLER_OUTPUT`. These are set by the runtime to coordinate sourced scripts and are not user-facing.
+Examples: `MCPBASH_STATE_DIR`, `MCPBASH_LOCK_ROOT`, `MCPBASH_TMP_ROOT`, `MCPBASH_STDOUT_LOCK_NAME`, `MCPBASH_INITIALIZED`, `MCPBASH_ROOTS_*` (not to be confused with the user-facing `MCPBASH_ROOTS`), `MCPBASH_CLIENT_SUPPORTS_*`, `MCPBASH_PROGRESS_FLUSHER_PID`, `MCPBASH_RESOURCE_POLL_PID`, `MCPBASH_NEXT_OUTGOING_ID`, `MCPBASH_HANDLER_OUTPUT`. These are set by the runtime to coordinate sourced scripts and are not user-facing.
 
 ## Test/Scaffold/Installer Helpers
 

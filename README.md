@@ -82,7 +82,7 @@ mcp-bash targets the **2025-11-25** MCP specification with negotiated downgrades
 | Utilities | ✅ Full | Progress, cancellation, logging, completion |
 | Elicitation | ✅ Full | Form, URL, enum, multi-choice modes |
 | Roots | ✅ Full | Server→client request, listChanged |
-| MCP Apps (UI) | ⚠️ Partial | `ui://` resources, templates; interactivity blocked by [host bug](https://github.com/modelcontextprotocol/ext-apps/issues/386) |
+| MCP Apps (UI) | ⚠️ Partial | `ui://` resources, templates; UI-initiated tool calls depend on host support |
 
 **Not yet implemented:** Audio content, sampling. Tasks (async job/poll) and server-identity discovery are HTTP-oriented and not applicable to stdio.
 
@@ -169,7 +169,7 @@ bash install.sh --verify <sha256-from-SHA256SUMS> --version 1.5.0
 
 ### 1.5 Verify It Works (30 seconds)
 
-Security defaults: hooks are disabled unless `MCPBASH_ALLOW_PROJECT_HOOKS=true`, and tools require an explicit allowlist (`MCPBASH_TOOL_ALLOWLIST=*` to allow all in trusted projects).
+Security defaults: the `server.d/register.sh` hook is disabled unless `MCPBASH_ALLOW_PROJECT_HOOKS=true` (`server.d/policy.sh` and `register.json` are always loaded), and tools require an explicit allowlist (`MCPBASH_TOOL_ALLOWLIST=*` to allow all in trusted projects).
 
 ```bash
 mcp-bash doctor
@@ -270,7 +270,7 @@ mcp-bash is **secure by default**. Here's what that means:
 | Layer | Default | What it does |
 |-------|---------|--------------|
 | **Tool allowlist** | Deny all | Tools won't run unless explicitly listed in `MCPBASH_TOOL_ALLOWLIST` |
-| **Hooks** | Disabled | Project hooks (`server.d/*.sh`) are ignored unless `MCPBASH_ALLOW_PROJECT_HOOKS=true` |
+| **Hooks** | Disabled | `server.d/register.sh` is not executed unless `MCPBASH_ALLOW_PROJECT_HOOKS=true`. `server.d/policy.sh` is always sourced, so treat it as trusted code; `server.d/env.sh` is only sourced by `run-tool --with-server-env` |
 | **Tool environment** | Minimal | Tools inherit only essential vars (`PATH`, `HOME`, `TMPDIR`, `LANG`, Windows system vars, and `MCP_*`/`MCPBASH_*`). Use `MCPBASH_TOOL_ENV_MODE` to change, or declare it in `server.meta.json` `"env"` |
 
 ### Quick reference
@@ -285,7 +285,7 @@ MCPBASH_TOOL_ALLOWLIST="tool1,tool2"
 # Allow all tools (trusted projects only)
 MCPBASH_TOOL_ALLOWLIST="*"
 
-# Enable project hooks (server.d/*.sh)
+# Enable the registration hook (server.d/register.sh)
 MCPBASH_ALLOW_PROJECT_HOOKS=true
 
 # Tool environment modes
@@ -505,10 +505,10 @@ Use `run-tool` to invoke a single tool without starting the full MCP server. Thi
 
 ```bash
 # Basic invocation (project inferred from CWD or MCPBASH_PROJECT_ROOT)
-mcp-bash run-tool my-tool --args '{"value":"hello"}'
+mcp-bash run-tool my-tool --allow-self --args '{"value":"hello"}'
 
 # Simulate roots (comma-separated), stream stderr, override timeout, or print env
-mcp-bash run-tool my-tool --args '{"value":"hi"}' --roots /tmp/project,/data/shared --verbose --timeout 15
+mcp-bash run-tool my-tool --allow-self --args '{"value":"hi"}' --roots /tmp/project,/data/shared --verbose --timeout 15
 # Inspect wiring without executing
 mcp-bash run-tool my-tool --print-env --dry-run
 
@@ -516,7 +516,7 @@ mcp-bash run-tool my-tool --print-env --dry-run
 mcp-bash run-tool my-tool --dry-run
 ```
 
-Flags: `--args` (JSON object), `--roots` (comma-separated paths), `--dry-run`, `--timeout <secs>`, `--verbose` (stream tool stderr), `--no-refresh` (reuse cached registry), `--minimal` (force degraded mode), `--project-root <dir>`, `--print-env` (dump wiring without executing). Elicitation is not supported in CLI mode.
+Flags: `--args` (JSON object), `--roots` (comma-separated paths), `--dry-run`, `--timeout <secs>`, `--verbose` (stream tool stderr), `--no-refresh` (reuse cached registry), `--minimal` (force degraded mode), `--project-root <dir>`, `--print-env` (dump wiring without executing), `--allow-self` / `--allow TOOL` / `--allow-all` (allowlist this run; tools are denied by default), `--with-server-env` (source `server.d/env.sh` first), `--source FILE` (source a file first; repeatable). Elicitation is not supported in CLI mode.
 
 The scaffolder and examples use per-tool directories (e.g., `tools/check-disk/tool.sh`); automatic discovery requires tools to live under subdirectories of `tools/` (root-level scripts are not discovered).
 
