@@ -56,7 +56,7 @@ _Figure: High-level dataflow—MCP client sends JSON-RPC over stdio to mcp-bash 
 ├─ providers/
 ├─ sdk/
 ├─ server.d/                # optional project hooks/config
-│  ├─ env.sh                 # environment overrides
+│  ├─ env.sh                 # env for run-tool --with-server-env (not sourced by the server)
 │  ├─ register.json          # preferred: data-only registration (no shell execution)
 │  ├─ register.sh            # hook registration (opt-in; executes shell code)
 │  └─ policy.sh              # optional: tool allow/deny hook

@@ -29,6 +29,12 @@ case "${uri}" in
 myapi://status)
     printf '{"status":"ok","version":"1.0"}'
     ;;
+myapi://items/*)
+    printf '{"item":"%s"}' "${uri#myapi://items/}"
+    ;;
+myapi://env)
+    printf 'json_tool_bin=%s' "${MCPBASH_JSON_TOOL_BIN:+set}"
+    ;;
 myapi://*)
     printf 'Unknown resource\n' >&2
     exit 3
@@ -58,6 +64,48 @@ cat >"${WORKSPACE}/resources/api-status.meta.json" <<'EOF'
 }
 EOF
 
+# Templated resource with the custom scheme and no "provider" field: template
+# metadata never reaches the static registry, so resources/read must infer the
+# provider from the URI scheme.
+cat >"${WORKSPACE}/resources/api-item.meta.json" <<'EOF'
+{
+  "name": "api-item",
+  "description": "API item by id",
+  "uriTemplate": "myapi://items/{id}",
+  "mimeType": "application/json"
+}
+EOF
+
+# Provider scripts that must never run: their schemes are not declared by any
+# resource or template. Each one records that it ran.
+MARKER_DIR="${TEST_TMPDIR}/markers"
+mkdir -p "${MARKER_DIR}"
+for stray in stray git bar; do
+	cat >"${WORKSPACE}/providers/${stray}.sh" <<EOF
+#!/usr/bin/env bash
+: >"${MARKER_DIR}/${stray}"
+printf 'ran ${stray}'
+EOF
+	chmod +x "${WORKSPACE}/providers/${stray}.sh"
+done
+
+# A static resource bound to its own scheme declares that scheme (svc://other
+# reaches svc.sh). A static resource bound to another provider does not declare
+# its scheme (bar://y must not reach bar.sh).
+cat >"${WORKSPACE}/providers/svc.sh" <<'EOF'
+#!/usr/bin/env bash
+printf 'svc got %s' "$1"
+EOF
+chmod +x "${WORKSPACE}/providers/svc.sh"
+echo svc >"${WORKSPACE}/resources/svc-status.txt"
+cat >"${WORKSPACE}/resources/svc-status.meta.json" <<'EOF'
+{"name": "svc-status", "uri": "svc://status", "provider": "svc"}
+EOF
+echo bar >"${WORKSPACE}/resources/bar-item.txt"
+cat >"${WORKSPACE}/resources/bar-item.meta.json" <<'EOF'
+{"name": "bar-item", "uri": "bar://x", "provider": "svc"}
+EOF
+
 # Create server.d/server.meta.json
 mkdir -p "${WORKSPACE}/server.d"
 cat >"${WORKSPACE}/server.d/server.meta.json" <<'EOF'
@@ -73,6 +121,16 @@ cat <<'JSON' >"${WORKSPACE}/requests.ndjson"
 {"jsonrpc":"2.0","method":"notifications/initialized"}
 {"jsonrpc":"2.0","id":"list","method":"resources/list","params":{}}
 {"jsonrpc":"2.0","id":"read","method":"resources/read","params":{"uri":"myapi://status"}}
+{"jsonrpc":"2.0","id":"read-templated","method":"resources/read","params":{"uri":"myapi://items/42"}}
+{"jsonrpc":"2.0","id":"read-env","method":"resources/read","params":{"uri":"myapi://env"}}
+{"jsonrpc":"2.0","id":"read-stray","method":"resources/read","params":{"uri":"stray://x"}}
+{"jsonrpc":"2.0","id":"read-git-plain","method":"resources/read","params":{"uri":"git://example.com/repo"}}
+{"jsonrpc":"2.0","id":"read-bar","method":"resources/read","params":{"uri":"bar://y"}}
+{"jsonrpc":"2.0","id":"read-upper","method":"resources/read","params":{"uri":"MYAPI://items/1"}}
+{"jsonrpc":"2.0","id":"read-svc-sibling","method":"resources/read","params":{"uri":"svc://other"}}
+{"jsonrpc":"2.0","id":"read-name-only","method":"resources/read","params":{"name":"api-status"}}
+{"jsonrpc":"2.0","id":"read-name-match","method":"resources/read","params":{"name":"api-status","uri":"myapi://status"}}
+{"jsonrpc":"2.0","id":"read-name-mismatch","method":"resources/read","params":{"name":"api-status","uri":"myapi://items/7"}}
 {"jsonrpc":"2.0","id":"shutdown","method":"shutdown"}
 {"jsonrpc":"2.0","id":"exit","method":"exit"}
 JSON
@@ -97,5 +155,36 @@ test_assert_eq "${list_result}" "api-status"
 # Verify resource was read successfully
 read_content="$(jq -r 'select(.id=="read") | .result.contents[0].text // empty' "${WORKSPACE}/responses.ndjson")"
 test_assert_eq "${read_content}" '{"status":"ok","version":"1.0"}'
+
+# Verify a URI expanded from a custom-scheme template routes to the project provider
+templated_content="$(jq -r 'select(.id=="read-templated") | .result.contents[0].text // .error.message // empty' "${WORKSPACE}/responses.ndjson")"
+test_assert_eq "${templated_content}" '{"item":"42"}'
+
+# Every provider receives the JSON tool selection, not only the ui provider
+env_content="$(jq -r 'select(.id=="read-env") | .result.contents[0].text // .error.message // empty' "${WORKSPACE}/responses.ndjson")"
+test_assert_eq "${env_content}" 'json_tool_bin=set'
+
+# Undeclared schemes never reach their provider script
+for case_id in read-stray read-git-plain read-bar read-upper; do
+	has_error="$(jq -r --arg id "${case_id}" 'select(.id==$id) | has("error")' "${WORKSPACE}/responses.ndjson")"
+	test_assert_eq "${has_error}" "true"
+done
+for stray in stray git bar; do
+	if [ -e "${MARKER_DIR}/${stray}" ]; then
+		test_fail "undeclared provider ${stray}.sh was executed"
+	fi
+done
+
+# A static resource bound to its scheme's provider declares the scheme
+svc_content="$(jq -r 'select(.id=="read-svc-sibling") | .result.contents[0].text // .error.message // empty' "${WORKSPACE}/responses.ndjson")"
+test_assert_eq "${svc_content}" 'svc got svc://other'
+
+# name and uri must refer to the same resource
+name_only="$(jq -r 'select(.id=="read-name-only") | .result.contents[0].text // .error.message // empty' "${WORKSPACE}/responses.ndjson")"
+test_assert_eq "${name_only}" '{"status":"ok","version":"1.0"}'
+name_match="$(jq -r 'select(.id=="read-name-match") | .result.contents[0].text // .error.message // empty' "${WORKSPACE}/responses.ndjson")"
+test_assert_eq "${name_match}" '{"status":"ok","version":"1.0"}'
+mismatch_code="$(jq -r 'select(.id=="read-name-mismatch") | .error.code // empty' "${WORKSPACE}/responses.ndjson")"
+test_assert_eq "${mismatch_code}" '-32602'
 
 printf 'Project-level provider integration test passed.\n'

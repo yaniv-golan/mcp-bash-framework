@@ -3,11 +3,14 @@
 
 set -euo pipefail
 
-mcp_uri_url_encode() {
+# Subshell body: LC_ALL=C makes indexing byte-based. Declaring it `local`
+# instead makes bash 5.3 intermittently report failure from $(...) when
+# LC_CTYPE=UTF-8 (the macOS Terminal default) is set.
+mcp_uri_url_encode() (
 	local value="$1"
 	local output=""
 	local i char hex
-	local LC_ALL=C
+	LC_ALL=C
 	for ((i = 0; i < ${#value}; i++)); do
 		char="${value:i:1}"
 		case "${char}" in
@@ -21,7 +24,7 @@ mcp_uri_url_encode() {
 		esac
 	done
 	printf '%s' "${output}"
-}
+)
 
 mcp_uri_file_uri_from_path() {
 	local path="$1"

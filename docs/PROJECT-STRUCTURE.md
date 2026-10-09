@@ -18,7 +18,7 @@ Optional hooks in `server.d/` customize server behavior:
 
 | Hook | Purpose | Docs |
 |------|---------|------|
-| `env.sh` | Inject environment variables at startup | [BEST-PRACTICES.md §3](BEST-PRACTICES.md#3-project-layout-primer) |
+| `env.sh` | Environment for `mcp-bash run-tool --with-server-env` (not sourced at server startup) | [BEST-PRACTICES.md §3](BEST-PRACTICES.md#3-project-layout-primer) |
 | `policy.sh` | Gate tool execution (allowlists, read-only mode) | [BEST-PRACTICES.md §4.2](BEST-PRACTICES.md#centralized-tool-policy-serverdpolicysh) |
 | `health-checks.sh` | Verify external dependencies (CLIs, env vars) | [BEST-PRACTICES.md §4.2](BEST-PRACTICES.md#external-dependency-health-checks-serverdhealth-checkssh) |
 | `register.sh` | Dynamic/imperative tool registration | [REGISTRY.md](REGISTRY.md) |

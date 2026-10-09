@@ -77,6 +77,10 @@ Alternatively, emit a bulk JSON payload with `resourceTemplates` to stdout; the 
 - `resources/templates/list` supports `limit` (default 50, max 200) and exposes the full count as an extension via `result._meta["mcpbash/total"]` alongside `resourceTemplates` and `nextCursor` (cursor uses the templates registry hash; stale cursors return `-32602`).
 - Template changes set the shared `MCP_RESOURCES_CHANGED` flag and trigger `notifications/resources/list_changed`, so clients can re-fetch resources **and** templates.
 
+## Reading expanded URIs
+
+Template metadata is not consulted by `resources/read`. The provider for an expanded URI is inferred from its scheme: `file://`, `git+https://`, `https://` and `ui://` use the built-in providers, and any other scheme uses the project provider of the same name (`myapi://items/{id}` → `providers/myapi.sh`). That routing applies only to schemes the project declares: a template whose `uriTemplate` starts with the literal scheme, or a static resource with that scheme and `"provider"` set to it. Scheme and file name are compared exactly, including case. A URI with an undeclared scheme is not sent to a project provider, even if a script of that name exists. Declarations follow the registry cache, so a removed template stops counting after the TTL, or in static registry mode after the cache is rebuilt. The provider receives the concrete URI as `$1` and parses the variables itself. The template's `mimeType` is not applied to the response, so the content is reported as `text/plain`.
+
 ## Security notes
 
 - Templates do not bypass roots: `resources/read` still enforces configured roots for the expanded URI.
