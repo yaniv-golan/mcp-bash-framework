@@ -27,7 +27,8 @@ Pure Bash MCP server framework. Bash≥3.2 + jq/gojq. Stdio transport only.
   - `tools/<name>/tool.sh` + `tools/<name>/tool.meta.json`.
   - `resources/<name>.meta.json` + content files.
   - `prompts/<name>.meta.json` + template files.
-  - `server.d/register.sh` (runs only when `MCPBASH_ALLOW_PROJECT_HOOKS=true` and has safe ownership/permissions), `server.d/env.sh`, `server.d/server.meta.json`, optional `server.d/policy.sh` (defines `mcp_tools_policy_check` to allow/deny tools centrally).
+  - `server.d/register.json` (preferred, data-only) or `server.d/register.sh` (runs only when `MCPBASH_ALLOW_PROJECT_HOOKS=true`); both require safe ownership/permissions (not group/world-writable). `server.d/server.meta.json` (identity, plus optional `"env"` tool/provider env policy). `server.d/env.sh` is sourced only by `mcp-bash run-tool --with-server-env`, never by the server. Optional `server.d/policy.sh` (defines `mcp_tools_policy_check` to allow/deny tools centrally).
+  - `providers/<scheme>.sh` (project resource providers for custom URI schemes).
   - `config/roots.json`, `.registry/` (registry cache, not committed).
 
 ## Quick Start for AI Agents Building MCP Servers
@@ -109,17 +110,18 @@ Note: `mcp_result_error` expects a JSON object with `type` and `message` fields.
   - Fields: `name`, `description`, `uri`, `mimeType`, `provider`.
   - Minimal example (one line):
     - `{"name":"res.name","description":"desc","uri":"file://./path/to/file.txt","mimeType":"text/plain","provider":"file"}`
-  - Providers: `file`, `https`, `git`; git provider is disabled by default (enable with `MCPBASH_ENABLE_GIT_PROVIDER=true`).
+  - Providers: `file`, `https`, `git`; git provider is disabled by default (enable with `MCPBASH_ENABLE_GIT_PROVIDER=true`). Project providers in `providers/<name>.sh` override or extend these.
+  - Templates: use `uriTemplate` (e.g. `"myapi://items/{id}"`) instead of `uri`. A client-supplied URI with a custom scheme reaches `providers/<scheme>.sh` only if the project declares that scheme (a template with that literal scheme, or a static resource with `"provider": "<scheme>"`); matching is case-sensitive. Providers get the URI as `$1` and must validate it (exit 3 not found, 4 invalid).
+  - `resources/read` with both `name` and `uri` requires them to refer to the same resource (`-32602` otherwise).
 - Prompt metadata (`prompts/<name>.meta.json`):
   - Fields: `name`, `description`, `path` (template file), `arguments` schema.
   - Templates are plain text; example: `Hello {{var}}!`.
   - Only `{{var}}` placeholders are substituted (values come from `prompts/get` `arguments`).
-- Completions (manual only, via `server.d/register.sh`):
-  - Use:
-    - `mcp_completion_manual_begin`
-    - `mcp_completion_register_manual '{"name":"ns.completion","path":"completions/name.sh","timeoutSecs":5}'`
-    - `mcp_completion_manual_finalize`
-  - Completion script paths are resolved relative to `MCPBASH_PROJECT_ROOT`.
+- Completions:
+  - Preferred: `server.d/register.json` → `{"version":1,"completions":[{"name":"ns.completion","path":"completions/name.sh","timeoutSecs":5}]}`.
+  - Or a script next to a prompt/resource: `prompts/<name>/<name>.completion.sh` (lookup order and env in `docs/COMPLETION.md`); these time out after `MCPBASH_COMPLETION_TIMEOUT_SECS` (default 5).
+  - Hook-based (`server.d/register.sh`, opt-in): `mcp_completion_manual_begin`, `mcp_completion_register_manual '{...}'`, `mcp_completion_manual_finalize`.
+  - Completion script paths are resolved relative to `MCPBASH_PROJECT_ROOT`; scripts run under the provider env policy.
 
 ## SDK & RUNTIME
 
@@ -228,7 +230,10 @@ Note: `mcp_result_error` expects a JSON object with `type` and `message` fields.
   - `MCPBASH_FORCE_MINIMAL=true` → force minimal capability tier even when JSON tooling is available.
 - Tool env isolation:
   - `MCPBASH_TOOL_ENV_MODE=minimal|inherit|allowlist` (default `minimal`).
-  - `MCPBASH_TOOL_ENV_ALLOWLIST` → extra env var names allowed when mode is `allowlist`.
+  - `MCPBASH_TOOL_ENV_ALLOWLIST` → extra env var names allowed when mode is `allowlist` (plain names only).
+  - Providers: `MCPBASH_PROVIDER_ENV_MODE=isolate|inherit|allowlist` (default `isolate`), `MCPBASH_PROVIDER_ENV_ALLOWLIST`.
+  - `inherit` needs `MCPBASH_TOOL_ENV_INHERIT_ALLOW=true` / `MCPBASH_PROVIDER_ENV_INHERIT_ALLOW=true` from the operator.
+  - Projects (and MCPB bundles) can declare these four in `server.d/server.meta.json` `"env"`; the launch env wins per scope; `MCPBASH_IGNORE_META_ENV=true` ignores it. Never put secret values there. `mcp-bash doctor` shows the effective policy.
 - Registry and TTLs:
   - `MCPBASH_REGISTRY_REFRESH_PATH` → optional subpath to limit `registry refresh` scanning.
   - `MCP_TOOLS_TTL`, `MCP_RESOURCES_TTL`, `MCP_PROMPTS_TTL` → registry cache TTLs (`docs/REGISTRY.md`).
@@ -363,4 +368,5 @@ Note: `mcp_result_error` expects a JSON object with `type` and `message` fields.
   - Tool names: `^[a-zA-Z0-9_-]{1,64}$`, no dots (Some clients including Claude Desktop rejects them); prefer hyphenated namespaces (e.g., `example-hello`).
 - Discovery:
   - Auto-discovered: tools, resources, prompts (from configured dirs).
-  - Manual-only: completions and any custom overrides via `server.d/register.sh`.
+  - Auto-discovered completions: scripts next to a prompt or resource (`prompts/<name>/<name>.completion.sh`).
+  - Registered: other completions and custom overrides via `server.d/register.json` (preferred) or `server.d/register.sh` (opt-in hooks).

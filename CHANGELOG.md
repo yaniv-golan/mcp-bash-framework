@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Declarative env policy in `server.d/server.meta.json`**: An optional `"env"` object can set `MCPBASH_TOOL_ENV_MODE`, `MCPBASH_TOOL_ENV_ALLOWLIST`, `MCPBASH_PROVIDER_ENV_MODE` and `MCPBASH_PROVIDER_ENV_ALLOWLIST`, so a project (including an installed MCPB bundle) can pass host-injected secrets such as an API key on to its tools and providers. The server applies it at startup and `mcp-bash run-tool` applies it too.
+- **Declarative env policy in `server.d/server.meta.json`**: An optional `"env"` object can set `MCPBASH_TOOL_ENV_MODE`, `MCPBASH_TOOL_ENV_ALLOWLIST`, `MCPBASH_PROVIDER_ENV_MODE` and `MCPBASH_PROVIDER_ENV_ALLOWLIST`, so a project (including an installed MCPB bundle) can pass host-injected secrets such as an API key on to its tools and providers. The server applies it at startup, and `mcp-bash run-tool` applies it too, after any `--with-server-env`/`--source` files, which count as launch env.
   - Only those four keys are accepted. Operator opt-ins (`*_INHERIT_ALLOW`, `MCPBASH_ALLOW_PROJECT_HOOKS`, ...) and any other variable are refused with a warning that names the key, never the value.
   - Values are validated before use: modes must be valid for their key, allowlists may only name plain variables (no shell-control or reserved names such as `LD_PRELOAD`, `BASH_ENV` or `MCPBASH_*`), and values with control characters are refused. A `server.meta.json` holding more than one JSON document applies nothing. Warnings go to stderr.
   - The launch environment wins. If it sets either the mode or the allowlist for tools (or for providers), both meta values for that scope are ignored. An empty value, or an unexpanded `${user_config.*}` placeholder, counts as unset. `MCPBASH_IGNORE_META_ENV=true` ignores the section entirely.
@@ -26,6 +26,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Bundles keep their base env on platforms with an override**: Claude Desktop replaces `mcp_config.env` with a `platform_overrides.<platform>.env` rather than merging, so an override dropped `MCPBASH_PROJECT_ROOT`, `MCPBASH_TOOL_ALLOWLIST` and every `user_config` variable on that platform. The bundler now copies the base env into each override env, and `docs/MCPB.md` no longer says the env is merged. `mcp-bash bundle` also warns when override env turns on an operator opt-in such as `MCPBASH_TOOL_ENV_INHERIT_ALLOW`.
 - **Bundles no longer pass unexpanded `${user_config.*}` placeholders to tools**: Claude Desktop leaves the literal placeholder text when an optional setting has no value and no default. `run-server.sh` now unsets such variables. On Windows, where the host passes TEMP but not TMP, it also sets TMP from TEMP.
 - **The tool inherit-mode gate now also applies to a mode set by `server.d/policy.sh`**: `MCPBASH_TOOL_ENV_MODE=inherit` requires `MCPBASH_TOOL_ENV_INHERIT_ALLOW=true`, but the check ran before `policy.sh` was sourced, so a mode exported there skipped it. The check now runs after the policy hook. `policy.sh` is project code and can still set anything, so this guards against accidental configuration, not a hostile project.
+
+### Changed
+
+- **Documentation**:
+  - `docs/MCPB.md` gains a "Passing secrets to tools" section and describes how Claude Desktop substitutes `user_config` values and what environment it passes.
+  - `docs/BEST-PRACTICES.md` warns against splicing untrusted input into jq programs.
+  - `docs/COMPLETION.md` documents per-prompt and per-resource completion scripts.
+  - `README.md`, `llms.txt`, `llms-full.txt`, `docs/LLM-CONTEXT.md` and the scaffolded `server.d/README.md` are updated for the env policy, resource templates and project providers, completions, and the tool environment. The README listed the minimal tool environment as `PATH`, `HOME`, `TERM`.
 
 ### Security
 

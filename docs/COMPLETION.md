@@ -1,6 +1,6 @@
 # Completion Support
 
-`completion/complete` is available in full mode (disabled in minimal mode). Completions are manually registered (there is no auto-discovery). Prefer declarative registration via `server.d/register.json`; hook-based registration via `server.d/register.sh` is still supported but executes shell code and is opt-in (`MCPBASH_ALLOW_PROJECT_HOOKS=true` plus safe ownership/permissions).
+`completion/complete` is available in full mode (disabled in minimal mode). Completions are either registered (prefer declarative registration via `server.d/register.json`) or picked up from a script placed next to a prompt or resource (see [Per-prompt and per-resource scripts](#per-prompt-and-per-resource-scripts)); hook-based registration via `server.d/register.sh` is still supported but executes shell code and is opt-in (`MCPBASH_ALLOW_PROJECT_HOOKS=true` plus safe ownership/permissions).
 
 ## Registering Completions
 
