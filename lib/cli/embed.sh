@@ -14,7 +14,7 @@ fi
 # Required framework lib files to embed.
 # Must stay in sync with the direct '. "${MCPBASH_HOME}/lib/..."' sources in bin/mcp-bash.
 # Enforced by test/unit/bundle_libs_sync.bats.
-EMBED_REQUIRED_LIBS="require runtime meta_env json hash ids lock io paginate logging auth uri policy tools_policy registry spec tools resources prompts completion timeout elicitation roots rpc core handler_helpers validate path resource_content resource_match resource_providers progress progress-passthrough capabilities ui ui-templates"
+EMBED_REQUIRED_LIBS="require runtime meta_env json hash ids lock io paginate logging auth uri policy tools_policy registry spec tools resources prompts completion timeout elicitation roots rpc core handler_helpers validate path resource_content resource_match resource_providers progress progress-passthrough capabilities file_read ui ui-templates"
 
 # mcp_embed_framework <dest_dir> <verbose>
 #
