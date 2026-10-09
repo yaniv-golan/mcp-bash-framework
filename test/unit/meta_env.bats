@@ -150,6 +150,8 @@ write_meta() {
 	mkdir -p "${proj}/server.d"
 	printf '%s\n' '{"name":"d","env":{"MCPBASH_TOOL_ENV_MODE":"allowlist","MCPBASH_TOOL_ENV_ALLOWLIST":"API_KEY","LEAK":"sk-sentinel-meta"}}' >"${proj}/server.d/server.meta.json"
 	cd "${proj}"
+	# setup() points MCPBASH_SERVER_DIR elsewhere; doctor now honours it.
+	unset MCPBASH_SERVER_DIR
 	API_KEY="sk-sentinel-env" run "${MCPBASH_HOME}/bin/mcp-bash" doctor
 	assert_output --partial "tools: mode allowlist (from server.meta.json)"
 	assert_output --partial "API_KEY: set"

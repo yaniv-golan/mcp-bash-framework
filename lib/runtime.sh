@@ -163,6 +163,45 @@ mcp_runtime_find_project_root() {
 	return 1
 }
 
+# The server dir the runtime uses: MCPBASH_SERVER_DIR, else <root>/server.d.
+# Usage: mcp_runtime_effective_server_dir [project_root]
+mcp_runtime_effective_server_dir() {
+	local root="${1:-${MCPBASH_PROJECT_ROOT:-.}}"
+	printf '%s' "${MCPBASH_SERVER_DIR:-${root%/}/server.d}"
+}
+
+# A user-visible label for the server dir: "server.d" by default, the path
+# relative to the project root when MCPBASH_SERVER_DIR is inside it, otherwise
+# just its basename. Never an absolute path (messages can reach MCP clients).
+# Usage: mcp_runtime_server_dir_label [project_root]
+mcp_runtime_server_dir_label() {
+	local root="${1:-${MCPBASH_PROJECT_ROOT:-}}"
+	local dir="${MCPBASH_SERVER_DIR:-}"
+	if [ -z "${dir}" ]; then
+		printf 'server.d'
+		return 0
+	fi
+	root="${root%/}"
+	dir="${dir%/}"
+	local rel=""
+	if [ -n "${root}" ]; then
+		case "${dir}" in
+		"${root}/"*) rel="${dir#"${root}"/}" ;;
+		esac
+		if [ -z "${rel}" ]; then
+			# macOS: /var vs /private/var and similar symlinked prefixes.
+			local phys_root phys_dir
+			phys_root="$(mcp_path_normalize --physical "${root}" 2>/dev/null || printf '%s' "${root}")"
+			phys_dir="$(mcp_path_normalize --physical "${dir}" 2>/dev/null || printf '%s' "${dir}")"
+			case "${phys_dir}" in
+			"${phys_root}/"*) rel="${phys_dir#"${phys_root}"/}" ;;
+			esac
+		fi
+	fi
+	[ -n "${rel}" ] || rel="$(basename "${dir}")"
+	printf '%s' "${rel}"
+}
+
 mcp_runtime_project_not_found_error() {
 	cat >&2 <<'EOF'
 Error: No MCP project found.

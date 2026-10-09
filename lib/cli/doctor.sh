@@ -10,6 +10,17 @@ fi
 
 # Globals: MCPBASH_HOME, MCPBASH_PROJECT_ROOT (optional), usage() from bin, runtime globals from initialize_runtime_paths.
 
+# Project root for doctor. When MCPBASH_SERVER_DIR points at a custom server
+# dir holding server.meta.json, MCPBASH_PROJECT_ROOT is the project (the
+# upward walk below only recognises <root>/server.d/server.meta.json).
+mcp_doctor_find_project_root() {
+	if [ -n "${MCPBASH_SERVER_DIR:-}" ] && [ -n "${MCPBASH_PROJECT_ROOT:-}" ] && [ -f "${MCPBASH_SERVER_DIR}/server.meta.json" ]; then
+		printf '%s' "${MCPBASH_PROJECT_ROOT}"
+		return 0
+	fi
+	mcp_runtime_find_project_root "${PWD}"
+}
+
 # Check the registration file the server will actually use, the way it uses
 # it (mcp_registry_register_apply): register.json when it is a file; otherwise
 # register.sh, only with project hooks enabled and when it is executable or
@@ -17,7 +28,8 @@ fi
 mcp_doctor_register_permission_issues() {
 	local project_root="$1"
 	command -v mcp_registry_register_check_permissions >/dev/null 2>&1 || . "${MCPBASH_HOME}/lib/registry.sh"
-	local server_dir="${project_root}/server.d"
+	local server_dir
+	server_dir="$(mcp_runtime_effective_server_dir "${project_root}")"
 	local file=""
 	if [ -f "${server_dir}/register.json" ]; then
 		file="register.json"
@@ -28,7 +40,7 @@ mcp_doctor_register_permission_issues() {
 	fi
 	[ -n "${file}" ] || return 0
 	if ! MCPBASH_PROJECT_ROOT="${project_root}" mcp_registry_register_check_permissions "${server_dir}/${file}"; then
-		printf '%s\t%s\n' "${file}" "$(MCPBASH_PROJECT_ROOT="${project_root}" mcp_registry_register_permission_message "server.d/${file}")"
+		printf '%s\t%s\n' "${file}" "$(MCPBASH_PROJECT_ROOT="${project_root}" mcp_registry_register_permission_message "$(mcp_runtime_server_dir_label "${project_root}")/${file}")"
 	fi
 }
 
@@ -554,23 +566,23 @@ EOF
 			add_finding "runtime.tmp_root_unset" "warning" "MCPBASH_TMP_ROOT not set (using system TMPDIR)" "false" ""
 		fi
 
-		if project_root="$(mcp_runtime_find_project_root "${PWD}" 2>/dev/null)"; then
-			if [ -f "${project_root}/server.d/server.meta.json" ] && [ -n "${jq_path}${gojq_path}" ]; then
+		if project_root="$(mcp_doctor_find_project_root 2>/dev/null)"; then
+			if [ -f "$(mcp_runtime_effective_server_dir "${project_root}")/server.meta.json" ] && [ -n "${jq_path}${gojq_path}" ]; then
 				if [ -n "${jq_path}" ]; then
-					if jq -e '.' "${project_root}/server.d/server.meta.json" >/dev/null 2>&1; then
+					if jq -e '.' "$(mcp_runtime_effective_server_dir "${project_root}")/server.meta.json" >/dev/null 2>&1; then
 						server_meta_valid="true"
 					else
 						server_meta_valid="false"
 						warnings=$((warnings + 1))
-						add_finding "project.server_meta_invalid" "warning" "server.d/server.meta.json is invalid JSON" "false" ""
+						add_finding "project.server_meta_invalid" "warning" "$(mcp_runtime_server_dir_label "${project_root}")/server.meta.json is invalid JSON" "false" ""
 					fi
 				else
-					if gojq -e '.' "${project_root}/server.d/server.meta.json" >/dev/null 2>&1; then
+					if gojq -e '.' "$(mcp_runtime_effective_server_dir "${project_root}")/server.meta.json" >/dev/null 2>&1; then
 						server_meta_valid="true"
 					else
 						server_meta_valid="false"
 						warnings=$((warnings + 1))
-						add_finding "project.server_meta_invalid" "warning" "server.d/server.meta.json is invalid JSON" "false" ""
+						add_finding "project.server_meta_invalid" "warning" "$(mcp_runtime_server_dir_label "${project_root}")/server.meta.json is invalid JSON" "false" ""
 					fi
 				fi
 			fi
@@ -597,7 +609,7 @@ EOF
 			if [ -n "${env_json_tool}" ]; then
 				command -v mcp_meta_env_report >/dev/null 2>&1 || . "${MCPBASH_HOME}/lib/meta_env.sh"
 				local env_report
-				env_report="$(MCPBASH_JSON_TOOL="$(basename "${env_json_tool}")" MCPBASH_JSON_TOOL_BIN="${env_json_tool}" mcp_meta_env_report "${project_root}/server.d/server.meta.json")"
+				env_report="$(MCPBASH_JSON_TOOL="$(basename "${env_json_tool}")" MCPBASH_JSON_TOOL_BIN="${env_json_tool}" mcp_meta_env_report "$(mcp_runtime_effective_server_dir "${project_root}")/server.meta.json")"
 				env_policy_json="$(printf '%s\n' "${env_report}" | "${env_json_tool}" -R -s -c '
 					[split("\n")[] | select(length > 0) | split("\t")] as $l
 					| def scope($s):
@@ -635,13 +647,13 @@ EOF
 			fi
 		fi
 
-		# Optional project requirements descriptor (server.d/requirements.json).
+		# Optional project requirements descriptor (<server dir>/requirements.json).
 		# When present, use it to derive a minimum required framework version and
 		# surface missing dependency tools as actionable findings.
 		local requirements_path=""
 		local requirements_min_version=""
 		if [ -n "${project_root}" ]; then
-			requirements_path="${project_root%/}/server.d/requirements.json"
+			requirements_path="$(mcp_runtime_effective_server_dir "${project_root}")/requirements.json"
 			if [ -f "${requirements_path}" ] && { [ -n "${jq_path}" ] || [ -n "${gojq_path}" ]; }; then
 				local req_tool=""
 				if [ -n "${jq_path}" ]; then
@@ -1269,11 +1281,12 @@ EOF
 		errors=$((errors + 1))
 	fi
 
-	# Optional project requirements descriptor (server.d/requirements.json).
+	# Optional project requirements descriptor (<server dir>/requirements.json).
 	local req_project_root=""
-	req_project_root="$(mcp_runtime_find_project_root "${PWD}" 2>/dev/null || printf '')"
+	req_project_root="$(mcp_doctor_find_project_root 2>/dev/null || printf '')"
 	if [ -n "${req_project_root}" ] && [ -z "${min_version}" ]; then
-		local req_path="${req_project_root%/}/server.d/requirements.json"
+		local req_path
+		req_path="$(mcp_runtime_effective_server_dir "${req_project_root}")/requirements.json"
 		if [ -f "${req_path}" ] && { [ -n "${jq_path}" ] || [ -n "${gojq_path}" ]; }; then
 			local req_tool=""
 			if [ -n "${gojq_path}" ]; then
@@ -1671,9 +1684,10 @@ EOF
 	# Project (optional) --------------------------------------------------
 	printf '\nProject (if in project directory):\n'
 	local detected_root=""
-	if detected_root="$(mcp_runtime_find_project_root "${PWD}" 2>/dev/null)"; then
+	if detected_root="$(mcp_doctor_find_project_root 2>/dev/null)"; then
 		printf '  ✓ Project root: %s\n' "${detected_root}"
-		local meta="${detected_root}/server.d/server.meta.json"
+		local meta
+		meta="$(mcp_runtime_effective_server_dir "${detected_root}")/server.meta.json"
 		if [ -f "${meta}" ] && { [ -n "${jq_path}" ] || [ -n "${gojq_path}" ]; }; then
 			local meta_tool=""
 			if [ -n "${gojq_path}" ]; then
@@ -1682,13 +1696,13 @@ EOF
 				meta_tool="${jq_path}"
 			fi
 			if "${meta_tool}" -e '.' "${meta}" >/dev/null 2>&1; then
-				printf '  ✓ server.d/server.meta.json: valid\n'
+				printf '  ✓ %s/server.meta.json: valid\n' "$(mcp_runtime_server_dir_label "${detected_root}")"
 			else
-				printf '  ⚠ server.d/server.meta.json: invalid JSON\n'
+				printf '  ⚠ %s/server.meta.json: invalid JSON\n' "$(mcp_runtime_server_dir_label "${detected_root}")"
 				warnings=$((warnings + 1))
 			fi
 		else
-			printf '  ⚠ server.d/server.meta.json: not found or JSON tooling unavailable\n'
+			printf '  ⚠ %s/server.meta.json: not found or JSON tooling unavailable\n' "$(mcp_runtime_server_dir_label "${detected_root}")"
 			warnings=$((warnings + 1))
 		fi
 
@@ -1712,7 +1726,7 @@ EOF
 			errors=$((errors + 1))
 		done < <(mcp_doctor_register_permission_issues "${detected_root}")
 
-		mcp_doctor_print_env_policy "${detected_root}/server.d/server.meta.json" "${gojq_path:-${jq_path}}"
+		mcp_doctor_print_env_policy "$(mcp_runtime_effective_server_dir "${detected_root}")/server.meta.json" "${gojq_path:-${jq_path}}"
 	else
 		printf '  (no project detected in current directory)\n'
 	fi

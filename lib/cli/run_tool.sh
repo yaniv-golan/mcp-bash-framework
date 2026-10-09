@@ -227,7 +227,7 @@ Usage:
 Invoke a tool directly with the same env wiring used by the server.
 
 Options:
-  --with-server-env  Source server.d/env.sh before tool execution
+  --with-server-env  Source env.sh from the server dir (server.d, or MCPBASH_SERVER_DIR) before tool execution
   --source FILE      Source FILE before tool execution (repeatable;
                      sourced after --with-server-env, in order specified)
 
@@ -345,7 +345,8 @@ EOF
 			will_source_server_env="true"
 		fi
 		if [ "${will_source_server_env}" = "true" ]; then
-			local server_env="${MCPBASH_PROJECT_ROOT}/server.d/env.sh"
+			local server_env
+			server_env="$(mcp_runtime_effective_server_dir)/env.sh"
 			if [ -f "${server_env}" ]; then
 				printf 'WILL_SOURCE_SERVER_ENV=%s\n' "${server_env}"
 			else
@@ -387,7 +388,8 @@ EOF
 
 	# Source server.d/env.sh if requested
 	if [ "${with_server_env}" = "true" ]; then
-		local server_env="${MCPBASH_PROJECT_ROOT}/server.d/env.sh"
+		local server_env
+		server_env="$(mcp_runtime_effective_server_dir)/env.sh"
 		if [ -f "${server_env}" ]; then
 			mcp_cli_run_tool_source_env "${server_env}" "${verbose}" || exit 1
 		fi

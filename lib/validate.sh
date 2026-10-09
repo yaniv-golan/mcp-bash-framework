@@ -64,17 +64,21 @@ mcp_validate_server_meta() {
 	local errors=0
 	local warnings=0
 	local server_meta="${MCPBASH_SERVER_DIR}/server.meta.json"
+	local meta_label="server.d"
+	if command -v mcp_runtime_server_dir_label >/dev/null 2>&1; then
+		meta_label="$(mcp_runtime_server_dir_label)"
+	fi
 
 	if [ -f "${server_meta}" ]; then
 		if [ "${json_tool_available}" = "true" ]; then
 			if ! "${MCPBASH_JSON_TOOL_BIN}" -e '.' "${server_meta}" >/dev/null 2>&1; then
-				printf '✗ server.d/server.meta.json - invalid JSON\n'
+				printf '✗ %s/server.meta.json - invalid JSON\n' "${meta_label}"
 				errors=$((errors + 1))
 			else
 				local srv_name
 				srv_name="$("${MCPBASH_JSON_TOOL_BIN}" -r '.name // ""' "${server_meta}" 2>/dev/null || printf '')"
 				if [ -z "${srv_name}" ]; then
-					printf '✗ server.d/server.meta.json - missing required "name" field\n'
+					printf '✗ %s/server.meta.json - missing required "name" field\n' "${meta_label}"
 					errors=$((errors + 1))
 				fi
 
@@ -82,7 +86,7 @@ mcp_validate_server_meta() {
 				local icons_result
 				icons_result="$(mcp_validate_icons "${MCPBASH_JSON_TOOL_BIN}" "${server_meta}")"
 				if [ "${icons_result}" != "ok" ]; then
-					printf '✗ server.d/server.meta.json - %s\n' "${icons_result}"
+					printf '✗ %s/server.meta.json - %s\n' "${meta_label}" "${icons_result}"
 					errors=$((errors + 1))
 				fi
 
@@ -92,11 +96,11 @@ mcp_validate_server_meta() {
 				while IFS=$'\t' read -r env_status env_key env_detail; do
 					case "${env_status}" in
 					error | invalid)
-						printf '✗ server.d/server.meta.json - env.%s: %s\n' "${env_key}" "${env_detail}"
+						printf '✗ %s/server.meta.json - env.%s: %s\n' "${meta_label}" "${env_key}" "${env_detail}"
 						env_errors=$((env_errors + 1))
 						;;
 					refused)
-						printf '⚠ server.d/server.meta.json - env.%s is ignored: only %s may be set there\n' "${env_key}" "${MCP_META_ENV_KEYS// /, }"
+						printf '⚠ %s/server.meta.json - env.%s is ignored: only %s may be set there\n' "${meta_label}" "${env_key}" "${MCP_META_ENV_KEYS// /, }"
 						warnings=$((warnings + 1))
 						;;
 					esac
@@ -104,15 +108,15 @@ mcp_validate_server_meta() {
 				errors=$((errors + env_errors))
 
 				if [ -n "${srv_name}" ] && [ "${icons_result}" = "ok" ] && [ "${env_errors}" -eq 0 ]; then
-					printf '✓ server.d/server.meta.json - valid\n'
+					printf '✓ %s/server.meta.json - valid\n' "${meta_label}"
 				fi
 			fi
 		else
-			printf '⚠ server.d/server.meta.json - skipped JSON validation (no jq/gojq)\n'
+			printf '⚠ %s/server.meta.json - skipped JSON validation (no jq/gojq)\n' "${meta_label}"
 			warnings=$((warnings + 1))
 		fi
 	else
-		printf '⚠ server.d/server.meta.json - missing (using smart defaults)\n'
+		printf '⚠ %s/server.meta.json - missing (using smart defaults)\n' "${meta_label}"
 		warnings=$((warnings + 1))
 	fi
 

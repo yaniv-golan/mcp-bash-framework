@@ -53,6 +53,8 @@ If `mcpb.conf` is not present, values are resolved from:
 4. Git config (for author info)
 5. Git remote (for repository URL)
 
+`bundle` always reads and packages `server.d/` and ignores `MCPBASH_SERVER_DIR`: the runtime inside a bundle uses the default `<bundle>/server.d`. Keep bundled projects on the default layout.
+
 ## Command-Line Options
 
 ```bash
