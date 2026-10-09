@@ -8,10 +8,7 @@
 
 set -euo pipefail
 
-MCP_GIT_POLICY_FUNCS="mcp_policy_extract_host_from_url mcp_policy_extract_port_from_url mcp_policy_host_is_noncanonical_ip_literal mcp_policy_ip_is_private mcp_policy_host_is_ip_literal mcp_policy_hostname_is_valid mcp_policy_resolve_vetted_ips mcp_policy_host_allowed mcp_policy_proxy_configured"
-# First git release with http.curloptResolve.
-MCP_GIT_PIN_MIN_MAJOR=2
-MCP_GIT_PIN_MIN_MINOR=37
+MCP_GIT_POLICY_FUNCS="mcp_policy_extract_host_from_url mcp_policy_extract_port_from_url mcp_policy_host_is_noncanonical_ip_literal mcp_policy_ip_is_private mcp_policy_host_is_ip_literal mcp_policy_hostname_is_valid mcp_policy_resolve_vetted_ips mcp_policy_host_allowed mcp_policy_proxy_configured mcp_policy_git_supports_pinning"
 
 mcp_git_log_block() {
 	local host="$1"
@@ -44,22 +41,6 @@ mcp_git_load_policy() {
 		command -v "${fn}" >/dev/null 2>&1 || return 1
 	done
 	return 0
-}
-
-mcp_git_supports_pinning() {
-	# True when the installed git understands http.curloptResolve.
-	local version major minor rest
-	version="$(git --version 2>/dev/null)" || return 1
-	version="${version#git version }"
-	major="${version%%.*}"
-	rest="${version#*.}"
-	minor="${rest%%[!0-9]*}"
-	case "${major}" in '' | *[!0-9]*) return 1 ;; esac
-	case "${minor}" in '' | *[!0-9]*) return 1 ;; esac
-	if [ "${major}" -gt "${MCP_GIT_PIN_MIN_MAJOR}" ]; then
-		return 0
-	fi
-	[ "${major}" -eq "${MCP_GIT_PIN_MIN_MAJOR}" ] && [ "${minor}" -ge "${MCP_GIT_PIN_MIN_MINOR}" ]
 }
 
 mcp_git_normalize_path() {
@@ -174,8 +155,8 @@ fi
 # cloned repository's .lfsconfig. LFS-tracked files are served as pointers.
 git_cfg=(-c http.followRedirects=false -c filter.lfs.smudge= -c filter.lfs.process= -c filter.lfs.required=false)
 if [ "${host_is_literal}" != "true" ]; then
-	if ! mcp_git_supports_pinning; then
-		printf '%s\n' "git provider requires git >= ${MCP_GIT_PIN_MIN_MAJOR}.${MCP_GIT_PIN_MIN_MINOR} (http.curloptResolve) to pin DNS; refusing to fetch" >&2
+	if ! mcp_policy_git_supports_pinning; then
+		printf '%s\n' "git provider requires git >= ${MCPBASH_POLICY_GIT_PIN_MIN_VERSION} (http.curloptResolve) to pin DNS; refusing to fetch" >&2
 		exit 4
 	fi
 	vet_rc=0

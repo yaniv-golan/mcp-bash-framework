@@ -44,6 +44,22 @@ mcp_doctor_register_permission_issues() {
 	fi
 }
 
+# With the git provider enabled in this shell, an installed git too old to pin
+# DNS (no http.curloptResolve) makes the provider refuse every hostname fetch.
+# Prints the warning message and returns 0 in that case; returns 1 otherwise
+# (provider off, git missing, or git new enough).
+mcp_doctor_git_pin_issue() {
+	[ "${MCPBASH_ENABLE_GIT_PROVIDER:-false}" = "true" ] || return 1
+	command -v git >/dev/null 2>&1 || return 1
+	command -v mcp_policy_git_supports_pinning >/dev/null 2>&1 || . "${MCPBASH_HOME}/lib/policy.sh"
+	mcp_policy_git_supports_pinning && return 1
+	local version=""
+	version="$(git --version 2>/dev/null | head -n1)" || version=""
+	version="${version#git version }"
+	printf 'git %s is older than %s: with MCPBASH_ENABLE_GIT_PROVIDER=true, git+https:// fetches by hostname will be refused (DNS pinning needs http.curloptResolve); upgrade git to >= %s' \
+		"${version:-(unknown version)}" "${MCPBASH_POLICY_GIT_PIN_MIN_VERSION}" "${MCPBASH_POLICY_GIT_PIN_MIN_VERSION}"
+}
+
 # Render the tool/provider env policy (text mode). Names and states only; values
 # are never printed. Results describe this shell, not the host that launches the
 # server (for example Claude Desktop, which injects its own variables).
@@ -564,6 +580,12 @@ EOF
 		else
 			warnings=$((warnings + 1))
 			add_finding "runtime.tmp_root_unset" "warning" "MCPBASH_TMP_ROOT not set (using system TMPDIR)" "false" ""
+		fi
+
+		local git_pin_message=""
+		if git_pin_message="$(mcp_doctor_git_pin_issue)"; then
+			warnings=$((warnings + 1))
+			add_finding "git.version_unpinnable" "warning" "${git_pin_message}" "false" ""
 		fi
 
 		if project_root="$(mcp_doctor_find_project_root 2>/dev/null)"; then
@@ -1284,6 +1306,12 @@ EOF
 	else
 		printf '  ✗ TMP root not writable: %s\n' "${tmp_root}"
 		errors=$((errors + 1))
+	fi
+
+	local git_pin_message=""
+	if git_pin_message="$(mcp_doctor_git_pin_issue)"; then
+		printf '  ⚠ %s\n' "${git_pin_message}"
+		warnings=$((warnings + 1))
 	fi
 
 	# Optional project requirements descriptor (<server dir>/requirements.json).

@@ -426,6 +426,30 @@ mcp_policy_proxy_configured() {
 	[ -n "${https_proxy:-}${HTTPS_PROXY:-}${http_proxy:-}${HTTP_PROXY:-}${all_proxy:-}${ALL_PROXY:-}" ]
 }
 
+# First git release with http.curloptResolve, which the git provider needs to
+# pin a hostname fetch. Shared by providers/git.sh and doctor.
+MCPBASH_POLICY_GIT_PIN_MIN_MAJOR=2
+MCPBASH_POLICY_GIT_PIN_MIN_MINOR=37
+# shellcheck disable=SC2034 # used by providers/git.sh and lib/cli/doctor.sh
+MCPBASH_POLICY_GIT_PIN_MIN_VERSION="${MCPBASH_POLICY_GIT_PIN_MIN_MAJOR}.${MCPBASH_POLICY_GIT_PIN_MIN_MINOR}"
+
+mcp_policy_git_supports_pinning() {
+	# True when the installed git understands http.curloptResolve. False when
+	# git is missing or its version cannot be read.
+	local version major minor rest
+	version="$(git --version 2>/dev/null)" || return 1
+	version="${version#git version }"
+	major="${version%%.*}"
+	rest="${version#*.}"
+	minor="${rest%%[!0-9]*}"
+	case "${major}" in '' | *[!0-9]*) return 1 ;; esac
+	case "${minor}" in '' | *[!0-9]*) return 1 ;; esac
+	if [ "${major}" -gt "${MCPBASH_POLICY_GIT_PIN_MIN_MAJOR}" ]; then
+		return 0
+	fi
+	[ "${major}" -eq "${MCPBASH_POLICY_GIT_PIN_MIN_MAJOR}" ] && [ "${minor}" -ge "${MCPBASH_POLICY_GIT_PIN_MIN_MINOR}" ]
+}
+
 mcp_policy_resolve_vetted_ips() {
 	# Resolve once and vet every answer. Prints the addresses (all public) on
 	# success. Callers must connect only to these addresses.
