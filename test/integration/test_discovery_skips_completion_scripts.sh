@@ -58,4 +58,17 @@ test_run_mcp "${WS}" "${WS}/requests2.ndjson" "${WS}/responses2.ndjson" || true
 comp="$(jq -c 'select(.id=="comp") | .result.completion.values' "${WS}/responses2.ndjson")"
 assert_eq '["b"]' "${comp}" "per-prompt completion script still serves its prompt (first candidate: <path>.completion)"
 
+# The per-resource completion script must still serve ref/resource completions,
+# which clients address by the resource's URI.
+notes_uri="$(jq -r 'select(.id=="resources") | .result.resources[] | select(.name=="notes") | .uri' "${WS}/responses.ndjson")"
+[ -n "${notes_uri}" ] || test_fail "resources/list did not report a URI for notes"
+{
+	printf '%s\n' '{"jsonrpc":"2.0","id":"init","method":"initialize","params":{}}'
+	printf '%s\n' '{"jsonrpc":"2.0","method":"notifications/initialized"}'
+	jq -cn --arg uri "${notes_uri}" '{jsonrpc:"2.0",id:"rcomp",method:"completion/complete",params:{ref:{type:"ref/resource",uri:$uri},argument:{name:"x",value:""}}}'
+} >"${WS}/requests3.ndjson"
+test_run_mcp "${WS}" "${WS}/requests3.ndjson" "${WS}/responses3.ndjson" || true
+rcomp="$(jq -c 'select(.id=="rcomp") | .result.completion.values' "${WS}/responses3.ndjson")"
+assert_eq '["note-1"]' "${rcomp}" "per-resource completion script still serves ref/resource for its URI"
+
 printf 'Discovery skips completion scripts test passed.\n'
