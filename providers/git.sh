@@ -168,8 +168,11 @@ if ! command -v git >/dev/null 2>&1; then
 fi
 
 # Config passed to every git invocation. Redirects are never followed: a
-# redirect target would not have been vetted or pinned.
-git_cfg=(-c http.followRedirects=false)
+# redirect target would not have been vetted or pinned. The git-lfs filter is
+# blanked (and GIT_LFS_SKIP_SMUDGE set below): git-lfs is its own HTTP client,
+# outside the pinning and redirect controls, and takes its server URL from the
+# cloned repository's .lfsconfig. LFS-tracked files are served as pointers.
+git_cfg=(-c http.followRedirects=false -c filter.lfs.smudge= -c filter.lfs.process= -c filter.lfs.required=false)
 if [ "${host_is_literal}" != "true" ]; then
 	if ! mcp_git_supports_pinning; then
 		printf '%s\n' "git provider requires git >= ${MCP_GIT_PIN_MIN_MAJOR}.${MCP_GIT_PIN_MIN_MINOR} (http.curloptResolve) to pin DNS; refusing to fetch" >&2
@@ -212,6 +215,7 @@ fi
 export GIT_TERMINAL_PROMPT=0
 export GIT_ALLOW_PROTOCOL=https
 export GIT_OPTIONAL_LOCKS=0
+export GIT_LFS_SKIP_SMUDGE=1
 
 repo="${uri#git+}"
 ref="HEAD"

@@ -30,7 +30,14 @@ if [ "\${1:-}" = "--version" ]; then
 	printf 'git version %s\n' "${FAKE_GIT_VERSION}"
 	exit 0
 fi
-printf '%s\n' "\$*" >>"\${GIT_CALLS:?}"
+printf 'LFS_SKIP=%s %s\n' "\${GIT_LFS_SKIP_SMUDGE:-unset}" "\$*" >>"\${GIT_CALLS:?}"
+# FAKE_GIT_FAIL_ON: fail only on this subcommand (default: fail every call).
+if [ -n "\${FAKE_GIT_FAIL_ON:-}" ]; then
+	case " \$* " in
+	*" \${FAKE_GIT_FAIL_ON} "*) exit 1 ;;
+	esac
+	exit 0
+fi
 exit 1
 EOF
 	chmod 700 "${BIN_DIR}/git"
@@ -66,7 +73,27 @@ run_provider() {
 		MCPBASH_ENABLE_GIT_PROVIDER=true \
 		MCPBASH_GIT_ALLOW_ALL=true \
 		GIT_CALLS="${GIT_CALLS}" RESOLVER_CALLS="${RESOLVER_CALLS}" \
+		FAKE_GIT_FAIL_ON="${FAKE_GIT_FAIL_ON:-}" \
 		bash "${PROVIDER}" "$1"
+}
+
+# Every recorded git call must run with LFS smudging off and the lfs filter
+# driver blanked, so a repository's .lfsconfig cannot steer git-lfs (its own
+# HTTP client, outside the pinning and redirect controls) to any URL.
+assert_lfs_disabled_on_every_call() {
+	local line failures=""
+	[ -s "${GIT_CALLS}" ] || fail "git was not run"
+	while IFS= read -r line; do
+		case "${line}" in
+		"LFS_SKIP=1 "*) ;;
+		*) failures="${failures} [env] ${line}" ;;
+		esac
+		case "${line}" in
+		*"-c filter.lfs.smudge= "*"-c filter.lfs.process= "*"-c filter.lfs.required=false "*) ;;
+		*) failures="${failures} [cfg] ${line}" ;;
+		esac
+	done <"${GIT_CALLS}"
+	[ -z "${failures}" ] || fail "lfs not disabled:${failures}"
 }
 
 @test "git_pinning: refuses and never runs git when resolution fails" {
@@ -143,4 +170,24 @@ run_provider() {
 	[ -z "${failures}" ] || fail "not refused:${failures}"
 	run_provider "git+https://example.com:000080/repo.git#main:README.md"
 	assert_output --partial "port"
+}
+
+@test "git_pinning: clone runs with git-lfs smudging disabled" {
+	stub_resolvers "93.184.216.34 STREAM example.com
+"
+	run_provider "git+https://example.com/repo.git#main:README.md"
+	assert_equal "${status}" "5"
+	run grep -c ' clone ' "${GIT_CALLS}"
+	assert_output "1"
+	assert_lfs_disabled_on_every_call
+}
+
+@test "git_pinning: fetch-by-sha runs every step with git-lfs smudging disabled" {
+	stub_resolvers "93.184.216.34 STREAM example.com
+"
+	FAKE_GIT_FAIL_ON="checkout" run_provider "git+https://example.com/repo.git#0123456789abcdef:README.md"
+	assert_equal "${status}" "5"
+	run grep -c -e ' init ' -e ' remote ' -e ' fetch ' -e ' checkout ' "${GIT_CALLS}"
+	assert_output "4"
+	assert_lfs_disabled_on_every_call
 }
