@@ -65,6 +65,7 @@ TESTS=(
 	"test_windows_registry_large_icons.sh"
 	"test_tools_policy.sh"
 	"test_meta_env.sh"
+	"test_ui_meta_env.sh"
 	"test_tools_errors.sh"
 	"test_tools_schema.sh"
 	"test_prompts.sh"

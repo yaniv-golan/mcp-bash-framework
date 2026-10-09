@@ -131,3 +131,29 @@ EOF
 	assert_success
 	assert_output --partial 'uriTemplate must contain {variable} placeholder'
 }
+
+@test "validate: a refused env key is named with a warning and its value is never printed" {
+	MCPBASH_SERVER_DIR="${BATS_TEST_TMPDIR}/server.d"
+	mkdir -p "${MCPBASH_SERVER_DIR}"
+	printf '%s\n' '{"name":"s","env":{"API_KEY":"sk-sentinel"}}' >"${MCPBASH_SERVER_DIR}/server.meta.json"
+
+	run mcp_validate_server_meta "true"
+	assert_success
+	assert_output --partial "API_KEY is ignored"
+	refute_output --partial "sk-sentinel"
+	# Last line: "<errors> <warnings>" = one warning, no errors.
+	assert_line --index 2 "0 1"
+}
+
+@test "validate: CLI never prints a refused env key's value" {
+	local proj="${BATS_TEST_TMPDIR}/proj"
+	mkdir -p "${proj}/server.d"
+	printf '%s\n' '{"name":"s","env":{"API_KEY":"sk-sentinel"}}' >"${proj}/server.d/server.meta.json"
+	unset MCPBASH_SERVER_DIR
+	run "${MCPBASH_HOME}/bin/mcp-bash" validate --project-root "${proj}"
+	assert_success
+	assert_output --partial "API_KEY is ignored"
+	refute_output --partial "sk-sentinel"
+	run "${MCPBASH_HOME}/bin/mcp-bash" validate --project-root "${proj}" --json
+	refute_output --partial "sk-sentinel"
+}
