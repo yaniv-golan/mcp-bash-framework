@@ -111,6 +111,32 @@ mcp_cli_run_tool_source_env() {
 	. "${resolved}"
 }
 
+# Print the tool/provider env policy for --print-env. Names and states only;
+# values are never printed. Reflects the launch env plus server.meta.json as
+# this process sees them now, before --with-server-env / --source files and
+# before server.d/policy.sh run.
+mcp_cli_run_tool_print_env_policy() {
+	mcp_require meta_env mcp_meta_env_report
+	printf 'ENV_POLICY (launch env + server.meta.json only; does not include --with-server-env or --source files, or server.d/policy.sh):\n'
+	local kind a b c scope_label
+	while IFS=$'\t' read -r kind a b c; do
+		case "${a}" in
+		TOOL) scope_label="tools" ;;
+		PROVIDER) scope_label="providers" ;;
+		*) scope_label="${a}" ;;
+		esac
+		case "${kind}" in
+		switch) printf '  MCPBASH_IGNORE_META_ENV is set: server.meta.json env is ignored\n' ;;
+		policy) printf '  %s: mode %s (from %s)\n' "${scope_label}" "${b}" "${c}" ;;
+		name) printf '    %s: %s\n' "${b}" "${c}" ;;
+		badname) printf '    %s: allowlist entry %s is not a valid variable name and is skipped\n' "${scope_label}" "${b}" ;;
+		inherit) printf '  %s: inherit mode without MCPBASH_%s_ENV_INHERIT_ALLOW=true will be refused\n' "${scope_label}" "${a}" ;;
+		refused) printf '  server.meta.json env.%s is ignored (not settable there)\n' "${a}" ;;
+		invalid | error) printf '  server.meta.json env.%s: %s\n' "${a}" "${b}" ;;
+		esac
+	done < <(mcp_meta_env_report)
+}
+
 mcp_cli_run_tool() {
 	local project_root=""
 	local args_json="{}"
@@ -350,6 +376,7 @@ EOF
 		else
 			printf 'ROOTS=none\n'
 		fi
+		mcp_cli_run_tool_print_env_policy
 		exit 0
 	fi
 

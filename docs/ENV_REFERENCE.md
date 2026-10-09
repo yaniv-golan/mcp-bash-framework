@@ -44,7 +44,7 @@ Authoritative list of supported environment variables. Defaults shown are the sh
 | `MCPBASH_PROVIDER_ENV_INHERIT_ALLOW` | `false` | Must be `true` to allow `MCPBASH_PROVIDER_ENV_MODE=inherit`. |
 | `MCPBASH_COMPLETION_TIMEOUT_SECS` | `5` | Timeout for per-prompt and per-resource completion scripts (`0` disables). Registered completions use their own `timeoutSecs`, or `MCPBASH_COMPLETION_REGISTERED_TIMEOUT_SECS`. |
 | `MCPBASH_COMPLETION_REGISTERED_TIMEOUT_SECS` | `30` | Timeout for registered completions (`register.json` / `register.sh`) that do not set `timeoutSecs` (`0` disables). An explicit `timeoutSecs` always wins; `timeoutSecs: 0` means no timeout. |
-| `MCPBASH_IGNORE_META_ENV` | `false` | Operator switch: when `true`, ignore the `"env"` object in `server.d/server.meta.json`. |
+| `MCPBASH_IGNORE_META_ENV` | `false` | Operator switch: when `true`, ignore the `"env"` object in `server.d/server.meta.json`. `mcp-bash run-tool --print-env` and `mcp-bash doctor` show which source (launch env, `server.meta.json`, default) decides each scope, with names and states only (never values). `--print-env` reflects the launch env plus `server.meta.json`, not `--with-server-env`/`--source` files or `server.d/policy.sh`. |
 | `MCPBASH_TOOL_ALLOWLIST` | (required) | Space/comma-separated tool names allowed to run (`*` to allow all). Empty by default (deny). |
 | `MCPBASH_TOOL_ALLOW_DEFAULT` | `deny` | Set to `allow` to keep legacy allow-all behavior without an explicit allowlist. |
 | `MCPBASH_FORCE_MINIMAL` | (unset) | Force minimal capability tier even when JSON tooling is present. |
