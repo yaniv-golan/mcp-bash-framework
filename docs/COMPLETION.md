@@ -16,7 +16,7 @@
 
 - `name` must be unique. Clients reference it via `params.ref` in `completion/complete` requests.
 - `path` is relative to `MCPBASH_PROJECT_ROOT` for `manual` providers.
-- `timeoutSecs` is optional; defaults to no per-request timeout (global watchdogs still apply).
+- `timeoutSecs` is optional. An explicit value always wins: a positive number is the limit in seconds, and `0` means no timeout. A negative or non-numeric value is rejected with a warning and treated as unset. When unset, the completion gets `MCPBASH_COMPLETION_REGISTERED_TIMEOUT_SECS` seconds (default 30; `0` disables; a non-number or more than 6 digits falls back to 30). A timed-out completion returns an error to the client. Per-prompt and per-resource scripts use `MCPBASH_COMPLETION_TIMEOUT_SECS` instead (default 5).
 - The registry rejects duplicates, missing paths, or buffer overflows (guarded by `MCPBASH_MANUAL_BUFFER_MAX_BYTES`).
 
 ## Client request shape (MCP 2025-11-25)

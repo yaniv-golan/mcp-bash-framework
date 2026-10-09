@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Registered completions now time out by default**: Completions registered in `server.d/register.json` or `register.sh` that don't set `timeoutSecs` had no limit, so a hung script held a worker. They now time out after `MCPBASH_COMPLETION_REGISTERED_TIMEOUT_SECS` (default 30; `0` restores no limit). An explicit `timeoutSecs: 0` now means no timeout; it used to trip the watchdog after about a second. A negative or non-numeric `timeoutSecs` is rejected at registration with a warning and treated as unset; it used to fail the completion at run time.
+
 ### Fixed
 
 - **The server exits when stdin closes, under bash 4+ with a FIFO stdin**: The timed read loop (used when the idle or orphan checks are on, the default) recognised end of input only after three quick consecutive returns. Under bash 4 and later, once a FIFO's writer closed, later reads timed out instead of reporting end of input again, so the server kept running until its idle timeout (one hour by default). A read status of 1 now ends the loop at once on bash 4+; bash 3.2 keeps the timing heuristic. Pipes and socketpairs, which Claude Desktop uses, were not affected. This was hidden in CI, which runs with `MCPBASH_CI_MODE` (blocking reads).

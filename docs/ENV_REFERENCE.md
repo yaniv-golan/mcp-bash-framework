@@ -42,7 +42,8 @@ Authoritative list of supported environment variables. Defaults shown are the sh
 | `MCPBASH_PROVIDER_ENV_MODE` | `isolate` | Provider env isolation (completion/resource providers): `isolate`, `inherit`, or `allowlist`. Prompts ignore this setting. Also settable from `server.meta.json` `"env"`; the launch env wins. |
 | `MCPBASH_PROVIDER_ENV_ALLOWLIST` | (unset) | Extra env names when `MCPBASH_PROVIDER_ENV_MODE=allowlist`. Also settable from `server.meta.json` `"env"`; the launch env wins. |
 | `MCPBASH_PROVIDER_ENV_INHERIT_ALLOW` | `false` | Must be `true` to allow `MCPBASH_PROVIDER_ENV_MODE=inherit`. |
-| `MCPBASH_COMPLETION_TIMEOUT_SECS` | `5` | Timeout for per-prompt and per-resource completion scripts (`0` disables). Registered completions use their own `timeoutSecs`. |
+| `MCPBASH_COMPLETION_TIMEOUT_SECS` | `5` | Timeout for per-prompt and per-resource completion scripts (`0` disables). Registered completions use their own `timeoutSecs`, or `MCPBASH_COMPLETION_REGISTERED_TIMEOUT_SECS`. |
+| `MCPBASH_COMPLETION_REGISTERED_TIMEOUT_SECS` | `30` | Timeout for registered completions (`register.json` / `register.sh`) that do not set `timeoutSecs` (`0` disables). An explicit `timeoutSecs` always wins; `timeoutSecs: 0` means no timeout. |
 | `MCPBASH_IGNORE_META_ENV` | `false` | Operator switch: when `true`, ignore the `"env"` object in `server.d/server.meta.json`. |
 | `MCPBASH_TOOL_ALLOWLIST` | (required) | Space/comma-separated tool names allowed to run (`*` to allow all). Empty by default (deny). |
 | `MCPBASH_TOOL_ALLOW_DEFAULT` | `deny` | Set to `allow` to keep legacy allow-all behavior without an explicit allowlist. |

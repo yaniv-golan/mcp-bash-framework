@@ -214,9 +214,12 @@ mcp_completion_apply_manual_json() {
 		fi
 		timeout="$(printf '%s' "${entry}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.timeoutSecs // ""' 2>/dev/null || printf '')"
 		local timeout_arg=""
-		if [ -n "${timeout}" ] && [[ "${timeout}" =~ ^-?[0-9]+$ ]]; then
+		if [ -n "${timeout}" ] && [[ "${timeout}" =~ ^[0-9]+$ ]] && [ "${#timeout}" -le 6 ]; then
 			timeout_arg="true"
 		else
+			if [ -n "${timeout}" ]; then
+				mcp_logging_warning "${MCP_COMPLETION_LOGGER}" "Completion ${name}: ignoring invalid timeoutSecs '${timeout}' (expected a non-negative whole number); using the default"
+			fi
 			timeout=""
 		fi
 		if ! "${MCPBASH_JSON_TOOL_BIN}" -n \
@@ -457,6 +460,30 @@ mcp_completion_default_timeout() {
 	printf '%s' "${value}"
 }
 
+# Timeout for registered completions that do not set timeoutSecs. Override with
+# MCPBASH_COMPLETION_REGISTERED_TIMEOUT_SECS (whole seconds; 0 disables).
+mcp_completion_registered_default_timeout() {
+	local value="${MCPBASH_COMPLETION_REGISTERED_TIMEOUT_SECS:-30}"
+	case "${value}" in
+	'' | *[!0-9]* | ???????*) value=30 ;; # not a number, or more than 6 digits
+	esac
+	[ "${value}" -eq 0 ] && value=""
+	printf '%s' "${value}"
+}
+
+# Effective timeout for a registered completion entry. An explicit timeoutSecs
+# wins, and 0 means "no timeout". Absent or invalid values use the default.
+mcp_completion_registered_timeout() {
+	local entry="$1" value
+	value="$(printf '%s' "${entry}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.timeoutSecs // ""' 2>/dev/null || true)"
+	if [ -n "${value}" ] && [[ "${value}" =~ ^[0-9]+$ ]] && [ "${#value}" -le 6 ]; then
+		[ "${value}" -eq 0 ] && value=""
+		printf '%s' "${value}"
+		return 0
+	fi
+	mcp_completion_registered_default_timeout
+}
+
 mcp_completion_select_provider() {
 	local name="$1"
 	local args_json="$2"
@@ -483,7 +510,7 @@ mcp_completion_select_provider() {
 		MCP_COMPLETION_PROVIDER_TYPE="manual"
 		MCP_COMPLETION_PROVIDER_SCRIPT="${script_rel}"
 		MCP_COMPLETION_PROVIDER_SCRIPT_KEY="manual:${script_rel}"
-		MCP_COMPLETION_PROVIDER_TIMEOUT="$(printf '%s' "${entry}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.timeoutSecs // ""' 2>/dev/null)"
+		MCP_COMPLETION_PROVIDER_TIMEOUT="$(mcp_completion_registered_timeout "${entry}")"
 		return 0
 	fi
 
