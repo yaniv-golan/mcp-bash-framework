@@ -109,6 +109,25 @@ run_provider() {
 	assert_output --partial "--resolve example.com:8443:[2606:4700::1111]"
 }
 
+@test "https_resolution: adds the wildcard pin only when no proxy is configured" {
+	stub_resolvers "93.184.216.34 STREAM example.com
+" ""
+	run_provider "https://example.com/file"
+	assert_success
+	run cat "${CURL_CALLS}"
+	assert_output --partial "--resolve *:443:93.184.216.34"
+
+	: >"${CURL_CALLS}"
+	run env PATH="${BIN_DIR}:${PATH}" MCPBASH_HOME="${MCPBASH_HOME}" \
+		MCPBASH_HTTPS_ALLOW_ALL=true https_proxy="http://proxy.invalid:443" \
+		CURL_CALLS="${CURL_CALLS}" RESOLVER_CALLS="${RESOLVER_CALLS}" \
+		bash "${PROVIDER}" "https://example.com/file"
+	assert_success
+	run cat "${CURL_CALLS}"
+	assert_output --partial "--resolve example.com:443:93.184.216.34"
+	refute_output --partial "--resolve *:"
+}
+
 @test "https_resolution: uses dscacheutil answers when getent has none" {
 	stub_resolvers "" "name: example.com
 ip_address: 93.184.216.34

@@ -8,7 +8,7 @@
 
 set -euo pipefail
 
-MCP_GIT_POLICY_FUNCS="mcp_policy_extract_host_from_url mcp_policy_extract_port_from_url mcp_policy_host_is_noncanonical_ip_literal mcp_policy_ip_is_private mcp_policy_host_is_ip_literal mcp_policy_hostname_is_valid mcp_policy_resolve_vetted_ips mcp_policy_host_allowed"
+MCP_GIT_POLICY_FUNCS="mcp_policy_extract_host_from_url mcp_policy_extract_port_from_url mcp_policy_host_is_noncanonical_ip_literal mcp_policy_ip_is_private mcp_policy_host_is_ip_literal mcp_policy_hostname_is_valid mcp_policy_resolve_vetted_ips mcp_policy_host_allowed mcp_policy_proxy_configured"
 # First git release with http.curloptResolve.
 MCP_GIT_PIN_MIN_MAJOR=2
 MCP_GIT_PIN_MIN_MINOR=37
@@ -197,8 +197,12 @@ EOF
 		exit 5
 	fi
 	# The host:port entry pins the name git's libcurl looks up; "*:port" also
-	# catches any spelling of the host libcurl might derive differently.
-	git_cfg+=(-c "http.curloptResolve=${host}:${port}:${pin_addrs}" -c "http.curloptResolve=*:${port}:${pin_addrs}")
+	# catches any spelling of the host libcurl might derive differently. It
+	# is left out behind a proxy, where it would also capture the proxy's name.
+	git_cfg+=(-c "http.curloptResolve=${host}:${port}:${pin_addrs}")
+	if ! mcp_policy_proxy_configured; then
+		git_cfg+=(-c "http.curloptResolve=*:${port}:${pin_addrs}")
+	fi
 fi
 
 export GIT_TERMINAL_PROMPT=0

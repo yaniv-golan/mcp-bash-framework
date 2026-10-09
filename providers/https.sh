@@ -13,7 +13,7 @@
 
 set -euo pipefail
 
-MCP_HTTPS_POLICY_FUNCS="mcp_policy_extract_host_from_url mcp_policy_extract_port_from_url mcp_policy_host_is_noncanonical_ip_literal mcp_policy_ip_is_private mcp_policy_host_is_ip_literal mcp_policy_hostname_is_valid mcp_policy_resolve_vetted_ips mcp_policy_host_allowed"
+MCP_HTTPS_POLICY_FUNCS="mcp_policy_extract_host_from_url mcp_policy_extract_port_from_url mcp_policy_host_is_noncanonical_ip_literal mcp_policy_ip_is_private mcp_policy_host_is_ip_literal mcp_policy_hostname_is_valid mcp_policy_resolve_vetted_ips mcp_policy_host_allowed mcp_policy_proxy_configured"
 
 mcp_https_load_policy() {
 	# Source the shared policy helpers. There is deliberately no local fallback
@@ -186,7 +186,12 @@ EOF
 
 	# Try each vetted address in order (all were checked as public). The
 	# host:port entry pins the name curl looks up; the "*:port" entry also
-	# catches any spelling of the host curl might derive differently.
+	# catches any spelling of the host curl might derive differently. It is
+	# left out behind a proxy, where it would also capture the proxy's name.
+	local add_wildcard="true"
+	if mcp_policy_proxy_configured; then
+		add_wildcard="false"
+	fi
 	local curl_rc=1
 	local ip addr http_code location
 	local -a pin_args=()
@@ -195,7 +200,10 @@ EOF
 		if [ -n "${ip}" ]; then
 			addr="${ip}"
 			case "${addr}" in *:*) addr="[${addr}]" ;; esac
-			pin_args=(--resolve "${host}:${port}:${addr}" --resolve "*:${port}:${addr}")
+			pin_args=(--resolve "${host}:${port}:${addr}")
+			if [ "${add_wildcard}" = "true" ]; then
+				pin_args+=(--resolve "*:${port}:${addr}")
+			fi
 		fi
 		# Capture HTTP code and headers in single request (with all security flags)
 		# NOTE: Remove -f flag to get HTTP status codes instead of curl failing on 4xx/5xx

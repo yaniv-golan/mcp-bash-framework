@@ -408,6 +408,14 @@ EOF
 	printf '%s' "${out}"
 }
 
+mcp_policy_proxy_configured() {
+	# True when curl/git would send requests through a proxy. Then the proxy
+	# resolves the target and a "*:port" pin entry must not be added: curl
+	# shares one host cache between target and proxy, so the wildcard would
+	# also redirect the proxy connection.
+	[ -n "${https_proxy:-}${HTTPS_PROXY:-}${http_proxy:-}${HTTP_PROXY:-}${all_proxy:-}${ALL_PROXY:-}" ]
+}
+
 mcp_policy_resolve_vetted_ips() {
 	# Resolve once and vet every answer. Prints the addresses (all public) on
 	# success. Callers must connect only to these addresses.
