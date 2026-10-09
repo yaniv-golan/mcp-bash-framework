@@ -77,6 +77,7 @@ TESTS=(
 	"test_project_hooks_disabled.sh"
 	"test_register_json.sh"
 	"test_resources.sh"
+	"test_resource_subscriptions.sh"
 	"test_resource_annotations.sh"
 	"test_resource_mime_declared.sh"
 	"test_resource_templates.sh"
