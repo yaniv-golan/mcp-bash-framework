@@ -231,8 +231,7 @@ Entries describe resource template patterns, sorted by `name`, and are refreshed
       "name": "project-files",
       "uriTemplate": "file:///{path}",
       "title": "Project Files",
-      "description": "Access any file in the project",
-      "mimeType": "application/octet-stream"
+      "description": "Access any file in the project"
     },
     {
       "name": "logs-by-date",
@@ -258,6 +257,7 @@ Key behaviors:
 - Discovery results are cached in `.registry/resource-templates.json` with hash-based pagination. TTL is controlled via `MCP_RESOURCES_TEMPLATES_TTL` (default 5s).
 - Changes to templates trigger the existing `notifications/resources/list_changed` path (`MCP_RESOURCES_CHANGED` flag is shared with resources).
 - `resources/templates/list` supports the same `limit` extension as other list endpoints and exposes the full count via `result._meta["mcpbash/total"]`; cursor decoding uses the templates registry hash so stale cursors are rejected after changes.
+- `resources/read` matches a URI against these entries when no resource has that name or exact URI. A matched template's `mimeType` is reported as the content's type, and its name and variables reach the provider as `MCP_RESOURCE_TEMPLATE_NAME` and `MCP_RESOURCE_TEMPLATE_VARS`. Only `{v}`, `{+v}` and `{#v}` are matched; see [RESOURCE-TEMPLATES.md](RESOURCE-TEMPLATES.md#reading-expanded-uris). The registry format is unchanged.
 
 ## Declarative registration (`server.d/register.json`)
 
