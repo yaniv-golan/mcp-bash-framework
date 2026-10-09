@@ -373,8 +373,16 @@ mcp_tools_embed_resource_from_path() {
 		uri="file://${abs}"
 	fi
 
+	# A mimeType the tool supplied is declared: it is the reported label.
+	# Without one, detection labels the content. Detection always decides
+	# text vs blob.
+	local mime_declared="false"
+	if [ -n "${mime_hint}" ]; then
+		mime_declared="true"
+	fi
+
 	local content_obj
-	if ! content_obj="$(mcp_resource_content_object_from_file "${abs}" "${mime_hint}" "${uri}")"; then
+	if ! content_obj="$(mcp_resource_content_object_from_file "${abs}" "${mime_hint}" "${uri}" "${mime_declared}")"; then
 		return 1
 	fi
 	printf '%s' "${content_obj}"
@@ -392,7 +400,7 @@ mcp_tools_collect_embedded_resources() {
 		specs_json="$("${MCPBASH_JSON_TOOL_BIN}" -c '
 			def normalize:
 				if type == "string" then {path: ., mimeType: null, uri: null}
-				elif type == "object" then {path: (.path // ""), mimeType: (.mimeType // null), uri: (.uri // null)}
+				elif type == "object" then {path: (.path // ""), mimeType: (if (.mimeType | type) == "string" then .mimeType else null end), uri: (.uri // null)}
 				else empty end;
 			try (
 				if type == "array" then . else [.] end
@@ -421,7 +429,9 @@ mcp_tools_collect_embedded_resources() {
 	local embed_attempts=0
 	local embed_added=0
 
-	while IFS=$'\t' read -r path mime uri || [ -n "${path}" ]; do
+	# Fields are split on US (0x1f), not tab: tab is IFS whitespace, so an
+	# empty mimeType between two tabs would collapse and shift the uri into it.
+	while IFS=$'\037' read -r path mime uri || [ -n "${path}" ]; do
 		[ -n "${path}" ] || continue
 		((embed_attempts++)) || true
 		local content_obj
@@ -442,7 +452,7 @@ mcp_tools_collect_embedded_resources() {
 		fi
 	done < <(printf '%s' "${specs_json}" | "${MCPBASH_JSON_TOOL_BIN}" -r '
 		.[]
-		| "\(.path // "")\t\(.mimeType // "")\t\(.uri // "")"
+		| "\(.path // "")\u001f\(.mimeType // "")\u001f\(.uri // "")"
 	')
 
 	if [ "${#contents[@]}" -eq 0 ]; then

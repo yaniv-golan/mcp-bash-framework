@@ -134,19 +134,20 @@ jq_check() {
 }
 
 # ============================================================================
-# Test 6: MIME auto-detection
+# Test 6: no --mime leaves detection to the server
 # ============================================================================
 
-@test "sdk_result_text_with_resource: MIME auto-detection" {
-	local test_file="${TEST_TMPDIR}/test.txt"
-	printf 'Text content' > "${test_file}"
+@test "sdk_result_text_with_resource: no --mime leaves mimeType null for server detection" {
+	local test_file="${TEST_TMPDIR}/test.json"
+	printf '{"a":1}' > "${test_file}"
 
 	result=$(mcp_result_text_with_resource '{"done":true}' --path "${test_file}")
 
 	local res_content
 	res_content=$(cat "${MCP_TOOL_RESOURCES_FILE}")
-	# Should have a MIME type (either detected or fallback)
-	jq_check "$res_content" '.[0].mimeType'
+	# The server detects the type; a declared value would become the label.
+	jq_check "$res_content" '.[0] | has("mimeType") and .mimeType == null'
+	jq_check "$res_content" '.[0].path == "'"${test_file}"'"'
 }
 
 # ============================================================================
@@ -373,40 +374,37 @@ jq_check() {
 }
 
 # ============================================================================
-# Test 18: MIME auto-detect unavailable fallback
+# Test 18: binary file without --mime
 # ============================================================================
 
-@test "sdk_result_text_with_resource: MIME fallback when auto-detect unavailable" {
+@test "sdk_result_text_with_resource: binary file without --mime is left to the server" {
 	local test_file="${TEST_TMPDIR}/test.bin"
 	printf '\x00\x01\x02' > "${test_file}"
 
-	# Force mcp_resource_detect_mime to not exist
-	# (This test verifies the fallback path when the function isn't loaded)
 	result=$(mcp_result_text_with_resource '{"done":true}' --path "${test_file}")
 	jq_check "$result" '.isError == false'
 
-	# Should have a MIME type even if detection fails
+	# No SDK-side guess: the server detects the type when it embeds the file
 	local res_content
 	res_content=$(cat "${MCP_TOOL_RESOURCES_FILE}")
-	jq_check "$res_content" '.[0].mimeType'
+	jq_check "$res_content" '.[0].mimeType == null'
 }
 
 # ============================================================================
 # Test 19: --mime at end without value
 # ============================================================================
 
-@test "sdk_result_text_with_resource: --mime at end without value triggers auto-detect" {
+@test "sdk_result_text_with_resource: --mime at end without value leaves detection to the server" {
 	local test_file="${TEST_TMPDIR}/test.txt"
 	printf 'content' > "${test_file}"
 
-	# --mime with missing value at end should result in empty MIME, triggering auto-detect
+	# --mime with missing value at end is the same as no --mime
 	result=$(mcp_result_text_with_resource '{"done":true}' --path "${test_file}" --mime)
 	jq_check "$result" '.isError == false'
 
 	local res_content
 	res_content=$(cat "${MCP_TOOL_RESOURCES_FILE}")
-	# Should have a MIME type (auto-detected)
-	jq_check "$res_content" '.[0].mimeType'
+	jq_check "$res_content" '.[0].mimeType == null'
 }
 
 # ============================================================================
