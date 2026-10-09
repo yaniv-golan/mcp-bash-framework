@@ -130,6 +130,13 @@ Entries describe resources and providers. Paths are relative to `MCPBASH_RESOURC
 - Metadata that cannot be parsed (missing `uri` or `uriTemplate`, unsupported `provider`, non-object `arguments`, unreadable `.meta.json`) is skipped and logged as a warning through the structured logging subsystem.
 - When no `provider` is specified, the scanner infers one from the URI scheme (`file://`, `git+https://`, `https://`, `ui://`). Any other scheme maps to a project provider of the same name when `${MCPBASH_PROVIDERS_DIR}/<scheme>.sh` exists (e.g., `myapi://status` → `providers/myapi.sh`); otherwise it defaults to `file` and is rejected if the provider script is unavailable. The file name must match the scheme exactly, including case. Manual registration (`register.sh` / `register.json`) does not infer custom providers: set `provider` explicitly.
 - Discovery records `name`, `description`, `path`, `uri`, `mimeType`, and `provider`; argument/template schemas are not persisted today.
+- **`mimeType` is a label; detection decides the encoding.**
+  - **Declared:** when a resource sets a non-empty string `mimeType` (in `.meta.json`, `mcp_register_resource` in `register.sh`, or `register.json`), `resources/read` reports it exactly as written.
+  - **Omitted:** detection (`file --mime`) labels the content; without `file`, the label is `text/plain`.
+  - **Encoding:** either way, detection decides whether content is sent as `text` or as a base64 `blob`. Content is a blob when `file` reports a binary type, when the first 1 KB holds a NUL byte, or when the declared type is a binary class (`image/*`, `audio/*`, `video/*`, `application/pdf`, `application/octet-stream`, zip/gzip/bzip2/xz). A declared `text/plain` on a PDF is still sent as a blob, and a declared text type the framework does not know (such as `application/toml`) stays text.
+  - **Inline headers:** the inline `# mcp:` header does not read `mimeType`, so those resources are always labelled by detection. Use a `.meta.json` file to declare one.
+  - **Registry flag:** the registry marks declared entries with an internal `mimeTypeDeclared: true`, computed by the framework (a value supplied in `register.json` is ignored). `resources/list` does not expose it. Caches written by older versions have no flag and are treated as undeclared.
+  - **Validation:** `mcp-bash validate` warns when a file-provider resource's declared `mimeType` clearly disagrees with its file, for example `text/plain` on a PDF or on JSON.
 - The `file` provider fails closed if no resource roots are configured; missing/non-existent roots are ignored, so ensure allowed roots exist before use.
 - Subscription notifications (`notifications/resources/updated`) are spec-shaped and only include `params.uri`; clients should call `resources/read` to fetch the updated content.
 
@@ -244,7 +251,7 @@ Entries describe resource template patterns, sorted by `name`, and are refreshed
 }
 ```
 
-Registry fields mirror the MCP `ResourceTemplate` schema, plus `generatedAt`, `hash`, and `total`.
+Registry fields mirror the MCP `ResourceTemplate` schema, plus `generatedAt`, `hash`, and `total`. Set `mimeType` on a template only if every match has that type; a catch-all such as `file:///{path}` should leave it out.
 
 ## Resource Templates
 

@@ -25,6 +25,8 @@ Add `uriTemplate` to a resource meta file (omit `uri`):
 ```
 Discovery scans `resources/*.meta.json`, requires `uriTemplate` to be a string with at least one `{variable}`, and skips entries that also set `uri`.
 
+Set `mimeType` on a template only if every match has that type. A catch-all such as `file:///{path}` matches files of every type, so it should leave `mimeType` out.
+
 ## Declarative registration (`server.d/register.json`)
 
 Register templates without executing shell code during list/refresh flows:

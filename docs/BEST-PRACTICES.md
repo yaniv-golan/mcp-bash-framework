@@ -478,9 +478,10 @@ mcp_result_text_with_resource \
 See [Embedding resources in tool responses](#embedding-resources-in-tool-responses) for full documentation.
 
 **Manual approach** (for advanced cases):
-- Write to `MCP_TOOL_RESOURCES_FILE` directly. TSV format: `path<TAB>mimeType<TAB>uri` (mime/uri optional).
+- Write to `MCP_TOOL_RESOURCES_FILE` directly. TSV format: `path<TAB>mimeType<TAB>uri` (mime/uri optional; leave the mime column empty to keep a uri).
 - JSON format is also accepted: `[{"path":"/tmp/result.png","mimeType":"image/png","uri":"file:///tmp/result.png"}]`
-- Binary files are base64-encoded into the `blob` field; text stays in `text`.
+- A non-empty `mimeType` is reported as given; leave it empty or `null` to let the server detect it.
+- Detection decides the encoding either way: binary files are base64-encoded into the `blob` field; text stays in `text`.
 - Keep paths inside allowed roots; invalid/unreadable entries are skipped (debug logs will mention the skip).
 
 #### Error handling
@@ -1458,11 +1459,14 @@ mcp_result_text_with_resource '{"status":"complete"}' \
   --path /tmp/data.csv --mime text/csv \
   --path /tmp/chart.png --mime image/png
 
-# MIME auto-detection (requires `file` command)
-mcp_result_text_with_resource '{"done":true}' --path /tmp/output.txt
+# No --mime: the server detects the type (requires the `file` command)
+mcp_result_text_with_resource '{"done":true}' --path /tmp/output.json
 ```
 
-Resources are embedded in the `content[]` array alongside the text. MIME type is auto-detected if `--mime` is omitted (requires `file` command; falls back to `application/octet-stream`).
+Resources are embedded in the `content[]` array alongside the text.
+- **With `--mime`:** the value is declared and reported exactly as given.
+- **Without `--mime`:** the helper writes no type and the server detects it with `file --mime`; without `file`, the type is `text/plain`.
+- **Encoding:** detection always decides whether the content is sent as `text` or as a base64 `blob`, so `--mime text/plain` on a PDF still sends a blob. Pass `--mime` only when detection gets the label wrong, for example `text/markdown`, which `file` reports as `text/plain`.
 
 **Note:** Resources require `MCP_TOOL_RESOURCES_FILE` to be set (automatic in tool context). Outside tool context, resources are logged as warnings and skipped.
 
