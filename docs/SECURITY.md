@@ -120,13 +120,22 @@ mcp-bash rate-limits **authentication failures** only (`MCPBASH_REMOTE_TOKEN_MAX
 - Amplification attacks through tools that call external services
 - DoS of upstream dependencies
 
-### Symlink race window (TOCTOU)
-File and tool path validation uses a double-check pattern: the path is verified as non-symlink, opened, then re-verified. A small race window exists between the first check and file open. Mitigations:
-- Race window is minimal (microseconds)
-- Attacker requires write access to the containing directory
-- Both checks must pass for successful read
+### Symlinks and swaps during a resource read
+The `file://` and `ui://` providers read local files through `lib/file_read.sh`, which opens the file once and checks what it opened. Before 1.6.0 they only tested the path for a symlink before and after opening it. Someone who could write inside an allowed root could swap the file for a symlink, let the provider open it, and swap it back. The read then returned the content of a file outside the roots.
 
-In high-security environments, consider mounting content directories read-only or using filesystem-level protections (e.g., immutable attributes).
+What the providers now guarantee:
+- **`file://`:** the path is resolved (`realpath`) and checked against `MCP_RESOURCES_ROOTS`. The provider then enters the file's directory and pins it, and walks up with `..` to confirm by device and inode that this directory really is inside the matched root. It requires the final component to be a regular file and not a symlink (`lstat`), opens it, and requires the open descriptor (`/dev/fd/N`) to be that same regular file. The bytes returned always come from that descriptor. A symlink swapped in for the file or for any directory below the root, at any point before the open, is refused. Changes made after the open do not affect what is read.
+- **`ui://`:** the same open-and-verify read, applied to the final component only. UI directories are not a confinement boundary; a UI directory may itself be a symlink. `MCPBASH_MAX_UI_RESOURCE_BYTES` is checked against the opened descriptor, and the output is capped at that size. Static HTML served from the UI registry goes through the same check. Before 1.6.0 it was read without any symlink check.
+- **Fail closed:** if the platform cannot identify the open descriptor (no usable `stat`, or no `/dev/fd`), the read is refused rather than done unchecked.
+
+Residual limits:
+- **Hard links:** a hard link to an outside file, placed inside a root, is a regular file inside the root and is served. Linux blocks hard links to files the attacker does not own when `fs.protected_hardlinks=1` (the default on most distributions); macOS has no such protection.
+- **macOS:** `stat` on `/dev/fd/N` reports the devfs device, so the file's identity there is its inode and birth time (nanoseconds), not device and inode.
+- **Windows (Git Bash/MSYS):** the same checks run through MSYS `stat` and `/dev/fd` (backed by `/proc/self/fd`). The race tests are skipped there, because Git Bash makes copies instead of symlinks unless native symlinks are enabled. If the descriptor check is unavailable, reads are refused, as described above.
+- **Blocking opens:** a file swapped for a FIFO *after* the `lstat` and before the open can block the provider. This is a denial of service, not a disclosure.
+- **Other paths:** prompt templates and registry hooks are not read this way. Hooks rely on the ownership and permission checks described above.
+
+If untrusted parties can write inside your roots, also consider mounting content read-only.
 
 ### Input schema validation
 `inputSchema` declared in tool metadata is **not enforced** by the framework. Tools receive arguments as-is and must perform their own validation. This is intentional to preserve flexibility, but means:
