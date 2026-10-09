@@ -650,7 +650,13 @@ mcp_env_apply_curated_policy() {
 		provider:PATH | provider:HOME | provider:TMPDIR | provider:TMP | provider:TEMP | provider:LANG | provider:LC_ALL) ;;
 		provider:USERPROFILE | provider:APPDATA | provider:SYSTEMROOT | provider:MSYSTEM | provider:MSYS2_ARG_CONV_EXCL) ;;
 		provider:LC_*) ;;
-		provider:MCP_*) ;;
+		# Framework-owned MCP_* families only; keep in sync with lib/tools.sh (tool
+		# env) and lib/meta_env.sh (reserved names). Other MCP_* names need the
+		# allowlist.
+		provider:MCP_SDK | provider:MCP_TOOL_* | provider:MCP_ELICIT_* | provider:MCP_PROGRESS_*) ;;
+		provider:MCP_LOG_STREAM | provider:MCP_CANCEL_FILE | provider:MCP_ROOTS_* | provider:MCP_RESOURCES_ROOTS) ;;
+		provider:MCP_COMPLETION_* | provider:MCP_PROMPT_* | provider:MCP_RESOURCE_*) ;;
+		provider:MCP_CONFIG_JSON | provider:MCP_TRANSPORT | provider:MCP_PATH_DEBUG) ;;
 		provider:MCPBASH_HOME | provider:MCPBASH_PROJECT_ROOT | provider:MCPBASH_RESOURCES_DIR | provider:MCPBASH_PROMPTS_DIR) ;;
 		provider:MCPBASH_ENABLE_GIT_PROVIDER | provider:MCPBASH_GIT_* | provider:MCPBASH_HTTPS_*) ;;
 		# The remote-access secret and its keys: never passed, even if allowlisted.

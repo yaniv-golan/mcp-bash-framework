@@ -189,3 +189,31 @@ write_meta() {
 	refute_output --partial "SOMEFILE"
 	assert_line --partial $'badname\tTOOL'
 }
+
+@test "meta_env: allowlists may name non-framework MCP_* variables" {
+	write_meta '{"env":{"MCPBASH_TOOL_ENV_ALLOWLIST":"MCP_REGISTRY_TOKEN,MCP_CUSTOM","MCPBASH_PROVIDER_ENV_ALLOWLIST":"MCP_REGISTRY_TOKEN"}}'
+	run mcp_meta_env_apply
+	assert_success
+	assert_output ""
+	mcp_meta_env_apply
+	assert_equal "${MCPBASH_TOOL_ENV_ALLOWLIST}" "MCP_REGISTRY_TOKEN,MCP_CUSTOM"
+	assert_equal "${MCPBASH_PROVIDER_ENV_ALLOWLIST}" "MCP_REGISTRY_TOKEN"
+}
+
+@test "meta_env: framework MCP_* families, MCPBASH_* and _MCP* stay reserved in allowlists" {
+	local name
+	for name in MCP_SDK MCP_TOOL_ARGS_JSON MCP_TOOL_META_JSON MCP_ELICIT_SUPPORTED MCP_PROGRESS_TOKEN \
+		MCP_LOG_STREAM MCP_CANCEL_FILE MCP_ROOTS_JSON MCP_RESOURCES_ROOTS MCP_COMPLETION_ARGS_JSON \
+		MCP_PROMPT_PATH MCP_RESOURCE_URI MCP_CONFIG_JSON MCP_TRANSPORT MCP_PATH_DEBUG \
+		MCPBASH_REMOTE_TOKEN _MCP_TOOLS_RESULT; do
+		write_meta "{\"env\":{\"MCPBASH_TOOL_ENV_ALLOWLIST\":\"FOO,${name}\"}}"
+		run mcp_meta_env_check
+		assert_output $'invalid\tMCPBASH_TOOL_ENV_ALLOWLIST\tlists a reserved or shell-control variable name'
+	done
+	# Near-misses of the framework families are user-owned names.
+	for name in MCP_SDKX MCP_TOOLS_TTL MCP_RESOURCES_TOKEN MCP_PROMPTS_X MCP_UI_X MCP_ROOTS MCP_TRANSPORT_X; do
+		write_meta "{\"env\":{\"MCPBASH_TOOL_ENV_ALLOWLIST\":\"${name}\"}}"
+		run mcp_meta_env_check
+		assert_output $'apply\tMCPBASH_TOOL_ENV_ALLOWLIST\t'"${name}"
+	done
+}

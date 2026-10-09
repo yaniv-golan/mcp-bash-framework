@@ -120,3 +120,63 @@ EOF2
 	assert_success
 	assert_output --partial "FOO=blocked"
 }
+
+# One probe list drives all three places that encode the framework-owned MCP_*
+# families (lib/tools.sh tool env, lib/runtime.sh provider env, lib/meta_env.sh
+# reserved names), so they cannot drift apart silently.
+MCP_FRAMEWORK_PROBES="MCP_SDK MCP_TOOL_PROBE MCP_ELICIT_PROBE MCP_PROGRESS_PROBE MCP_LOG_STREAM MCP_CANCEL_FILE MCP_ROOTS_PROBE MCP_RESOURCES_ROOTS MCP_COMPLETION_PROBE MCP_PROMPT_PROBE MCP_RESOURCE_PROBE MCP_CONFIG_JSON MCP_TRANSPORT MCP_PATH_DEBUG"
+MCP_USER_PROBES="MCP_REGISTRY_TOKEN MCP_SDKX MCP_TOOLS_PROBE MCP_RESOURCES_PROBE MCP_PROMPTS_PROBE MCP_UI_PROBE MCP_ROOTS MCP_TRANSPORT_X"
+
+print_probe_states() {
+	local n
+	for n in ${MCP_FRAMEWORK_PROBES} ${MCP_USER_PROBES}; do
+		printf '%s=%s;' "${n}" "${!n+1}"
+	done
+}
+
+@test "tool_env_allowlist: framework MCP_* families agree across tool env, provider env and meta_env" {
+	local n want=""
+	for n in ${MCP_FRAMEWORK_PROBES}; do want="${want}${n}=1;"; done
+	for n in ${MCP_USER_PROBES}; do want="${want}${n}=;"; done
+	# "stdio" keeps MCP_TRANSPORT valid and MCP_PATH_DEBUG off.
+	for n in ${MCP_FRAMEWORK_PROBES} ${MCP_USER_PROBES}; do
+		export "${n}=stdio"
+	done
+
+	# Tool env (minimal).
+	cat >"${PROJECT_ROOT}/tools/echo-env/tool.sh" <<EOF2
+#!/usr/bin/env bash
+for n in ${MCP_FRAMEWORK_PROBES} ${MCP_USER_PROBES}; do
+	printf '%s=%s;' "\${n}" "\${!n+1}"
+done
+EOF2
+	MCPBASH_TOOL_ENV_MODE=minimal run "${MCPBASH_HOME}/bin/mcp-bash" run-tool echo-env --allow-self
+	assert_success
+	assert_output --partial "${want}"
+
+	# Provider curated env (isolate).
+	run bash -c "$(declare -f print_probe_states)
+		MCP_FRAMEWORK_PROBES='${MCP_FRAMEWORK_PROBES}' MCP_USER_PROBES='${MCP_USER_PROBES}'
+		. '${MCPBASH_HOME}/lib/runtime.sh'
+		export MCPBASH_PROVIDER_ENV_MODE=isolate
+		mcp_env_apply_curated_policy provider
+		print_probe_states"
+	assert_success
+	assert_output "${want}"
+
+	# server.meta.json allowlists: framework names refused, user names allowed.
+	. "${MCPBASH_HOME}/lib/meta_env.sh"
+	export MCPBASH_SERVER_DIR="${PROJECT_ROOT}/server.d"
+	export MCPBASH_JSON_TOOL="${MCPBASH_JSON_TOOL:-jq}"
+	export MCPBASH_JSON_TOOL_BIN="${MCPBASH_JSON_TOOL_BIN:-$(command -v jq)}"
+	for n in ${MCP_FRAMEWORK_PROBES}; do
+		printf '{"env":{"MCPBASH_TOOL_ENV_ALLOWLIST":"%s"}}\n' "${n}" >"${MCPBASH_SERVER_DIR}/server.meta.json"
+		run mcp_meta_env_check
+		assert_output --partial $'invalid\tMCPBASH_TOOL_ENV_ALLOWLIST'
+	done
+	for n in ${MCP_USER_PROBES}; do
+		printf '{"env":{"MCPBASH_TOOL_ENV_ALLOWLIST":"%s"}}\n' "${n}" >"${MCPBASH_SERVER_DIR}/server.meta.json"
+		run mcp_meta_env_check
+		assert_output $'apply\tMCPBASH_TOOL_ENV_ALLOWLIST\t'"${n}"
+	done
+}

@@ -1895,7 +1895,13 @@ mcp_tools_call() {
 				# Without SYSTEMROOT, Python cannot initialise sockets (WinError 10106).
 				SYSTEMROOT | SYSTEMDRIVE | WINDIR | windir | COMSPEC | PATHEXT) ;;
 				USERPROFILE | APPDATA | LOCALAPPDATA | TEMP | TMP | MSYSTEM | MSYS2_ARG_CONV_EXCL) ;;
-				MCP_* | MCPBASH_*) ;;
+				# Framework-owned MCP_* families only; other MCP_* names (for example a
+				# user's MCP_REGISTRY_TOKEN) need the allowlist. Keep in sync with
+				# lib/runtime.sh (provider env) and lib/meta_env.sh (reserved names).
+				MCP_SDK | MCP_TOOL_* | MCP_ELICIT_* | MCP_PROGRESS_* | MCP_LOG_STREAM | MCP_CANCEL_FILE) ;;
+				MCP_ROOTS_* | MCP_RESOURCES_ROOTS | MCP_COMPLETION_* | MCP_PROMPT_* | MCP_RESOURCE_*) ;;
+				MCP_CONFIG_JSON | MCP_TRANSPORT | MCP_PATH_DEBUG) ;;
+				MCPBASH_*) ;;
 				*)
 					if [ "${tool_env_mode}" = "allowlist" ]; then
 						case "${allowlist_names}" in

@@ -36,10 +36,10 @@ Authoritative list of supported environment variables. Defaults shown are the sh
 | `MCPBASH_PROGRESS_FLUSH_INTERVAL` | `0.5` | Flush cadence (seconds) when live progress is enabled. |
 | `MCPBASH_RESOURCES_POLL_INTERVAL_SECS` | `2` | Resource subscription polling interval (poller starts after first `resources/subscribe`); `0` to disable polling. |
 | `MCPBASH_ENV_PAYLOAD_THRESHOLD` | `65536` | Spill args/metadata to temp files above this many bytes. |
-| `MCPBASH_TOOL_ENV_MODE` | `minimal` | Tool env isolation: `minimal`, `inherit`, or `allowlist`. Also settable from `server.meta.json` `"env"`; the launch env wins. |
+| `MCPBASH_TOOL_ENV_MODE` | `minimal` | Tool env isolation: `minimal`, `inherit`, or `allowlist`. `minimal` keeps PATH/HOME/TMPDIR/LANG, Windows system variables, `MCPBASH_*` (never `MCPBASH_REMOTE_TOKEN*`) and only the framework-owned `MCP_*` families (see [SECURITY.md](SECURITY.md)); other `MCP_*` names need `allowlist`. Also settable from `server.meta.json` `"env"`; the launch env wins. |
 | `MCPBASH_TOOL_ENV_ALLOWLIST` | (unset) | Extra env names when `MCPBASH_TOOL_ENV_MODE=allowlist`. Also settable from `server.meta.json` `"env"`; the launch env wins. |
 | `MCPBASH_TOOL_ENV_INHERIT_ALLOW` | `false` | Must be `true` to allow `MCPBASH_TOOL_ENV_MODE=inherit`. |
-| `MCPBASH_PROVIDER_ENV_MODE` | `isolate` | Provider env isolation (completion/resource providers): `isolate`, `inherit`, or `allowlist`. Prompts ignore this setting. Also settable from `server.meta.json` `"env"`; the launch env wins. |
+| `MCPBASH_PROVIDER_ENV_MODE` | `isolate` | Provider env isolation (completion/resource providers): `isolate`, `inherit`, or `allowlist`. `isolate` keeps the same framework-owned `MCP_*` families as tools; other `MCP_*` names need `allowlist`. Prompts ignore this setting. Also settable from `server.meta.json` `"env"`; the launch env wins. |
 | `MCPBASH_PROVIDER_ENV_ALLOWLIST` | (unset) | Extra env names when `MCPBASH_PROVIDER_ENV_MODE=allowlist`. Also settable from `server.meta.json` `"env"`; the launch env wins. |
 | `MCPBASH_PROVIDER_ENV_INHERIT_ALLOW` | `false` | Must be `true` to allow `MCPBASH_PROVIDER_ENV_MODE=inherit`. |
 | `MCPBASH_COMPLETION_TIMEOUT_SECS` | `5` | Timeout for per-prompt and per-resource completion scripts (`0` disables). Registered completions use their own `timeoutSecs`, or `MCPBASH_COMPLETION_REGISTERED_TIMEOUT_SECS`. |

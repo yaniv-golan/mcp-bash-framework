@@ -11,21 +11,37 @@ setup() {
 	. "${MCPBASH_HOME}/lib/runtime.sh"
 }
 
-@test "env_curated: provider policy drops ambient vars but keeps MCP_* and baseline" {
+@test "env_curated: provider policy drops ambient vars but keeps framework MCP_* and baseline" {
 	out="$(
 		(
 			export MCPBASH_PROVIDER_ENV_MODE="isolate"
 			export FOO="bar"
 			export MCP_FOO="m"
+			export MCP_REGISTRY_TOKEN="secret"
+			export MCP_PROGRESS_STREAM="p"
 			export MCPBASH_FOO="b"
 			export MCPBASH_HOME="/h"
 			export TMP="t"
 			export TEMP="t2"
 			mcp_env_apply_curated_policy provider
-			printf '%s|%s|%s|%s|%s|%s' "${FOO-}" "${MCP_FOO-}" "${MCPBASH_FOO-}" "${MCPBASH_HOME-}" "${TMP-}" "${TEMP-}"
+			printf '%s|%s|%s|%s|%s|%s|%s|%s' "${FOO-}" "${MCP_FOO-}" "${MCP_REGISTRY_TOKEN-}" "${MCP_PROGRESS_STREAM-}" "${MCPBASH_FOO-}" "${MCPBASH_HOME-}" "${TMP-}" "${TEMP-}"
 		)
 	)"
-	assert_equal "|m||/h|t|t2" "${out}"
+	assert_equal "${out}" "|||p||/h|t|t2"
+}
+
+@test "env_curated: provider allowlist passes an allowlisted non-framework MCP_* name" {
+	out="$(
+		(
+			export MCPBASH_PROVIDER_ENV_MODE="allowlist"
+			export MCPBASH_PROVIDER_ENV_ALLOWLIST="MCP_REGISTRY_TOKEN"
+			export MCP_REGISTRY_TOKEN="secret"
+			export MCP_OTHER="x"
+			mcp_env_apply_curated_policy provider
+			printf '%s|%s' "${MCP_REGISTRY_TOKEN-}" "${MCP_OTHER-}"
+		)
+	)"
+	assert_equal "${out}" "secret|"
 }
 
 @test "env_curated: provider allowlist preserves explicitly allowlisted vars" {
