@@ -835,9 +835,12 @@ mcp_json_extract_cancel_id() {
 		return 1
 	fi
 
+	# Print the id in compact JSON form ("slow" keeps its quotes), the same form
+	# mcp_json_extract_id gives the request. Worker keys are built from that
+	# form, so a raw string here would never match a running worker.
 	case "${MCPBASH_JSON_TOOL}" in
 	gojq | jq)
-		if ! printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -er '.params.requestId // .params.id' 2>/dev/null; then
+		if ! printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -ec '.params.requestId // .params.id' 2>/dev/null; then
 			return 1
 		fi
 		;;

@@ -96,3 +96,29 @@ setup() {
 		assert_equal "${decoded}" "${original}"
 	done
 }
+
+@test "json: cancel id matches the request id form for string and number ids" {
+	MCPBASH_FORCE_MINIMAL=false
+	mcp_runtime_detect_json_tool
+	if [ "${MCPBASH_MODE}" = "minimal" ]; then
+		skip "JSON tooling unavailable"
+	fi
+
+	# Worker keys come from mcp_json_extract_id; the cancel id must use the
+	# same JSON form or a string id never finds its worker.
+	request_id="$(mcp_json_extract_id '{"jsonrpc":"2.0","id":"slow","method":"tools/call"}')"
+	cancel_id="$(mcp_json_extract_cancel_id '{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":"slow"}}')"
+	assert_equal '"slow"' "${request_id}"
+	assert_equal "${request_id}" "${cancel_id}"
+
+	request_id="$(mcp_json_extract_id '{"jsonrpc":"2.0","id":7,"method":"tools/call"}')"
+	cancel_id="$(mcp_json_extract_cancel_id '{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":7}}')"
+	assert_equal '7' "${cancel_id}"
+	assert_equal "${request_id}" "${cancel_id}"
+
+	cancel_id="$(mcp_json_extract_cancel_id '{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"id":"legacy"}}')"
+	assert_equal '"legacy"' "${cancel_id}"
+
+	run mcp_json_extract_cancel_id '{"jsonrpc":"2.0","method":"notifications/cancelled","params":{}}'
+	assert_failure
+}
