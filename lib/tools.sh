@@ -1535,20 +1535,6 @@ mcp_tools_call() {
 		return 1
 	fi
 
-	# Warn once per process when running in inherit mode, since tools then
-	# receive the full host environment including any secrets present.
-	local env_mode_raw="${MCPBASH_TOOL_ENV_MODE:-minimal}"
-	local env_mode_lc
-	env_mode_lc="$(printf '%s' "${env_mode_raw}" | tr '[:upper:]' '[:lower:]')"
-	if [ "${env_mode_lc}" = "inherit" ] && [ "${MCPBASH_TOOL_ENV_INHERIT_WARNED}" != "true" ]; then
-		MCPBASH_TOOL_ENV_INHERIT_WARNED="true"
-		mcp_logging_warning "${MCP_TOOLS_LOGGER}" "MCPBASH_TOOL_ENV_MODE=inherit; tools receive the full host environment"
-	fi
-	if [ "${env_mode_lc}" = "inherit" ] && [ "${MCPBASH_TOOL_ENV_INHERIT_ALLOW:-false}" != "true" ]; then
-		mcp_tools_error -32602 "MCPBASH_TOOL_ENV_MODE=inherit requires MCPBASH_TOOL_ENV_INHERIT_ALLOW=true"
-		return 1
-	fi
-
 	# Initialize and enforce project policy (server.d/policy.sh can override).
 	mcp_tools_policy_init
 	if ! mcp_tools_policy_check "${name}" "${metadata}"; then
@@ -1558,6 +1544,21 @@ mcp_tools_call() {
 		local policy_data="${_MCP_TOOLS_ERROR_DATA:-null}"
 		[ -z "${policy_data}" ] && policy_data="null"
 		_mcp_tools_emit_error "${_MCP_TOOLS_ERROR_CODE}" "${_MCP_TOOLS_ERROR_MESSAGE}" "${policy_data}"
+		return 1
+	fi
+
+	# Checked after policy.sh has run, so a mode it sets is gated too. Warn once
+	# per process in inherit mode, since tools then receive the full host
+	# environment including any secrets present.
+	local env_mode_raw="${MCPBASH_TOOL_ENV_MODE:-minimal}"
+	local env_mode_lc
+	env_mode_lc="$(printf '%s' "${env_mode_raw}" | tr '[:upper:]' '[:lower:]')"
+	if [ "${env_mode_lc}" = "inherit" ] && [ "${MCPBASH_TOOL_ENV_INHERIT_WARNED}" != "true" ]; then
+		MCPBASH_TOOL_ENV_INHERIT_WARNED="true"
+		mcp_logging_warning "${MCP_TOOLS_LOGGER}" "MCPBASH_TOOL_ENV_MODE=inherit; tools receive the full host environment"
+	fi
+	if [ "${env_mode_lc}" = "inherit" ] && [ "${MCPBASH_TOOL_ENV_INHERIT_ALLOW:-false}" != "true" ]; then
+		mcp_tools_error -32602 "MCPBASH_TOOL_ENV_MODE=inherit requires MCPBASH_TOOL_ENV_INHERIT_ALLOW=true"
 		return 1
 	fi
 

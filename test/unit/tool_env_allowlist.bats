@@ -47,3 +47,22 @@ EOF2
 	assert_success
 	assert_output --partial "X=single"
 }
+
+@test "tool_env_allowlist: inherit set by policy.sh still requires INHERIT_ALLOW" {
+	cat >"${PROJECT_ROOT}/server.d/policy.sh" <<'EOF2'
+export MCPBASH_TOOL_ENV_MODE=inherit
+EOF2
+	FOO="host-secret" run "${MCPBASH_HOME}/bin/mcp-bash" run-tool echo-env --allow-self
+	assert_failure
+	refute_output --partial "FOO=host-secret"
+}
+
+@test "tool_env_allowlist: inherit set by policy.sh works when the operator allows it" {
+	cat >"${PROJECT_ROOT}/server.d/policy.sh" <<'EOF2'
+export MCPBASH_TOOL_ENV_MODE=inherit
+EOF2
+	FOO="host-secret" MCPBASH_TOOL_ENV_INHERIT_ALLOW=true \
+		run "${MCPBASH_HOME}/bin/mcp-bash" run-tool echo-env --allow-self
+	assert_success
+	assert_output --partial "FOO=host-secret"
+}

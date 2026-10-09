@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The tool inherit-mode gate now also applies to a mode set by `server.d/policy.sh`**: `MCPBASH_TOOL_ENV_MODE=inherit` requires `MCPBASH_TOOL_ENV_INHERIT_ALLOW=true`, but the check ran before `policy.sh` was sourced, so a mode exported there skipped it. The check now runs after the policy hook. `policy.sh` is project code and can still set anything, so this guards against accidental configuration, not a hostile project.
+
 ### Security
 
 - **`MCPBASH_TOOL_ENV_ALLOWLIST` names are validated with an anchored pattern**: The name check used a shell glob that only anchored the first two characters, so an entry such as `xx[$(command)]` was accepted, and reading it with indirect expansion ran the embedded command in the server's tool subshell. Names must now match `^[A-Za-z_][A-Za-z0-9_]*$` exactly; anything else is skipped. The value is set by whoever configures the server, so this was not reachable by MCP clients, but configuration data must never execute code.
