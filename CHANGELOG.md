@@ -57,6 +57,10 @@ Details are in the entries below.
 
 ### Fixed
 
+- **A malformed `notifications/cancelled` no longer ends the server**: A cancel with a missing, null or false `requestId`, or with non-object `params`, made the server exit; in minimal mode every cancel did. It is now ignored, like any notification the server can't use.
+- **Closing stdin after a cancellation no longer cuts the shutdown short on bash 4+**: The server exited with status 143, dropped results still in flight and left workers running. It now delivers them and exits 0.
+- **`mcp_json_quote_text ""` works on bash 3.2 under `set -u`**: It aborted with "unbound variable", so `mcp-bash doctor --json` printed invalid JSON on macOS `/bin/bash`.
+- **An unsubscribe sent right after a subscribe for the same URI ends the subscription**: Requests run in parallel, so the unsubscribe could finish first, find nothing, and leave the subscription live.
 - **`notifications/cancelled` cancels requests with string ids**: Only numeric ids were matched, so a cancelled call with a string id still returned its result.
 - **`resources/unsubscribe` accepts the spec's `uri` param**: It removes every subscription to that URI. `subscriptionId` is still accepted. Unsubscribing something that isn't subscribed returns `{}`; a request with neither field returns `-32602` ("Resource uri required"; previously "subscriptionId required").
 - **Subscription polling starts with the first `resources/subscribe`**: It used to start only with the next client message, so a client that subscribed and then waited got no updates.
