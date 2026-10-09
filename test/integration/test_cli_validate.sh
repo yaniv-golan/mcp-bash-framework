@@ -344,20 +344,32 @@ META
 	mime_warned() {
 		printf '%s\n' "${mime_output}" | grep -F "resources/$1/$1.meta.json" | grep -F 'mimeType' | grep -q 'remove it to use detection'
 	}
-	for d in pdfplain jsonplain pngtext; do
+	# Expectations that depend on what this platform's file(1) recognises.
+	expect_warn="pngtext"
+	case "$(file --brief --mime-type "${MIME_ROOT}/resources/pdfplain/doc.pdf" 2>/dev/null)" in
+	application/pdf) expect_warn="${expect_warn} pdfplain" ;;
+	esac
+	case "$(file --brief --mime-type "${MIME_ROOT}/resources/jsonplain/data.json" 2>/dev/null)" in
+	application/json) expect_warn="${expect_warn} jsonplain" ;;
+	esac
+	for d in ${expect_warn}; do
 		if ! mime_warned "${d}"; then
 			printf '%s\n' "${mime_output}" >&2
 			test_fail "expected a mimeType mismatch warning for ${d}"
 		fi
 	done
-	for d in mdplain jsondecl pdfundecl tomldecl; do
+	expect_quiet="jsondecl pdfundecl tomldecl"
+	case "$(file --brief --mime-type "${MIME_ROOT}/resources/mdplain/notes.md" 2>/dev/null)" in
+	text/plain) expect_quiet="${expect_quiet} mdplain" ;;
+	esac
+	for d in ${expect_quiet}; do
 		if mime_warned "${d}"; then
 			printf '%s\n' "${mime_output}" >&2
 			test_fail "unexpected mimeType mismatch warning for ${d}"
 		fi
 	done
-	assert_contains 'res.pdfplain' "${mime_output}" "warning should name the resource"
-	assert_contains 'application/pdf' "${mime_output}" "warning should name the detected type"
+	assert_contains 'res.pngtext' "${mime_output}" "warning should name the resource"
+	assert_contains '"text/plain"' "${mime_output}" "warning should name the detected type"
 	printf 'Declared mimeType validation passed.\n'
 fi
 

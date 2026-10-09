@@ -18,20 +18,31 @@ fi
 
 test_create_tmpdir
 
-run_server() {
-	local workdir="$1"
-	(
-		cd "${workdir}" || exit 1
-		MCPBASH_PROJECT_ROOT="${workdir}" ./bin/mcp-bash <"requests.ndjson" >"responses.ndjson"
-	)
-}
-
 write_samples() {
 	local dir="$1"
 	printf '# Notes\n\nSome *markdown* text.\n' >"${dir}/notes.md"
 	printf '{"a":1,"b":[1,2,3]}\n' >"${dir}/data.json"
 	# NUL-free PDF: only detection can tell it is binary.
 	printf '%%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%%%EOF\n' >"${dir}/doc.pdf"
+}
+
+# The assertions below assume this platform's file(1) recognises the samples.
+PROBE_DIR="${TEST_TMPDIR}/probe"
+mkdir -p "${PROBE_DIR}"
+write_samples "${PROBE_DIR}"
+if [ "$(file --brief --mime-type "${PROBE_DIR}/data.json" 2>/dev/null)" != "application/json" ] \
+	|| [ "$(file --brief --mime-type "${PROBE_DIR}/doc.pdf" 2>/dev/null)" != "application/pdf" ] \
+	|| [ "$(file --brief --mime-type "${PROBE_DIR}/notes.md" 2>/dev/null)" != "text/plain" ]; then
+	printf 'SKIP: file(1) on this platform labels the samples differently\n'
+	exit 0
+fi
+
+run_server() {
+	local workdir="$1"
+	(
+		cd "${workdir}" || exit 1
+		MCPBASH_PROJECT_ROOT="${workdir}" ./bin/mcp-bash <"requests.ndjson" >"responses.ndjson"
+	)
 }
 
 # Fails unless the list never carries mimeTypeDeclared and each read reports
