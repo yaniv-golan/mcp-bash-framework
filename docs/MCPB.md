@@ -326,6 +326,31 @@ How Claude Desktop applies these (read from Desktop 2.31226.0):
 }
 ```
 
+### Passing secrets to tools
+
+A value from `user_config` reaches the **server** process through `user_config_env_map`. Tools and providers do not see it yet, because they run with a curated environment: tools default to `MCPBASH_TOOL_ENV_MODE=minimal`, and resource and completion providers default to `MCPBASH_PROVIDER_ENV_MODE=isolate`. Declare which variables to pass on in `server.d/server.meta.json`:
+
+```json
+{
+  "name": "my-server",
+  "user_config": {
+    "api_key": { "type": "string", "title": "API Key", "sensitive": true, "required": true }
+  },
+  "user_config_env_map": { "api_key": "MY_API_KEY" },
+  "env": {
+    "MCPBASH_TOOL_ENV_MODE": "allowlist",
+    "MCPBASH_TOOL_ENV_ALLOWLIST": "MY_API_KEY",
+    "MCPBASH_PROVIDER_ENV_MODE": "allowlist",
+    "MCPBASH_PROVIDER_ENV_ALLOWLIST": "MY_API_KEY"
+  }
+}
+```
+
+- `"env"` declares the policy, never the value. Only these four keys are accepted; anything else is refused (and makes `mcp-bash bundle` fail, since the value would ship).
+- The launch environment wins: if it sets either the mode or the allowlist for tools (or for providers), the `"env"` values for that scope are ignored. Operators can ignore the section entirely with `MCPBASH_IGNORE_META_ENV=true`.
+- `mcp-bash doctor` shows the effective policy and whether each allowlisted variable is set in the current shell.
+- Before 1.5.0 the only way to do this in a bundle was `platform_overrides.<platform>.env`, repeated per platform. That still works (and the bundler now keeps the base env in each override), but `"env"` is simpler and applies on every platform and to `mcp-bash run-tool`.
+
 ## Platform Compatibility
 
 Bundles are compatible with:

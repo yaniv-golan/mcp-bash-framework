@@ -36,12 +36,13 @@ Authoritative list of supported environment variables. Defaults shown are the sh
 | `MCPBASH_PROGRESS_FLUSH_INTERVAL` | `0.5` | Flush cadence (seconds) when live progress is enabled. |
 | `MCPBASH_RESOURCES_POLL_INTERVAL_SECS` | `2` | Resource subscription polling interval (poller starts after first `resources/subscribe`); `0` to disable polling. |
 | `MCPBASH_ENV_PAYLOAD_THRESHOLD` | `65536` | Spill args/metadata to temp files above this many bytes. |
-| `MCPBASH_TOOL_ENV_MODE` | `minimal` | Tool env isolation: `minimal`, `inherit`, or `allowlist`. |
-| `MCPBASH_TOOL_ENV_ALLOWLIST` | (unset) | Extra env names when `MCPBASH_TOOL_ENV_MODE=allowlist`. |
+| `MCPBASH_TOOL_ENV_MODE` | `minimal` | Tool env isolation: `minimal`, `inherit`, or `allowlist`. Also settable from `server.meta.json` `"env"`; the launch env wins. |
+| `MCPBASH_TOOL_ENV_ALLOWLIST` | (unset) | Extra env names when `MCPBASH_TOOL_ENV_MODE=allowlist`. Also settable from `server.meta.json` `"env"`; the launch env wins. |
 | `MCPBASH_TOOL_ENV_INHERIT_ALLOW` | `false` | Must be `true` to allow `MCPBASH_TOOL_ENV_MODE=inherit`. |
-| `MCPBASH_PROVIDER_ENV_MODE` | `isolate` | Provider env isolation (completion/resource providers): `isolate`, `inherit`, or `allowlist`. Prompts ignore this setting. |
-| `MCPBASH_PROVIDER_ENV_ALLOWLIST` | (unset) | Extra env names when `MCPBASH_PROVIDER_ENV_MODE=allowlist`. |
+| `MCPBASH_PROVIDER_ENV_MODE` | `isolate` | Provider env isolation (completion/resource providers): `isolate`, `inherit`, or `allowlist`. Prompts ignore this setting. Also settable from `server.meta.json` `"env"`; the launch env wins. |
+| `MCPBASH_PROVIDER_ENV_ALLOWLIST` | (unset) | Extra env names when `MCPBASH_PROVIDER_ENV_MODE=allowlist`. Also settable from `server.meta.json` `"env"`; the launch env wins. |
 | `MCPBASH_PROVIDER_ENV_INHERIT_ALLOW` | `false` | Must be `true` to allow `MCPBASH_PROVIDER_ENV_MODE=inherit`. |
+| `MCPBASH_IGNORE_META_ENV` | `false` | Operator switch: when `true`, ignore the `"env"` object in `server.d/server.meta.json`. |
 | `MCPBASH_TOOL_ALLOWLIST` | (required) | Space/comma-separated tool names allowed to run (`*` to allow all). Empty by default (deny). |
 | `MCPBASH_TOOL_ALLOW_DEFAULT` | `deny` | Set to `allow` to keep legacy allow-all behavior without an explicit allowlist. |
 | `MCPBASH_FORCE_MINIMAL` | (unset) | Force minimal capability tier even when JSON tooling is present. |

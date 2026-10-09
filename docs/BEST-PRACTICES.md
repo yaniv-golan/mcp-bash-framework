@@ -1694,6 +1694,7 @@ Cache results by exporting `MCP_TESTS_SKIP_REMOTE=1` when remote fixtures are un
 
 ### 6.1 Configuration hierarchy
 1. Launch-time environment variables (`MCPBASH_*`, `MCP_*`)
+1. `server.d/server.meta.json` `"env"` (tool/provider env-policy keys only; ignored for a scope when the launch env sets that scope's mode or allowlist)
 2. `server.d/env.sh` exports (`mcp-bash run-tool --with-server-env` only; not applied to a running server)
 3. Manual registration inputs (`server.d/register.json` / `server.d/register.sh`) overriding discovery output
 4. Client-initiated negotiation (capabilities, logging)
