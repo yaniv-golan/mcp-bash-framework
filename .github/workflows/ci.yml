@@ -247,11 +247,13 @@ jobs:
           retention-days: 7
 
   # macOS GUI hosts (Claude Desktop and other Electron/Node apps) resolve the
-  # "#!/usr/bin/env bash" shebang to /bin/bash 3.2. The runner image puts a
-  # newer bash first on PATH, so every other job runs bash 4+. This job puts a
-  # shim dir first on PATH whose only entry is bash -> /bin/bash, so bats, the
-  # test scripts, bin/mcp-bash and the tools it runs all execute under 3.2.
-  # Every step after "Put /bin/bash first on PATH" runs under 3.2 too.
+  # "#!/usr/bin/env bash" shebang to /bin/bash 3.2. The unit job runs only on
+  # Ubuntu, and the macOS integration job runs in CI mode (blocking reads), so
+  # the timed-read loop was never exercised on 3.2. This job puts a shim dir
+  # first on PATH whose only entry is bash -> /bin/bash, so bats, the test
+  # scripts, bin/mcp-bash and the tools it runs all execute under 3.2 whatever
+  # bash the runner image puts on PATH. Every step after "Put /bin/bash first
+  # on PATH" runs under 3.2 too.
   bash32-macos:
     runs-on: macos-latest
     defaults:
