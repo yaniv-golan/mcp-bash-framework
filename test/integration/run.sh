@@ -24,15 +24,25 @@ mkdir -p "${LOG_DIR}"
 
 # Track if any test failed - used to preserve logs on failure
 SUITE_FAILED=0
+# Set once the summary has been printed. bash 3.2 loses the status of a fatal
+# shell error (unbound variable under set -u, a parse error) when an EXIT trap
+# runs, and exits 0; the trap uses this to turn that into a failure.
+SUITE_COMPLETED=0
 
 cleanup_suite_tmp() {
+	local rc=$?
+	if [ "${SUITE_COMPLETED}" != "1" ] && [ "${rc}" -eq 0 ]; then
+		printf 'Integration runner stopped before the summary (bash %s); failing.\n' "${BASH_VERSION}" >&2
+		rc=1
+		SUITE_FAILED=1
+	fi
 	# Always preserve logs on failure or if explicitly requested
-	if [ "${KEEP_INTEGRATION_LOGS}" = "1" ] || [ "${SUITE_FAILED}" -ne 0 ]; then
-		return
+	if [ "${KEEP_INTEGRATION_LOGS}" != "1" ] && [ "${SUITE_FAILED}" -eq 0 ]; then
+		if [ -n "${SUITE_TMP}" ] && [ -d "${SUITE_TMP}" ]; then
+			rm -rf "${SUITE_TMP}" 2>/dev/null || true
+		fi
 	fi
-	if [ -n "${SUITE_TMP}" ] && [ -d "${SUITE_TMP}" ]; then
-		rm -rf "${SUITE_TMP}" 2>/dev/null || true
-	fi
+	exit "${rc}"
 }
 trap cleanup_suite_tmp EXIT INT TERM
 
@@ -57,6 +67,7 @@ TESTS=(
 	"test_sigterm_prompt_exit.sh"
 	"test_stdout_closed_exit.sh"
 	"test_short_read_timeout_stays_up.sh"
+	"test_trace_bash32.sh"
 	"test_completion_registered_timeout.sh"
 	"test_conformance_strict_shapes.sh"
 	"test_installer.sh"
@@ -143,7 +154,7 @@ apply_only_and_skip_filters() {
 			fi
 			local already=false
 			local s
-			for s in "${selected[@]}"; do
+			for s in ${selected[@]+"${selected[@]}"}; do
 				if [ "${s}" = "${token}" ]; then
 					already=true
 					break
@@ -165,20 +176,24 @@ apply_only_and_skip_filters() {
 			fi
 			local -a filtered=()
 			local s
-			for s in "${selected[@]}"; do
+			for s in ${selected[@]+"${selected[@]}"}; do
 				if [ "${s}" != "${token}" ]; then
 					filtered+=("${s}")
 				fi
 			done
-			selected=("${filtered[@]}")
+			selected=(${filtered[@]+"${filtered[@]}"})
 		done
 	fi
 
-	TESTS=("${selected[@]}")
+	TESTS=(${selected[@]+"${selected[@]}"})
 }
 
 apply_only_and_skip_filters
 total="${#TESTS[@]}"
+if [ "${total}" -eq 0 ]; then
+	printf 'No integration tests selected (MCPBASH_INTEGRATION_ONLY/SKIP).\n' >&2
+	exit 1
+fi
 
 get_test_desc() {
 	local script="$1"
@@ -346,6 +361,7 @@ if [ "${KEEP_INTEGRATION_LOGS}" != "1" ] && [ "${failed}" -eq 0 ]; then
 	log_note="${LOG_DIR} (will be removed on success; preserved on failure)"
 fi
 
+SUITE_COMPLETED=1
 printf '\nIntegration summary: %d passed, %d failed (logs: %s, elapsed: %ss)\n' "${passed}" "${failed}" "${log_note}" "${suite_elapsed}"
 
 if [ "${failed}" -ne 0 ]; then

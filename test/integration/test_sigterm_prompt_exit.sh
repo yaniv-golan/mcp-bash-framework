@@ -22,18 +22,24 @@ LIMIT=5
 
 # Without job control, bash starts background jobs with SIGINT ignored, and a
 # non-interactive shell cannot trap a signal ignored at startup. Real hosts
-# (Node, terminals) don't launch servers that way; enable job control so the
-# server starts with default signal dispositions.
-set -m
+# (Node, terminals) don't launch servers that way. "set -m" here is not enough:
+# the integration runner itself backgrounds this script without job control,
+# so SIGINT is already ignored when it starts and every child inherits that.
+# Launch the server through perl, which resets SIGINT to the default first.
+test_require_command perl
+launch() {
+	# shellcheck disable=SC2016  # $SIG and @ARGV are perl, not shell.
+	exec perl -e '$SIG{INT} = "DEFAULT"; exec @ARGV or die "exec: $!\n"' "$@"
+}
 
 # mode "real": idle/orphan checks on (timed read). mode "ci": blocking read.
 check_signal() {
 	local signal="$1" mode="$2" fifo="${TEST_TMPDIR}/in.${RANDOM}"
 	mkfifo "${fifo}"
 	if [ "${mode}" = "ci" ]; then
-		(cd "${WS}" && MCPBASH_CI_MODE=true exec bash ./bin/mcp-bash <"${fifo}" >/dev/null 2>&1) &
+		(cd "${WS}" && export MCPBASH_CI_MODE=true && launch bash ./bin/mcp-bash <"${fifo}" >/dev/null 2>&1) &
 	else
-		(cd "${WS}" && unset MCPBASH_CI_MODE && exec bash ./bin/mcp-bash <"${fifo}" >/dev/null 2>&1) &
+		(cd "${WS}" && unset MCPBASH_CI_MODE && launch bash ./bin/mcp-bash <"${fifo}" >/dev/null 2>&1) &
 	fi
 	local pid=$!
 	exec 7>"${fifo}"
