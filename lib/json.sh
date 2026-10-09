@@ -67,7 +67,9 @@ mcp_json_quote_text() {
 		esac
 	done
 	local joined=""
-	printf -v joined '%s' "${parts[@]}"
+	# Empty input leaves parts empty; bash 3.2 treats "${parts[@]}" of an
+	# empty array as unbound under set -u, so expand it only when set.
+	printf -v joined '%s' ${parts[@]+"${parts[@]}"}
 	printf '"%s"' "${joined}"
 }
 

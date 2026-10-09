@@ -97,6 +97,17 @@ setup() {
 	done
 }
 
+@test "json: mcp_json_quote_text quotes the empty string under set -u in bash and /bin/bash" {
+	# bash 3.2 treats "${arr[@]}" of an empty array as unbound under set -u.
+	local shell_bin
+	for shell_bin in bash /bin/bash; do
+		[ -x "$(command -v "${shell_bin}")" ] || continue
+		run "${shell_bin}" -c 'set -euo pipefail; . "$1/lib/json.sh"; mcp_json_quote_text ""; printf "|after"' _ "${MCPBASH_HOME}"
+		assert_success
+		assert_output '""|after'
+	done
+}
+
 @test "json: cancel id matches the request id form for string and number ids" {
 	MCPBASH_FORCE_MINIMAL=false
 	mcp_runtime_detect_json_tool
