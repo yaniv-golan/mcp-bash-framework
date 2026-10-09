@@ -105,12 +105,75 @@ send '{"jsonrpc":"2.0","method":"notifications/initialized"}'
 LIVE_URI="$(uri_of live)"
 send "{\"jsonrpc\":\"2.0\",\"id\":\"sub-live\",\"method\":\"resources/subscribe\",\"params\":{\"uri\":\"${LIVE_URI}\"}}"
 wait_for '.id == "sub-live"' 10 || fail "subscribe response missing"
-jq -e -s 'any(.[]; .id == "sub-live" and (.result.subscriptionId | type) == "string")' "${RESPONSES}" >/dev/null ||
-	fail "subscribe result must carry a subscriptionId"
+jq -e -s 'any(.[]; .id == "sub-live" and (.result.subscriptionId | type) == "string")' "${RESPONSES}" >/dev/null \
+	|| fail "subscribe result must carry a subscriptionId"
 sleep $((POLL_SECS + 1))
 printf 'v2\n' >"${RES}/live.txt"
-wait_for ".method == \"notifications/resources/updated\" and .params.uri == \"${LIVE_URI}\"" $((POLL_SECS * 5 + 2)) ||
-	fail "no update for a subscription with no client traffic after subscribe"
+wait_for ".method == \"notifications/resources/updated\" and .params.uri == \"${LIVE_URI}\"" $((POLL_SECS * 5 + 2)) \
+	|| fail "no update for a subscription with no client traffic after subscribe"
+
+# --- 2. Unsubscribe by uri (MCP UnsubscribeRequest params are {uri}). ---
+SUB2_URI="$(uri_of sub2)"
+send "{\"jsonrpc\":\"2.0\",\"id\":\"sub2a\",\"method\":\"resources/subscribe\",\"params\":{\"uri\":\"${SUB2_URI}\"}}"
+send "{\"jsonrpc\":\"2.0\",\"id\":\"sub2b\",\"method\":\"resources/subscribe\",\"params\":{\"uri\":\"${SUB2_URI}\"}}"
+wait_for '.id == "sub2a"' 10 || fail "subscribe sub2a missing"
+wait_for '.id == "sub2b"' 10 || fail "subscribe sub2b missing"
+records_before="$(record_count)"
+send "{\"jsonrpc\":\"2.0\",\"id\":\"unsub2\",\"method\":\"resources/unsubscribe\",\"params\":{\"uri\":\"${SUB2_URI}\"}}"
+wait_for '.id == "unsub2"' 10 || fail "unsubscribe by uri: no response"
+jq -e -s 'any(.[]; .id == "unsub2" and .result == {})' "${RESPONSES}" >/dev/null \
+	|| fail "unsubscribe by uri must return an empty result"
+records_after="$(record_count)"
+if [ "$((records_before - records_after))" -ne 2 ]; then
+	fail "unsubscribe by uri must remove both subscriptions to that uri (before=${records_before} after=${records_after})"
+fi
+sub2_updates_before="$(updates_for "${SUB2_URI}")"
+printf 'v2\n' >"${RES}/sub2.txt"
+sleep $((POLL_SECS * 3 + 1))
+if [ "$(updates_for "${SUB2_URI}")" != "${sub2_updates_before}" ]; then
+	fail "update sent for a uri after unsubscribe by uri"
+fi
+
+# Unsubscribing a uri with no subscription is a successful no-op.
+send "{\"jsonrpc\":\"2.0\",\"id\":\"unsub-unknown\",\"method\":\"resources/unsubscribe\",\"params\":{\"uri\":\"$(uri_of nowhere)\"}}"
+wait_for '.id == "unsub-unknown"' 10 || fail "unsubscribe unknown uri: no response"
+jq -e -s 'any(.[]; .id == "unsub-unknown" and .result == {})' "${RESPONSES}" >/dev/null \
+	|| fail "unsubscribe of an unknown uri must return an empty result"
+# Neither uri nor subscriptionId: invalid params.
+send '{"jsonrpc":"2.0","id":"unsub-empty","method":"resources/unsubscribe","params":{}}'
+wait_for '.id == "unsub-empty"' 10 || fail "unsubscribe without params: no response"
+jq -e -s 'any(.[]; .id == "unsub-empty" and .error.code == -32602)' "${RESPONSES}" >/dev/null \
+	|| fail "unsubscribe without uri or subscriptionId must return -32602"
+
+# Legacy: unsubscribe by the subscriptionId that subscribe returned still works.
+SUB3_URI="$(uri_of sub3)"
+send "{\"jsonrpc\":\"2.0\",\"id\":\"sub3\",\"method\":\"resources/subscribe\",\"params\":{\"uri\":\"${SUB3_URI}\"}}"
+wait_for '.id == "sub3"' 10 || fail "subscribe sub3 missing"
+sub3_id="$(jq -r -s '.[] | select(.id == "sub3") | .result.subscriptionId' "${RESPONSES}")"
+records_before="$(record_count)"
+send "{\"jsonrpc\":\"2.0\",\"id\":\"unsub3\",\"method\":\"resources/unsubscribe\",\"params\":{\"subscriptionId\":\"${sub3_id}\"}}"
+wait_for '.id == "unsub3"' 10 || fail "unsubscribe by subscriptionId: no response"
+jq -e -s 'any(.[]; .id == "unsub3" and .result == {})' "${RESPONSES}" >/dev/null \
+	|| fail "unsubscribe by subscriptionId must return an empty result"
+if [ "$((records_before - $(record_count)))" -ne 1 ]; then
+	fail "unsubscribe by subscriptionId must remove that subscription"
+fi
+
+# --- 3. A newline in the name or uri cannot redirect a subscription. ---
+NL_URI="$(uri_of nl)"
+OTHER_URI="$(uri_of other)"
+send "{\"jsonrpc\":\"2.0\",\"id\":\"sub-nl\",\"method\":\"resources/subscribe\",\"params\":{\"name\":\"bogus\\n${OTHER_URI}\",\"uri\":\"${NL_URI}\"}}"
+wait_for '.id == "sub-nl"' 10 || fail "subscribe with newline name: no response"
+if jq -e -s 'any(.[]; .id == "sub-nl" and has("result"))' "${RESPONSES}" >/dev/null; then
+	sleep $((POLL_SECS * 2 + 1))
+	printf 'v2\n' >"${RES}/other.txt"
+	printf 'v2\n' >"${RES}/nl.txt"
+	wait_for ".method == \"notifications/resources/updated\" and .params.uri == \"${NL_URI}\"" $((POLL_SECS * 5 + 2)) \
+		|| fail "subscription with a newline in its name did not track its uri"
+	if [ "$(updates_for "${OTHER_URI}")" != "0" ]; then
+		fail "a newline in the subscribe name redirected the subscription to another uri"
+	fi
+fi
 
 # --- Every update names a resource. ---
 if [ "$(count_of '.method == "notifications/resources/updated" and ((.params.uri // "") == "")')" != "0" ]; then

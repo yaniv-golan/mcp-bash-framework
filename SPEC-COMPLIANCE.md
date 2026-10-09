@@ -31,7 +31,7 @@ This table shows when features were introduced in the MCP specification and when
 | Tool Icons (SEP-973) | 2025-11-25 | 0.5.0 | ✅ Full | Local files converted to data URIs |
 | **Resources** | | | | |
 | Resources (list/read) | 2024-11-05 | 0.1.0 | ✅ Full | File/HTTPS/Git providers |
-| Resource Subscriptions | 2024-11-05 | 0.1.0 | ✅ Full | Change notifications |
+| Resource Subscriptions | 2024-11-05 | 0.1.0 | ✅ Full | Change notifications; `resources/unsubscribe` takes `{uri}` (removes every subscription to it) and also accepts the `subscriptionId` that subscribe returns as an extension |
 | Resource Templates | 2024-11-05 | 0.7.0 | ✅ Full | Auto-discovery + manual registration with hash-based pagination |
 | Resource Annotations | 2024-11-05 | 1.1.3 | ✅ Full | Optional `annotations` on regular resources (meta.json, inline header, manual registration) |
 | Resource Icons (SEP-973) | 2025-11-25 | 0.5.0 | ✅ Full | Local files converted to data URIs |

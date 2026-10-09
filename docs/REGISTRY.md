@@ -139,6 +139,11 @@ Entries describe resources and providers. Paths are relative to `MCPBASH_RESOURC
   - **Validation:** `mcp-bash validate` warns when a file-provider resource's declared `mimeType` clearly disagrees with its file, for example `text/plain` on a PDF or on JSON.
 - The `file` provider fails closed if no resource roots are configured; missing/non-existent roots are ignored, so ensure allowed roots exist before use.
 - Subscription notifications (`notifications/resources/updated`) are spec-shaped and only include `params.uri`; clients should call `resources/read` to fetch the updated content.
+- **Subscriptions:**
+  - `resources/subscribe` takes `{uri}` (or a registered `name`). Its result carries an extra `subscriptionId`; the spec result is empty, and extra fields are allowed.
+  - `resources/unsubscribe` takes `{uri}`, as in the spec, and removes every subscription to that uri on the connection. It also accepts `{subscriptionId}` to remove one subscription.
+  - Unsubscribing a uri or id that is not subscribed succeeds with no effect. A request with neither field returns `-32602`.
+  - Polling starts as soon as the first `resources/subscribe` arrives, so a client that subscribes and then waits still receives updates. The interval is `MCPBASH_RESOURCES_POLL_INTERVAL_SECS` (default `2`).
 
 ## Project-Level Providers
 
