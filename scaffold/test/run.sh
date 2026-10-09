@@ -69,7 +69,8 @@ fi
 
 run_test() {
 	local name="$1"
-	local args="${2:-{}}"
+	local no_args='{}'
+	local args="${2:-${no_args}}"
 	local description="${3:-}"
 
 	if [[ -n "${description}" ]]; then
@@ -103,7 +104,8 @@ run_test() {
 
 run_dry_run() {
 	local name="$1"
-	local args="${2:-{}}"
+	local no_args='{}'
+	local args="${2:-${no_args}}"
 
 	printf "  %s (dry-run)... " "${name}"
 

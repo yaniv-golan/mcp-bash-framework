@@ -32,6 +32,6 @@ load '../common/fixtures'
 }
 
 @test "brace_default: no JSON default uses the \${x:-{}} form" {
-	run grep -rn ':-{}}' "${MCPBASH_HOME}/lib" "${MCPBASH_HOME}/sdk" "${MCPBASH_HOME}/handlers" "${MCPBASH_HOME}/providers"
+	run grep -rn ':-{}}' "${MCPBASH_HOME}/lib" "${MCPBASH_HOME}/sdk" "${MCPBASH_HOME}/handlers" "${MCPBASH_HOME}/providers" "${MCPBASH_HOME}/bin" "${MCPBASH_HOME}/scaffold" "${MCPBASH_HOME}/examples" "${MCPBASH_HOME}/test/common"
 	assert_failure
 }

@@ -64,6 +64,16 @@ if [ "${dangerous_pattern_found}" -eq 1 ]; then
 	# Warning only - don't fail the build (too noisy for existing code)
 fi
 
+# Custom lint: a parameter-expansion default whose word starts with an
+# unquoted brace (the JSON "empty object" default) ends at the first closing
+# brace, so a set value gets a stray "}" appended and no longer parses. Put
+# the default in a variable (d='{}'; x="${x:-${d}}") or quote it.
+printf 'Checking for unquoted brace defaults in parameter expansions...\n'
+brace_default_re='\$\{[A-Za-z0-9_@*#]+(\[[^]]*\])?:?[-=+?][{]'
+if grep -nE "${brace_default_re}" "${existing_files[@]}" "${MCPBASH_HOME}/bin/mcp-bash"; then
+	test_fail "unquoted brace default in a parameter expansion (see matches above)"
+fi
+
 # Verify core libs can be sourced with /bin/bash (macOS 3.2 compatibility)
 # This is the definitive test - actually try to source the libs with bash 3.2
 if [ -x /bin/bash ]; then

@@ -78,7 +78,9 @@ Environment variables:
 Recommended parsing:
 ```bash
 # Prefer .query; fall back to .prefix; treat missing as empty string.
-query="$(printf '%s' "${MCP_COMPLETION_ARGS_JSON:-{}}" | jq -r '(.query // .prefix // "")')"
+args="${MCP_COMPLETION_ARGS_JSON:-}"
+[ -n "${args}" ] || args='{}'
+query="$(printf '%s' "${args}" | jq -r '(.query // .prefix // "")')"
 ```
 
 Stdout (any of):
