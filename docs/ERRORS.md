@@ -149,8 +149,8 @@ Size guardrails: `mcp_core_guard_response_size` rejects oversized responses with
 
 ## Resource provider exit codes
 - `file.sh`: `2` outside allowed roots → `-32603`; `3` missing file → `-32002`.
-- `git.sh`: `4` invalid URI or missing git → `-32602`; `5` clone/fetch failure → `-32603`.
-- `https.sh`: `4` invalid URI or missing curl → `-32602`; `5` network/timeout → `-32603`; `6` payload exceeds `MCPBASH_HTTPS_MAX_BYTES` → `-32603`.
+- `git.sh`: `4` invalid URI, blocked host (policy, or resolves to a blocked address), missing git, or git older than 2.37 → `-32602`; `5` host does not resolve, or clone/fetch failure → `-32603`.
+- `https.sh`: `4` invalid URI, blocked host (policy, or resolves to a blocked address) or missing curl → `-32602`; `5` host does not resolve, network/timeout → `-32603`; `6` payload exceeds `MCPBASH_HTTPS_MAX_BYTES` → `-32603`.
 - Any other provider exit code maps to `-32603` with stderr text when available.
 
 ## Troubleshooting Quick Hits

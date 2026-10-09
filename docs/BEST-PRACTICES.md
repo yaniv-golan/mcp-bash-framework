@@ -609,18 +609,18 @@ result=$(mcp_download_safe --url "$url" --out "/tmp/data.json" --allow "example.
 **Error types** (in `.error.type`):
 - `invalid_url` – URL is empty or not https://
 - `invalid_params` – Invalid/missing parameters (e.g., missing --out, non-numeric --timeout)
-- `host_blocked` – Host is private, obfuscated, or not in allowlist
+- `host_blocked` – Host is private, resolves to a private address, is a non-canonical IP literal, or is not in allowlist
 - `provider_unavailable` – HTTPS provider not found or curl missing
-- `network_error` – Connection failed (retries exhausted)
+- `network_error` – Host did not resolve, or connection failed (retries exhausted)
 - `size_exceeded` – Response exceeds --max-bytes limit
 - `write_error` – Could not write to output path
 - `provider_error` – Provider script failed unexpectedly
 - `redirect` – URL returned 3xx redirect (location in `.error.location`)
 
 **Security features**:
-- SSRF protection: Blocks private IPs (127.x, 10.x, 192.168.x, etc.) and DNS rebinding
+- SSRF protection: Blocks private, loopback, link-local, CGNAT and other special IPv4/IPv6 ranges (see [SECURITY.md](SECURITY.md)); the host is resolved once and curl is pinned to the vetted addresses, and an unresolvable host is never fetched
 - Deny-by-default: Requires explicit host allowlist
-- Obfuscated IP detection: Rejects integer/hex IP literals
+- Obfuscated IP detection: Rejects any IPv4 literal that is not a canonical dotted quad (octal, hex, short or integer forms)
 - No redirects: Prevents redirect-based SSRF attacks
 - Automatic retry: Exponential backoff for transient failures
 
