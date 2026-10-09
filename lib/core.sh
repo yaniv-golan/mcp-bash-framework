@@ -1636,10 +1636,13 @@ mcp_core_start_resource_poll() {
 	fi
 
 	(
+		# Like the flusher: one failed iteration (for example a record removed
+		# by an unsubscribe mid-poll) must not end polling for the session.
+		set +e
 		while :; do
 			# Exit with the server ($$ is its PID here too); see the flusher.
 			kill -0 "$$" 2>/dev/null || exit 0
-			mcp_resources_poll_subscriptions
+			mcp_resources_poll_subscriptions || true
 			sleep "${interval}"
 		done
 	) &

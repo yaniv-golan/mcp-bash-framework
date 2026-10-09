@@ -159,14 +159,143 @@ mcp_resources_hash_payload() {
 	mcp_hash_string "${payload}"
 }
 
+# Subscription records live in MCPBASH_STATE_DIR, one file per subscription:
+# resource_subscription.<id>, holding one JSON object
+#   {"name":…, "uri":…, "requested_uri":…, "fingerprint":…}
+# JSON keeps a newline in a client-supplied name or uri inside its field. The
+# state dir belongs to one server process (created at start, removed at exit),
+# so records never outlive the connection that made them and no older format
+# needs migrating; a record that does not parse is skipped.
+MCP_RESOURCES_SUBSCRIPTION_LOCK="resource_subscriptions"
+
+mcp_resources_subscription_id_valid() {
+	# Ids are server-generated (sub-<uuid> or sub-<epoch>-<random>).
+	case "$1" in
+	'' | *[!A-Za-z0-9-]*) return 1 ;;
+	esac
+	return 0
+}
+
+mcp_resources_subscription_path() {
+	printf '%s/resource_subscription.%s' "${MCPBASH_STATE_DIR}" "$1"
+}
+
+mcp_resources_subscription_lock() {
+	# Serializes record rewrites (poller) against removals (unsubscribe). Best
+	# effort: a stuck lock must not wedge the poller or an unsubscribe.
+	if [ -z "${MCPBASH_LOCK_ROOT:-}" ] || ! declare -F mcp_lock_acquire_timeout >/dev/null 2>&1; then
+		return 1
+	fi
+	mcp_lock_acquire_timeout "${MCP_RESOURCES_SUBSCRIPTION_LOCK}" 2 2>/dev/null
+}
+
+mcp_resources_subscription_unlock() {
+	mcp_lock_release "${MCP_RESOURCES_SUBSCRIPTION_LOCK}" 2>/dev/null || true
+}
+
+# Load a record into _MCP_SUB_NAME, _MCP_SUB_URI, _MCP_SUB_REQUESTED_URI and
+# _MCP_SUB_FINGERPRINT. Returns 1 when the record is missing (for example,
+# removed by an unsubscribe after it was listed) or does not parse.
+mcp_resources_subscription_load() {
+	local path="$1"
+	_MCP_SUB_NAME=""
+	_MCP_SUB_URI=""
+	_MCP_SUB_REQUESTED_URI=""
+	_MCP_SUB_FINGERPRINT=""
+	[ -f "${path}" ] || return 1
+	# Fields are NUL-separated: bash strings cannot hold NUL, so no stored value does.
+	{
+		IFS= read -r -d '' _MCP_SUB_NAME \
+			&& IFS= read -r -d '' _MCP_SUB_URI \
+			&& IFS= read -r -d '' _MCP_SUB_REQUESTED_URI \
+			&& IFS= read -r -d '' _MCP_SUB_FINGERPRINT
+	} < <("${MCPBASH_JSON_TOOL_BIN}" -j 'select(type == "object") | (.name // "" | tostring), "\u0000", (.uri // "" | tostring), "\u0000", (.requested_uri // "" | tostring), "\u0000", (.fingerprint // "" | tostring), "\u0000"' "${path}" 2>/dev/null) || return 1
+	return 0
+}
+
+# Write a record atomically (temp file, then mv). The temp name does not match
+# the resource_subscription.* glob, so the poller never reads a partial record.
+# Args: id name uri fingerprint [requested_uri] [mode]
+# mode "create" (default) writes unconditionally; "update" rewrites only a
+# record that still exists, so a poll never resurrects an unsubscribed record.
 mcp_resources_subscription_store() {
 	local subscription_id="$1"
 	local name="$2"
 	local uri="$3"
 	local fingerprint="$4"
-	local path="${MCPBASH_STATE_DIR}/resource_subscription.${subscription_id}"
-	printf '%s\n%s\n%s\n' "${name}" "${uri}" "${fingerprint}" >"${path}.tmp"
-	mv "${path}.tmp" "${path}"
+	local requested_uri="${5:-}"
+	local mode="${6:-create}"
+	mcp_resources_subscription_id_valid "${subscription_id}" || return 1
+	local path tmp
+	path="$(mcp_resources_subscription_path "${subscription_id}")"
+	tmp="${MCPBASH_STATE_DIR}/resource_subscription_tmp.${subscription_id}.${BASHPID:-$$}"
+	if [ "${mode}" = "update" ] && [ ! -f "${path}" ]; then
+		return 1
+	fi
+	if ! "${MCPBASH_JSON_TOOL_BIN}" -n -c \
+		--arg name "${name}" --arg uri "${uri}" \
+		--arg requested_uri "${requested_uri}" --arg fingerprint "${fingerprint}" \
+		'{name: $name, uri: $uri, requested_uri: $requested_uri, fingerprint: $fingerprint}' >"${tmp}" 2>/dev/null; then
+		rm -f "${tmp}" 2>/dev/null || true
+		return 1
+	fi
+	if [ "${mode}" != "update" ]; then
+		mv -f "${tmp}" "${path}"
+		return
+	fi
+	local locked=false rc=0
+	if mcp_resources_subscription_lock; then
+		locked=true
+	fi
+	# Re-check right before the rename: an unsubscribe may have removed the
+	# record while the provider was reading.
+	if [ -f "${path}" ]; then
+		mv -f "${tmp}" "${path}" || rc=1
+	else
+		rm -f "${tmp}" 2>/dev/null || true
+		rc=1
+	fi
+	if [ "${locked}" = true ]; then
+		mcp_resources_subscription_unlock
+	fi
+	return "${rc}"
+}
+
+mcp_resources_subscription_remove() {
+	local subscription_id="$1"
+	mcp_resources_subscription_id_valid "${subscription_id}" || return 1
+	local path locked=false rc=1
+	path="$(mcp_resources_subscription_path "${subscription_id}")"
+	if mcp_resources_subscription_lock; then
+		locked=true
+	fi
+	if [ -f "${path}" ]; then
+		rm -f "${path}" && rc=0
+	fi
+	if [ "${locked}" = true ]; then
+		mcp_resources_subscription_unlock
+	fi
+	return "${rc}"
+}
+
+# Remove every subscription whose effective or requested uri equals $1.
+# Prints the number removed.
+mcp_resources_subscription_remove_by_uri() {
+	local target="$1"
+	local removed=0 path subscription_id
+	if [ -n "${target}" ] && [ -n "${MCPBASH_STATE_DIR:-}" ]; then
+		for path in "${MCPBASH_STATE_DIR}"/resource_subscription.*; do
+			subscription_id="${path#"${MCPBASH_STATE_DIR}/resource_subscription."}"
+			mcp_resources_subscription_id_valid "${subscription_id}" || continue
+			mcp_resources_subscription_load "${path}" || continue
+			if [ "${_MCP_SUB_URI}" = "${target}" ] || [ "${_MCP_SUB_REQUESTED_URI}" = "${target}" ]; then
+				if mcp_resources_subscription_remove "${subscription_id}"; then
+					removed=$((removed + 1))
+				fi
+			fi
+		done
+	fi
+	printf '%s' "${removed}"
 }
 
 mcp_resources_subscription_store_payload() {
@@ -174,29 +303,25 @@ mcp_resources_subscription_store_payload() {
 	local name="$2"
 	local uri="$3"
 	local payload="$4"
+	local requested_uri="${5:-}"
 	local fingerprint
 	fingerprint="$(mcp_resources_hash_payload "${payload}")"
-	mcp_resources_subscription_store "${subscription_id}" "${name}" "${uri}" "${fingerprint}"
-}
-
-mcp_resources_subscription_store_error() {
-	local subscription_id="$1"
-	local name="$2"
-	local uri="$3"
-	local code="$4"
-	local message="$5"
-	local fingerprint
-	fingerprint="ERROR:${code}:$(mcp_resources_hash_payload "${message}")"
-	mcp_resources_subscription_store "${subscription_id}" "${name}" "${uri}" "${fingerprint}"
+	mcp_resources_subscription_store "${subscription_id}" "${name}" "${uri}" "${fingerprint}" "${requested_uri}"
 }
 
 mcp_resources_emit_update() {
 	local subscription_id="$1"
 	local payload="$2"
+	local fallback_uri="${3:-}"
 	mcp_logging_debug "${MCP_RESOURCES_LOGGER}" "Emit update subscription=${subscription_id}"
 	# Extract uri from payload contents for the notification
 	local uri
-	uri="$(printf '%s' "${payload}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.contents[0].uri // ""')"
+	uri="$(printf '%s' "${payload}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.contents[0].uri // ""' 2>/dev/null)" || uri=""
+	if [ -z "${uri}" ]; then
+		uri="${fallback_uri}"
+	fi
+	# An update must name a resource; never send one with an empty uri.
+	[ -n "${uri}" ] || return 0
 	# MCP 2025-11-25: notifications/resources/updated params are {uri}.
 	rpc_send_line_direct "$("${MCPBASH_JSON_TOOL_BIN}" -n -c --arg uri "${uri}" '{"jsonrpc":"2.0","method":"notifications/resources/updated","params":{"uri":$uri}}')"
 }
@@ -206,9 +331,9 @@ mcp_resources_emit_error() {
 	local code="$2"
 	local message="$3"
 	local uri="${4:-}"
-	if [ -z "${uri}" ]; then
-		uri=""
-	fi
+	mcp_logging_debug "${MCP_RESOURCES_LOGGER}" "Emit error update subscription=${subscription_id} code=${code} message=${message//$'\n'/ }"
+	# An update must name a resource; never send one with an empty uri.
+	[ -n "${uri}" ] || return 0
 	# MCP 2025-11-25: keep notifications/resources/updated spec-shaped; clients can
 	# call resources/read and observe the error there.
 	rpc_send_line_direct "$("${MCPBASH_JSON_TOOL_BIN}" -n -c --arg uri "${uri}" '{"jsonrpc":"2.0","method":"notifications/resources/updated","params":{"uri":$uri}}')"
@@ -219,41 +344,41 @@ mcp_resources_poll_subscriptions() {
 		return 0
 	fi
 	[ -n "${MCPBASH_STATE_DIR:-}" ] || return 0
-	local path
+	local path subscription_id name uri requested_uri fingerprint result
+	local new_fingerprint code message error_fingerprint
 	for path in "${MCPBASH_STATE_DIR}"/resource_subscription.*; do
-		if [ ! -f "${path}" ]; then
+		subscription_id="${path#"${MCPBASH_STATE_DIR}/resource_subscription."}"
+		mcp_resources_subscription_id_valid "${subscription_id}" || continue
+		# The record can vanish (unsubscribe) between the glob and this read.
+		mcp_resources_subscription_load "${path}" || continue
+		name="${_MCP_SUB_NAME}"
+		uri="${_MCP_SUB_URI}"
+		requested_uri="${_MCP_SUB_REQUESTED_URI}"
+		fingerprint="${_MCP_SUB_FINGERPRINT}"
+		if [ -z "${name}" ] && [ -z "${uri}" ]; then
 			continue
 		fi
-		local subscription_id name uri fingerprint
-		subscription_id="${path##*.}"
-		name=""
-		uri=""
-		fingerprint=""
-		{
-			IFS= read -r name || true
-			IFS= read -r uri || true
-			IFS= read -r fingerprint || true
-		} <"${path}"
-		local result
 		if mcp_resources_read "${name}" "${uri}"; then
 			result="${_MCP_RESOURCES_RESULT}"
-			local new_fingerprint
 			new_fingerprint="$(mcp_resources_hash_payload "${result}")"
 			if [ "${new_fingerprint}" != "${fingerprint}" ]; then
-				mcp_resources_subscription_store "${subscription_id}" "${name}" "${uri}" "${new_fingerprint}"
-				mcp_resources_emit_update "${subscription_id}" "${result}"
+				# Notify only if the record survived the read (no unsubscribe meanwhile).
+				if mcp_resources_subscription_store "${subscription_id}" "${name}" "${uri}" "${new_fingerprint}" "${requested_uri}" update; then
+					mcp_resources_emit_update "${subscription_id}" "${result}" "${uri}"
+				fi
 			fi
 		else
-			local code message error_fingerprint
 			code="${_MCP_RESOURCES_ERROR_CODE:--32603}"
 			message="${_MCP_RESOURCES_ERROR_MESSAGE:-Unable to read resource}"
 			error_fingerprint="ERROR:${code}:$(mcp_resources_hash_payload "${message}")"
 			if [ "${error_fingerprint}" != "${fingerprint}" ]; then
-				mcp_resources_subscription_store "${subscription_id}" "${name}" "${uri}" "${error_fingerprint}"
-				mcp_resources_emit_error "${subscription_id}" "${code}" "${message}" "${uri}"
+				if mcp_resources_subscription_store "${subscription_id}" "${name}" "${uri}" "${error_fingerprint}" "${requested_uri}" update; then
+					mcp_resources_emit_error "${subscription_id}" "${code}" "${message}" "${uri}"
+				fi
 			fi
 		fi
 	done
+	return 0
 }
 mcp_resources_registry_max_bytes() {
 	mcp_registry_global_max_bytes
