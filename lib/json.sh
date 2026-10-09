@@ -53,7 +53,9 @@ mcp_json_quote_text() {
 			;;
 		*)
 			LC_ALL=C printf -v code '%d' "'${char}"
-			if [ "${code}" -lt 32 ]; then
+			# bash 3.2 reports bytes >= 0x80 as negative (signed char); those
+			# start non-ASCII characters and are kept as-is, not escaped.
+			if [ "${code}" -ge 0 ] && [ "${code}" -lt 32 ]; then
 				LC_ALL=C printf -v hex '%02X' "${code}"
 				parts+=("\\u00${hex}")
 			else

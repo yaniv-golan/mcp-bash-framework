@@ -76,3 +76,12 @@ setup() {
 	trimmed="$(MCPBASH_MODE="full" MCPBASH_JSON_TOOL="gojq" MCPBASH_JSON_TOOL_BIN="${MCPBASH_JSON_TOOL_BIN}" mcp_json_normalize_line "${bom_line}")"
 	assert_equal '{"jsonrpc":"2.0","method":"ping"}' "${trimmed}"
 }
+
+@test "json: mcp_json_quote_text keeps non-ASCII text intact under /bin/bash (3.2 on macOS)" {
+	[ -x /bin/bash ] || skip "/bin/bash not available"
+	run /bin/bash -c '. "$1/lib/json.sh"; mcp_json_quote_text "café – 日本"' _ "${MCPBASH_HOME}"
+	assert_success
+	assert_output '"café – 日本"'
+	run /bin/bash -c '. "$1/lib/json.sh"; mcp_json_quote_text "$(printf "a\tb\001c")"' _ "${MCPBASH_HOME}"
+	assert_output '"a\tb\u0001c"'
+}
