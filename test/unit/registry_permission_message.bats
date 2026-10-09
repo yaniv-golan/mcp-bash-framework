@@ -58,3 +58,29 @@ setup() {
 	run "${TEST_JSON_TOOL_BIN:-jq}" -r '[.findings[] | select(.id == "project.register_permissions") | .message][0]' <<<"${output}"
 	assert_output --partial "server.d is group- or world-writable"
 }
+
+@test "registry_permission_message: doctor ignores register.sh the server would not use" {
+	printf '%s\n' '{"name":"p"}' >"${project}/server.d/server.meta.json"
+	rm -f "${project}/server.d/register.json"
+	printf '#!/usr/bin/env bash\n' >"${project}/server.d/register.sh"
+	chmod 775 "${project}/server.d/register.sh"
+	cd "${project}"
+	# Hooks disabled (the product default; the test fixtures enable them): the
+	# server never sources register.sh.
+	MCPBASH_ALLOW_PROJECT_HOOKS=false run "${MCPBASH_HOME}/bin/mcp-bash" doctor
+	refute_output --partial "register.sh refused"
+	# Hooks enabled: now it matters.
+	MCPBASH_ALLOW_PROJECT_HOOKS=true run "${MCPBASH_HOME}/bin/mcp-bash" doctor
+	assert_output --partial "server.d/register.sh refused: server.d/register.sh is group- or world-writable"
+}
+
+@test "registry_permission_message: dangling symlinks and directories are named, not '?'" {
+	ln -s missing.json "${project}/server.d/reg-link.json"
+	mcp_registry_register_check_permissions "${project}/server.d/reg-link.json" || true
+	run mcp_registry_register_permission_message "x"
+	assert_output "x refused: server.d/reg-link.json is a symlink (replace it with a regular file)"
+	mkdir "${project}/server.d/dir.json"
+	mcp_registry_register_check_permissions "${project}/server.d/dir.json" || true
+	run mcp_registry_register_permission_message "x"
+	assert_output "x refused: server.d/dir.json is not a regular file"
+}

@@ -1864,8 +1864,8 @@ mcp_tools_call() {
 			for env_key in $(compgen -e); do
 				case "${env_key}" in
 				PATH | HOME | TMPDIR | LANG) ;;
-				# Windows system variables (kept for providers too). Without SYSTEMROOT,
-				# for example, Python cannot initialise sockets (WinError 10106).
+				# Windows system variables (the provider env keeps a subset of these).
+				# Without SYSTEMROOT, Python cannot initialise sockets (WinError 10106).
 				SYSTEMROOT | SYSTEMDRIVE | WINDIR | windir | COMSPEC | PATHEXT) ;;
 				USERPROFILE | APPDATA | LOCALAPPDATA | TEMP | TMP | MSYSTEM | MSYS2_ARG_CONV_EXCL) ;;
 				MCP_* | MCPBASH_*) ;;
@@ -1894,7 +1894,11 @@ mcp_tools_call() {
 			# operators who set variables without `export`.
 			if [ "${tool_env_mode}" = "allowlist" ]; then
 				local allowlist_var allowlist_value
-				for allowlist_var in ${allowlist_raw}; do
+				# read -a, not an unquoted for-list: an entry such as `*` must not
+				# glob-expand to file names in the working directory.
+				local -a allowlist_entries=()
+				read -r -a allowlist_entries <<<"${allowlist_raw}"
+				for allowlist_var in ${allowlist_entries[@]+"${allowlist_entries[@]}"}; do
 					[ -n "${allowlist_var}" ] || continue
 					# Anchored regex, not a case glob: a glob's trailing `*` would accept
 					# names like `xx[$(cmd)]`, whose subscript ${!name} then evaluates.

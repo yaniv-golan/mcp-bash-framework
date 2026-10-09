@@ -15,12 +15,10 @@ mcp_meta_env_file() {
 	printf '%s' "${MCPBASH_SERVER_DIR:-${MCPBASH_PROJECT_ROOT:-.}/server.d}/server.meta.json"
 }
 
+# Always stderr: apply runs at startup, before initialize, and in run-tool,
+# whose stdout carries the tool result. Like other startup diagnostics.
 _mcp_meta_env_warn() {
-	if declare -F mcp_logging_warning >/dev/null 2>&1; then
-		mcp_logging_warning "mcp.meta_env" "$1"
-	else
-		printf 'mcp-bash: %s\n' "$1" >&2
-	fi
+	printf 'mcp-bash: %s\n' "$1" >&2
 }
 
 # Classify every entry of the "env" object. Prints one TAB-separated line per
@@ -38,7 +36,7 @@ mcp_meta_env_check() {
 	if [ "${MCPBASH_JSON_TOOL:-none}" = "none" ] || [ -z "${MCPBASH_JSON_TOOL_BIN:-}" ]; then
 		return 0
 	fi
-	"${MCPBASH_JSON_TOOL_BIN}" -r '
+	"${MCPBASH_JSON_TOOL_BIN}" -r -s '
 		def safe_key: gsub("[^A-Za-z0-9_]"; "?") | .[0:64];
 		def name_ok: test("^[A-Za-z_][A-Za-z0-9_]*$");
 		def name_dangerous:
@@ -47,6 +45,8 @@ mcp_meta_env_check() {
 		def modes($k):
 			if $k == "MCPBASH_TOOL_ENV_MODE" then ["minimal", "allowlist", "inherit"]
 			else ["isolate", "allowlist", "inherit"] end;
+		if length != 1 then "error\tenv\tserver.meta.json must contain exactly one JSON document"
+		else .[0] |
 		if (type != "object") or (has("env") | not) or (.env == null) then empty
 		elif (.env | type) != "object" then "error\tenv\tenv must be an object"
 		else .env | to_entries[] |
@@ -56,6 +56,7 @@ mcp_meta_env_check() {
 			then "refused\t\($k | safe_key)"
 			elif ($v | type) != "string" then "invalid\t\($k)\tvalue must be a string"
 			elif ($v | length) > 4096 then "invalid\t\($k)\tvalue longer than 4096 characters"
+			elif ($v | explode | any(. < 32 or . == 127)) then "invalid\t\($k)\tvalue contains control characters"
 			elif ($k | endswith("_MODE")) then
 				if ($v | IN(modes($k)[])) then "apply\t\($k)\t\($v)"
 				else "invalid\t\($k)\tmode must be one of: \(modes($k) | join(", "))" end
@@ -67,6 +68,7 @@ mcp_meta_env_check() {
 					"invalid\t\($k)\tlists a reserved or shell-control variable name"
 				else "apply\t\($k)\t\($names | join(","))" end
 			end
+		end
 		end
 	' "${meta_file}" 2>/dev/null || printf 'error\tenv\tserver.meta.json is not valid JSON\n'
 }
@@ -96,7 +98,7 @@ mcp_meta_env_scope_from_launch() {
 # detection and before any tool or provider is spawned.
 mcp_meta_env_apply() {
 	case "${MCPBASH_IGNORE_META_ENV:-false}" in
-	true | 1) return 0 ;;
+	true | 1 | yes | on) return 0 ;;
 	esac
 	local tool_from_launch=false provider_from_launch=false
 	mcp_meta_env_scope_from_launch TOOL && tool_from_launch=true
@@ -140,7 +142,7 @@ mcp_meta_env_report() {
 	local meta_file="${1:-$(mcp_meta_env_file)}"
 	local ignore_meta=false
 	case "${MCPBASH_IGNORE_META_ENV:-false}" in
-	true | 1)
+	true | 1 | yes | on)
 		ignore_meta=true
 		printf 'switch\tignored\n'
 		;;
@@ -188,7 +190,9 @@ mcp_meta_env_report() {
 
 		[ "${mode}" = "allowlist" ] || continue
 		local name state
-		for name in ${list//,/ }; do
+		local -a names=()
+		IFS=', ' read -r -a names <<<"${list}"
+		for name in ${names[@]+"${names[@]}"}; do
 			[ -n "${name}" ] || continue
 			if ! [[ "${name}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
 				printf 'badname\t%s\t%s\n' "${scope}" "$(printf '%s' "${name}" | tr -c 'A-Za-z0-9_' '?' | cut -c1-64)"

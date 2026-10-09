@@ -62,7 +62,9 @@ write_meta() {
 
 @test "meta_env: rejects injection and reserved names in allowlists" {
 	write_meta '{"env":{"MCPBASH_TOOL_ENV_ALLOWLIST":"FOO,xx[$(touch pwned)]","MCPBASH_PROVIDER_ENV_ALLOWLIST":"FOO,LD_PRELOAD"}}'
+	cd "${BATS_TEST_TMPDIR}"
 	run mcp_meta_env_apply
+	[ ! -e "${BATS_TEST_TMPDIR}/pwned" ]
 	assert_output --partial "ignoring MCPBASH_TOOL_ENV_ALLOWLIST"
 	assert_output --partial "ignoring MCPBASH_PROVIDER_ENV_ALLOWLIST"
 	mcp_meta_env_apply 2>/dev/null
@@ -157,4 +159,31 @@ write_meta() {
 	refute_output --partial "sk-sentinel"
 	run "${TEST_JSON_TOOL_BIN:-jq}" -r '.envPolicy.tool.source + " " + .envPolicy.refusedKeys[0]' <<<"${output}"
 	assert_output "server.meta.json LEAK"
+}
+
+@test "meta_env: control characters in values are rejected (jq and gojq agree)" {
+	write_meta '{"env":{"MCPBASH_TOOL_ENV_ALLOWLIST":"A\n","MCPBASH_PROVIDER_ENV_ALLOWLIST":"B\tC"}}'
+	run mcp_meta_env_apply
+	assert_output --partial "ignoring MCPBASH_TOOL_ENV_ALLOWLIST: value contains control characters"
+	assert_output --partial "ignoring MCPBASH_PROVIDER_ENV_ALLOWLIST: value contains control characters"
+}
+
+@test "meta_env: a file with more than one JSON document applies nothing" {
+	write_meta '{"env":{"MCPBASH_TOOL_ENV_MODE":"inherit"}} {"env":{"MCPBASH_TOOL_ENV_MODE":"allowlist"}}'
+	run mcp_meta_env_apply
+	assert_output --partial "exactly one JSON document"
+	mcp_meta_env_apply 2>/dev/null
+	assert_equal "${MCPBASH_TOOL_ENV_MODE:-unset}" "unset"
+	write_meta '{"env":{"MCPBASH_TOOL_ENV_MODE":"allowlist"}} garbage'
+	mcp_meta_env_apply 2>/dev/null
+	assert_equal "${MCPBASH_TOOL_ENV_MODE:-unset}" "unset"
+}
+
+@test "meta_env: report does not glob-expand a '*' allowlist" {
+	write_meta '{"name":"t"}'
+	cd "${BATS_TEST_TMPDIR}"
+	touch SOMEFILE
+	MCPBASH_TOOL_ENV_MODE=allowlist MCPBASH_TOOL_ENV_ALLOWLIST='*' run mcp_meta_env_report
+	refute_output --partial "SOMEFILE"
+	assert_line --partial $'badname\tTOOL'
 }

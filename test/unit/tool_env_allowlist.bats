@@ -95,3 +95,28 @@ EOF2
 	assert_output --partial 'TMP=C:\\t'
 	assert_output --partial "OTHER=blocked"
 }
+
+@test "tool_env_allowlist: server.meta.json env warnings stay off run-tool stdout" {
+	cat >"${PROJECT_ROOT}/server.d/server.meta.json" <<'EOF2'
+{"name":"allowlist-test","env":{"API_KEY":"sk-sentinel-out","MCPBASH_TOOL_ENV_MODE":"bogus"}}
+EOF2
+	run --separate-stderr "${MCPBASH_HOME}/bin/mcp-bash" run-tool echo-env --allow-self
+	assert_success
+	[ "$(printf '%s\n' "${output}" | wc -l | tr -d ' ')" = "1" ]
+	[[ "${stderr}" == *"ignoring API_KEY"* ]]
+	[[ "${output}${stderr}" != *"sk-sentinel-out"* ]]
+}
+
+@test "tool_env_allowlist: run-tool treats --with-server-env as launch env (no mixing)" {
+	cat >"${PROJECT_ROOT}/server.d/server.meta.json" <<'EOF2'
+{"name":"allowlist-test","env":{"MCPBASH_TOOL_ENV_MODE":"allowlist","MCPBASH_TOOL_ENV_ALLOWLIST":"X"}}
+EOF2
+	cat >"${PROJECT_ROOT}/server.d/env.sh" <<'EOF2'
+export MCPBASH_TOOL_ENV_ALLOWLIST="FOO"
+EOF2
+	# env.sh sets the tool allowlist, so the whole tool scope is the operator's:
+	# the meta MODE must not be combined with env.sh's allowlist.
+	FOO="mixed" run "${MCPBASH_HOME}/bin/mcp-bash" run-tool echo-env --allow-self --with-server-env
+	assert_success
+	assert_output --partial "FOO=blocked"
+}

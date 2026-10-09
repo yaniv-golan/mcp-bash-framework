@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Declarative env policy in `server.d/server.meta.json`**: An optional `"env"` object can set `MCPBASH_TOOL_ENV_MODE`, `MCPBASH_TOOL_ENV_ALLOWLIST`, `MCPBASH_PROVIDER_ENV_MODE` and `MCPBASH_PROVIDER_ENV_ALLOWLIST`, so a project (including an installed MCPB bundle) can pass host-injected secrets such as an API key on to its tools and providers. The server applies it at startup and `mcp-bash run-tool` applies it too.
   - Only those four keys are accepted. Operator opt-ins (`*_INHERIT_ALLOW`, `MCPBASH_ALLOW_PROJECT_HOOKS`, ...) and any other variable are refused with a warning that names the key, never the value.
-  - Values are validated before use: modes must be valid for their key, and allowlists may only name plain variables (no shell-control or reserved names such as `LD_PRELOAD`, `BASH_ENV` or `MCPBASH_*`).
+  - Values are validated before use: modes must be valid for their key, allowlists may only name plain variables (no shell-control or reserved names such as `LD_PRELOAD`, `BASH_ENV` or `MCPBASH_*`), and values with control characters are refused. A `server.meta.json` holding more than one JSON document applies nothing. Warnings go to stderr.
   - The launch environment wins. If it sets either the mode or the allowlist for tools (or for providers), both meta values for that scope are ignored. An empty value, or an unexpanded `${user_config.*}` placeholder, counts as unset. `MCPBASH_IGNORE_META_ENV=true` ignores the section entirely.
   - `inherit` still requires the operator's `*_INHERIT_ALLOW`.
   - `mcp-bash validate` reports problems in the section, and `mcp-bash bundle` refuses a bundle whose section contains a disallowed key, because its value would ship.

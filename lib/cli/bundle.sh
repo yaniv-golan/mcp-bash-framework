@@ -355,7 +355,7 @@ mcp_bundle_warn_override_opt_ins() {
 		printf '  \342\232\240 platform_overrides env sets operator opt-in %s for every user of this bundle\n' "${key}" >&2
 	done < <(printf '%s' "${RESOLVED_PLATFORM_OVERRIDES}" | "${MCPBASH_JSON_TOOL_BIN}" -r '
 		[.[]? | objects | .env? // {} | objects | keys[]
-		 | select(test("^MCPBASH_(TOOL_ENV_INHERIT_ALLOW|PROVIDER_ENV_INHERIT_ALLOW|ALLOW_PROJECT_HOOKS|HTTPS_ALLOW_ALL|GIT_ALLOW_ALL|ENABLE_GIT_PROVIDER|TOOL_ALLOWLIST|TOOL_ALLOW_DEFAULT)$"))
+		 | select(test("^MCPBASH_(TOOL_ENV_INHERIT_ALLOW|PROVIDER_ENV_INHERIT_ALLOW|ALLOW_PROJECT_HOOKS|HTTPS_ALLOW_ALL|HTTPS_ALLOW_HOSTS|GIT_ALLOW_ALL|GIT_ALLOW_HOSTS|ENABLE_GIT_PROVIDER|TOOL_ALLOWLIST|TOOL_ALLOW_DEFAULT|ALLOW_JSON_TOOL_OVERRIDE_FOR_ROOT|ALLOW_CORRUPT_STDOUT|REMOTE_TOKEN_ENABLED)$"))
 		 | gsub("[^A-Za-z0-9_]"; "?")] | unique[]' 2>/dev/null)
 }
 

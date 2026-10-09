@@ -287,9 +287,6 @@ EOF
 	fi
 	mcp_runtime_init_paths "cli"
 	mcp_runtime_detect_json_tool
-	# Same declarative env policy as the server, so local runs match production.
-	mcp_require meta_env mcp_meta_env_apply
-	mcp_meta_env_apply
 
 	if [ "${no_refresh}" = "true" ]; then
 		mcp_cli_run_tool_load_cache || exit 1
@@ -377,6 +374,12 @@ EOF
 			mcp_cli_run_tool_source_env "${source_files[${idx}]}" "${verbose}" || exit 1
 		done
 	fi
+
+	# Same declarative env policy as the server, so local runs match production.
+	# Applied after sourced env files, which count as launch env (they win per
+	# scope, exactly like variables set before launching the server).
+	mcp_require meta_env mcp_meta_env_apply
+	mcp_meta_env_apply
 
 	if ! printf '%s' "${args_json}" | "${MCPBASH_JSON_TOOL_BIN}" -e 'type=="object"' >/dev/null 2>&1; then
 		printf 'run-tool: --args must be a JSON object\n' >&2

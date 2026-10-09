@@ -451,7 +451,7 @@ mcp_completion_resource_script() {
 mcp_completion_default_timeout() {
 	local value="${MCPBASH_COMPLETION_TIMEOUT_SECS:-5}"
 	case "${value}" in
-	'' | *[!0-9]*) value=5 ;;
+	'' | *[!0-9]* | ???????*) value=5 ;; # not a number, or more than 6 digits
 	esac
 	[ "${value}" -eq 0 ] && value=""
 	printf '%s' "${value}"

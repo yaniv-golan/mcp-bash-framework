@@ -390,7 +390,14 @@ mcp_registry_register_permission_message() {
 	[ "${label}" = "the project root" ] && fix_target="<project root>"
 	case "${MCP_REGISTRY_INSECURE_REASON}" in
 	writable) printf '%s refused: %s is group- or world-writable (fix: chmod g-w,o-w %s)' "${what}" "${label}" "${fix_target}" ;;
-	symlink) printf '%s refused: %s is a symlink (replace it with a regular file)' "${what}" "${label}" ;;
+	symlink)
+		if [ -d "${target}" ]; then
+			printf '%s refused: %s is a symlink (use the real directory path)' "${what}" "${label}"
+		else
+			printf '%s refused: %s is a symlink (replace it with a regular file)' "${what}" "${label}"
+		fi
+		;;
+	notfile) printf '%s refused: %s is not a regular file' "${what}" "${label}" ;;
 	owner) printf '%s refused: %s is not owned by the user running mcp-bash' "${what}" "${label}" ;;
 	*) printf '%s refused: could not check ownership/permissions of %s' "${what}" "${label}" ;;
 	esac
@@ -400,7 +407,12 @@ mcp_registry_register_check_permissions() {
 	local script_path="$1"
 	MCP_REGISTRY_INSECURE_TARGET=""
 	MCP_REGISTRY_INSECURE_REASON=""
+	if [ -L "${script_path}" ]; then
+		_mcp_registry_insecure "${script_path}" "symlink"
+		return 1
+	fi
 	if [ ! -f "${script_path}" ]; then
+		_mcp_registry_insecure "${script_path}" "notfile"
 		return 1
 	fi
 	# Defense-in-depth: never source symlink hooks, and require that the script

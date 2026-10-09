@@ -10,23 +10,31 @@ fi
 
 # Globals: MCPBASH_HOME, MCPBASH_PROJECT_ROOT (optional), usage() from bin, runtime globals from initialize_runtime_paths.
 
-# Render the tool/provider env policy (text mode). Names and states only; values
-# are never printed. Results describe this shell, not the host that launches the
-# server (for example Claude Desktop, which injects its own variables).
-# Check server.d/register.json and register.sh the way the server will.
-# Prints one TAB-separated line per refused file: <file> <message>.
+# Check the registration file the server will actually use, the way it uses
+# it (mcp_registry_register_apply): register.json when it is a file; otherwise
+# register.sh, only with project hooks enabled and when it is executable or
+# has a shebang. Prints one TAB-separated line per refusal: <file> <message>.
 mcp_doctor_register_permission_issues() {
 	local project_root="$1"
 	command -v mcp_registry_register_check_permissions >/dev/null 2>&1 || . "${MCPBASH_HOME}/lib/registry.sh"
-	local file
-	for file in register.json register.sh; do
-		[ -e "${project_root}/server.d/${file}" ] || [ -L "${project_root}/server.d/${file}" ] || continue
-		if ! MCPBASH_PROJECT_ROOT="${project_root}" mcp_registry_register_check_permissions "${project_root}/server.d/${file}"; then
-			printf '%s\t%s\n' "${file}" "$(MCPBASH_PROJECT_ROOT="${project_root}" mcp_registry_register_permission_message "server.d/${file}")"
+	local server_dir="${project_root}/server.d"
+	local file=""
+	if [ -f "${server_dir}/register.json" ]; then
+		file="register.json"
+	elif [ -f "${server_dir}/register.sh" ] && mcp_registry_register_hooks_allowed; then
+		if [ -x "${server_dir}/register.sh" ] || head -n1 "${server_dir}/register.sh" 2>/dev/null | grep -q '^#!'; then
+			file="register.sh"
 		fi
-	done
+	fi
+	[ -n "${file}" ] || return 0
+	if ! MCPBASH_PROJECT_ROOT="${project_root}" mcp_registry_register_check_permissions "${server_dir}/${file}"; then
+		printf '%s\t%s\n' "${file}" "$(MCPBASH_PROJECT_ROOT="${project_root}" mcp_registry_register_permission_message "server.d/${file}")"
+	fi
 }
 
+# Render the tool/provider env policy (text mode). Names and states only; values
+# are never printed. Results describe this shell, not the host that launches the
+# server (for example Claude Desktop, which injects its own variables).
 mcp_doctor_print_env_policy() {
 	local meta_file="$1"
 	local json_tool_bin="$2"

@@ -120,8 +120,8 @@ fi
 # setting has no value and no default. Unset such variables so tools never see
 # the placeholder as a real value (for example as an API key).
 for _mcpb_var in $(compgen -e); do
-  case "${!_mcpb_var}" in
-  '${user_config.'*) unset "${_mcpb_var}" ;;
+  case "${!_mcpb_var-}" in
+  '${user_config.'*) unset "${_mcpb_var}" 2>/dev/null || true ;;
   esac
 done
 unset _mcpb_var
