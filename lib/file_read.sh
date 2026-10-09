@@ -19,8 +19,9 @@
 #   5. stats the open descriptor through /dev/fd/9 and requires a regular file
 #      with the same device and inode as step 3. macOS reports the devfs device
 #      for anything stat'd through /dev/fd/N, so there the file's birth time
-#      (nanoseconds), which writes and links do not change, stands in for the
-#      device;
+#      (nanoseconds) stands in for the device. Writes and links do not change
+#      it, but the owner can set it with utimes (an mtime earlier than the
+#      birth time moves it back); see docs/SECURITY.md;
 #   6. streams the content from fd 9, so the bytes returned are the bytes of
 #      the file that was checked.
 # A symlink swapped in at any point before the open is refused; a swap after
