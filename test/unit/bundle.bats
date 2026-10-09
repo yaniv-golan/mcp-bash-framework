@@ -1592,6 +1592,27 @@ EOF
 	[ -x "${EXTRACT_DIR}/server/.mcp-bash/bin/mcp-bash" ]
 }
 
+@test "bundle: platform_overrides env includes the base env (hosts replace, not merge)" {
+	cat >"${PROJECT_ROOT}/server.d/server.meta.json" <<'EOF2'
+{
+  "name": "test-server",
+  "version": "1.2.3",
+  "user_config": {"api_key": {"type": "string", "title": "Key", "sensitive": true, "required": true}},
+  "user_config_env_map": {"api_key": "API_KEY"},
+  "platform_overrides": {"win32": {"env": {"EXTRA": "1", "MCPBASH_TOOL_ALLOWLIST": "hello"}}, "linux": {"args": ["--x"]}}
+}
+EOF2
+	(cd "${PROJECT_ROOT}" && "${MCPBASH_HOME}/bin/mcp-bash" bundle --output "${OUTPUT_DIR}" >/dev/null 2>&1)
+	unzip -q "${OUTPUT_DIR}/test-server-1.2.3.mcpb" -d "${EXTRACT_DIR}"
+	run "${TEST_JSON_TOOL_BIN}" -c '.server.mcp_config.platform_overrides.win32.env' "${EXTRACT_DIR}/manifest.json"
+	assert_output --partial '"MCPBASH_PROJECT_ROOT":"${__dirname}/server"'
+	assert_output --partial '"API_KEY":"${user_config.api_key}"'
+	assert_output --partial '"EXTRA":"1"'
+	assert_output --partial '"MCPBASH_TOOL_ALLOWLIST":"hello"'
+	run "${TEST_JSON_TOOL_BIN}" -c '.server.mcp_config.platform_overrides.linux' "${EXTRACT_DIR}/manifest.json"
+	assert_output '{"args":["--x"]}'
+}
+
 @test "bundle: disallowed server.meta.json env keys fail validation without printing values" {
 	cat >"${PROJECT_ROOT}/server.d/server.meta.json" <<'EOF2'
 {"name": "test-server", "version": "1.2.3", "env": {"MCPBASH_TOOL_ENV_MODE": "allowlist", "API_KEY": "sk-sentinel-42"}}
@@ -1602,3 +1623,11 @@ EOF2
 	refute_output --partial "sk-sentinel-42"
 }
 
+@test "bundle: warns when platform_overrides env sets operator opt-ins" {
+	cat >"${PROJECT_ROOT}/server.d/server.meta.json" <<'EOF2'
+{"name": "test-server", "version": "1.2.3", "platform_overrides": {"darwin": {"env": {"MCPBASH_TOOL_ENV_INHERIT_ALLOW": "true"}}}}
+EOF2
+	run bash -c "cd '${PROJECT_ROOT}' && '${MCPBASH_HOME}/bin/mcp-bash' bundle --validate"
+	assert_success
+	assert_output --partial "operator opt-in MCPBASH_TOOL_ENV_INHERIT_ALLOW"
+}

@@ -344,6 +344,21 @@ mcp_bundle_validate_meta_env() {
 	[ "${failed}" -eq 0 ]
 }
 
+# Operator opt-ins set by the project through platform_overrides env take
+# effect for every user of the bundle; flag them so it is a conscious choice.
+mcp_bundle_warn_override_opt_ins() {
+	[ -n "${RESOLVED_PLATFORM_OVERRIDES:-}" ] && [ "${RESOLVED_PLATFORM_OVERRIDES}" != "null" ] || return 0
+	[ "${MCPBASH_JSON_TOOL:-none}" != "none" ] || return 0
+	local key
+	while IFS= read -r key; do
+		[ -n "${key}" ] || continue
+		printf '  \342\232\240 platform_overrides env sets operator opt-in %s for every user of this bundle\n' "${key}" >&2
+	done < <(printf '%s' "${RESOLVED_PLATFORM_OVERRIDES}" | "${MCPBASH_JSON_TOOL_BIN}" -r '
+		[.[]? | objects | .env? // {} | objects | keys[]
+		 | select(test("^MCPBASH_(TOOL_ENV_INHERIT_ALLOW|PROVIDER_ENV_INHERIT_ALLOW|ALLOW_PROJECT_HOOKS|HTTPS_ALLOW_ALL|GIT_ALLOW_ALL|ENABLE_GIT_PROVIDER|TOOL_ALLOWLIST|TOOL_ALLOW_DEFAULT)$"))
+		 | gsub("[^A-Za-z0-9_]"; "?")] | unique[]' 2>/dev/null)
+}
+
 mcp_bundle_warn_missing_author() {
 	# MCPB spec requires author field - warn if we couldn't resolve one
 	if [ -z "${RESOLVED_AUTHOR_NAME:-}" ]; then
@@ -1234,7 +1249,7 @@ mcp_bundle_generate_manifest() {
 				server: {
 					type: "binary",
 					entry_point: "server/run-server.sh",
-					mcp_config: ({
+					mcp_config: (({
 						command: "${__dirname}/server/run-server.sh",
 						args: ([] + (if $args_map != "" then ($args_map | split(",") | map(select(. != "")) | map("${user_config.\(.)}")) else [] end)),
 						env: ({
@@ -1242,6 +1257,14 @@ mcp_bundle_generate_manifest() {
 							MCPBASH_TOOL_ALLOWLIST: "*"
 						} + (if $static_registry then {MCPBASH_STATIC_REGISTRY: "1"} else {} end) + (if $env_map != "" then ($env_map | split(",") | map(select(. != "")) | map(split("=")) | map({key: .[1], value: ("${user_config." + .[0] + "}")}) | from_entries) else {} end))
 					} + (if $platform_overrides != null then {platform_overrides: $platform_overrides} else {} end))
+					# Hosts (Claude Desktop) REPLACE mcp_config.env with an override env
+					# rather than merging, so fold the base env into each override env.
+					| .env as $base_env
+					| if (.platform_overrides | type) == "object" then
+						.platform_overrides |= with_entries(
+							if (.value | type) == "object" and (.value.env | type) == "object"
+							then .value.env = ($base_env + .value.env) else . end)
+					else . end)
 				},
 				compatibility: ({
 					platforms: $platforms
@@ -1440,6 +1463,9 @@ mcp_cli_bundle() {
 
 	# Warn if version is not valid semver
 	mcp_bundle_warn_nonsemver_version
+
+	# Warn if platform_overrides env turns on operator opt-ins
+	mcp_bundle_warn_override_opt_ins
 
 	# Static registry mode handling (default: true for zero-config fast cold start)
 	# Bundle creators can opt out with MCPB_STATIC=false in mcpb.conf
