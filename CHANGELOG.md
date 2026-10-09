@@ -13,9 +13,11 @@ Details are in the entries below.
 - **Git provider** (opt-in, `MCPBASH_ENABLE_GIT_PROVIDER=true`): hostnames need git 2.37 or later; older git refuses them, since it can't be pinned to the checked address (`mcp-bash doctor` warns). It no longer follows HTTP redirects. LFS-tracked files are returned as pointer files.
 - **URL ports:** the HTTPS and git providers refuse ports with leading zeros (`:080`) or out of range.
 - **HTTPS and git providers:** a host that doesn't resolve is no longer fetched, and both providers refuse every request if `lib/policy.sh` can't be loaded.
-- **Tool environment:** only framework-owned `MCP_*` variables are passed by default, and `MCPBASH_REMOTE_TOKEN*` is never passed outside `inherit` mode. Add other names to the allowlist if a tool needs them.
+- **Tool and provider environment:** only framework-owned `MCP_*` variables are passed by default, and `MCPBASH_REMOTE_TOKEN*` is never passed to tools or providers outside `inherit` mode (and is removed from tools' `_meta` in every mode). Add other names to the allowlist if a tool or provider needs them.
 - **Resources:** a declared `mimeType` is reported as declared again, so resources scaffolded with `"mimeType": "text/plain"` report `text/plain`.
 - **Completions:** registered completions without `timeoutSecs` time out after 30 seconds (`0` disables).
+- **`initialize`:** a client asking for an unsupported protocol version now gets the latest supported version instead of an error; a non-string `protocolVersion` (e.g. `false`) now fails with `-32602`.
+- **Runtime directories:** state and lock directories get random names; `${TMPDIR}/mcpbash.locks` is no longer used. A symlinked `MCPBASH_STATE_DIR`, `MCPBASH_LOCK_ROOT` or `MCPBASH_LOG_DIR` now stops startup.
 - **`resources/unsubscribe`:** a request with neither `uri` nor `subscriptionId` now fails with "Resource uri required".
 
 ### Changed
