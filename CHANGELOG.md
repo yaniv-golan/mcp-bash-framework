@@ -7,12 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`mcp-bash run-tool --print-env` shows the env policy**: It now prints the effective tool and provider env policy (mode and source per scope, allowlisted names and whether each is set) and never values. It covers the launch environment plus `server.meta.json` only, not `--with-server-env`/`--source` files or `server.d/policy.sh`, and says so.
+- **Bundles log cleared placeholders at debug level**: With `MCPBASH_LOG_LEVEL=debug`, a bundle's `run-server.sh` writes the names (never values) of variables it unset because they still held an unexpanded `${user_config.*}` placeholder.
+
 ### Changed
 
 - **Registered completions now time out by default**: Completions registered in `server.d/register.json` or `register.sh` that don't set `timeoutSecs` had no limit, so a hung script held a worker. They now time out after `MCPBASH_COMPLETION_REGISTERED_TIMEOUT_SECS` (default 30; `0` restores no limit). An explicit `timeoutSecs: 0` now means no timeout; it used to trip the watchdog after about a second. A negative or non-numeric `timeoutSecs` is rejected at registration with a warning and treated as unset; it used to fail the completion at run time.
 
 ### Fixed
 
+- **`MCPBASH_SERVER_DIR` is honoured by `doctor`, `run-tool` and `validate`**: They assumed `server.d/` for `server.meta.json`, register files, `env.sh` and `requirements.json`. Labels in output stay relative to the project. `mcp-bash bundle` still packages the project's `server.d/` (documented in `docs/MCPB.md`).
 - **SIGTERM and SIGINT stop the server promptly**: The signal traps only recorded the signal, and bash runs a trap after the pending `read` returns. A server waiting for input therefore ignored `SIGTERM` until the read timed out (up to the orphan-check interval, 30s by default), or, with a blocking read (`MCPBASH_CI_MODE` or both checks off), until the next input line. Hosts that escalate to `SIGKILL` skipped cleanup. The traps now exit at once (130/143), and the exit handler still runs.
 - **Background helpers exit when the server dies**: The progress/elicitation flusher and the resource-subscription poller are background loops that relied on the server stopping them on exit. A server killed without cleanup (for example `SIGKILL`) left them running indefinitely, holding its pipes open. Each loop now exits on its next tick once the server process is gone.
 - **The server exits when stdin closes, under bash 4+ with a FIFO stdin**: The timed read loop (used when the idle or orphan checks are on, the default) recognised end of input only after three quick consecutive returns. Under bash 4 and later, once a FIFO's writer closed, later reads timed out instead of reporting end of input again, so the server kept running until its idle timeout (one hour by default). A read status of 1 now ends the loop at once on bash 4+; bash 3.2 keeps the timing heuristic. Pipes and socketpairs, which Claude Desktop uses, were not affected. This was hidden in CI, which runs with `MCPBASH_CI_MODE` (blocking reads).
