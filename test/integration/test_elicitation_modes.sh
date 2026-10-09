@@ -59,7 +59,7 @@ SH
 
 	(
 		cd "${workroot}" || exit 1
-		MCPBASH_PROJECT_ROOT="${workroot}" ./bin/mcp-bash <"${in_fifo}" >"${out_fifo}"
+		MCPBASH_PROJECT_ROOT="${workroot}" exec ./bin/mcp-bash <"${in_fifo}" >"${out_fifo}"
 	) &
 	local pid=$!
 
@@ -133,7 +133,7 @@ SH
 
 	(
 		cd "${workroot}" || exit 1
-		MCPBASH_PROJECT_ROOT="${workroot}" ./bin/mcp-bash <"${in_fifo}" >"${out_fifo}"
+		MCPBASH_PROJECT_ROOT="${workroot}" exec ./bin/mcp-bash <"${in_fifo}" >"${out_fifo}"
 	) &
 	local pid=$!
 

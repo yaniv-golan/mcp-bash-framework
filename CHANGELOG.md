@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The server exits when stdin closes, under bash 4+ with a FIFO stdin**: The timed read loop (used when the idle or orphan checks are on, the default) recognised end of input only after three quick consecutive returns. Under bash 4 and later, once a FIFO's writer closed, later reads timed out instead of reporting end of input again, so the server kept running until its idle timeout (one hour by default). A read status of 1 now ends the loop at once on bash 4+; bash 3.2 keeps the timing heuristic. Pipes and socketpairs, which Claude Desktop uses, were not affected. This was hidden in CI, which runs with `MCPBASH_CI_MODE` (blocking reads).
 - **Completion scripts are no longer listed as prompts or resources**: Prompt and resource auto-discovery registered every file except `*.meta.json`, so the per-prompt completion scripts documented in 1.5.0 (`prompts/<name>/<name>.completion.sh`, or `*.completion`) appeared as extra prompts named `<name>.completion`, including in Claude Desktop's prompt menu and in bundles' static registries. Discovery now skips `*.completion.sh` and `*.completion` files; their completion lookup is unchanged.
 
 ## [1.5.0] - 2026-10-09

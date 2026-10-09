@@ -318,6 +318,14 @@ mcp_core_read_loop() {
 				# Handle any partial line data (for EOF case)
 				[ -n "${line}" ] && mcp_core_handle_line "${line}"
 
+				# bash >= 4 reports a read timeout as >128, so status 1 is an
+				# unambiguous EOF. Stop now: on a FIFO whose writer closed, later
+				# reads time out instead of returning EOF again, which would starve
+				# the consecutive-quick-returns heuristic below.
+				if [ "${BASH_VERSINFO[0]}" -ge 4 ] && [ "${read_status}" -eq 1 ]; then
+					break
+				fi
+
 				# Timing heuristic for EOF detection (bash 3.2 compatibility):
 				# If read returned very quickly relative to timeout, it's likely EOF.
 				local quick_threshold=2
