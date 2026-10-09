@@ -71,7 +71,9 @@ mcp-bash keeps the attack surface small: every tool is a subprocess with a contr
 > - Consider using environment-only policy (`MCPBASH_TOOL_ALLOWLIST`) instead of `policy.sh` when possible
 > - In shared environments, verify no other user has the same UID
 - Outbound JSON is escaped and newline-compacted before hitting stdout to keep consumers safe.
-- State/lock/registry directories are created with `umask 077`; debug mode uses a randomized 0700 directory rather than a predictable path.
+- Per-process state and lock directories are created with `mktemp -d` (unpredictable name, mode 0700) under `MCPBASH_TMP_ROOT`/`TMPDIR`, with the lock root inside the state dir, so another local user cannot pre-create or symlink them in a shared `/tmp`. Nothing uses a fixed shared name there any more (the old CLI `mcpbash.locks` is gone). CI mode's default `MCPBASH_LOG_DIR` is created the same way, and debug mode uses a randomized 0700 directory.
+- `MCPBASH_STATE_DIR`, `MCPBASH_LOCK_ROOT` and `MCPBASH_LOG_DIR` set by the operator are trusted, but the server refuses to start if one is a symlink. `MCPBASH_TMP_ROOT` is the trust root and may itself be a symlink (on macOS `/tmp` is one). Cleanup refuses to remove a symlink.
+- The registry cache directory (`.registry` in the project) is created with `umask 077`.
 - The `mcp-bash run-tool --source` flag executes arbitrary shell code from the specified file before tool execution. Only use with trusted files; treat `--source` paths the same as tool scripts themselves (user explicitly requests execution, implying trust). The `--with-server-env` flag sources only `server.d/env.sh` from the project root.
 
 ## Supply chain & tool audits

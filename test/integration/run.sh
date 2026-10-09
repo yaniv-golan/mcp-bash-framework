@@ -85,6 +85,7 @@ TESTS=(
 	"test_resources_providers.sh"
 	"test_minimal_mode.sh"
 	"test_protocol_unsupported_version.sh"
+	"test_runtime_dirs.sh"
 	"test_registry_refresh.sh"
 	"test_registry_limits.sh"
 	"test_progress_logs.sh"
