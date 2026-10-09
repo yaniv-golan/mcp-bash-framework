@@ -291,4 +291,74 @@ fi
 
 printf 'Icons format validation passed.\n'
 
+# --- Declared resource mimeType vs detection ---
+if command -v file >/dev/null 2>&1; then
+	MIME_ROOT="${TEST_TMPDIR}/validate-mime"
+	mkdir -p "${MIME_ROOT}/server.d"
+	cat >"${MIME_ROOT}/server.d/server.meta.json" <<'META'
+{"name": "mime-test"}
+META
+
+	# add_mime_resource DIR FILE MIME_JSON (MIME_JSON "" omits mimeType)
+	add_mime_resource() {
+		local dir="$1" file="$2" mime_json="$3"
+		local res_dir="${MIME_ROOT}/resources/${dir}"
+		local mime_field=""
+		[ -n "${mime_json}" ] && mime_field=", \"mimeType\": ${mime_json}"
+		cat >"${res_dir}/${dir}.meta.json" <<META
+{"name": "res.${dir}", "uri": "file://${res_dir}/${file}", "provider": "file"${mime_field}}
+META
+	}
+	pdf_body='%%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%%%EOF\n'
+	for d in pdfplain jsonplain mdplain jsondecl pngtext pdfundecl tomldecl; do
+		mkdir -p "${MIME_ROOT}/resources/${d}"
+	done
+	# shellcheck disable=SC2059  # Intentional: the body is a printf format.
+	printf "${pdf_body}" >"${MIME_ROOT}/resources/pdfplain/doc.pdf"
+	# shellcheck disable=SC2059
+	printf "${pdf_body}" >"${MIME_ROOT}/resources/pdfundecl/doc.pdf"
+	printf '{"a":1}\n' >"${MIME_ROOT}/resources/jsonplain/data.json"
+	printf '# Title\n\ntext\n' >"${MIME_ROOT}/resources/mdplain/notes.md"
+	printf 'plain words\n' >"${MIME_ROOT}/resources/jsondecl/data.txt"
+	printf 'plain words\n' >"${MIME_ROOT}/resources/pngtext/fake.png"
+	printf 'a = 1\n' >"${MIME_ROOT}/resources/tomldecl/conf.toml"
+	add_mime_resource pdfplain doc.pdf '"text/plain"'
+	add_mime_resource jsonplain data.json '"text/plain"'
+	add_mime_resource mdplain notes.md '"text/plain"'
+	add_mime_resource jsondecl data.txt '"application/json"'
+	add_mime_resource pngtext fake.png '"image/png"'
+	add_mime_resource pdfundecl doc.pdf ''
+	add_mime_resource tomldecl conf.toml '"application/toml"'
+
+	set +e
+	mime_output="$(
+		cd "${MIME_ROOT}" && "${MCPBASH_TEST_ROOT}/bin/mcp-bash" validate 2>&1
+	)"
+	mime_status=$?
+	set -e
+
+	if [ "${mime_status}" -ne 0 ]; then
+		printf '%s\n' "${mime_output}" >&2
+		test_fail "validate failed; mimeType mismatches must only warn"
+	fi
+	mime_warned() {
+		printf '%s\n' "${mime_output}" | grep -F "resources/$1/$1.meta.json" | grep -F 'mimeType' | grep -q 'remove it to use detection'
+	}
+	for d in pdfplain jsonplain pngtext; do
+		if ! mime_warned "${d}"; then
+			printf '%s\n' "${mime_output}" >&2
+			test_fail "expected a mimeType mismatch warning for ${d}"
+		fi
+	done
+	for d in mdplain jsondecl pdfundecl tomldecl; do
+		if mime_warned "${d}"; then
+			printf '%s\n' "${mime_output}" >&2
+			test_fail "unexpected mimeType mismatch warning for ${d}"
+		fi
+	done
+	assert_contains 'res.pdfplain' "${mime_output}" "warning should name the resource"
+	assert_contains 'application/pdf' "${mime_output}" "warning should name the detected type"
+	printf 'Declared mimeType validation passed.\n'
+fi
+
 printf 'CLI validate errors and --fix flow passed.\n'

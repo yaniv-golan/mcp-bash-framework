@@ -378,6 +378,92 @@ mcp_validate_prompts() {
 	printf '%s %s %s\n' "${errors}" "${warnings}" "${fixes}"
 }
 
+# Warn when a resource's declared mimeType clearly disagrees with what
+# detection reports for its local file. Conservative on purpose: only when one
+# side is binary and the other text, or a declared text/plain is detected as a
+# more specific text type. Only file-provider resources with a readable local
+# file are checked, and only when file(1) is available.
+# Usage: mcp_validate_resource_mime <meta_path> <rel_meta>
+# Prints one warning line and returns 0 when it warns; returns 1 otherwise.
+mcp_validate_resource_mime() {
+	local meta_path="$1"
+	local rel_meta="$2"
+
+	if ! declare -F mcp_resource_detect_mime_full >/dev/null 2>&1; then
+		if [ -n "${MCPBASH_HOME:-}" ] && [ -f "${MCPBASH_HOME}/lib/resource_content.sh" ]; then
+			# shellcheck source=lib/resource_content.sh disable=SC1091
+			. "${MCPBASH_HOME}/lib/resource_content.sh"
+		else
+			return 1
+		fi
+	fi
+
+	local fields
+	fields="$("${MCPBASH_JSON_TOOL_BIN}" -r '
+		if (.mimeType | type) == "string" and (.mimeType | length) > 0 then
+			[(.name // "" | tostring), .mimeType, (.uri // "" | tostring), (.provider // "" | tostring)] | join("\u001f")
+		else empty end
+	' "${meta_path}" 2>/dev/null || true)"
+	[ -n "${fields}" ] || return 1
+
+	local name declared uri provider
+	IFS=$'\037' read -r name declared uri provider <<<"${fields}"
+	case "${provider}" in
+	"" | file) ;;
+	*) return 1 ;;
+	esac
+	case "${uri}" in
+	file://*) ;;
+	*) return 1 ;;
+	esac
+	local path="${uri#file://}"
+	if [ ! -f "${path}" ] || [ ! -r "${path}" ]; then
+		return 1
+	fi
+
+	local detected_full detected
+	detected_full="$(mcp_resource_detect_mime_full "${path}")"
+	detected="$(printf '%s' "${detected_full%%;*}" | awk '{$1=$1};1')"
+	[ -n "${detected}" ] || return 1
+
+	local declared_lower
+	declared_lower="$(printf '%s' "${declared}" | tr '[:upper:]' '[:lower:]')"
+	declared_lower="$(printf '%s' "${declared_lower%%;*}" | awk '{$1=$1};1')"
+
+	local declared_class="other" detected_class="other"
+	if mcp_resource_declared_mime_is_binary "${declared_lower}"; then
+		declared_class="binary"
+	elif ! mcp_resource_is_binary_mime "${declared_lower}"; then
+		declared_class="text"
+	fi
+	case "${detected_full}" in
+	*charset=binary*) detected_class="binary" ;;
+	*)
+		if mcp_resource_declared_mime_is_binary "${detected}"; then
+			detected_class="binary"
+		elif ! mcp_resource_is_binary_mime "${detected}"; then
+			detected_class="text"
+		fi
+		;;
+	esac
+
+	local mismatch="false"
+	if [ "${declared_class}" = "binary" ] && [ "${detected_class}" = "text" ]; then
+		mismatch="true"
+	elif [ "${declared_class}" = "text" ] && [ "${detected_class}" = "binary" ]; then
+		mismatch="true"
+	elif [ "${declared_lower}" = "text/plain" ]; then
+		case "${detected}" in
+		application/json | text/markdown | text/html | application/xml | text/xml) mismatch="true" ;;
+		esac
+	fi
+	[ "${mismatch}" = "true" ] || return 1
+
+	printf '⚠ %s - resource "%s" declares mimeType "%s" but its file is detected as "%s"; update mimeType or remove it to use detection\n' \
+		"${rel_meta}" "${name}" "${declared}" "${detected}"
+	return 0
+}
+
 mcp_validate_resources() {
 	local resources_root="$1"
 	local json_tool_available="$2"
@@ -465,6 +551,10 @@ mcp_validate_resources() {
 
 						if [ -n "${r_name}" ] && [ "${uri_valid}" = "true" ] && [ "${icons_result}" = "ok" ]; then
 							printf '✓ %s - valid\n' "${rel_meta}"
+						fi
+
+						if [ -n "${r_uri}" ] && mcp_validate_resource_mime "${meta_path}" "${rel_meta}"; then
+							warnings=$((warnings + 1))
 						fi
 					fi
 				else
