@@ -51,6 +51,7 @@ TESTS=(
 	"test_core_errors.sh"
 	"test_completion.sh"
 	"test_completion_prompt_script.sh"
+	"test_discovery_skips_completion_scripts.sh"
 	"test_conformance_strict_shapes.sh"
 	"test_installer.sh"
 	"test_tools.sh"

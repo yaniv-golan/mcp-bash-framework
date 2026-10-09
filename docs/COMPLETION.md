@@ -56,7 +56,9 @@ A completion script can sit next to a prompt or resource instead of being regist
 3. `prompts/pick/pick.completion.sh`
 4. `prompts/pick/pick.completion`
 
-Resources work the same way, relative to `resources/`. A `register.json` entry with the same name takes precedence.
+Resources work the same way, relative to `resources/`. A `register.json` entry with the same name takes precedence. Prompt and resource discovery skip these scripts, so they never appear as prompts or resources themselves.
+
+**Client support:** Claude Desktop (checked in 2.31226.0) never sends `completion/complete` for prompt arguments; its prompt form shows plain inputs. Its bundled agent requests completions only for resource-template arguments (`ref/resource`). Per-prompt completions therefore help other clients only. For Desktop users, list valid values in the argument's `description`.
 
 - The request's `ref.name` is the prompt (or resource) name.
 - Scripts run from the project root, under the provider env policy (`MCPBASH_PROVIDER_ENV_*`). To read a secret such as an API key, allowlist it, for example with `MCPBASH_PROVIDER_ENV_ALLOWLIST` in `server.meta.json` `"env"`.

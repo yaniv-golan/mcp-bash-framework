@@ -652,7 +652,9 @@ mcp_resources_scan() {
 				'{name: $name, description: $desc, path: $path, uri: $uri, mimeType: $mime, provider: $provider}
 				+ (if $icons != null then {icons: $icons} else {} end)
 				+ (if $annotations != null then {annotations: $annotations} else {} end)' >>"${items_file}"
-		done < <(find "${resources_dir}" -type f ! -name ".*" ! -name "*.meta.json" -print0 2>/dev/null)
+		done < <(find "${resources_dir}" -type f ! -name ".*" ! -name "*.meta.json" ! -name "*.completion.sh" ! -name "*.completion" -print0 2>/dev/null)
+		# Completion scripts next to a prompt/resource (<name>.completion.sh,
+		# <name>.completion) belong to it and are not entries of their own.
 	fi
 
 	if [ -n "${duplicate_name}" ]; then

@@ -5,6 +5,12 @@ All notable changes to mcp-bash-framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Completion scripts are no longer listed as prompts or resources**: Prompt and resource auto-discovery registered every file except `*.meta.json`, so the per-prompt completion scripts documented in 1.5.0 (`prompts/<name>/<name>.completion.sh`, or `*.completion`) appeared as extra prompts named `<name>.completion`, including in Claude Desktop's prompt menu and in bundles' static registries. Discovery now skips `*.completion.sh` and `*.completion` files; their completion lookup is unchanged.
+
 ## [1.5.0] - 2026-10-09
 
 ### Added
