@@ -10,7 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Behaviour changes to check before upgrading
 
 Details are in the entries below.
-- **Git provider** (opt-in, `MCPBASH_ENABLE_GIT_PROVIDER=true`): hostnames need git 2.37 or later; older git refuses them, since it can't be pinned to the checked address (`mcp-bash doctor` warns). It no longer follows HTTP redirects.
+- **Git provider** (opt-in, `MCPBASH_ENABLE_GIT_PROVIDER=true`): hostnames need git 2.37 or later; older git refuses them, since it can't be pinned to the checked address (`mcp-bash doctor` warns). It no longer follows HTTP redirects. LFS-tracked files are returned as pointer files.
+- **URL ports:** the HTTPS and git providers refuse ports with leading zeros (`:080`) or out of range.
 - **HTTPS and git providers:** a host that doesn't resolve is no longer fetched, and both providers refuse every request if `lib/policy.sh` can't be loaded.
 - **Tool environment:** only framework-owned `MCP_*` variables are passed by default, and `MCPBASH_REMOTE_TOKEN*` is never passed outside `inherit` mode. Add other names to the allowlist if a tool needs them.
 - **Resources:** a declared `mimeType` is reported as declared again, so resources scaffolded with `"mimeType": "text/plain"` report `text/plain`.
@@ -31,6 +32,8 @@ Details are in the entries below.
 
 ### Security
 
+- **HTTPS and git providers refuse non-canonical URL ports**: A port like `:000080` or `:0` made the providers pin port 443 while curl or git connected to the real port, unpinned. A port must now be plain decimal 1-65535 without leading zeros (exit 4, `host_blocked` in `mcp_download_safe`). Spellings such as `:080`, which worked before, are now refused too.
+- **The git provider disables git-lfs downloads**: A cloned repository's `.lfsconfig` could send git-lfs, which makes its own HTTP requests outside the provider's pinning, protocol and redirect controls, to any URL. LFS-tracked files are now returned as pointer files.
 - **`file://` and `ui://` reads can no longer be redirected by a symlink swap**: The providers checked the path for symlinks before and after reading, but never checked the file they actually opened. Someone able to write inside an allowed resource root could swap the file, or a directory above it, for a symlink mid-read and read files outside the roots. Reads now go through `lib/file_read.sh`. It pins the checked directory, confirms by inode that the directory is inside the matched root, and opens the file once. No bytes are returned unless the open descriptor is the regular, non-symlink file that was checked. If the platform can't identify the descriptor (no usable `stat` or `/dev/fd`), the read is refused. Known limits: a hard link inside a root to an outside file is still served; on macOS the file is identified by inode and birth time, which the file's owner can set; and a file swapped for a FIFO can block a read. See `docs/SECURITY.md`.
 - **Static UI HTML is no longer served through a symlink pointing anywhere**: The UI registry read static HTML with no symlink check, so an `index.html` symlink to any file was served. It now uses the same verified read, and `MCPBASH_MAX_UI_RESOURCE_BYTES` now applies to it.
 - **HTTPS and git providers check addresses more strictly and always pin the resolved address**: These checks matter when an operator has widened the host allowlist (`MCPBASH_HTTPS_ALLOW_ALL`, `MCPBASH_GIT_ALLOW_ALL` or broad allow lists).
@@ -47,6 +50,7 @@ Details are in the entries below.
 
 ### Added
 
+- **`mcp-bash doctor` warns when the git provider can't pin**: With `MCPBASH_ENABLE_GIT_PROVIDER=true` and git older than 2.37, doctor warns (`git.version_unpinnable` in `--json`) that fetches by hostname will be refused.
 - **`resources/read` matches resource templates**: When no resource has the requested name or exact URI, the URI is matched against the registered resource templates.
   - **Syntax:** a subset of RFC 6570: `{v}` (stops at `/`, `?`, `#`), `{+v}` and `{#v}`. Templates using other operators, comma lists, modifiers, adjacent or repeated expressions keep their previous read behaviour.
   - **Ties:** the template with the most literal characters wins, then the fewest expressions, then the template name.
@@ -57,6 +61,7 @@ Details are in the entries below.
 
 ### Fixed
 
+- **The `policy.sh` default-check warning isn't fooled by comments**: `validate` and `doctor` counted a mention of `mcp_tools_policy_check_default` in a comment as a call.
 - **A malformed `notifications/cancelled` no longer ends the server**: A cancel with a missing, null or false `requestId`, or with non-object `params`, made the server exit; in minimal mode every cancel did. It is now ignored, like any notification the server can't use.
 - **Closing stdin after a cancellation no longer cuts the shutdown short on bash 4+**: The server exited with status 143, dropped results still in flight and left workers running. It now delivers them and exits 0.
 - **`mcp_json_quote_text ""` works on bash 3.2 under `set -u`**: It aborted with "unbound variable", so `mcp-bash doctor --json` printed invalid JSON on macOS `/bin/bash`.
