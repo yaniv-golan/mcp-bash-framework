@@ -328,14 +328,19 @@ mcp_core_read_loop() {
 					break
 				fi
 
-				# Timing heuristic for EOF detection (bash 3.2 compatibility):
-				# If read returned very quickly relative to timeout, it's likely EOF.
-				local quick_threshold=2
-				if [ "${read_timeout}" -le 2 ]; then
-					quick_threshold=1
+				# Timing heuristic for EOF detection (bash 3.2 compatibility).
+				# On bash >= 4 a status > 128 is a timeout, never EOF.
+				# On bash 3.2 a timeout also returns 1, but only after the full
+				# timeout: whole-second `date` deltas for a read that waited
+				# read_timeout seconds are >= read_timeout, while EOF returns at
+				# once. So "quick" means strictly less than the timeout; a fixed
+				# threshold misread 1-2s timeouts as EOF and exited idle servers.
+				local quick_return=false
+				if [ "${BASH_VERSINFO[0]}" -lt 4 ] && [ "${read_elapsed}" -lt "${read_timeout}" ]; then
+					quick_return=true
 				fi
 
-				if [ "${read_elapsed}" -le "${quick_threshold}" ]; then
+				if [ "${quick_return}" = "true" ]; then
 					immediate_returns=$((immediate_returns + 1))
 					# 3 consecutive immediate returns = definitely EOF
 					if [ ${immediate_returns} -ge 3 ]; then
