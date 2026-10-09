@@ -61,6 +61,9 @@ Details are in the entries below.
 
 ### Fixed
 
+- **On bash 3.2, a disconnected client no longer leaves the server spinning**: When the host ignores SIGPIPE (as GUI hosts do) and the client goes away, the failed response write left its bytes in bash 3.2's output buffer. They leaked into later command output, and the server looped at full CPU instead of exiting.
+- **`mcp-bash run-tool --source FILE` fails when FILE has a syntax error**: On bash 3.2 it reported success. Files are now syntax-checked before they are sourced.
+- **Scaffolded completions, the scaffolded `test/run.sh` and the example completions no longer use the `"${x:-{}}"` default**: It appends a stray `}`, so scaffolded `run_test name '{...}'` calls were rejected by `run-tool`. `test/lint.sh` now rejects the pattern.
 - **The `policy.sh` default-check warning isn't fooled by comments**: `validate` and `doctor` counted a mention of `mcp_tools_policy_check_default` in a comment as a call.
 - **A malformed `notifications/cancelled` no longer ends the server**: A cancel with a missing, null or false `requestId`, or with non-object `params`, made the server exit; in minimal mode every cancel did. It is now ignored, like any notification the server can't use.
 - **Closing stdin after a cancellation no longer cuts the shutdown short on bash 4+**: The server exited with status 143, dropped results still in flight and left workers running. It now delivers them and exits 0.
