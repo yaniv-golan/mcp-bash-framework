@@ -1564,6 +1564,9 @@ mcp_core_start_progress_flusher() {
 		# fail (e.g., Git Bash background quirks).
 		set +e
 		while :; do
+			# $$ is the server's PID even in this subshell. Exit with it: a server
+			# killed without cleanup (SIGKILL, crash) cannot stop this loop.
+			kill -0 "$$" 2>/dev/null || exit 0
 			if [ "${MCPBASH_ENABLE_LIVE_PROGRESS:-false}" = "true" ]; then
 				mcp_core_flush_worker_streams_once || true
 			fi
@@ -1618,6 +1621,8 @@ mcp_core_start_resource_poll() {
 
 	(
 		while :; do
+			# Exit with the server ($$ is its PID here too); see the flusher.
+			kill -0 "$$" 2>/dev/null || exit 0
 			mcp_resources_poll_subscriptions
 			sleep "${interval}"
 		done

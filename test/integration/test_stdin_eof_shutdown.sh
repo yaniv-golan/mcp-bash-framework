@@ -53,9 +53,14 @@ run_fifo() {
 	rm -f "${fifo}"
 }
 
+feed_init_then_close() {
+	printf '%s\n' "${INIT}"
+	sleep 1
+}
+
 run_pipe() {
 	local shell_bin="$1"
-	{ printf '%s\n' "${INIT}"; sleep 1; } | (cd "${WS}" && exec "${shell_bin}" ./bin/mcp-bash >/dev/null 2>&1) &
+	feed_init_then_close | (cd "${WS}" && exec "${shell_bin}" ./bin/mcp-bash >/dev/null 2>&1) &
 	wait_for_exit "$!" "${shell_bin} pipe"
 }
 
