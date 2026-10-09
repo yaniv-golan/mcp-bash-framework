@@ -43,7 +43,7 @@ mcp_health_run_project_checks() {
 
 	# Validate ownership/permissions (same checks as register.sh)
 	if ! mcp_registry_register_check_permissions "${checks_file}"; then
-		printf '  ⚠ Skipping health-checks.sh: ownership/permissions issue\n' >&2
+		printf '  ⚠ Skipping health-checks.sh: %s\n' "$(mcp_registry_register_permission_message "health-checks.sh")" >&2
 		return 0
 	fi
 

@@ -13,6 +13,20 @@ fi
 # Render the tool/provider env policy (text mode). Names and states only; values
 # are never printed. Results describe this shell, not the host that launches the
 # server (for example Claude Desktop, which injects its own variables).
+# Check server.d/register.json and register.sh the way the server will.
+# Prints one TAB-separated line per refused file: <file> <message>.
+mcp_doctor_register_permission_issues() {
+	local project_root="$1"
+	command -v mcp_registry_register_check_permissions >/dev/null 2>&1 || . "${MCPBASH_HOME}/lib/registry.sh"
+	local file
+	for file in register.json register.sh; do
+		[ -e "${project_root}/server.d/${file}" ] || [ -L "${project_root}/server.d/${file}" ] || continue
+		if ! MCPBASH_PROJECT_ROOT="${project_root}" mcp_registry_register_check_permissions "${project_root}/server.d/${file}"; then
+			printf '%s\t%s\n' "${file}" "$(MCPBASH_PROJECT_ROOT="${project_root}" mcp_registry_register_permission_message "server.d/${file}")"
+		fi
+	done
+}
+
 mcp_doctor_print_env_policy() {
 	local meta_file="$1"
 	local json_tool_bin="$2"
@@ -561,6 +575,13 @@ EOF
 				warnings=$((warnings + 1))
 				add_finding "project.registry_missing" "warning" ".registry/ does not exist (will be created on demand)" "false" ""
 			fi
+
+			local reg_file reg_message
+			while IFS=$'\t' read -r reg_file reg_message; do
+				[ -n "${reg_file}" ] || continue
+				errors=$((errors + 1))
+				add_finding "project.register_permissions" "error" "${reg_message}" "false" ""
+			done < <(mcp_doctor_register_permission_issues "${project_root}")
 
 			# Tool/provider env policy, as seen from this shell. Names and states
 			# only; values are never included.
@@ -1675,6 +1696,13 @@ EOF
 			printf '  ⚠ Registry: .registry/ does not exist (will be created on demand)\n'
 			warnings=$((warnings + 1))
 		fi
+
+		local reg_file reg_message
+		while IFS=$'\t' read -r reg_file reg_message; do
+			[ -n "${reg_file}" ] || continue
+			printf '  ✗ %s (every tools/resources/prompts list fails until fixed)\n' "${reg_message}"
+			errors=$((errors + 1))
+		done < <(mcp_doctor_register_permission_issues "${detected_root}")
 
 		mcp_doctor_print_env_policy "${detected_root}/server.d/server.meta.json" "${gojq_path:-${jq_path}}"
 	else

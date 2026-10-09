@@ -327,24 +327,39 @@ mcp_registry_register_stat_uid_gid() {
 	printf '%s' "${uid_gid}"
 }
 
+# On failure, MCP_REGISTRY_INSECURE_TARGET / MCP_REGISTRY_INSECURE_REASON say
+# which path failed and why (see mcp_registry_register_permission_message).
+MCP_REGISTRY_INSECURE_TARGET=""
+MCP_REGISTRY_INSECURE_REASON=""
+
+_mcp_registry_insecure() {
+	MCP_REGISTRY_INSECURE_TARGET="$1"
+	MCP_REGISTRY_INSECURE_REASON="$2"
+	return 1
+}
+
 mcp_registry_register_check_secure_path() {
 	local target="$1"
 	if [ -z "${target}" ]; then
 		return 1
 	fi
 	if [ -L "${target}" ]; then
+		_mcp_registry_insecure "${target}" "symlink"
 		return 1
 	fi
 	local perm_mask perm_bits
 	if ! perm_mask="$(mcp_registry_register_stat_perm_mask "${target}")"; then
+		_mcp_registry_insecure "${target}" "unreadable"
 		return 1
 	fi
 	perm_bits=$((8#${perm_mask}))
 	if [ $((perm_bits & 0020)) -ne 0 ] || [ $((perm_bits & 0002)) -ne 0 ]; then
+		_mcp_registry_insecure "${target}" "writable"
 		return 1
 	fi
 	local uid_gid cur_uid cur_gid
 	if ! uid_gid="$(mcp_registry_register_stat_uid_gid "${target}")"; then
+		_mcp_registry_insecure "${target}" "unreadable"
 		return 1
 	fi
 	cur_uid="$(id -u 2>/dev/null || printf '0')"
@@ -352,17 +367,46 @@ mcp_registry_register_check_secure_path() {
 	case "${uid_gid}" in
 	"${cur_uid}:${cur_gid}" | "${cur_uid}:"*) return 0 ;;
 	esac
+	_mcp_registry_insecure "${target}" "owner"
 	return 1
+}
+
+# Explain the last permission refusal: which path, why, and how to fix it.
+# Paths are shown relative to the project root, because this text can reach
+# MCP clients in registry error responses.
+mcp_registry_register_permission_message() {
+	local what="$1"
+	local target="${MCP_REGISTRY_INSECURE_TARGET}"
+	local label="${target}"
+	local root="${MCPBASH_PROJECT_ROOT:-}"
+	if [ -n "${root}" ] && [ "${target}" = "${root}" ]; then
+		label="the project root"
+	elif [ -n "${root}" ] && [ "${target#"${root}"/}" != "${target}" ]; then
+		label="${target#"${root}"/}"
+	else
+		label="$(basename "${target:-?}")"
+	fi
+	local fix_target="${label}"
+	[ "${label}" = "the project root" ] && fix_target="<project root>"
+	case "${MCP_REGISTRY_INSECURE_REASON}" in
+	writable) printf '%s refused: %s is group- or world-writable (fix: chmod g-w,o-w %s)' "${what}" "${label}" "${fix_target}" ;;
+	symlink) printf '%s refused: %s is a symlink (replace it with a regular file)' "${what}" "${label}" ;;
+	owner) printf '%s refused: %s is not owned by the user running mcp-bash' "${what}" "${label}" ;;
+	*) printf '%s refused: could not check ownership/permissions of %s' "${what}" "${label}" ;;
+	esac
 }
 
 mcp_registry_register_check_permissions() {
 	local script_path="$1"
+	MCP_REGISTRY_INSECURE_TARGET=""
+	MCP_REGISTRY_INSECURE_REASON=""
 	if [ ! -f "${script_path}" ]; then
 		return 1
 	fi
 	# Defense-in-depth: never source symlink hooks, and require that the script
 	# and its parent dirs are not group/world writable and are owned by the user.
 	if [ -L "${script_path}" ]; then
+		_mcp_registry_insecure "${script_path}" "symlink"
 		return 1
 	fi
 	if ! mcp_registry_register_check_secure_path "${script_path}"; then
@@ -506,7 +550,7 @@ mcp_registry_declarative_execute() {
 	fi
 
 	if ! mcp_registry_register_check_permissions "${json_path}"; then
-		mcp_registry_declarative_set_error_all "Declarative register.json permissions/ownership invalid"
+		mcp_registry_declarative_set_error_all "$(mcp_registry_register_permission_message "Declarative register.json")"
 		return 0
 	fi
 
@@ -851,11 +895,13 @@ mcp_registry_register_execute() {
 	fi
 
 	if ! mcp_registry_register_check_permissions "${script_path}"; then
-		mcp_registry_register_set_status "tools" "error" "Manual registration script permissions/ownership invalid"
-		mcp_registry_register_set_status "resources" "error" "Manual registration script permissions/ownership invalid"
-		mcp_registry_register_set_status "resourceTemplates" "error" "Manual registration script permissions/ownership invalid"
-		mcp_registry_register_set_status "prompts" "error" "Manual registration script permissions/ownership invalid"
-		mcp_registry_register_set_status "completions" "error" "Manual registration script permissions/ownership invalid"
+		local perm_message
+		perm_message="$(mcp_registry_register_permission_message "Manual registration script register.sh")"
+		mcp_registry_register_set_status "tools" "error" "${perm_message}"
+		mcp_registry_register_set_status "resources" "error" "${perm_message}"
+		mcp_registry_register_set_status "resourceTemplates" "error" "${perm_message}"
+		mcp_registry_register_set_status "prompts" "error" "${perm_message}"
+		mcp_registry_register_set_status "completions" "error" "${perm_message}"
 		MCP_REGISTRY_REGISTER_COMPLETE=true
 		return 0
 	fi
