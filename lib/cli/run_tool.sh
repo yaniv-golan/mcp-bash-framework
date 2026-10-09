@@ -459,6 +459,10 @@ EOF
 	else
 		if [ -n "${_MCP_TOOLS_RESULT:-}" ]; then
 			printf '%s\n' "${_MCP_TOOLS_RESULT}"
+		elif [ "${_MCP_TOOLS_ERROR_CODE:-0}" != "0" ] && [ -n "${_MCP_TOOLS_ERROR_MESSAGE:-}" ]; then
+			# Early refusals (inherit gate, path policy, missing executable) set only
+			# the error variables.
+			printf 'run-tool: %s\n' "${_MCP_TOOLS_ERROR_MESSAGE}"
 		else
 			printf 'run-tool: tool execution failed\n'
 		fi

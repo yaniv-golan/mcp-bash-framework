@@ -55,6 +55,7 @@ EOF2
 	FOO="host-secret" run "${MCPBASH_HOME}/bin/mcp-bash" run-tool echo-env --allow-self
 	assert_failure
 	refute_output --partial "FOO=host-secret"
+	assert_output --partial "requires MCPBASH_TOOL_ENV_INHERIT_ALLOW=true"
 }
 
 @test "tool_env_allowlist: inherit set by policy.sh works when the operator allows it" {
