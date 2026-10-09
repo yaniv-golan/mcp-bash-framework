@@ -103,7 +103,9 @@ EOF2
 EOF2
 	run --separate-stderr "${MCPBASH_HOME}/bin/mcp-bash" run-tool echo-env --allow-self
 	assert_success
-	[ "$(printf '%s\n' "${output}" | wc -l | tr -d ' ')" = "1" ]
+	# The warnings must go to stderr, never stdout (which carries the result).
+	[[ "${output}" != *"ignoring"* ]]
+	[[ "${output}" == *'"structuredContent"'* ]]
 	[[ "${stderr}" == *"ignoring API_KEY"* ]]
 	[[ "${output}${stderr}" != *"sk-sentinel-out"* ]]
 }

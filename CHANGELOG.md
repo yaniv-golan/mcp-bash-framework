@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Tools and providers no longer receive the remote-access secret**: Outside `inherit` mode, `MCPBASH_REMOTE_TOKEN*` is removed from tool and provider environments, even when an allowlist names it. The token's request `_meta` keys (`MCPBASH_REMOTE_TOKEN_KEY`, default `mcpbash/remoteToken`, and the fallback key) are deleted from the `_meta` passed to tools (`MCP_TOOL_META_JSON`/`MCP_TOOL_META_FILE`) in every mode. A `_meta` that is not a JSON object becomes `{}`. Behaviour change: a tool that read the token must get it another way.
+- **Only framework-owned `MCP_*` variables reach tools and providers by default**: Previously every `MCP_*` variable passed, including user secrets such as `MCP_REGISTRY_TOKEN` (which `docs/MCPB.md` tells users to export). Now only `MCP_SDK`, `MCP_TOOL_*`, `MCP_ELICIT_*`, `MCP_PROGRESS_*`, `MCP_LOG_STREAM`, `MCP_CANCEL_FILE`, `MCP_ROOTS_*`, `MCP_RESOURCES_ROOTS`, `MCP_COMPLETION_*`, `MCP_PROMPT_*`, `MCP_RESOURCE_*`, `MCP_CONFIG_JSON`, `MCP_TRANSPORT` and `MCP_PATH_DEBUG` pass. Behaviour change: a tool or provider that reads its own `MCP_*` variable must name it in `MCPBASH_TOOL_ENV_ALLOWLIST`/`MCPBASH_PROVIDER_ENV_ALLOWLIST` (allowlist mode); `server.meta.json` `"env"` allowlists may now name such variables, while the framework families stay reserved.
+
 ### Added
 
 - **`mcp-bash run-tool --print-env` shows the env policy**: It now prints the effective tool and provider env policy (mode and source per scope, allowlisted names and whether each is set) and never values. It covers the launch environment plus `server.meta.json` only, not `--with-server-env`/`--source` files or `server.d/policy.sh`, and says so.
@@ -18,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Early `tools/call` refusals report their own code and message**: Inherit mode without `MCPBASH_TOOL_ENV_INHERIT_ALLOW`, a tool path rejected at call time, and a missing executable returned `-32603 Tool execution failed`. They now return `-32602` with the specific message (no values or paths), and `mcp-bash run-tool` prints the same messages.
 - **`MCPBASH_SERVER_DIR` is honoured by `doctor`, `run-tool` and `validate`**: They assumed `server.d/` for `server.meta.json`, register files, `env.sh` and `requirements.json`. Labels in output stay relative to the project. `mcp-bash bundle` still packages the project's `server.d/` (documented in `docs/MCPB.md`).
 - **SIGTERM and SIGINT stop the server promptly**: The signal traps only recorded the signal, and bash runs a trap after the pending `read` returns. A server waiting for input therefore ignored `SIGTERM` until the read timed out (up to the orphan-check interval, 30s by default), or, with a blocking read (`MCPBASH_CI_MODE` or both checks off), until the next input line. Hosts that escalate to `SIGKILL` skipped cleanup. The traps now exit at once (130/143), and the exit handler still runs.
 - **Background helpers exit when the server dies**: The progress/elicitation flusher and the resource-subscription poller are background loops that relied on the server stopping them on exit. A server killed without cleanup (for example `SIGKILL`) left them running indefinitely, holding its pipes open. Each loop now exits on its next tick once the server process is gone.
