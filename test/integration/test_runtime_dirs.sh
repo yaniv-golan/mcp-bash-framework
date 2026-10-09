@@ -61,7 +61,7 @@ if [ -n "$(ls -A "${VICTIM}")" ]; then
 	test_fail "something was written through the planted symlink: $(ls -A "${VICTIM}")"
 fi
 
-leftover="$(cd "${SHARED_TMP}" && ls -A | grep -v -e '^mcpbash.locks$' -e '^mcpbash.state.planted$' || true)"
+leftover="$(find "${SHARED_TMP}" -mindepth 1 -maxdepth 1 ! -name 'mcpbash.locks' ! -name 'mcpbash.state.planted' -exec basename {} \; || true)"
 if [ -n "${leftover}" ]; then
 	test_fail "servers left runtime dirs behind: ${leftover}"
 fi
