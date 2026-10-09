@@ -126,3 +126,85 @@ mcp_meta_env_apply() {
 	done < <(mcp_meta_env_check)
 	return 0
 }
+
+# Describe the effective env policy for diagnostics (doctor), without changing
+# the environment. Mirrors mcp_meta_env_apply. Prints TAB-separated lines:
+#   switch   ignored                       MCPBASH_IGNORE_META_ENV is set
+#   policy   SCOPE MODE SOURCE             SOURCE: launch env | server.meta.json | default
+#   name     SCOPE NAME STATE              STATE: set | empty | placeholder | not set
+#   badname  SCOPE NAME                    allowlist entry that is not a valid name
+#   inherit  SCOPE                         inherit without the operator's *_INHERIT_ALLOW
+#   refused / invalid / error              as from mcp_meta_env_check
+# Values are never printed; names are validated before any lookup.
+mcp_meta_env_report() {
+	local meta_file="${1:-$(mcp_meta_env_file)}"
+	local ignore_meta=false
+	case "${MCPBASH_IGNORE_META_ENV:-false}" in
+	true | 1)
+		ignore_meta=true
+		printf 'switch\tignored\n'
+		;;
+	esac
+
+	local meta_lines=""
+	meta_lines="$(mcp_meta_env_check "${meta_file}")"
+	local status key detail
+	while IFS=$'\t' read -r status key detail; do
+		case "${status}" in
+		refused) printf 'refused\t%s\n' "${key}" ;;
+		invalid | error) printf '%s\t%s\t%s\n' "${status}" "${key}" "${detail}" ;;
+		esac
+	done <<<"${meta_lines}"
+
+	local scope default_mode mode list source mode_var list_var meta_mode meta_list
+	for scope in TOOL PROVIDER; do
+		mode_var="MCPBASH_${scope}_ENV_MODE"
+		list_var="MCPBASH_${scope}_ENV_ALLOWLIST"
+		if [ "${scope}" = "TOOL" ]; then default_mode="minimal"; else default_mode="isolate"; fi
+		meta_mode="$(printf '%s\n' "${meta_lines}" | awk -F'\t' -v k="${mode_var}" '$1=="apply" && $2==k {print $3}')"
+		meta_list="$(printf '%s\n' "${meta_lines}" | awk -F'\t' -v k="${list_var}" '$1=="apply" && $2==k {print $3}')"
+		if mcp_meta_env_scope_from_launch "${scope}"; then
+			source="launch env"
+			mode="${!mode_var-}"
+			list="${!list_var-}"
+			_mcp_meta_env_launch_set "${mode}" || mode=""
+			_mcp_meta_env_launch_set "${list}" || list=""
+		elif [ "${ignore_meta}" = "false" ] && [ -n "${meta_mode}${meta_list}" ]; then
+			source="server.meta.json"
+			mode="${meta_mode}"
+			list="${meta_list}"
+		else
+			source="default"
+			mode=""
+			list=""
+		fi
+		mode="$(printf '%s' "${mode:-${default_mode}}" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z_-' '?' | cut -c1-32)"
+		printf 'policy\t%s\t%s\t%s\n' "${scope}" "${mode}" "${source}"
+
+		local inherit_allow_var="MCPBASH_${scope}_ENV_INHERIT_ALLOW"
+		if [ "${mode}" = "inherit" ] && [ "${!inherit_allow_var:-false}" != "true" ]; then
+			printf 'inherit\t%s\n' "${scope}"
+		fi
+
+		[ "${mode}" = "allowlist" ] || continue
+		local name state
+		for name in ${list//,/ }; do
+			[ -n "${name}" ] || continue
+			if ! [[ "${name}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+				printf 'badname\t%s\t%s\n' "${scope}" "$(printf '%s' "${name}" | tr -c 'A-Za-z0-9_' '?' | cut -c1-64)"
+				continue
+			fi
+			if [ -z "${!name+x}" ]; then
+				state="not set"
+			elif [ -z "${!name}" ]; then
+				state="empty"
+			else
+				case "${!name}" in
+				'${user_config.'*) state="placeholder" ;;
+				*) state="set" ;;
+				esac
+			fi
+			printf 'name\t%s\t%s\t%s\n' "${scope}" "${name}" "${state}"
+		done
+	done
+}

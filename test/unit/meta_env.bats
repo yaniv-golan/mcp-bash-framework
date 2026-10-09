@@ -111,3 +111,50 @@ write_meta() {
 	assert_success
 	assert_output ""
 }
+
+@test "meta_env: report shows sources and name states without values" {
+	write_meta '{"env":{"MCPBASH_TOOL_ENV_MODE":"allowlist","MCPBASH_TOOL_ENV_ALLOWLIST":"API_KEY,MISSING,EMPTYV,PH"}}'
+	API_KEY="sk-sentinel-1" EMPTYV="" PH='${user_config.ph}' run mcp_meta_env_report
+	assert_success
+	assert_line --partial $'policy\tTOOL\tallowlist\tserver.meta.json'
+	assert_line --partial $'name\tTOOL\tAPI_KEY\tset'
+	assert_line --partial $'name\tTOOL\tMISSING\tnot set'
+	assert_line --partial $'name\tTOOL\tEMPTYV\tempty'
+	assert_line --partial $'name\tTOOL\tPH\tplaceholder'
+	assert_line --partial $'policy\tPROVIDER\tisolate\tdefault'
+	refute_output --partial "sk-sentinel-1"
+}
+
+@test "meta_env: report never evaluates invalid launch-env allowlist names" {
+	write_meta '{"name":"t"}'
+	local marker="${BATS_TEST_TMPDIR}/pwned"
+	MCPBASH_TOOL_ENV_MODE=allowlist MCPBASH_TOOL_ENV_ALLOWLIST="OK,xx[\$(touch ${marker})]" run mcp_meta_env_report
+	assert_success
+	assert_line --partial $'policy\tTOOL\tallowlist\tlaunch env'
+	assert_line --partial $'badname\tTOOL\txx'
+	[ ! -e "${marker}" ]
+}
+
+@test "meta_env: report flags inherit without the operator opt-in" {
+	write_meta '{"env":{"MCPBASH_PROVIDER_ENV_MODE":"inherit"}}'
+	run mcp_meta_env_report
+	assert_line $'inherit\tPROVIDER'
+	MCPBASH_PROVIDER_ENV_INHERIT_ALLOW=true run mcp_meta_env_report
+	refute_line $'inherit\tPROVIDER'
+}
+
+@test "meta_env: doctor text and --json show the policy and never print values" {
+	local proj="${BATS_TEST_TMPDIR}/proj"
+	mkdir -p "${proj}/server.d"
+	printf '%s\n' '{"name":"d","env":{"MCPBASH_TOOL_ENV_MODE":"allowlist","MCPBASH_TOOL_ENV_ALLOWLIST":"API_KEY","LEAK":"sk-sentinel-meta"}}' >"${proj}/server.d/server.meta.json"
+	cd "${proj}"
+	API_KEY="sk-sentinel-env" run "${MCPBASH_HOME}/bin/mcp-bash" doctor
+	assert_output --partial "tools: mode allowlist (from server.meta.json)"
+	assert_output --partial "API_KEY: set"
+	assert_output --partial "env.LEAK is ignored"
+	refute_output --partial "sk-sentinel"
+	API_KEY="sk-sentinel-env" run "${MCPBASH_HOME}/bin/mcp-bash" doctor --json
+	refute_output --partial "sk-sentinel"
+	run "${TEST_JSON_TOOL_BIN:-jq}" -r '.envPolicy.tool.source + " " + .envPolicy.refusedKeys[0]' <<<"${output}"
+	assert_output "server.meta.json LEAK"
+}

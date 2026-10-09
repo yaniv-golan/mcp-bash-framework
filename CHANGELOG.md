@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - The launch environment wins. If it sets either the mode or the allowlist for tools (or for providers), both meta values for that scope are ignored. An empty value, or an unexpanded `${user_config.*}` placeholder, counts as unset. `MCPBASH_IGNORE_META_ENV=true` ignores the section entirely.
   - `inherit` still requires the operator's `*_INHERIT_ALLOW`.
   - `mcp-bash validate` reports problems in the section, and `mcp-bash bundle` refuses a bundle whose section contains a disallowed key, because its value would ship.
+- **`mcp-bash doctor` shows the tool and provider env policy**: For tools and providers it shows the effective mode and where it came from (launch env, `server.meta.json` or default), and whether each allowlisted variable is set, empty, an unexpanded placeholder or not set in the current shell. It also flags refused or invalid `server.meta.json` env keys, invalid allowlist names, and `inherit` without the operator opt-in. Values are never printed. `doctor --json` adds an `envPolicy` object and matching findings.
 
 ### Fixed
 
