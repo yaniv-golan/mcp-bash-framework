@@ -93,6 +93,7 @@ TESTS=(
 	"test_progress_logs.sh"
 	"test_notification_dedup.sh"
 	"test_cancellation.sh"
+	"test_cancel_malformed.sh"
 	"test_cli_guards.sh"
 	"test_cli_init_new.sh"
 	"test_cli_init_config_doctor.sh"

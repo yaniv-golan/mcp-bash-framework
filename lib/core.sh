@@ -1237,7 +1237,11 @@ mcp_core_handle_cancel_notification() {
 		return 0
 	fi
 
-	cancel_id="$(mcp_json_extract_cancel_id "${json_line}")"
+	# The extractor fails when there is no usable id (missing, null or false
+	# requestId, non-object params) and always in minimal mode. A notification
+	# gets no response, so such a cancel is dropped; under set -e an unguarded
+	# failure here would end the server.
+	cancel_id="$(mcp_json_extract_cancel_id "${json_line}")" || cancel_id=""
 	if [ -z "${cancel_id}" ]; then
 		return 0
 	fi
