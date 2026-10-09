@@ -85,3 +85,14 @@ setup() {
 	run /bin/bash -c '. "$1/lib/json.sh"; mcp_json_quote_text "$(printf "a\tb\001c")"' _ "${MCPBASH_HOME}"
 	assert_output '"a\tb\u0001c"'
 }
+
+@test "json: mcp_json_quote_text round-trips control characters, backslashes and quotes" {
+	local shell_bin original out decoded
+	original="$(printf 'tab\there\nnew "quoted" back\\slash \001 bell\b ff\f cr\r end')"
+	for shell_bin in bash /bin/bash; do
+		[ -x "$(command -v "${shell_bin}")" ] || continue
+		out="$("${shell_bin}" -c '. "$1/lib/json.sh"; mcp_json_quote_text "$2"' _ "${MCPBASH_HOME}" "${original}")"
+		decoded="$(printf '%s' "${out}" | "${TEST_JSON_TOOL_BIN:-jq}" -j .)" || fail "${shell_bin}: invalid JSON: ${out}"
+		assert_equal "${decoded}" "${original}"
+	done
+}

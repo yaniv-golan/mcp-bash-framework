@@ -30,26 +30,28 @@ mcp_json_quote_text() {
 	for ((i = 0; i < length; i++)); do
 		char="${input:i:1}"
 		case "${char}" in
+		# Single quotes keep backslashes literal: '\' is one backslash, and
+		# '\n' is the two characters backslash and n (the JSON escape).
 		'"')
 			parts+=('\"')
 			;;
-		'\\')
-			parts+=('\\\\')
+		'\')
+			parts+=('\\')
 			;;
 		$'\b')
-			parts+=('\\b')
+			parts+=('\b')
 			;;
 		$'\f')
-			parts+=('\\f')
+			parts+=('\f')
 			;;
 		$'\n')
-			parts+=('\\n')
+			parts+=('\n')
 			;;
 		$'\r')
-			parts+=('\\r')
+			parts+=('\r')
 			;;
 		$'\t')
-			parts+=('\\t')
+			parts+=('\t')
 			;;
 		*)
 			LC_ALL=C printf -v code '%d' "'${char}"
