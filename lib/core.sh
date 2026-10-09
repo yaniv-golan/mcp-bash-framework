@@ -1309,7 +1309,7 @@ mcp_core_get_id_key() {
 
 mcp_core_method_allowed_preinit() {
 	case "$1" in
-	initialize | notifications/initialized | notifications/cancelled | shutdown | exit)
+	initialize | notifications/initialized | notifications/cancelled | ping | shutdown | exit)
 		return 0
 		;;
 	*)
