@@ -21,24 +21,32 @@ mcp_handle_lifecycle() {
 		fi
 
 		local requested_version=""
-		requested_version="$(mcp_json_extract_protocol_version "${json_payload}")"
+		local requested_status=0
+		requested_version="$(mcp_json_extract_protocol_version "${json_payload}")" || requested_status=$?
+		if [ "${requested_status}" -eq 2 ]; then
+			# protocolVersion is present but not a string: invalid params. The
+			# data shape mirrors the MCP spec's example error.
+			local requested_json="${requested_version:-null}"
+			printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32602,"message":"Unsupported protocol version: protocolVersion must be a string","data":{"supported":%s,"requested":%s}}}' \
+				"${id}" "$(mcp_spec_supported_protocols_json)" "${requested_json}"
+			return 0
+		fi
 		local negotiated_version=""
 		if ! negotiated_version="$(mcp_spec_resolve_protocol_version "${requested_version}")"; then
-			local supported_list
-			supported_list="$(mcp_spec_supported_protocols | tr ' ' ', ')"
-			local err_msg
-			err_msg="$(printf 'Unsupported protocol version: %s. Supported: %s' "${requested_version:-<none>}" "${supported_list}")"
-			err_msg="$(mcp_json_quote_text "${err_msg}")"
-			printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32602,"message":%s}}' "${id}" "${err_msg}"
-			return 0
+			# MCP 2025-11-25 Lifecycle > Version Negotiation: when the requested
+			# version is unsupported the server MUST respond with another version
+			# it supports (SHOULD be the latest); the client decides whether to
+			# disconnect.
+			negotiated_version="$(mcp_spec_latest_protocol)"
+			# The requested value is client-controlled: keep the note on one
+			# printable line of bounded length.
+			local requested_display="${requested_version:0:64}"
+			requested_display="${requested_display//[^[:print:]]/?}"
+			printf '%s\n' "mcp-bash: client requested unsupported protocol version ${requested_display}; responding with ${negotiated_version} (supported: $(mcp_spec_supported_protocols))." >&2
 		fi
 
 		# shellcheck disable=SC2034
 		MCPBASH_NEGOTIATED_PROTOCOL_VERSION="${negotiated_version}"
-
-		if [ -n "${requested_version}" ] && [ "${requested_version}" != "${negotiated_version}" ]; then
-			printf '%s\n' "Degraded protocol to ${negotiated_version} per client request." >&2
-		fi
 
 		local capabilities
 		capabilities="$(mcp_spec_capabilities_for_runtime "${negotiated_version}")"

@@ -8,6 +8,22 @@ mcp_spec_supported_protocols() {
 	printf '%s' "2025-11-25 2025-06-18 2025-03-26 2024-11-05"
 }
 
+mcp_spec_latest_protocol() {
+	# The newest supported protocol (first entry of the supported list).
+	local versions
+	versions="$(mcp_spec_supported_protocols)"
+	printf '%s' "${versions%% *}"
+}
+
+mcp_spec_supported_protocols_json() {
+	# Supported protocols as a JSON array of strings (no jq: minimal mode uses it).
+	local version out=""
+	for version in $(mcp_spec_supported_protocols); do
+		out="${out:+${out},}\"${version}\""
+	done
+	printf '[%s]' "${out}"
+}
+
 mcp_spec_resolve_protocol_version() {
 	local requested="$1"
 	local version

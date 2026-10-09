@@ -605,7 +605,8 @@ mcp_json_minimal_process_pair() {
 	return 0
 }
 
-mcp_json_minimal_extract_param_string() {
+mcp_json_minimal_extract_param_raw() {
+	# Print the raw (trimmed) JSON text of params.<key>; return 1 when absent.
 	local param_key="$1"
 	if [ "${MCP_JSON_CACHE_HAS_PARAMS}" != "true" ]; then
 		return 1
@@ -639,18 +640,26 @@ mcp_json_minimal_extract_param_string() {
 		fi
 		local name="${key:1:${#key}-2}"
 		if [ "${name}" = "${param_key}" ]; then
-			local unquoted
-			if ! unquoted="$(mcp_json_minimal_unquote "${value}")"; then
-				IFS=$' \t\n'
-				return 1
-			fi
 			IFS=$' \t\n'
-			printf '%s' "${unquoted}"
+			printf '%s' "${value}"
 			return 0
 		fi
 	done
 	IFS=$' \t\n'
 	return 1
+}
+
+mcp_json_minimal_extract_param_string() {
+	local param_key="$1"
+	local value unquoted
+	if ! value="$(mcp_json_minimal_extract_param_raw "${param_key}")"; then
+		return 1
+	fi
+	if ! unquoted="$(mcp_json_minimal_unquote "${value}")"; then
+		return 1
+	fi
+	printf '%s' "${unquoted}"
+	return 0
 }
 
 mcp_json_minimal_find_colon() {
@@ -834,6 +843,9 @@ mcp_json_extract_cancel_id() {
 }
 
 mcp_json_extract_protocol_version() {
+	# Print params.protocolVersion. A missing or null value prints nothing and
+	# returns 0 (callers treat that as "use the default"). A value that is
+	# present but not a string prints its compact JSON text and returns 2.
 	local json="$1"
 
 	if mcp_runtime_is_minimal_mode; then
@@ -841,18 +853,51 @@ mcp_json_extract_protocol_version() {
 			printf ''
 			return 1
 		fi
-		if mcp_json_minimal_extract_param_string "protocolVersion"; then
+		local raw=""
+		if ! raw="$(mcp_json_minimal_extract_param_raw "protocolVersion")" || [ -z "${raw}" ] || [ "${raw}" = "null" ]; then
+			printf ''
 			return 0
 		fi
-		printf ''
-		return 0
+		if [ "${raw:0:1}" = '"' ]; then
+			if mcp_json_minimal_unquote "${raw}"; then
+				return 0
+			fi
+			printf ''
+			return 0
+		fi
+		# Only echo scalars the minimal parser can vouch for; anything else is
+		# reported as null so the error payload stays valid JSON.
+		case "${raw}" in
+		true | false) printf '%s' "${raw}" ;;
+		*)
+			if mcp_json_minimal_is_number "${raw}"; then
+				printf '%s' "${raw}"
+			else
+				printf 'null'
+			fi
+			;;
+		esac
+		return 2
 	fi
 
 	case "${MCPBASH_JSON_TOOL}" in
 	gojq | jq)
-		if ! printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -er '.params.protocolVersion // empty' 2>/dev/null; then
+		local tagged=""
+		if ! tagged="$(printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -r '(.params.protocolVersion?) as $v | if $v == null then "M" elif ($v | type) == "string" then "S" + $v else "X" + ($v | tojson) end' 2>/dev/null)"; then
 			printf ''
+			return 0
 		fi
+		case "${tagged}" in
+		S*)
+			printf '%s' "${tagged#S}"
+			return 0
+			;;
+		X*)
+			printf '%s' "${tagged#X}"
+			return 2
+			;;
+		esac
+		printf ''
 		;;
 	*)
 		printf ''

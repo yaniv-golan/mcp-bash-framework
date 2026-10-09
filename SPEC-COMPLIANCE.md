@@ -98,7 +98,9 @@ This table shows when features were introduced in the MCP specification and when
 | JSON-RPC Version | 2.0 |
 | Downgrade Support | Negotiated during `initialize` (to `2025-06-18`, `2025-03-26`, or `2024-11-05` when requested) |
 | Accepted Versions | `2025-11-25` (default), `2025-06-18`, `2025-03-26`, `2024-11-05` |
-| Unsupported Versions | Older protocols (for example `2024-10-07`) receive `{"code":-32602,"message":"Unsupported protocol version"}` |
+| Missing Version | An `initialize` without `protocolVersion` (or with `null`) negotiates the default, `2025-11-25` |
+| Unsupported Versions | Any other string (older, such as `2024-10-07`, or newer, such as `2099-01-01`) receives a normal `initialize` result with `protocolVersion: "2025-11-25"`, the latest supported version, per Lifecycle → Version Negotiation; the client decides whether to disconnect. The server writes a note to stderr. |
+| Invalid Versions | A non-string `protocolVersion` receives `-32602` with `data: {"supported":[...],"requested":<value>}` |
 
 ## Capability Coverage Matrix
 

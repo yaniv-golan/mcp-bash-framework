@@ -137,7 +137,7 @@ Example `resources/read` error payload:
 | `-32700` | Parse errors and invalid JSON normalization | `lib/core.sh` |
 | `-32600` | Invalid request (missing method, batch arrays when disabled) | `lib/core.sh` |
 | `-32601` | Unknown or disallowed method (`notifications/message` from client, missing handler) | `lib/core.sh`, `handlers/*` |
-| `-32602` | Invalid params (unsupported protocol version, invalid cursor/log level, missing/invalid remote token) | `handlers/lifecycle.sh`, `handlers/completion.sh`, `handlers/logging.sh`, `lib/auth.sh`, registry cursors |
+| `-32602` | Invalid params (non-string `protocolVersion`, invalid cursor/log level, missing/invalid remote token) | `handlers/lifecycle.sh`, `handlers/completion.sh`, `handlers/logging.sh`, `lib/auth.sh`, registry cursors |
 | `-32603` | Internal errors (empty handler response, registry size/parse failures, tool output/stderr over limits, provider failures) | `lib/core.sh`, `lib/tools.sh`, `lib/resources.sh`, `lib/prompts.sh` |
 | `-32001` | Tool cancelled (SIGTERM/INT from client) | `lib/tools.sh` |
 | `-32000` | Server not initialized (`initialize` not completed) | `lib/core.sh` |
@@ -154,7 +154,8 @@ Size guardrails: `mcp_core_guard_response_size` rejects oversized responses with
 - Any other provider exit code maps to `-32603` with stderr text when available.
 
 ## Troubleshooting Quick Hits
-- **Unsupported protocol (`-32602`)**: Client requested an older MCP version. Update the client or request `2025-11-25`/`2025-06-18`/`2025-03-26`/`2024-11-05`.
+- **Unsupported protocol version**: Not an error. When a client requests a version the server does not support, `initialize` succeeds with the latest supported version (`2025-11-25`) and the server logs `client requested unsupported protocol version …` to stderr. If the client then disconnects, update it or have it request `2025-11-25`/`2025-06-18`/`2025-03-26`/`2024-11-05`.
+- **Invalid protocol version (`-32602`)**: `protocolVersion` was not a string. `error.data.supported` lists the accepted versions and `error.data.requested` echoes the value sent.
 - **Invalid cursor (`-32602`)**: Drop the cursor to restart pagination; ensure clients do not cache cursors across registry refreshes.
 - **Tool timed out (`isError: true`, `structuredContent.error.type: "timeout"`)**: The tool exceeded its time limit. Check `structuredContent.error.reason` for context:
   - `"fixed"` – Static timeout elapsed (progress-aware timeout disabled).
