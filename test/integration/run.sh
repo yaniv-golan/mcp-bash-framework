@@ -55,6 +55,7 @@ TESTS=(
 	"test_stdin_eof_shutdown.sh"
 	"test_background_loops_exit.sh"
 	"test_sigterm_prompt_exit.sh"
+	"test_stdout_closed_exit.sh"
 	"test_completion_registered_timeout.sh"
 	"test_conformance_strict_shapes.sh"
 	"test_installer.sh"
