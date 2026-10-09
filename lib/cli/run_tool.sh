@@ -106,6 +106,14 @@ mcp_cli_run_tool_source_env() {
 		printf 'run-tool: sourcing %s\n' "${resolved}" >&2
 	fi
 
+	# Check syntax first. On bash 3.2 a parse error inside a sourced file (for
+	# example a malformed [[ ]]) aborts the shell under set -e, and the EXIT
+	# trap then turns that into exit status 0, so run-tool reported success.
+	if ! "${BASH:-bash}" -n "${resolved}"; then
+		printf 'run-tool: syntax error in env file: %s\n' "${resolved}" >&2
+		return 1
+	fi
+
 	# Source the file in current shell context
 	# shellcheck disable=SC1090
 	. "${resolved}"
