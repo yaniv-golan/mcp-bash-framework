@@ -251,12 +251,6 @@ test_compute_base_tar_key() {
 		printf '%s' "${MCPBASH_BASE_TAR_KEY}"
 		return 0
 	fi
-	if [ -z "${MCPBASH_BASE_TAR_KEY:-}" ] && [ -f "${MCPBASH_BASE_TAR_META:-}" ] && [ -f "${MCPBASH_BASE_TAR:-}" ]; then
-		MCPBASH_BASE_TAR_KEY="$(cat "${MCPBASH_BASE_TAR_META}")"
-		export MCPBASH_BASE_TAR_KEY
-		printf '%s' "${MCPBASH_BASE_TAR_KEY}"
-		return 0
-	fi
 	test_init_sha256_cmd || return 1
 
 	local -a include_dirs
