@@ -526,7 +526,8 @@ See [**Project Structure Guide**](docs/PROJECT-STRUCTURE.md) for detailed layout
 ## Diagnostics & Validation
 
 - Readiness/health probe: `mcp-bash --health [--project-root DIR] [--timeout SECS]` (`0`=ready, `1`=unhealthy, `2`=misconfigured)
-- Project checks: `mcp-bash validate [--project-root DIR] [--fix] [--json] [--explain-defaults] [--strict] [--inspector]`
+- Project checks: `mcp-bash validate [--project-root DIR] [--fix] [--json] [--explain-defaults] [--strict] [--inspector] [--deprecations-as-errors]`. Uses of APIs that change in 2.0 are reported as deprecations, counted separately from errors and warnings.
+- Migrating to the 2.0 helpers: `mcp-bash migrate [--project-root DIR]` lists the uses of APIs removed in 2.0 (check only by default); `--write` applies the safe rewrites (to `mcp_result_json` and `mcp_fail --type`), `--list` / `--explain ID` describe the rules, `--json` gives a machine-readable report. If the project vendors the runtime, run `mcp-bash vendor --upgrade` first. See [BEST-PRACTICES.md](docs/BEST-PRACTICES.md#migrating-to-the-20-helpers).
 - Environment check: `mcp-bash doctor [--json] [--dry-run|--fix]`
 - Registry cache introspection: `mcp-bash registry status [--project-root DIR]`
 - Client config: `mcp-bash config --json` (machine-readable), `--client <name>` (pasteable JSON), `--wrapper` (generate auto-install wrapper)
@@ -813,7 +814,7 @@ mcp_result_text_with_resource \
   --path "${payload_path}" --mime text/plain
 ```
 
-See the dedicated example at `examples/06-embedded-resources/` and [BEST-PRACTICES.md](docs/BEST-PRACTICES.md#embedding-resources-in-tool-responses) for full documentation.
+This helper stays as is in 1.x and changes in 2.0; `mcp-bash migrate` will show the replacement once it is final. See the dedicated example at `examples/06-embedded-resources/` and [BEST-PRACTICES.md](docs/BEST-PRACTICES.md#embedding-resources-in-tool-responses) for full documentation.
 
 ## Built with mcp-bash
 

@@ -28,7 +28,8 @@ This guide distils hands-on recommendations for designing, building, and operati
 | `bin/mcp-bash scaffold resource <name>` | Produce resource boilerplate wired to the file provider | [§4.1](#41-scaffold-workflow) |
 | `bin/mcp-bash scaffold test` | Create a lightweight test harness (`test/run.sh`, `test/README.md`) | [§4.1](#41-scaffold-workflow) |
 | `bin/mcp-bash run-tool <name>` | Invoke a tool without starting the server (supports `--dry-run`, `--roots`, `--timeout`, `--verbose`, `--minimal`, `--print-env`) | [§5.2](#52-local-workflow) |
-| `bin/mcp-bash validate` | Validate project structure and metadata (`--json`, `--strict`, `--explain-defaults` for CI, `--inspector` for MCP Inspector CLI validation) | [§5.2](#52-local-workflow) |
+| `bin/mcp-bash validate` | Validate project structure and metadata (`--json`, `--strict`, `--explain-defaults` for CI, `--inspector` for MCP Inspector CLI validation); lists deprecations (APIs removed in 2.0) separately, `--deprecations-as-errors` to fail on them | [§5.2](#52-local-workflow) |
+| `bin/mcp-bash migrate` | Find uses of APIs removed in 2.0 (check only by default); `--write` applies the safe rewrites, `--list` / `--explain ID` / `--json` | [§4.8](#migrating-to-the-20-helpers) |
 | `bin/mcp-bash doctor` | Diagnose environment and installation issues (`--json` for CI/log parsing; `--dry-run`/`--fix` for managed-install repair) | [§2](#2-environment--tooling) |
 | `bin/mcp-bash registry status` | Show registry cache status (hash/mtime/counts) | [§5.2](#52-local-workflow) |
 | `./test/lint.sh` | Run shellcheck + shfmt gates; wraps commands from [TESTING.md](../TESTING.md) | [§5.2](#52-local-workflow) |
@@ -45,18 +46,17 @@ This guide distils hands-on recommendations for designing, building, and operati
 | `mcp_args_int` | Parse integer with range validation | `count="$(mcp_args_int '.count' --default 10 --min 1 --max 200)"` |
 | `mcp_args_get` | Low-level jq extraction | `val="$(mcp_args_get '.nested.field // ""')"` |
 | `mcp_require_path` | Validate path against MCP roots | `path="$(mcp_require_path '.path' --default-to-single-root)"` |
-| `mcp_emit_json` | Emit JSON result | `mcp_emit_json '{"status":"ok"}'` |
+| `mcp_result_json` | Return JSON (it becomes `structuredContent`) | `mcp_result_json '{"status":"ok"}'` |
+| `mcp_result_text` | Return plain text | `mcp_result_text "Done"` |
 | `mcp_json_obj` | Build JSON object from pairs | `mcp_json_obj status ok msg "done"` |
-| `mcp_fail_invalid_args` | Return -32602 error | `mcp_fail_invalid_args "count must be positive"` |
+| `mcp_fail --type` | End the tool with an error the model reads | `mcp_fail --type invalid_args "count must be positive" --hint "Use 1-200"` |
 | `mcp_progress` | Report progress | `mcp_progress 50 "Halfway done" 100` |
 | `mcp_is_cancelled` | Check cancellation | `if mcp_is_cancelled; then exit 1; fi` |
 | `mcp_log_info` | Structured logging | `mcp_log_info "tool" "message"` |
 | `mcp_with_retry` | Retry with exponential backoff | `mcp_with_retry 3 1.0 -- curl -sf "$url"` |
 | `mcp_download_safe` ★ | SSRF-safe HTTPS download | `mcp_download_safe --url "$url" --allow "api.example.com"` |
 | `mcp_download_safe_or_fail` ★ | SSRF-safe download (fails on error) | `path=$(mcp_download_safe_or_fail --url "$url" --out "$tmp" --allow "x.com")` |
-| `mcp_result_success` | Emit success CallToolResult envelope | `mcp_result_success "$json_data"` |
-| `mcp_result_error` | Emit error CallToolResult envelope | `mcp_result_error '{"type":"not_found"}'` |
-| `mcp_error` ★ | Convenience error helper with hints | `mcp_error "not_found" "User missing" --hint "Check ID"` |
+| `mcp_tool_error_result` | Build an error result without ending the tool (advanced) | `mcp_tool_error_result not_found "User missing" --hint "Check ID"` |
 | `mcp_result_text_with_resource` ★ | Combined text + embedded resources | `mcp_result_text_with_resource "$json" --path /tmp/out.txt` |
 | `mcp_json_truncate` | Truncate large arrays for context limits | `mcp_json_truncate "$arr" 10000 --array-path ".data"` |
 | `mcp_is_valid_json` | Validate single JSON value | `if mcp_is_valid_json "$val"; then ...` |
@@ -95,7 +95,7 @@ This guide distils hands-on recommendations for designing, building, and operati
 
 ### Troubleshooting keywords
 - **Minimal mode** – server only exposes lifecycle/ping/logging; often triggered by missing `jq`/`gojq` or forced via `MCPBASH_FORCE_MINIMAL`.
-- **Compatibility toggles** – `MCPBASH_COMPAT_BATCHES` re-enables legacy JSON-RPC batch arrays for clients using newer protocols; protocol `2025-03-26` accepts arrays automatically.
+- **Compatibility toggles** – `MCPBASH_COMPAT_BATCHES` re-enables legacy JSON-RPC batch arrays for clients using newer protocols; protocol `2025-03-26` accepts arrays automatically. The toggle is removed in 2.0. <!-- lint-api-usage: allow -->
 - **Discovery churn** – `notifications/*/list_changed` loops may indicate fast TTLs or manual registry overrides; inspect `.registry/*.json`.
 - **Cancellation** – `mcp_is_cancelled` returning true mid-tool (see `examples/03-progress-and-cancellation/tools/slow/tool.sh:5`) highlights clients timing out; revisit tool timeouts and progress cadence.
 - **Progress throttling** – hitting the 100/minute default triggers warning logs and truncated progress; adjust `MCPBASH_MAX_PROGRESS_PER_MIN` when high-frequency updates matter.
@@ -262,11 +262,11 @@ else
   if [ "${roots_count}" -eq 1 ]; then
     repo_path="$(mcp_roots_list | head -n1)"
   else
-    mcp_fail_invalid_args "repoPath is required when zero or multiple roots are configured"
+    mcp_fail --type invalid_args "repoPath is required when zero or multiple roots are configured"
   fi
 fi
 if [ "${roots_count}" -gt 0 ] && ! mcp_roots_contains "${repo_path}"; then
-  mcp_fail_invalid_args "repoPath is outside configured MCP roots"
+  mcp_fail --type invalid_args "repoPath is outside configured MCP roots"
 fi
 if command -v realpath >/dev/null 2>&1; then
   repo_path="$(realpath "${repo_path}")"
@@ -337,7 +337,7 @@ Some MCP hosts (e.g., Claude Cowork) spawn server processes with minimal `PATH` 
 # lib/cli-detect.sh - add to your MCP server project
 
 # Detect a CLI by searching version manager shim locations.
-# Usage: CLI_PATH=$(mcp_detect_cli mycli "pip install pkg") || mcp_fail "not found"
+# Usage: CLI_PATH=$(mcp_detect_cli mycli "pip install pkg") || mcp_fail --type unavailable "mycli not found"
 #
 # Override: Set ${NAME}_CLI (e.g., MYCLI_CLI) to skip detection.
 # Bash 3.2 compatible (no ${var^^}).
@@ -389,7 +389,7 @@ mcp_detect_cli() {
 **Usage in tools:**
 ```bash
 source "${MCPBASH_PROJECT_ROOT}/lib/cli-detect.sh"
-MYCLI=$(mcp_detect_cli mycli "pip install my-package") || mcp_fail "mycli not found"
+MYCLI=$(mcp_detect_cli mycli "pip install my-package") || mcp_fail --type unavailable "mycli not found" --hint "pip install my-package"
 "${MYCLI}" --version
 ```
 
@@ -427,21 +427,23 @@ fi
 
 #### Structured outputs
 
-**`mcp_emit_json`** – Emit JSON result (compacted if JSON tooling available):
+**`mcp_result_json`** – Return JSON. The value becomes `structuredContent` exactly as given (no wrapper), and the text block carries the serialized JSON (or a short summary when it exceeds `MCPBASH_MAX_TEXT_BYTES`, default 100KB; override per call with `--max-text-bytes N`). An `outputSchema` describes this JSON itself:
 
 ```bash
-mcp_emit_json '{"status":"ok","count":42}'
+mcp_result_json '{"status":"ok","count":42}'
 ```
+
+`structuredContent` must be an object on protocols before 2026-07-28, which is every request in 1.x, so a non-object value (array, string, number) is sent as text only. Wrap an array in an object when clients should get structured data.
 
 **`mcp_json_obj`** – Build JSON objects from key/value pairs (all values stringified):
 
 ```bash
 # Simple object
-mcp_emit_json "$(mcp_json_obj status ok message "Operation completed")"
-# Output: {"status":"ok","message":"Operation completed"}
+mcp_result_json "$(mcp_json_obj status ok message "Operation completed")"
+# structuredContent: {"status":"ok","message":"Operation completed"}
 
 # Multiple fields
-mcp_emit_json "$(mcp_json_obj \
+mcp_result_json "$(mcp_json_obj \
   status ok \
   message "Rebase completed" \
   repoPath "${repo_path}" \
@@ -452,15 +454,17 @@ mcp_emit_json "$(mcp_json_obj \
 **`mcp_json_arr`** – Build JSON arrays:
 
 ```bash
-mcp_emit_json "$(mcp_json_arr "item1" "item2" "item3")"
-# Output: ["item1","item2","item3"]
+items="$(mcp_json_arr "item1" "item2" "item3")"   # ["item1","item2","item3"]
+mcp_result_json "{\"items\":${items}}"
 ```
 
-**`mcp_emit_text`** – Emit plain text result:
+**`mcp_result_text`** – Return plain text (no `structuredContent`):
 
 ```bash
-mcp_emit_text "Hello, ${name}!"
+mcp_result_text "Hello, ${name}!"
 ```
+
+Neither helper ends the tool. In an early-return branch, follow it with `exit 0`, or the tool keeps going and prints a second result.
 
 #### Embedded resources (`type:"resource"`)
 
@@ -486,16 +490,18 @@ See [Embedding resources in tool responses](#embedding-resources-in-tool-respons
 
 #### Error handling
 
-**`mcp_fail`** – Return structured JSON-RPC error and exit:
+**`mcp_fail --type`** – End the tool with an error result the model can read (`isError: true`, exit status 0):
 
 ```bash
-# Generic failure with code
-mcp_fail -32603 "Internal error" '{"detail":"something broke"}'
+# Unexpected failure, with details for logs and clients
+mcp_fail --type internal "Internal error" --data '{"detail":"something broke"}'
 
-# Invalid arguments (code -32602)
-mcp_fail_invalid_args "count must be positive"
-mcp_fail_invalid_args "invalid config" '{"field":"count","value":-1}'
+# Invalid arguments, with a hint the model can act on
+mcp_fail --type invalid_args "count must be positive" --hint "Pass a count between 1 and 200"
+mcp_fail --type invalid_args "invalid config" --data '{"field":"count","value":-1}'
 ```
+
+Documented types: `invalid_args`, `not_found`, `permission`, `policy_denied`, `timeout`, `unavailable`, `internal` (other strings are accepted). See [§4.4](#44-error-handling-patterns) for the result shape.
 
 #### Progress & cancellation
 
@@ -511,7 +517,7 @@ mcp_progress 50 "Halfway done"             # 50%, message, no total
 ```bash
 for i in $(seq 1 100); do
   if mcp_is_cancelled; then
-    mcp_fail -32001 "Operation cancelled"
+    mcp_fail --type cancelled "Operation cancelled"
   fi
   # do work...
   mcp_progress "${i}" "Processing item ${i}"
@@ -676,7 +682,7 @@ mcp_config_load \
 
 ```bash
 # Get required value (fails if missing)
-api_key=$(mcp_config_get '.api.key') || mcp_fail_invalid_args "Missing config: api.key"
+api_key=$(mcp_config_get '.api.key') || mcp_fail --type unavailable "Missing config: api.key"
 
 # Get optional value with default
 timeout=$(mcp_config_get '.timeout' --default 30)
@@ -699,7 +705,8 @@ mcp_config_load \
   --defaults '{"timeout": 30, "retries": 3}'
 
 # Get values
-api_key=$(mcp_config_get '.api_key') || mcp_fail_invalid_args "Missing api_key in config"
+api_key=$(mcp_config_get '.api_key') || mcp_fail --type unavailable "Missing api_key in config" \
+  --hint "Set api_key in config.json or MY_TOOL_CONFIG"
 timeout=$(mcp_config_get '.timeout' --default 30)
 retries=$(mcp_config_get '.retries' --default 3)
 
@@ -754,14 +761,14 @@ mcp_log_info "my-tool" "Processing ${count} items in ${repo_path}"
 # Check for cancellation in long operations
 for i in $(seq 1 "${count}"); do
   if mcp_is_cancelled; then
-    mcp_fail -32001 "Cancelled by user"
+    mcp_fail --type cancelled "Cancelled by user"
   fi
   mcp_progress "${i}" "Processing item ${i}" "${count}"
   # ... do work ...
 done
 
 # Return structured result
-mcp_result_success "$(mcp_json_obj \
+mcp_result_json "$(mcp_json_obj \
   status ok \
   message "Processed ${count} items" \
   path "${repo_path}" \
@@ -938,54 +945,58 @@ source "${MCP_SDK:?}/tool-sdk.sh"
 
 count="$(mcp_args_get '.count // 10')"
 
-# ❌ DON'T use Protocol Error for correctable input issues
-# mcp_fail_invalid_args "count must be positive"  # Returns -32602
-
-# ✅ DO provide actionable feedback the LLM can learn from
+# ❌ DON'T fail with a bare exit code or a JSON-RPC error: the model sees only "tool failed"
+# ✅ DO return an error result the model can read and act on (this ends the tool)
 if [ "${count}" -lt 1 ]; then
-  mcp_result_error "$(mcp_json_obj \
-    error "count must be between 1 and 100" \
-    received "${count}" \
-    suggestion "Try count=10 for a reasonable default"
-  )"
+  mcp_fail --type invalid_args "count must be between 1 and 100 (received: ${count})" \
+    --hint "Try count=10 for a reasonable default"
 fi
 ```
 
 #### When to use each error type
 
-**Use Protocol Errors (`mcp_fail`) for:**
-- Missing required parameters that the SDK can't default
-- Truly malformed input (not JSON, wrong types)
-- Authorization/permission failures
-- Internal server errors
+**Use Tool Execution Errors (`mcp_fail --type`) for everything your tool reports:**
+- Missing, out-of-range or badly formatted arguments (`invalid_args`)
+- Entities that don't exist (`not_found`)
+- Access refused (`permission`)
+- Dependencies or upstream APIs that are down or rate limited (`unavailable`), slow operations (`timeout`)
+- Unexpected failures (`internal`)
 
-**Use Tool Execution Errors (exit non-zero with message) for:**
-- Values out of valid range
-- Invalid formats (dates, emails, paths)
-- Business logic failures ("file not found", "API rate limited")
-- Any case where your error message teaches the LLM how to fix it
+**Protocol Errors come from the server, not your tool:** unknown tool, malformed request, cancellation, output over the size limits. In 1.x the SDK argument helpers (`mcp_args_require`, `mcp_args_int`, `mcp_args_bool`, `mcp_require_path`) still report bad arguments as `-32602` protocol errors.
 
 #### SDK helpers
 
 ```bash
-# Protocol error (tool stops, error goes to client)
-mcp_fail -32602 "authorization required"
-mcp_fail_invalid_args "targetPath is required"
-
-# Tool execution error (LLM gets actionable feedback)
+# Ends the tool with an error result the model reads
 if [ ! -f "${target_path}" ]; then
-  mcp_result_error "$(mcp_json_obj \
-    error "File not found" \
-    path "${target_path}" \
-    hint "Check available files with list-files tool"
-  )"
+  mcp_fail --type not_found "File not found: ${target_path}" \
+    --hint "Check available files with the list-files tool" \
+    --data "$(mcp_json_obj path "${target_path}")"
 fi
+
+# Advanced: build the same result without exiting (e.g. to clean up first)
+if [ ! -r "${target_path}" ]; then
+  mcp_tool_error_result permission "Cannot read ${target_path}"
+  rm -rf "${work_dir}"
+  exit 0
+fi
+```
+
+The result has the message (and the hint) as its text, no `structuredContent` (an error is not checked against the tool's `outputSchema`), and the details under `_meta["mcpbash/error"]`:
+
+```json
+{
+  "content": [{"type": "text", "text": "File not found: /tmp/x\n\nHint: Check available files with the list-files tool"}],
+  "isError": true,
+  "_meta": {"mcpbash/error": {"type": "not_found", "message": "File not found: /tmp/x", "hint": "Check available files with the list-files tool", "data": {"path": "/tmp/x"}}}
+}
 ```
 
 #### General guidelines
 
-- Use `mcp_fail` (or `mcp_fail_invalid_args`) to return structured JSON-RPC errors with proper `code/message/data` directly from tools; it survives `tool_env_mode=minimal/allowlist` via the injected `MCP_TOOL_ERROR_FILE`.
-- Only return `-32603` (internal error) for unknown failures; otherwise map to specific JSON-RPC errors spelled out in the protocol.
+- `mcp_fail --type` ends the tool (exit status 0); nothing after it runs. `mcp_result_json` and `mcp_result_text` don't end the tool, so an early-return branch needs `exit 0` after them.
+- Use `internal` only for unexpected failures; a specific type tells the model whether retrying or changing the arguments can help.
+- The 1.x error helpers still work but are removed in 2.0: numeric `mcp_fail CODE MESSAGE` and `mcp_fail_invalid_args` send a JSON-RPC error the model never sees, and `mcp_error` / `mcp_result_error` don't end the tool. `mcp-bash migrate` finds them (see [Migrating to the 2.0 helpers](#migrating-to-the-20-helpers)). <!-- lint-api-usage: allow -->
 - Capture stderr and propagate actionable diagnostics; see `examples/01-args-and-validation/tools/echo-arg/tool.sh:30-36` for human-readable error surfaces.
 - Wrap risky filesystem/network calls in helper functions so they can be retried or mocked in unit tests.
 - For richer tool failure context, enable `MCPBASH_TOOL_STDERR_CAPTURE` and tune `MCPBASH_TOOL_STDERR_TAIL_LIMIT` (default 4096 bytes). Timeouts include exit code and stderr tail when `MCPBASH_TOOL_TIMEOUT_CAPTURE` is on (default).
@@ -1025,7 +1036,7 @@ notes=$(my_cli notes ls --entity-id "$id" 2>/dev/null | jq -c '.data.notes // []
 metadata=$(my_cli metadata get "$id" 2>/dev/null | jq -c '.data // null' || echo 'null')
 
 # Now safe to compose - all variables contain valid JSON
-mcp_result_success "$(jq -n \
+mcp_result_json "$(jq -n \
     --argjson entity "$entity" \
     --argjson notes "$notes" \
     --argjson metadata "$metadata" \
@@ -1091,7 +1102,7 @@ users=$(cat "$tmp_dir/users.json" 2>/dev/null | jq -c '. // []' || echo '[]')
 teams=$(cat "$tmp_dir/teams.json" 2>/dev/null | jq -c '. // []' || echo '[]')
 projects=$(cat "$tmp_dir/projects.json" 2>/dev/null | jq -c '. // []' || echo '[]')
 
-mcp_result_success "$(jq -n --argjson u "$users" --argjson t "$teams" --argjson p "$projects" \
+mcp_result_json "$(jq -n --argjson u "$users" --argjson t "$teams" --argjson p "$projects" \
     '{users: $u, teams: $t, projects: $p}')"
 ```
 
@@ -1135,11 +1146,11 @@ _stderr=$(cat "$_stderr_file")
 
 # Use results
 if [ "$_exit_code" -eq 0 ]; then
-    mcp_result_success "$_stdout"
+    mcp_result_json "$_stdout"
 else
-    # Stream stderr via stdin to avoid argv pressure with large error messages
-    mcp_result_error "$(printf '%s' "$_stderr" | "${MCPBASH_JSON_TOOL_BIN}" -Rsc --argjson c "$_exit_code" \
-        '{type: "cli_error", message: ., exitCode: $c}')"
+    # Keep the message bounded: pass the tail of stderr, not all of it
+    mcp_fail --type cli_error "Command failed (exit ${_exit_code}): $(printf '%s' "$_stderr" | tail -c 2000)" \
+        --data "{\"exitCode\":${_exit_code}}"
 fi
 ```
 
@@ -1155,12 +1166,11 @@ _stdout=$(cat "$_stdout_file")
 _stderr=$(cat "$_stderr_file")
 
 if [ "$_exit_code" -eq 0 ]; then
-    mcp_result_success "$_stdout"
+    mcp_result_json "$_stdout"
 else
     # Extract error from JSON stdout or fall back to stderr
     _error_msg=$(mcp_extract_cli_error "$_stdout" "$_stderr" "$_exit_code")
-    mcp_result_error "$(printf '%s' "$_error_msg" | "${MCPBASH_JSON_TOOL_BIN}" -Rsc --argjson c "$_exit_code" \
-        '{type: "cli_error", message: ., exitCode: $c}')"
+    mcp_fail --type cli_error "$_error_msg" --data "{\"exitCode\":${_exit_code}}"
 fi
 ```
 
@@ -1238,17 +1248,14 @@ set -euo pipefail
 source "${MCP_SDK:?}/tool-sdk.sh"
 result=$(mycli get "$id")  # script exits here if mycli returns non-zero
 if [[ -z "$result" ]]; then
-    mcp_result_error "$(mcp_json_obj type "not_found" message "Not found")"  # never reached
+    mcp_fail --type not_found "Not found: ${id}"  # never reached
 fi
 
 # ✅ Use set -uo pipefail (no -e) when wrapping CLIs with business errors
 set -uo pipefail
 source "${MCP_SDK:?}/tool-sdk.sh"
-result=$(mycli get "$id" 2>&1) || {
-    mcp_result_error "$(mcp_json_obj type "cli_error" message "CLI failed: ${result}")"
-    exit 0
-}
-mcp_result_success "$(printf '%s' "$result" | jq -c '.')"
+result=$(mycli get "$id" 2>&1) || mcp_fail --type cli_error "CLI failed: ${result}"
+mcp_result_json "$(printf '%s' "$result" | jq -c '.')"
 ```
 
 **Why:** The scaffold default `set -euo pipefail` is correct for tools that only use SDK helpers (which are designed to work under `-e`). But external CLIs often return non-zero exit codes for business logic (e.g., "record not found", "no matches"), not just fatal errors. With `-e`, the script exits before your error handling runs. Drop the `-e` and handle errors explicitly when wrapping CLIs. See [example 15-cli-wrapper](../examples/15-cli-wrapper/) for a complete working example.
@@ -1264,11 +1271,11 @@ mcp_result_success "$(printf '%s' "$result" | jq -c '.')"
 
 ### 4.8 Building CallToolResult responses
 
-The SDK provides helpers for building MCP `CallToolResult` responses with consistent `{success, result}` envelope patterns. These helpers handle `structuredContent`, `content[].text` population, and `isError` flag management.
+The SDK provides helpers for building MCP `CallToolResult` responses. They fill `content[].text`, `structuredContent` and the `isError` flag consistently. `mcp_result_json`, `mcp_result_text` and `mcp_fail --type` are available from 1.8.0 and stay unchanged in 2.0.
 
 #### Success responses
 
-Use `mcp_result_success` to emit a success envelope:
+Use `mcp_result_json` to return structured data:
 
 ```bash
 #!/usr/bin/env bash
@@ -1276,89 +1283,78 @@ source "${MCP_SDK:?}/tool-sdk.sh"
 
 # Return structured data
 data=$(some_command | jq -c '.')
-mcp_result_success "$data"
+mcp_result_json "$data"
 ```
 
 The helper produces:
 ```json
 {
-  "content": [{"type": "text", "text": "...summary..."}],
-  "structuredContent": {"success": true, "result": <your_data>},
+  "content": [{"type": "text", "text": "<your_data, serialized>"}],
+  "structuredContent": <your_data>,
   "isError": false
 }
 ```
 
+- `structuredContent` is exactly the JSON you pass, with no wrapper, so the tool's `outputSchema` describes that JSON, and a UI reads `result.structuredContent` directly.
+- When the serialized JSON exceeds `MCPBASH_MAX_TEXT_BYTES` (default 102400, or `--max-text-bytes N`), the text block becomes a short summary such as `object with 3 keys (full data in structuredContent)`.
+- On protocols before 2026-07-28 (every request in 1.x) `structuredContent` must be an object: a non-object value is sent as text only, never summarised.
+- Invalid JSON gives an `internal` error result instead.
+
+Use `mcp_result_text "..."` for a plain-text result. Neither helper ends the tool; follow it with `exit 0` in an early-return branch.
+
 #### Error responses
 
-Use `mcp_result_error` to emit error envelopes with `isError: true`:
+Use `mcp_fail --type` to end the tool with an error result the model can read:
 
 ```bash
 #!/usr/bin/env bash
 source "${MCP_SDK:?}/tool-sdk.sh"
 
 if [ ! -f "$target_path" ]; then
-  mcp_result_error "$(jq -n --arg p "$target_path" '{type:"not_found", path:$p}')"
-  exit 0  # Tool completed, error is in structured response
+  mcp_fail --type not_found "No such file: ${target_path}" \
+    --hint "Call list-files to see what exists" \
+    --data "$(jq -n --arg p "$target_path" '{path:$p}')"
 fi
 ```
 
-The helper produces:
+The helper prints the result and exits with status 0 (the tool completed; the error is in the result):
 ```json
 {
-  "content": [{"type": "text", "text": "error..."}],
-  "structuredContent": {"success": false, "error": {"type": "not_found", "path": "..."}},
-  "isError": true
+  "content": [{"type": "text", "text": "No such file: ...\n\nHint: Call list-files to see what exists"}],
+  "isError": true,
+  "_meta": {"mcpbash/error": {"type": "not_found", "message": "No such file: ...", "hint": "Call list-files to see what exists", "data": {"path": "..."}}}
 }
 ```
 
-#### Convenience error helper
+- The text block is what the model reads: the message, plus `Hint: …` when given.
+- There is no `structuredContent`, so an error is never checked against the tool's `outputSchema`.
+- `--data` must be JSON; with jq available, invalid JSON is dropped.
+- `mcp_tool_error_result TYPE MESSAGE [--hint TEXT] [--data JSON]` prints the same result without exiting, for the rare case where the tool must do more work (such as cleanup) before it exits.
 
-Use `mcp_error` to simplify error construction with consistent schema:
-
-```bash
-#!/usr/bin/env bash
-source "${MCP_SDK:?}/tool-sdk.sh"
-
-# Simple error
-mcp_error "not_found" "User not found"
-
-# With LLM-actionable hint
-mcp_error "validation_error" "Count must be positive" \
-  --hint "Try count=10 for a reasonable default"
-
-# With structured data for context
-mcp_error "validation_error" "Value out of range" \
-  --hint "Adjust value to be within bounds" \
-  --data '{"received": -5, "min": 1, "max": 100}'
-```
-
-The helper builds a normalized error object and delegates to `mcp_result_error`:
-```json
-{
-  "type": "validation_error",
-  "message": "Value out of range",
-  "hint": "Adjust value to be within bounds",
-  "data": {"received": -5, "min": 1, "max": 100}
-}
-```
-
-**Recommended error types** (conventions, not enforced):
+**Error types** (`--type`; other strings are accepted):
 
 | Type | Use case |
 |------|----------|
+| `invalid_args` | Missing or invalid arguments |
 | `not_found` | Entity doesn't exist |
-| `validation_error` | Input fails validation |
-| `invalid_json` | JSON parsing failed |
-| `permission_denied` | Access not allowed |
-| `file_error` | File system operation failed |
-| `network_error` | Network request failed |
+| `permission` | Access not allowed |
+| `policy_denied` | Refused by server policy (the server uses it for policy denials) |
 | `timeout` | Operation timed out |
-| `cli_error` | External command failed |
-| `internal_error` | Unexpected/fallback error |
+| `unavailable` | Dependency, CLI or upstream service unavailable |
+| `internal` | Unexpected/fallback error |
 
-**When to use `mcp_error` vs `mcp_fail`:**
-- Use `mcp_error` for tool execution errors the LLM can potentially recover from (bad input values, missing resources)
-- Use `mcp_fail` for protocol errors that indicate structural problems (missing required parameters, internal server errors)
+<a id="migrating-to-the-20-helpers"></a>
+#### Migrating to the 2.0 helpers
+
+mcp-bash 2.0 keeps `mcp_result_json`, `mcp_result_text` and `mcp_fail --type`, and removes the 1.x helpers: `mcp_result_success`, `mcp_result_error`, `mcp_error`, numeric `mcp_fail CODE MESSAGE`, `mcp_fail_invalid_args`, `mcp_emit_text`, `mcp_emit_json`, and the `MCPBASH_COMPAT_BATCHES` toggle. They all still work in 1.x. <!-- lint-api-usage: allow -->
+
+1. **See what's affected.** `mcp-bash validate` reports these uses as *deprecations*, counted separately from errors and warnings (`--deprecations-as-errors` fails on them, e.g. in CI). `mcp-bash migrate` lists each use with its fix; `--list` shows the rules, `--explain ID` describes one, `--json` is machine-readable.
+2. **Upgrade a vendored runtime first.** If the project embeds the runtime in `.mcp-bash/`, run `mcp-bash vendor --upgrade` before rewriting: tools run against the vendored SDK, and an older one lacks the new helpers. `migrate --write` refuses until you do (or pass `--force`).
+3. **Apply the safe rewrites.** `mcp-bash migrate --write` rewrites the calls it can change mechanically, together with the matching `outputSchema` changes. It refuses a git tree with uncommitted changes (unless `--force`); outside git it keeps a `.bak` copy of each file. Once nothing else is pending it records `"mcpBash": {"apiVersion": 2}` in `server.d/server.meta.json`.
+4. **Fix the rest by hand.** `mcp-bash migrate` exits 0 when nothing is pending, 1 when automatic fixes are pending and 2 when manual work remains. The result shape changes with the helpers: `mcp_result_json` sends no `{success, result}` envelope, so UI code that read `structuredContent.result` reads `structuredContent` instead. <!-- lint-api-usage: allow -->
+5. **Update your own tests.** Tests that assert the `{success, result}` envelope or the `_mcpToolError` marker need updating; policy denials are now `isError` results (`_meta["mcpbash/error"].type` = `policy_denied`).
+
+`mcp_result_text_with_resource` and capturing `mcp_elicit*` output with `$(...)` have no replacement in 1.x; keep them as they are. Both change in 2.0. <!-- lint-api-usage: allow -->
 
 #### Truncating large results
 
@@ -1374,7 +1370,7 @@ items=$(my_cli list-all | jq -c '.')
 # Truncate to fit context window (default 100KB)
 truncated=$(mcp_json_truncate "$items" 102400)
 
-mcp_result_success "$truncated"
+mcp_result_json "$truncated"
 ```
 
 **Specifying the array path:** When your API returns arrays in a non-standard field, use `--array-path` to specify which array to truncate:
@@ -1426,9 +1422,9 @@ When truncation isn't needed (`truncated: false`), `kept` equals `total`.
 
 ```bash
 if mcp_is_valid_json "$user_input"; then
-  mcp_result_success "$user_input"
+  mcp_result_json "$user_input"
 else
-  mcp_result_error '{"type":"invalid_json","message":"Input is not valid JSON"}'
+  mcp_fail --type invalid_args "Input is not valid JSON"
 fi
 ```
 
@@ -1441,16 +1437,15 @@ if [ "$payload_size" -gt 1048576 ]; then
 fi
 ```
 
-#### When to use result helpers vs mcp_emit_json
+#### Choosing a result helper
 
 | Scenario | Use |
 |----------|-----|
-| Simple data return (legacy) | `mcp_emit_json` |
-| Structured envelope with success/error | `mcp_result_success` / `mcp_result_error` |
-| LLM needs actionable error context | `mcp_result_error` with detailed error object |
-| Large arrays that may exceed context | `mcp_json_truncate` + `mcp_result_success` |
-
-The result helpers are recommended for new tools as they provide consistent response shapes that clients can rely on.
+| Structured data | `mcp_result_json` |
+| Plain text | `mcp_result_text` |
+| LLM needs actionable error context | `mcp_fail --type TYPE "message" --hint "..." [--data JSON]` |
+| Large arrays that may exceed context | `mcp_json_truncate` + `mcp_result_json` |
+| Text plus embedded files | `mcp_result_text_with_resource` (changes in 2.0) |
 
 #### Embedding resources in tool responses
 
@@ -1477,6 +1472,8 @@ Resources are embedded in the `content[]` array alongside the text.
 **Note:** Resources require `MCP_TOOL_RESOURCES_FILE` to be set (automatic in tool context). Outside tool context, resources are logged as warnings and skipped.
 
 **Warning:** This helper **overwrites** `MCP_TOOL_RESOURCES_FILE`. Do not mix with direct file writes; the helper will replace any existing content.
+
+**Note:** Unlike `mcp_result_json`, this helper still sends its data in the 1.x `{success, result}` envelope. It has no replacement yet; keep using it as is. It changes in 2.0, and `mcp-bash migrate` will show the replacement once it is final.
 
 ### 4.9 Progress passthrough from subprocesses
 
@@ -1612,7 +1609,7 @@ exit_code=$?
 
 if [[ $exit_code -ne 0 ]]; then
     error_msg=$(cat "$stderr_file")
-    mcp_result_error "$("${MCPBASH_JSON_TOOL_BIN}" -n --arg msg "$error_msg" '{error: $msg}')"
+    mcp_fail --type cli_error "my-cli failed: ${error_msg}"
 fi
 ```
 
@@ -1804,7 +1801,7 @@ sequenceDiagram
 ```
 
 - **Full vs minimal mode** – Document which commands require full JSON tooling. For example, completing resource list pagination depends on `jq` or `gojq` for canonicalisation; clients should handle `minimal` capability flags gracefully.
-- **Backward compatibility** – Protocol `2025-03-26` accepts JSON-RPC array batches automatically; newer protocols remain strict single-object per line unless `MCPBASH_COMPAT_BATCHES=true` is set for legacy clients.
+- **Backward compatibility** – Protocol `2025-03-26` accepts JSON-RPC array batches automatically; newer protocols remain strict single-object per line unless `MCPBASH_COMPAT_BATCHES=true` is set for legacy clients (1.x only; removed in 2.0). <!-- lint-api-usage: allow -->
 - **Transport considerations** – When tunnelling through gateways, preserve stdio framing (one JSON object per line) and forward `Mcp-Session-Id`. Reference [docs/REMOTE.md](REMOTE.md) for gateway-specific nuances.
 - **Example transcripts** – Capture happy-path sequences (initialize → tools/list → tool invocation) using your recording method of choice and store sanitized transcripts under `examples/run/`. (No built-in `--transcript` flag today.)
 
@@ -1899,10 +1896,11 @@ flowchart TD
 ## Doc changelog
 | Date | Version | Notes |
 | --- | --- | --- |
-| 2026-01-16 | v1.7 | Added `mcp_error` convenience helper for tool execution errors with consistent schema, optional hints, and structured data. Updated SDK quick reference table. Added "Convenience error helper" section to §4.7. Updated ERRORS.md with recommended error types. |
+| 2026-10-10 | v1.8 | Taught the result and error helpers that 2.0 keeps (`mcp_result_json`, `mcp_result_text`, `mcp_fail --type`) throughout. Added "Migrating to the 2.0 helpers" to §4.8 and `mcp-bash migrate` to the command reference. |
+| 2026-01-16 | v1.7 | Added `mcp_error` convenience helper for tool execution errors with consistent schema, optional hints, and structured data. Updated SDK quick reference table. Added "Convenience error helper" section to §4.7. Updated ERRORS.md with recommended error types. <!-- lint-api-usage: allow --> |
 | 2026-01-07 | v1.6 | Added §4.2 "LLM-friendly tool metadata" covering rich descriptions, parameter documentation, and domain model resources. Created companion doc [LLM-CONTEXT.md](LLM-CONTEXT.md) with comprehensive patterns. Renumbered subsequent sections (§4.3-§4.9). Updated scaffold template with description guidance. |
 | 2026-01-06 | v1.5 | Added §4.9 "Progress passthrough from subprocesses" covering `mcp_run_with_progress` helper for forwarding CLI progress to MCP. Includes common patterns for NDJSON, percentage, counter, and ffmpeg-style CLIs. Updated SDK quick reference table. |
-| 2026-01-04 | v1.4 | Added §4.7 "Building CallToolResult responses" covering `mcp_result_success`, `mcp_result_error`, `mcp_json_truncate`, `mcp_is_valid_json`, and `mcp_byte_length` helpers. Updated SDK quick reference table. Added "Capturing stdout and stderr separately" pattern to §4.3. |
+| 2026-01-04 | v1.4 | Added §4.7 "Building CallToolResult responses" covering `mcp_result_success`, `mcp_result_error`, `mcp_json_truncate`, `mcp_is_valid_json`, and `mcp_byte_length` helpers. Updated SDK quick reference table. Added "Capturing stdout and stderr separately" pattern to §4.3. <!-- lint-api-usage: allow --> |
 | 2026-01-03 | v1.3 | Added `mcp_with_retry` SDK helper for retrying transient failures. Added parallel external calls and rate limiting patterns. Added project health checks hook (`server.d/health-checks.sh`). Added "Common Bash Pitfalls" section (§4.4) covering `((var++))` under `set -e`, empty arrays, and pipefail. |
 | 2026-01-03 | v1.2 | Added "Calling external CLI tools" section (§4.3) with safe jq pipeline patterns, fallback defaults table, and external command quick reference. Added cross-reference in ERRORS.md. |
 | 2025-12-05 | v1.1 | Expanded SDK documentation: comprehensive coverage of `mcp_args_require`, `mcp_args_bool`, `mcp_args_int`, `mcp_require_path`, structured output helpers, and `run-tool` CLI usage patterns. Added SDK quick reference table. |

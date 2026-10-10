@@ -7,7 +7,7 @@ Key points:
 - **Framework/project separation**: Install the framework once (e.g., via `install.sh`), create unlimited MCP server projects. Your tools stay yours; upgrades are clean.
 - **Stdio transport only**: Standard input/output communication. No daemons, no HTTP servers, no hidden state.
 - **Auto-discovery & auto-detection**: Tools/resources/prompts are discovered from project directories; project root is auto-detected when you run `mcp-bash` inside a project (for MCP clients, set `MCPBASH_PROJECT_ROOT` explicitly). Manual registry hooks run only when `MCPBASH_ALLOW_PROJECT_HOOKS=true` and have safe ownership/permissions.
-- **Built-in DX commands**: `mcp-bash new`, `mcp-bash init`, `mcp-bash scaffold tool|prompt|resource`, `mcp-bash validate [--json|--strict|--explain-defaults]`, `mcp-bash config [--json|--client|--wrapper]` (`--show` prints labeled snippets per client; use `--client` to filter), `mcp-bash doctor [--json]`, `mcp-bash registry status`, `mcp-bash run-tool [--print-env]`.
+- **Built-in DX commands**: `mcp-bash new`, `mcp-bash init`, `mcp-bash scaffold tool|prompt|resource`, `mcp-bash validate [--json|--strict|--explain-defaults|--deprecations-as-errors]` (also lists deprecations: uses of APIs that change in 2.0), `mcp-bash config [--json|--client|--wrapper]` (`--show` prints labeled snippets per client; use `--client` to filter), `mcp-bash doctor [--json]`, `mcp-bash registry status`, `mcp-bash run-tool [--print-env]`, `mcp-bash migrate [--write|--list|--explain ID|--json]` (finds uses of APIs removed in 2.0; check only by default, `--write` applies the safe rewrites).
 - **Env isolation**: Tools and providers get a minimal environment (only framework-owned `MCP_*` names; never the remote token). To pass a host-injected secret (e.g. an MCPB `user_config` API key), declare the policy in `server.d/server.meta.json` `"env"` (`MCPBASH_TOOL_ENV_MODE`/`_ALLOWLIST`, `MCPBASH_PROVIDER_ENV_MODE`/`_ALLOWLIST` only). `server.d/env.sh` is used only by `run-tool --with-server-env`.
 - **Tool policy**: Default deny unless `MCPBASH_TOOL_ALLOWLIST` is set (use `*` only in trusted projects). Optional `server.d/policy.sh` defines `mcp_tools_policy_check()` for centralized allow/deny.
 - **Tool annotations**: Declare behavior hints (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) in `.meta.json` to help clients present appropriate UI cues.
@@ -24,7 +24,7 @@ If you are an AI agent building an MCP server project, follow these steps:
 
 1. **Create project:** `mcp-bash new my-server && cd my-server`
 2. **Add tools:** `mcp-bash scaffold tool my-tool-name` — this generates `tools/my-tool-name/tool.sh` and `tools/my-tool-name/tool.meta.json` with the correct SDK sourcing and structure. Always use the scaffold instead of writing tool files from scratch.
-3. **Implement logic** in `tools/my-tool-name/tool.sh`. The scaffold already sources the SDK (`source "${MCP_SDK:?}/tool-sdk.sh"`). Use `mcp_args_get`, `mcp_result_success`, `mcp_error` — not raw jq.
+3. **Implement logic** in `tools/my-tool-name/tool.sh`. The scaffold already sources the SDK (`source "${MCP_SDK:?}/tool-sdk.sh"`). Use `mcp_args_get`, `mcp_result_json` / `mcp_result_text` for results and `mcp_fail --type TYPE "message" --hint "..."` for errors the model should see (it ends the tool) — not raw jq.
 4. **Generate client config:** `mcp-bash config --client claude-desktop`
    - **CRITICAL:** The config output includes `MCPBASH_TOOL_ALLOWLIST`. Without it, ALL tools are silently blocked (default-deny policy). Do not remove it.
 5. **Test:** `mcp-bash run-tool my-tool-name --allow-self --args '{"key":"value"}'`
@@ -39,7 +39,7 @@ MCP hosts (Claude Desktop, Cursor) launch servers with a minimal PATH that exclu
 source "${MCP_SDK:?}/tool-sdk.sh"
 # Copy mcp_detect_cli from docs/BEST-PRACTICES.md §4.4 into your project's lib/
 source "${MCPBASH_PROJECT_ROOT}/lib/cli-detect.sh"
-MYCLI=$(mcp_detect_cli mycli "pip install my-package") || mcp_fail -32603 "mycli not found"
+MYCLI=$(mcp_detect_cli mycli "pip install my-package") || mcp_fail --type unavailable "mycli not found" --hint "Install it: pip install my-package"
 "${MYCLI}" search "$query"
 ```
 
@@ -54,14 +54,13 @@ MYCLI="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../bin" && pwd)/mycli"
 ```bash
 set -uo pipefail  # not set -euo — -e would exit before error handling
 source "${MCP_SDK:?}/tool-sdk.sh"
-result=$("${MYCLI}" get "$id" 2>&1) || {
-    mcp_result_error "$(mcp_json_obj type "cli_error" message "CLI failed: ${result}")"
-    exit 0
-}
-mcp_result_success "$(printf '%s' "$result" | jq -c '.')"
+result=$("${MYCLI}" get "$id" 2>&1) || mcp_fail --type unavailable "CLI failed: ${result}"
+mcp_result_json "$(printf '%s' "$result" | jq -c '.')"
 ```
 
-Note: `mcp_result_error` expects a JSON object with `type` and `message` fields. Use `mcp_json_obj type "..." message "..."` to build it — do not pass a plain string.
+`mcp_fail --type` returns an error result the model can read (`isError: true`) and ends the tool. `mcp_result_json` sends the JSON as `structuredContent` as is (no `{success, result}` wrapper), so an `outputSchema` describes the data itself.
+
+Migrating an existing project: `mcp_result_success`, `mcp_result_error`, `mcp_error`, `mcp_fail CODE MSG` and `mcp_emit_*` still work in 1.x but are removed in 2.0; `mcp-bash migrate` lists them and `--write` rewrites the safe cases. <!-- lint-api-usage: allow -->
 
 ## Docs
 
@@ -88,7 +87,7 @@ Note: `mcp_result_error` expects a JSON object with `type` and `message` fields.
 
 ## SDK & Scaffolding
 
-- [Tool SDK](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/sdk/tool-sdk.sh): Shared helpers for argument parsing (`mcp_args_get`), output (`mcp_emit_json`, `mcp_emit_text`), JSON construction (`mcp_json_escape`, `mcp_json_obj`, `mcp_json_arr`), progress (`mcp_progress`, `mcp_run_with_progress`), cancellation (`mcp_is_cancelled`), logging (`mcp_log_info`, `mcp_log_warn`), configuration loading (`mcp_config_load`, `mcp_config_get`), error handling (`mcp_error` with `--hint` and `--data` flags for LLM-friendly errors), secure downloads (`mcp_download_safe`, `mcp_download_safe_or_fail` for SSRF-safe HTTPS fetching with retries), and embedded resources (`mcp_result_text_with_resource`).
+- [Tool SDK](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/sdk/tool-sdk.sh): Shared helpers for argument parsing (`mcp_args_get`), results (`mcp_result_json`, `mcp_result_text`), JSON construction (`mcp_json_escape`, `mcp_json_obj`, `mcp_json_arr`), progress (`mcp_progress`, `mcp_run_with_progress`), cancellation (`mcp_is_cancelled`), logging (`mcp_log_info`, `mcp_log_warn`), configuration loading (`mcp_config_load`, `mcp_config_get`), error handling (`mcp_fail --type TYPE MESSAGE` with `--hint` and `--data` flags for errors the model can read; it ends the tool), secure downloads (`mcp_download_safe`, `mcp_download_safe_or_fail` for SSRF-safe HTTPS fetching with retries), and embedded resources (`mcp_result_text_with_resource`).
 - [Scaffold Templates](https://github.com/yaniv-golan/mcp-bash-framework/tree/main/scaffold): Templates for generating compliant tools, resources, and prompts via `mcp-bash scaffold <type> <name>`; create a full server skeleton via `mcp-bash new <name>`.
 
 ## Configuration & Operations

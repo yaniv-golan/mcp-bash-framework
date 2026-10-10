@@ -24,21 +24,31 @@ Protocol errors are **not actionable by the LLM** in most cases—the model cann
 
 ### Tool Execution Errors (isError: true)
 
-Tool execution errors occur during tool execution and are returned as **successful results** with `isError: true`. These provide actionable feedback that LLMs can use to self-correct:
+Tool execution errors occur during tool execution and are returned as **successful results** with `isError: true`. These provide actionable feedback that LLMs can use to self-correct. An error result from `mcp_fail --type` looks like this:
 
 ```json
 {
   "jsonrpc": "2.0",
   "id": 1,
   "result": {
-    "content": [{"type": "text", "text": "Invalid date: must be in the future (received: 2020-01-01)"}],
-    "isError": true
+    "content": [{"type": "text", "text": "Date must be in the future\n\nHint: Use a date after today"}],
+    "isError": true,
+    "_meta": {
+      "mcpbash/error": {
+        "type": "invalid_args",
+        "message": "Date must be in the future",
+        "hint": "Use a date after today",
+        "data": {"received": "2020-01-01"}
+      }
+    }
   }
 }
 ```
 
+The text block carries what the model reads (the message, plus the hint when there is one). Machine-readable details go in `_meta["mcpbash/error"]`; `hint` and `data` are left out when not given. An error result has no `structuredContent`, so it is never checked against the tool's `outputSchema`.
+
 **When to use Tool Execution Errors:**
-- Input validation failures the LLM could correct (bad date format, value out of range)
+- Missing or invalid arguments the LLM could correct (required parameter missing, bad date format, value out of range)
 - Business logic errors (file not found, permission denied)
 - API failures with actionable details
 - Any error where the message helps the LLM retry with better inputs
@@ -49,66 +59,72 @@ Tool execution errors occur during tool execution and are returned as **successf
 |----------|------------|-----|
 | Tool name missing | Protocol (`-32602`) | Request structure issue |
 | Tool not found | Protocol (`-32602`) | Invalid tool name (entity not found) |
+| Required argument missing | Tool Execution (`isError: true`) when you report it with `mcp_fail --type invalid_args`. In 1.x the argument helpers (`mcp_args_require`, `mcp_args_int`, `mcp_args_bool`, `mcp_require_path`) still send a JSON-RPC error; this changes in 2.0. | LLM can call again with the argument |
 | Date format invalid | Tool Execution (`isError: true`) | LLM can retry with correct format |
 | Value out of range | Tool Execution (`isError: true`) | LLM can adjust the value |
 | File path outside roots | Tool Execution (`isError: true`) | LLM can choose allowed path |
+| Tool denied by policy | Tool Execution (`isError: true`, type `policy_denied`) | LLM and user see the reason |
 | Tool timeout | Tool Execution (`isError: true`) | LLM can adjust parameters; see [Timeout Strategy Guide](BEST-PRACTICES.md#timeout-strategy-guide) |
 | API rate limited | Tool Execution (`isError: true`) | LLM can retry later |
 
 ### SDK Support
 
-Use the SDK helpers to return the appropriate error type:
+Return tool execution errors with `mcp_fail --type`. It prints the error result and **ends the tool** (exit 0), so nothing after it runs:
 
 ```bash
-# Tool Execution Error (LLM can self-correct)
-# Use mcp_error for convenience with consistent schema:
-mcp_error "validation_error" "Date must be in the future" \
+# Tool Execution Error (LLM can self-correct); ends the tool
+mcp_fail --type invalid_args "Date must be in the future" \
   --hint "Use a date after today" \
   --data '{"received": "2020-01-01"}'
 
-# Or use mcp_result_error directly with a JSON object:
-mcp_result_error "$(mcp_json_obj \
-  type "validation_error" \
-  message "Date must be in the future" \
-  received "2020-01-01"
-)"
-
-# For missing/malformed required parameters, use protocol error instead:
-mcp_fail_invalid_args "date parameter is required"
+# Report a missing required parameter yourself so the model sees it:
+mcp_fail --type invalid_args "date parameter is required" --hint "Pass date as YYYY-MM-DD"
 ```
 
-**Recommended error types** for consistency:
+`--data` must be valid JSON; with jq/gojq available, invalid data is dropped. To build the same result without ending the tool (for example to post-process it), call `mcp_tool_error_result TYPE MESSAGE [--hint TEXT] [--data JSON]`, which prints it and returns 0.
+
+**Documented error types:**
 
 | Type | Use case |
 |------|----------|
+| `invalid_args` | Arguments missing or invalid |
 | `not_found` | Entity doesn't exist |
-| `validation_error` | Input fails validation |
-| `invalid_json` | JSON parsing failed |
-| `permission_denied` | Access not allowed |
-| `file_error` | File system operation failed |
-| `network_error` | Network request failed |
-| `redirect` | URL redirected to a different location (see `.error.location` for target); returned by HTTPS provider on 3xx responses |
+| `permission` | Access not allowed |
+| `policy_denied` | Refused by policy (the server uses this for policy denials) |
 | `timeout` | Operation timed out |
-| `cli_error` | External command failed |
-| `internal_error` | Unexpected/fallback error |
-| `path_not_found` | `--array-path` points to missing key (truncation) |
-| `invalid_array_path` | Path exists but is not an array (truncation) |
-| `invalid_path_syntax` | Malformed jq path (truncation) |
-| `output_too_large` | Response too large even with empty array (truncation) |
+| `unavailable` | A dependency (API, CLI, network) is unavailable; retrying later may work |
+| `internal` | Unexpected/fallback error |
 
-#### Structured response envelope helpers
+Other type strings are accepted (for example `cli_error` or `network_error`); prefer the documented ones so clients can rely on them.
 
-For tools returning structured data with consistent `{success, result}` or `{success, error}` envelopes:
+Some SDK helpers report failures in their own output rather than as a tool result, with these `error.type` values:
+
+| Type | Produced by |
+|------|-------------|
+| `redirect` | `mcp_download_safe` on a 3xx response (see `.error.location` for the target) |
+| `path_not_found` | `mcp_json_truncate`: `--array-path` points to a missing key |
+| `invalid_array_path` | `mcp_json_truncate`: path exists but is not an array |
+| `invalid_path_syntax` | `mcp_json_truncate`: malformed jq path |
+| `output_too_large` | `mcp_json_truncate`: response too large even with an empty array |
+
+Check for these in the tool and turn them into an `mcp_fail --type` call with a hint (see `examples/12-config-and-downloads`).
+
+#### Result helpers
+
+For successful results:
 
 ```bash
-# Success response: isError=false, structuredContent.success=true
-mcp_result_success '{"items": [...], "count": 42}'
+# structuredContent is exactly this JSON; the text block is its serialization
+mcp_result_json '{"items": [], "count": 42}'
 
-# Error response: isError=true, structuredContent.success=false
-mcp_result_error '{"type": "not_found", "path": "/missing/file"}'
+# Plain text, no structuredContent
+mcp_result_text "Deleted 3 files"
 ```
 
-These helpers set the appropriate `isError` flag automatically and populate both `content[].text` (human-readable summary) and `structuredContent` (machine-readable envelope). See [BEST-PRACTICES.md §4.7](BEST-PRACTICES.md#47-building-calltoolresult-responses) for full documentation.
+Unlike `mcp_fail --type`, these helpers **do not end the tool**: in an early-return branch, follow them with `exit 0`. With `mcp_result_json` the tool's `outputSchema` describes the JSON itself (there is no `{success, result}` wrapper). See [BEST-PRACTICES.md §4.8](BEST-PRACTICES.md#48-building-calltoolresult-responses) for full documentation.
+
+The 1.x helpers `mcp_result_success`, `mcp_result_error`, `mcp_error`, `mcp_fail_invalid_args` and numeric `mcp_fail CODE MESSAGE` still work in 1.x but are removed in 2.0; `mcp-bash migrate` lists them and rewrites the ones it can. <!-- lint-api-usage: allow -->
+`mcp_result_success`/`mcp_result_error` wrap data in a `{success, result}`/`{success, error}` envelope, `mcp_error` and `mcp_result_*` do not end the tool, and the numeric `mcp_fail` form returns a JSON-RPC protocol error the model can't see. <!-- lint-api-usage: allow -->
 
 For validation that happens early in a tool (before doing real work), prefer returning `isError: true` so the LLM learns from the feedback.
 
@@ -167,7 +183,7 @@ Size guardrails: `mcp_core_guard_response_size` rejects oversized responses with
 - **Resource/provider failures (`-32603`, message includes provider detail such as "Unable to read resource")**: Confirm the provider is supported (`file`, `git`, `https`), URI is valid, and payload size is within `MCPBASH_MAX_RESOURCE_BYTES`.
 - **Minimal mode responses (`-32601`)**: Ensure `jq`/`gojq` is available or unset `MCPBASH_FORCE_MINIMAL` to enable tools/resources/prompts.
 - **jq parse error in tool output**: Often caused by external CLI failures producing empty stdout. Using `2>/dev/null` hides stderr but doesn't prevent empty output—add `|| echo '{}'` fallback. See [BEST-PRACTICES.md § Calling external CLI tools](BEST-PRACTICES.md#calling-external-cli-tools).
-- **mcp_result_success/mcp_result_error produces no output**: Ensure JSON tooling is available (jq/gojq); in minimal mode these helpers return degraded JSON output. Check `MCPBASH_MODE` environment variable.
+- **`mcp_result_json` returns an `internal` error result**: The argument was empty or (with jq/gojq available) not a single valid JSON value. Without JSON tooling (minimal mode, see `MCPBASH_MODE`) the helper cannot validate: an object is passed through as `structuredContent` unchecked and any other value is sent as text only.
 - **mcp_is_valid_json rejects valid-looking JSON**: The helper validates single JSON values only; arrays with multiple root objects or trailing content are rejected. Use `jq -e . >/dev/null 2>&1` for lenient validation.
 - **mcp_json_truncate not truncating**: Ensure the second argument (max_bytes) is a positive integer. Non-numeric values default to 102400 (100KB).
 

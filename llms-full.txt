@@ -17,7 +17,8 @@ Pure Bash MCP server framework. Bash≥3.2 + jq/gojq. Stdio transport only.
   3) Generate wiring for clients: `mcp-bash config --wrapper` (TTY creates `./my-mcp-server.sh`, piped/redirected prints to stdout) or `mcp-bash config --client <client>` for pasteable JSON.
   4) Add tools/resources/prompts via `mcp-bash scaffold tool|prompt|resource <name>`, then `mcp-bash validate` before wiring to clients.
 - Validation & config:
-  - Validate project: `bin/mcp-bash validate [--project-root DIR] [--fix] [--json] [--explain-defaults] [--strict]`.
+  - Validate project: `bin/mcp-bash validate [--project-root DIR] [--fix] [--json] [--explain-defaults] [--strict] [--deprecations-as-errors]` (deprecations, uses of APIs that change in 2.0, are counted separately and don't fail validation unless `--deprecations-as-errors`).
+  - Find (and fix) uses of APIs removed in 2.0: `bin/mcp-bash migrate [--project-root DIR] [--write [--force]] [--only ID,..] [--skip ID,..] [--json]`, `--list`, `--explain ID`. Check only by default; `--write` applies the safe rewrites (refuses a dirty git tree without `--force`) and records `"mcpBash": {"apiVersion": 2}` in `server.meta.json` once nothing else is pending. A vendored runtime that predates `mcp_result_json` needs `mcp-bash vendor --upgrade` first. Exit status: 0 nothing pending, 1 automatic fixes pending, 2 manual work pending, 3 usage error.
   - Generate MCP client config snippets / JSON descriptor: `bin/mcp-bash config [--project-root DIR] [--show|--json|--client NAME|--wrapper]` (`--show` prints labeled snippets for all clients; use `--client` to filter).
   - Environment diagnostics: `bin/mcp-bash doctor [--json]` (local operator use; exposes paths and env).
   - Registry cache: `bin/mcp-bash registry status [--project-root DIR]`.
@@ -37,7 +38,7 @@ If you are an AI agent building an MCP server project, follow these steps:
 
 1. **Create project:** `mcp-bash new my-server && cd my-server`
 2. **Add tools:** `mcp-bash scaffold tool my-tool-name` — this generates `tools/my-tool-name/tool.sh` and `tools/my-tool-name/tool.meta.json` with the correct SDK sourcing and structure. Always use the scaffold instead of writing tool files from scratch.
-3. **Implement logic** in `tools/my-tool-name/tool.sh`. The scaffold already sources the SDK (`source "${MCP_SDK:?}/tool-sdk.sh"`). Use `mcp_args_get`, `mcp_result_success`, `mcp_error` — not raw jq.
+3. **Implement logic** in `tools/my-tool-name/tool.sh`. The scaffold already sources the SDK (`source "${MCP_SDK:?}/tool-sdk.sh"`). Use `mcp_args_get`, `mcp_result_json` / `mcp_result_text` for results and `mcp_fail --type TYPE "message" --hint "..."` for errors the model should see (it ends the tool) — not raw jq.
 4. **Generate client config:** `mcp-bash config --client claude-desktop`
    - **CRITICAL:** The config output includes `MCPBASH_TOOL_ALLOWLIST`. Without it, ALL tools are silently blocked (default-deny policy). Do not remove it.
 5. **Test:** `mcp-bash run-tool my-tool-name --allow-self --args '{"key":"value"}'`
@@ -52,7 +53,7 @@ MCP hosts (Claude Desktop, Cursor) launch servers with a minimal PATH that exclu
 source "${MCP_SDK:?}/tool-sdk.sh"
 # Copy mcp_detect_cli from docs/BEST-PRACTICES.md §4.4 into your project's lib/
 source "${MCPBASH_PROJECT_ROOT}/lib/cli-detect.sh"
-MYCLI=$(mcp_detect_cli mycli "pip install my-package") || mcp_fail -32603 "mycli not found"
+MYCLI=$(mcp_detect_cli mycli "pip install my-package") || mcp_fail --type unavailable "mycli not found" --hint "Install it: pip install my-package"
 "${MYCLI}" search "$query"
 ```
 
@@ -67,14 +68,11 @@ MYCLI="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../bin" && pwd)/mycli"
 ```bash
 set -uo pipefail  # not set -euo — -e would exit before error handling
 source "${MCP_SDK:?}/tool-sdk.sh"
-result=$("${MYCLI}" get "$id" 2>&1) || {
-    mcp_result_error "$(mcp_json_obj type "cli_error" message "CLI failed: ${result}")"
-    exit 0
-}
-mcp_result_success "$(printf '%s' "$result" | jq -c '.')"
+result=$("${MYCLI}" get "$id" 2>&1) || mcp_fail --type unavailable "CLI failed: ${result}"
+mcp_result_json "$(printf '%s' "$result" | jq -c '.')"
 ```
 
-Note: `mcp_result_error` expects a JSON object with `type` and `message` fields. Use `mcp_json_obj type "..." message "..."` to build it — do not pass a plain string.
+`mcp_fail --type` returns an error result the model can read (`isError: true`) and ends the tool. `mcp_result_json` sends the JSON as `structuredContent` as is (no `{success, result}` wrapper), so an `outputSchema` describes the data itself.
 
 ## EMBEDDED RESOURCES (type:"resource")
 
@@ -87,6 +85,7 @@ Note: `mcp_result_error` expects a JSON object with `type` and `message` fields.
 - The framework appends `{type:"resource", resource:{uri,mimeType,text|blob}}` to `result.content`.
 - Binary files are auto-base64-encoded to `blob`; text stays in `text`.
 - Paths must be readable and inside allowed roots; invalid entries are skipped (debug logs will note skips).
+- This helper has no 2.0-stable replacement yet; keep it as is; it changes in 2.0 and `mcp-bash migrate` will flag it.
 
 ## TOOL STRUCTURE
 
@@ -96,8 +95,8 @@ Note: `mcp_result_error` expects a JSON object with `type` and `message` fields.
   - Assume `MCP_SDK` is set by the framework to the `sdk/` directory; exit with a clear error if it is not.
   - `source "${MCP_SDK}/tool-sdk.sh"` to load SDK helpers.
   - Read args via `mcp_args_get` / `mcp_args_raw`.
-  - Validate inputs; call `mcp_fail_invalid_args` or `mcp_fail <code> "msg" [data_json]` on error.
-  - Build structured results via `mcp_json_obj` / `mcp_json_arr` and emit via `mcp_emit_json` (preferred), or use `mcp_emit_text` for plain text.
+  - Validate inputs; on error call `mcp_fail --type invalid_args "msg" [--hint TEXT] [--data JSON]` (ends the tool with an error result the model can read).
+  - Build structured results via `mcp_json_obj` / `mcp_json_arr` and return them with `mcp_result_json` (preferred), or `mcp_result_text` for plain text. Neither ends the tool: in an early-return branch, follow them with `exit 0`.
 
 ## METADATA (TOOLS/RESOURCES/PROMPTS/COMPLETIONS)
 
@@ -136,16 +135,17 @@ Note: `mcp_result_error` expects a JSON object with `type` and `message` fields.
   - `mcp_meta_raw` → raw JSON `_meta` string from the tools/call request.
   - `mcp_meta_get '<jq_filter>'` → extract value from `_meta` via jq/gojq.
   - Use cases: pass auth context, rate limiting IDs, or behavior flags not generated by the LLM.
-- Output:
-  - `mcp_emit_text "string"` → plain text result.
-  - `mcp_emit_json '{"k":"v"}'` → JSON result (compacted).
+- Results (print the result; they do not end the tool):
+  - `mcp_result_text "string"` → plain text result.
+  - `mcp_result_json '{"k":"v"}' [--max-text-bytes N]` → `structuredContent` is exactly the JSON (no `{success, result}` envelope; `outputSchema` describes the data itself); the text block is the serialized JSON, or a short summary above N bytes (default `MCPBASH_MAX_TEXT_BYTES`, 102400). A non-object value is sent as text only on protocols before 2026-07-28 (so always in 1.x).
 - JSON construction helpers:
   - `mcp_json_escape "value"` → returns a quoted JSON string literal using the framework’s JSON tool (or a safe fallback).
   - `mcp_json_obj key1 "val1" key2 "val2" ...` → returns `{"key1":"val1","key2":"val2",...}` (all values treated as strings; odd arg count is a fatal error).
   - `mcp_json_arr "v1" "v2" ...` → returns `["v1","v2",...]` (all values treated as strings).
 - Errors:
-  - `mcp_fail <code> "msg" [data_json]` → JSON-RPC error.
-  - `mcp_fail_invalid_args "msg"` → `-32602` invalid params.
+  - `mcp_fail --type TYPE "msg" [--hint TEXT] [--data JSON]` → ends the tool (exit 0) with an `isError: true` result the model can read: the text is the message plus `\n\nHint: …`; details go in `_meta["mcpbash/error"]` (`{type, message, hint, data}`; no `structuredContent`). Types: `invalid_args`, `not_found`, `permission`, `policy_denied`, `timeout`, `unavailable`, `internal` (other strings are accepted).
+  - `mcp_tool_error_result TYPE "msg" [--hint TEXT] [--data JSON]` → prints the same result without ending the tool (advanced).
+  - 1.x helpers `mcp_result_success`, `mcp_result_error`, `mcp_error`, `mcp_fail CODE MSG`, `mcp_fail_invalid_args`, `mcp_emit_text`/`mcp_emit_json` still work in 1.x but are removed in 2.0; `mcp-bash migrate` rewrites them. <!-- lint-api-usage: allow -->
 - Progress & cancellation:
   - `mcp_progress <0-100> "msg" [total]` → progress notifications.
   - `mcp_run_with_progress --pattern REGEX [--extract json|match1|ratio] [--stderr-file FILE] -- cmd args` → forward subprocess progress to MCP (see BEST-PRACTICES.md §4.9).
@@ -164,8 +164,6 @@ Note: `mcp_result_error` expects a JSON object with `type` and `message` fields.
 - Configuration loading helpers:
   - `mcp_config_load --env VAR --file path --example path --defaults '{...}'` → load config with precedence (env var → file → example → defaults).
   - `mcp_config_get '.key' --default value` → extract value from loaded config by jq path.
-- Error helpers:
-  - `mcp_error "type" "message" [--hint "guidance"] [--data '{...}']` → convenience wrapper for tool execution errors with consistent schema; `--hint` provides LLM-friendly actionable guidance.
 - Secure download helpers:
   - `mcp_download_safe --url URL --out PATH [--allow hosts] [--timeout N] [--max-bytes N] [--retries N]` → SSRF-safe HTTPS download with automatic retries, exponential backoff, and structured JSON output (`{success:true, bytes:N, path:...}` or `{success:false, error:{...}}`). Always returns 0 (safe with `set -e`).
   - `mcp_download_safe_or_fail --url URL --out PATH [...]` → fail-fast wrapper that returns the output path on success or fails the tool with `-32602` on error.
@@ -310,7 +308,7 @@ Note: `mcp_result_error` expects a JSON object with `type` and `message` fields.
   - Prompts basics: `examples/07-prompts-basics`.
   - Elicitation: `examples/08-elicitation`.
   - Registry overrides + live progress: `examples/09-registry-overrides`.
-  - CLI wrapper: `examples/15-cli-wrapper/tools/system-info/tool.sh` — `mcp_detect_cli`, `set -uo pipefail`, `mcp_result_error`-with-JSON-object.
+  - CLI wrapper: `examples/15-cli-wrapper/tools/system-info/tool.sh` — `mcp_detect_cli`, `set -uo pipefail`, `mcp_result_json` / `mcp_fail --type`.
   - Advanced ffmpeg studio: `examples/advanced/ffmpeg-studio`.
 
 ## COMMANDS & TESTING
@@ -323,7 +321,8 @@ Note: `mcp_result_error` expects a JSON object with `type` and `message` fields.
   - Run a single tool without starting the server: `bin/mcp-bash run-tool <name> [--args JSON] [--roots paths] [--dry-run] [--timeout SECS] [--verbose] [--no-refresh] [--minimal] [--project-root DIR] [--print-env]`.
   - Debug mode: `bin/mcp-bash debug` (enables payload logging and preserved state; see `docs/DEBUGGING.md`).
   - Registry refresh: `bin/mcp-bash registry refresh [--project-root DIR] [--no-notify] [--quiet] [--filter SUBPATH]`.
-  - Validate project: `bin/mcp-bash validate [--project-root DIR] [--fix] [--json] [--explain-defaults] [--strict]`.
+  - Validate project: `bin/mcp-bash validate [--project-root DIR] [--fix] [--json] [--explain-defaults] [--strict] [--deprecations-as-errors]` (deprecations, uses of APIs that change in 2.0, are counted separately and don't fail validation unless `--deprecations-as-errors`).
+  - Find (and fix) uses of APIs removed in 2.0: `bin/mcp-bash migrate [--project-root DIR] [--write [--force]] [--only ID,..] [--skip ID,..] [--json]`, `--list`, `--explain ID`. Check only by default; `--write` applies the safe rewrites (refuses a dirty git tree without `--force`) and records `"mcpBash": {"apiVersion": 2}` in `server.meta.json` once nothing else is pending. A vendored runtime that predates `mcp_result_json` needs `mcp-bash vendor --upgrade` first. Exit status: 0 nothing pending, 1 automatic fixes pending, 2 manual work pending, 3 usage error.
   - Generate MCP client config snippets / JSON descriptor: `bin/mcp-bash config [--project-root DIR] [--show|--json|--client NAME|--wrapper]`.
   - Diagnose environment: `bin/mcp-bash doctor [--json]` (local diagnostic; reveals paths/env).
   - Registry status: `bin/mcp-bash registry status [--project-root DIR]` (hash/mtime/counts).

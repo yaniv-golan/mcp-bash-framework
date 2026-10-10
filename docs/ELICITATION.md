@@ -67,12 +67,14 @@ The helpers always print the `{"action": ...}` JSON, but they **exit non-zero** 
 resp="$(mcp_elicit_confirm "Delete 40 files?")" || true
 action="$(jq -r '.action' <<<"${resp}")"
 if [ "${action}" != "accept" ] || [ "$(jq -r '.content.confirmed' <<<"${resp}")" != "true" ]; then
-    mcp_result_error "$(mcp_json_obj error "Not confirmed" action "${action}")"
-    exit 0   # result helpers don't end the tool; stop here
+    mcp_fail --type permission "Not confirmed (action: ${action})" \
+        --hint "Ask the user to confirm, then call the tool again"
 fi
 ```
 
-`mcp_result_success` and `mcp_result_error` print the result but **do not exit**. In an early-return branch, follow them with `exit 0`, or the tool keeps running and prints a second result.
+`mcp_fail --type` ends the tool. `mcp_result_json` and `mcp_result_text` print the result but **do not exit**: in an early-return branch, follow them with `exit 0`, or the tool keeps running and prints a second result.
+
+This capture pattern (`resp="$(mcp_elicit_… )" || true` and branching on `.action`) keeps working in 1.x. It changes in 2.0; `mcp-bash migrate` will show the replacement once it is final. <!-- lint-api-usage: allow -->
 
 ## Examples
 - `examples/08-elicitation` — minimal confirm + choice flow with fallback when elicitation is unsupported.
