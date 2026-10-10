@@ -1302,7 +1302,25 @@ mcp_core_cancel_request() {
 	fi
 
 	mcp_core_send_signal_chain "${pid}" "${pgid}" TERM
-	sleep 1
+	# Escalate from a helper so the main loop isn't held up: waiting here
+	# stalled all request handling for 1s per cancel, one cancel at a time.
+	# The double fork keeps the helper out of the job table, so it never
+	# counts as a worker; stdout goes to /dev/null so it can't hold the
+	# client's pipe open.
+	(
+		(
+			set +e
+			sleep 1
+			mcp_core_cancel_escalate "${key}" "${pid}" "${pgid}"
+		) >/dev/null </dev/null &
+	)
+}
+
+mcp_core_cancel_escalate() {
+	local key="$1"
+	local pid="$2"
+	local pgid="$3"
+
 	if mcp_core_process_alive "${pid}"; then
 		mcp_core_send_signal_chain "${pid}" "${pgid}" KILL
 	fi

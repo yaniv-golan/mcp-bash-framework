@@ -22,9 +22,8 @@ test_stage_workspace "${WORKSPACE}"
 # The tool runs for TOOL_SECS. A cancelled call must stay silent well past that,
 # so the test keeps reading for at least TOOL_SECS + GRACE_SECS after the calls
 # start, and GRACE_SECS after an uncancelled control call returns.
-# The server handles cancels one at a time and spends about 1s on each (TERM,
-# wait, KILL), so the third cancel lands ~3s after the calls; the tool must
-# outlast that by a wide margin on slow CI runners.
+# The tool must outlast the cancels by a wide margin on slow CI runners
+# (macOS runners are sometimes 2x slower).
 TOOL_SECS=8
 GRACE_SECS=4
 

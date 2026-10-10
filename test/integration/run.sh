@@ -108,6 +108,7 @@ TESTS=(
 	"test_cancellation.sh"
 	"test_cancel_malformed.sh"
 	"test_cancel_eof_drain.sh"
+	"test_cancel_nonblocking.sh"
 	"test_cli_guards.sh"
 	"test_cli_init_new.sh"
 	"test_cli_init_config_doctor.sh"

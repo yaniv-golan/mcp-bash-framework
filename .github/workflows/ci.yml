@@ -330,6 +330,7 @@ jobs:
             test_cancellation.sh
             test_cancel_malformed.sh
             test_cancel_eof_drain.sh
+            test_cancel_nonblocking.sh
             test_resource_subscriptions.sh
             test_elicitation_modes.sh
             test_large_payloads.sh
