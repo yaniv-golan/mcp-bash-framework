@@ -35,6 +35,13 @@ mcp_lock_stat_mtime() {
 	printf '%s' "${mtime}"
 }
 
+# The lock root lives in the server's state directory, which cleanup removes on
+# exit. A worker still waiting then can never create its lock dir, so the
+# acquire functions give up (return 1) instead of polling forever.
+mcp_lock_root_gone() {
+	[ ! -d "${MCPBASH_LOCK_ROOT}" ]
+}
+
 mcp_lock_acquire() {
 	local name="$1"
 	local path
@@ -47,6 +54,9 @@ mcp_lock_acquire() {
 			fi
 			rm -rf "${path}" 2>/dev/null || true
 		else
+			if mcp_lock_root_gone; then
+				return 1
+			fi
 			mcp_lock_try_reap "${path}"
 			sleep "${MCPBASH_LOCK_POLL_INTERVAL}"
 		fi
@@ -68,6 +78,9 @@ mcp_lock_acquire_timeout() {
 			fi
 			rm -rf "${path}" 2>/dev/null || true
 		else
+			if mcp_lock_root_gone; then
+				return 1
+			fi
 			mcp_lock_try_reap "${path}"
 			if [ "${timeout_secs}" -gt 0 ]; then
 				local now
