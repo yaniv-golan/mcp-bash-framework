@@ -30,9 +30,12 @@ run_tool() {
 		"${MCPBASH_HOME}/bin/mcp-bash" run-tool "$1" --project-root "${PROJ}" --args "$2"
 }
 
+# The tool's own refusal must arrive as one isError result, not a protocol
+# error (outputSchema validation is skipped for isError results).
 assert_single_error_result() {
 	assert_equal "$(printf '%s' "${output}" | jq -s 'length' 2>/dev/null)" "1"
-	assert_equal "$(printf '%s' "${output}" | jq -r '(.isError // false) or (._mcpToolError // false)')" "true"
+	assert_equal "$(printf '%s' "${output}" | jq -r '._mcpToolError // false')" "false"
+	assert_equal "$(printf '%s' "${output}" | jq -r '.isError')" "true"
 }
 
 @test "example ffmpeg: existing output without elicitation is refused, nothing runs, file intact" {
@@ -50,6 +53,9 @@ assert_single_error_result() {
 
 @test "example ffmpeg: a missing input stops before ffprobe" {
 	run_tool inspect_media '{"path":"nope.mp4"}'
-	assert_single_error_result
+	# A missing path is rejected by the example's path resolver with mcp_fail,
+	# which is a protocol error in 1.x (it becomes isError in 2.0).
+	assert_equal "$(printf '%s' "${output}" | jq -s 'length' 2>/dev/null)" "1"
+	assert_equal "$(printf '%s' "${output}" | jq -r '(.isError // false) or (._mcpToolError // false)')" "true"
 	[ ! -e "${CALLS}" ]
 }
