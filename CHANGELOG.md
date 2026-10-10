@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Claude Code plugin with an mcp-bash skill**: The repository is now a plugin marketplace. `/plugin install mcp-bash --marketplace yaniv-golan/mcp-bash-framework` installs a skill that walks an agent through creating, testing, wiring and bundling an mcp-bash server, and lists the traps that fail silently (deny-by-default tools, `policy.sh`, the tool environment, bash 3.2 under Claude Desktop, completion script names).
 
+### Security
+
+- **Resources embedded in tool results can no longer be redirected by a symlink swap**: A tool's embedded resources (`MCP_TOOL_RESOURCES_FILE`, `mcp_result_text_with_resource`) were checked against the roots by path and then opened by name up to three times, for mime detection, the binary check and the content. Someone able to write inside a root could swap the file for a symlink after the check, and the tool result then carried the content of a file outside the roots. The file is now read once through the same verified read as `file://` resources, with the matched root, and detection and encoding use the bytes of that read. A file that isn't a regular file inside the roots when it is opened is skipped with a warning.
+
 ### Fixed
 
 - **`mcp_args_get --default` works**: The tool scaffold writes `mcp_args_get '.name' --default 'World'`, but `mcp_args_get` ignored the option, so every scaffolded tool returned the string `null` for a missing argument. `--default VALUE` is now used when the value is missing, null or an empty string (as `mcp_args_int` and `mcp_args_bool` do); `false`, `0` and the string `"null"` are kept. With `--default`, the helper also works in minimal mode. Tools copied from the scaffold are fixed without changes.

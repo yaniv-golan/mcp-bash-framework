@@ -9,6 +9,13 @@ if [[ -z "${BASH_VERSION:-}" ]]; then
 fi
 # shellcheck disable=SC2030,SC2031  # Subshell env mutations are intentionally isolated
 
+# Verified file reads (tool-embedded resources are read through mcp_file_read_verified).
+if ! declare -F mcp_file_read_verified >/dev/null 2>&1; then
+	# shellcheck source=lib/file_read.sh
+	# shellcheck disable=SC1091
+	. "${MCPBASH_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/lib/file_read.sh"
+fi
+
 MCP_TOOLS_REGISTRY_JSON=""
 MCP_TOOLS_REGISTRY_HASH=""
 MCP_TOOLS_REGISTRY_PATH=""
@@ -332,6 +339,24 @@ mcp_tools_normalize_local_path() {
 	printf '%s' "${abs}"
 }
 
+# Print the root in MCPBASH_ROOTS_PATHS that contains PATH (canonical), or
+# nothing when none does or the root is "/" (no ancestor check needed).
+mcp_tools_embed_matched_root() {
+	local path="$1"
+	local root
+	for root in ${MCPBASH_ROOTS_PATHS[@]+"${MCPBASH_ROOTS_PATHS[@]}"}; do
+		[ -n "${root}" ] || continue
+		[ "${root}" = "/" ] && return 0
+		root="${root%/}"
+		# Literal prefix comparison, as in mcp_roots_contains_path.
+		if [ "${path:0:$((${#root} + 1))}" = "${root}/" ]; then
+			printf '%s' "${root}"
+			return 0
+		fi
+	done
+	return 0
+}
+
 mcp_tools_embed_resource_from_path() {
 	local path="$1"
 	local mime_hint="${2:-}"
@@ -381,11 +406,40 @@ mcp_tools_embed_resource_from_path() {
 		mime_declared="true"
 	fi
 
+	# Read the file once through the verified read and build the content from
+	# that copy: the checks above looked at the path, and opening it by name
+	# again (mime detection, NUL sniff, content) would follow a symlink swapped
+	# in after them. The verified read pins the directory, confirms it is inside
+	# the matched root and returns the bytes of the regular file it checked.
+	local matched_root=""
+	if declare -F mcp_roots_contains_path >/dev/null 2>&1; then
+		matched_root="$(mcp_tools_embed_matched_root "${abs}")"
+	fi
+	local copy_base="${MCPBASH_STATE_DIR:-${TMPDIR:-/tmp}}"
+	local copy_dir
+	if ! copy_dir="$(mktemp -d "${copy_base%/}/mcpbash.embed.XXXXXX" 2>/dev/null)"; then
+		mcp_logging_warning "${MCP_TOOLS_LOGGER}" "Embedded resource skipped (no temporary directory): $(basename "${abs}")"
+		return 1
+	fi
+	local copy="${copy_dir}/${abs##*/}"
+	local read_status=0
+	mcp_file_read_verified "${abs}" "" "${matched_root}" >"${copy}" || read_status=$?
+	if [ "${read_status}" -ne 0 ]; then
+		rm -rf "${copy_dir}"
+		case "${read_status}" in
+		5) mcp_logging_warning "${MCP_TOOLS_LOGGER}" "Embedded resource skipped (cannot verify the opened file on this platform): $(basename "${abs}")" ;;
+		*) mcp_logging_warning "${MCP_TOOLS_LOGGER}" "Embedded resource skipped (not a regular file inside the roots, or changed while being read): $(basename "${abs}")" ;;
+		esac
+		return 1
+	fi
+
 	local content_obj
-	if ! content_obj="$(mcp_resource_content_object_from_file "${abs}" "${mime_hint}" "${uri}" "${mime_declared}")"; then
+	if ! content_obj="$(mcp_resource_content_object_from_file "${copy}" "${mime_hint}" "${uri}" "${mime_declared}")"; then
+		rm -rf "${copy_dir}"
 		mcp_logging_warning "${MCP_TOOLS_LOGGER}" "Embedded resource could not be encoded: $(basename "${abs}")"
 		return 1
 	fi
+	rm -rf "${copy_dir}"
 	printf '%s' "${content_obj}"
 }
 
