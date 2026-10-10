@@ -37,6 +37,34 @@ wait_bounded() {
 	wait "${pid}" 2>/dev/null || true
 }
 
+# On a missed elicitation, show what the still-running server was doing:
+# its process tree (is the flusher alive?) and its state files.
+dump_server_state() {
+	local pid="$1" label="$2" state_dir
+	printf '=== %s: server diagnostics (pid %s) ===\n' "${label}" "${pid}" >&2
+	ps -A -o pid=,ppid=,stat=,etime=,command= 2>/dev/null | awk -v root="${pid}" '
+		{ pid[NR]=$1; ppid[NR]=$2; line[NR]=$0 }
+		END { keep[root]=1; changed=1
+			while (changed) { changed=0; for (i=1;i<=NR;i++) if (!(pid[i] in keep) && (ppid[i] in keep)) { keep[pid[i]]=1; changed=1 } }
+			for (i=1;i<=NR;i++) if (pid[i] in keep) print line[i] }' >&2 || true
+	# Newest match: PIDs get reused, and kept-log runs leave old state dirs behind.
+	# shellcheck disable=SC2012  # names are mktemp-generated, no odd characters
+	state_dir="$(ls -td "${TMPDIR:-/tmp}"/mcpbash.state.*."${pid}".* 2>/dev/null | head -1)"
+	if [ -n "${state_dir}" ]; then
+		printf '%s\n' "--- state dir ${state_dir}" >&2
+		ls -la "${state_dir}" >&2 || true
+		local f
+		for f in "${state_dir}"/elicit* "${state_dir}"/pid.* "${state_dir}"/stderr.*; do
+			[ -f "${f}" ] || continue
+			printf '%s\n' "--- ${f##*/}" >&2
+			tail -c 2000 "${f}" >&2 || true
+			printf '\n' >&2
+		done
+	else
+		printf '%s\n' "--- no state dir found under ${TMPDIR:-/tmp}" >&2
+	fi
+}
+
 # --- Test 1: Legacy capability format (should imply form mode) ---
 test_legacy_format() {
 	local workroot="${TEST_TMPDIR}/legacy"
@@ -97,6 +125,9 @@ SH
 		fi
 	done
 
+	if [ "${elicit_seen}" -ne 1 ]; then
+		dump_server_state "${pid}" "legacy format"
+	fi
 	printf '%s\n' '{"jsonrpc":"2.0","id":"exit","method":"exit"}' >&3
 	exec 3>&-
 	wait_bounded "${pid}"
@@ -171,6 +202,9 @@ SH
 		fi
 	done
 
+	if [ "${elicit_seen}" -ne 1 ]; then
+		dump_server_state "${pid}" "new form format"
+	fi
 	printf '%s\n' '{"jsonrpc":"2.0","id":"exit","method":"exit"}' >&5
 	exec 5>&-
 	wait_bounded "${pid}"
