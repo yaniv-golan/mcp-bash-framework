@@ -489,3 +489,59 @@ test_run_mcp() {
 		./bin/mcp-bash <"${requests_file}" >"${responses_file}" 2>"${stderr_file}"
 	)
 }
+
+# Read one line from file descriptor FD, waiting at most SECS seconds, into
+# TEST_LINE. Returns 0 with a complete line, 1 on timeout or end of input.
+# A plain `read -t` that times out mid-line drops input: bash 4+ returns the
+# partial line in its variable (a caller that retries loses it) and bash 3.2
+# discards it. The rest of the line then arrives as an unparseable fragment.
+# Here bash 4+ keeps the partial input (per FD) and joins it with the next read;
+# bash 3.2 reads one character at a time, so a timeout never splits a read.
+# Call it directly, not in $(...), or the kept input is lost with the subshell.
+# shellcheck disable=SC2034  # TEST_LINE is read by the caller.
+test_read_line() {
+	local fd="$1"
+	local secs="$2"
+	local keep_var="_TEST_READ_PARTIAL_${fd}"
+	local kept="${!keep_var:-}"
+	local part=""
+	local rc=0
+	TEST_LINE=""
+	if [ "${BASH_VERSINFO[0]}" -lt 4 ]; then
+		local ch deadline=$((SECONDS + secs))
+		while :; do
+			ch=""
+			rc=0
+			IFS= read -r -n 1 -t 1 -u "${fd}" ch || rc=$?
+			if [ "${rc}" -eq 0 ] && [ -z "${ch}" ]; then
+				TEST_LINE="${kept}"
+				eval "${keep_var}=''"
+				return 0
+			fi
+			if [ "${rc}" -eq 0 ]; then
+				kept="${kept}${ch}"
+				continue
+			fi
+			# Timeout or end of input: keep what was read for the next call.
+			printf -v "${keep_var}" '%s' "${kept}"
+			if [ "${SECONDS}" -ge "${deadline}" ]; then
+				return 1
+			fi
+			sleep 0.1 # end of input returns at once; don't spin
+		done
+	fi
+	IFS= read -r -t "${secs}" -u "${fd}" part || rc=$?
+	if [ "${rc}" -eq 0 ]; then
+		TEST_LINE="${kept}${part}"
+		eval "${keep_var}=''"
+		return 0
+	fi
+	if [ "${rc}" -eq 1 ] && [ -n "${kept}${part}" ]; then
+		# End of input after a final line without a newline.
+		TEST_LINE="${kept}${part}"
+		eval "${keep_var}=''"
+		return 0
+	fi
+	printf -v "${keep_var}" '%s' "${kept}${part}"
+	return 1
+}

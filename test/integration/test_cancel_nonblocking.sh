@@ -66,15 +66,19 @@ exec 3>"${PIPE_IN}"
 exec 4<"${PIPE_OUT}"
 
 send() { printf '%s\n' "$1" >&3; }
+# test_read_line keeps a line split across a read timeout; a plain `read -t`
+# retry would drop it.
 read_resp() {
-	local line
-	read -r -t 1 -u 4 line && printf '%s' "${line}"
+	line=""
+	if test_read_line 4 1; then
+		line="${TEST_LINE}"
+	fi
 }
 wait_for_id() {
 	local want="$1" limit="$2" line deadline
 	deadline=$((SECONDS + limit))
 	while [ "${SECONDS}" -lt "${deadline}" ]; do
-		line="$(read_resp || true)"
+		read_resp
 		[ -z "${line}" ] && continue
 		SEEN="${SEEN} $(printf '%s' "${line}" | jq -c '.id // .method' 2>/dev/null || printf 'unparsed')"
 		if [ "$(printf '%s' "${line}" | jq -c '.id' 2>/dev/null || true)" = "${want}" ]; then
