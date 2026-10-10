@@ -1,0 +1,1 @@
+{"content":[{"type":"text","text":"limit must be positive\n\nHint: pass 1-100"}],"isError":true,"_meta":{"mcpbash/error":{"type":"invalid_args","message":"limit must be positive","hint":"pass 1-100","data":{"field":"limit"}}}}

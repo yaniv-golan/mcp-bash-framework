@@ -637,6 +637,18 @@ mcp_with_retry() {
 }
 
 mcp_fail() {
+	# Frozen form (mcp-bash 1.8+, unchanged in 2.0):
+	#   mcp_fail --type TYPE MESSAGE [--hint TEXT] [--data JSON]
+	# Ends the tool with an error result the model can see (isError: true).
+	# The numeric form below (mcp_fail CODE MESSAGE [DATA]) is the 1.x
+	# protocol-error form and is removed in 2.0.
+	if [ "${1-}" = "--type" ]; then
+		local err_type="${2-}"
+		local err_message="${3-}"
+		shift 3 2>/dev/null || shift $#
+		mcp_tool_error_result "${err_type}" "${err_message}" "$@"
+		exit 0
+	fi
 	local code="$1"
 	local message="${2:-}"
 	local data_raw="${3:-}"
@@ -1160,6 +1172,88 @@ mcp_byte_length() {
 #
 # Output: CallToolResult JSON to stdout
 # Returns: 0 always (MCP tool errors are expressed via isError, not exit codes)
+# mcp_result_text TEXT
+# Frozen (mcp-bash 1.8+, unchanged in 2.0). A successful result with one text
+# block and no structured content. Prints the result; does not end the tool.
+mcp_result_text() {
+	printf '{"content":[{"type":"text","text":%s}],"isError":false}' "$(__mcp_sdk_json_escape "${1-}")"
+}
+
+# mcp_result_json JSON [--max-text-bytes N]
+# Frozen (mcp-bash 1.8+, unchanged in 2.0). A successful result whose
+# structuredContent is exactly JSON (no {success, result} envelope); the text
+# block is the serialized JSON. When the text would exceed N bytes (default
+# MCPBASH_MAX_TEXT_BYTES, else 102400) it is replaced by a short summary,
+# since the data is in structuredContent.
+# Protocols before 2026-07-28 require structuredContent to be an object: for
+# those, a non-object value is sent as text only and is never summarised.
+# Invalid JSON gives an internal error result. Prints the result; does not
+# end the tool.
+mcp_result_json() {
+	local data="${1-}"
+	shift 2>/dev/null || true
+	local max_raw=""
+	while [ $# -gt 0 ]; do
+		case "$1" in
+		--max-text-bytes)
+			max_raw="${2-}"
+			shift 2 2>/dev/null || shift $#
+			;;
+		*) shift ;;
+		esac
+	done
+	local max_text_bytes
+	max_text_bytes=$(__mcp_sdk_uint_or_default "${max_raw}" "${MCPBASH_MAX_TEXT_BYTES:-102400}")
+	# Set per request by the server in 2.0; 1.x always serves legacy-era requests.
+	local era="${MCPBASH_PROTOCOL_ERA:-legacy}"
+
+	if [ "${MCPBASH_MODE:-full}" != "minimal" ] && [ -n "${MCPBASH_JSON_TOOL_BIN:-}" ]; then
+		local out
+		if out="$(printf '%s' "${data}" | "${MCPBASH_JSON_TOOL_BIN}" -c -s \
+			--argjson max "${max_text_bytes}" --arg era "${era}" '
+			if length != 1 then error("not a single value") else
+				.[0] as $d | ($d | tojson) as $t |
+				if ($d | type) == "object" or $era == "modern" then
+					{
+						content: [{type: "text", text: (
+							if ($t | utf8bytelength) <= $max then $t
+							else (
+								(if ($d | type) == "object" then "object with \($d | keys | length) keys"
+								elif ($d | type) == "array" then "array with \($d | length) items"
+								else ($d | type) end)
+								+ " (full data in structuredContent)")
+							end)}],
+						structuredContent: $d,
+						isError: false
+					}
+				else
+					{content: [{type: "text", text: $t}], isError: false}
+				end
+			end' 2>/dev/null)" && [ -n "${out}" ]; then
+			printf '%s' "${out}"
+		else
+			mcp_tool_error_result internal "mcp_result_json: argument is not a single JSON value"
+		fi
+		return 0
+	fi
+
+	# No JSON tool: can't validate; an object goes through as structuredContent.
+	local trimmed="${data#"${data%%[![:space:]]*}"}"
+	case "${trimmed}" in
+	"{"*)
+		printf '{"content":[{"type":"text","text":%s}],"structuredContent":%s,"isError":false}' \
+			"$(__mcp_sdk_json_escape "${data}")" "${data}"
+		;;
+	"")
+		mcp_tool_error_result internal "mcp_result_json: argument is not a single JSON value"
+		;;
+	*)
+		printf '{"content":[{"type":"text","text":%s}],"isError":false}' "$(__mcp_sdk_json_escape "${data}")"
+		;;
+	esac
+	return 0
+}
+
 mcp_result_success() {
 	local data="$1"
 	# Sanitize max_text_bytes to avoid set -e hazards from non-numeric input
