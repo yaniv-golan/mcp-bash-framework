@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tool policy denials:** a call refused by `MCPBASH_TOOL_ALLOWLIST` or `server.d/policy.sh` now returns a tool result with `isError: true` and type `policy_denied` instead of a JSON-RPC error, and a policy's custom error code is no longer sent. `mcp-bash run-tool` output for a denial no longer contains the `_mcpToolError` marker: test harnesses that detect a refused call through that marker must check `.isError` instead (`run-tool` still exits 1).
 - **Migrating to the frozen helpers:** `mcp-bash migrate --write` changes your tools, not your tests. Update your own tests that assert the `{success, result}` envelope or the `_mcpToolError` marker; `migrate` can't see them.
 - **SDK argument helpers:** `mcp_args_require`, `mcp_args_int`, `mcp_args_bool`, `mcp_require_path` and `mcp_download_safe_or_fail` now report a missing or invalid argument as a tool error result (`isError: true`, `_meta["mcpbash/error"].type` = `invalid_args`) instead of a JSON-RPC `-32602` error. Tests or clients that expect `-32602` from these helpers must check `.result.isError` instead. `mcp_fail_invalid_args` itself still sends `-32602`.
+- **Tools now receive SIGTERM on timeout and cancel:** tools used to run with SIGTERM ignored, so only SIGKILL stopped them. A tool's own `trap … TERM` now runs when its call times out or is cancelled, and gets about a second before SIGKILL.
 
 ### Changed
 
@@ -32,6 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Timed-out and cancelled tools left processes running**: the tool wrapper ignored SIGTERM, and every process it started inherited that. A cancelled tool could keep running, and on timeout only the tool's own process was killed, so anything it started (for example a `sleep` or a `git` command) was left orphaned. Timeout now stops the tool and everything it started (TERM, then KILL after a second), and cancel stops the request's whole process group even when the worker exits first. A tool call with a timeout also no longer waits for the watchdog's next one-second tick after the tool finishes. Not on Git Bash, which has no process groups.
+- **No file error on stderr after a cancel**: the delayed cancel cleanup no longer writes into the state directory of a server that has already exited.
 - **Two examples kept going after rejecting their input**: `examples/04-roots-basics` read a file after rejecting its path as outside the allowed roots, and `examples/12-config-and-downloads` downloaded an `http://` URL after rejecting it. Both used `mcp_error`, which reports an error but doesn't end the tool; they now use `mcp_fail --type`.
 - **A request split across the read timeout is answered**: With the timed read loop (the default outside CI mode), a request whose bytes arrived on both sides of the read timeout was lost. On bash 4+ each part was answered as a separate, unparseable message; on bash 3.2 the first part was discarded. The request itself was never answered, and the client waited indefinitely. The server now keeps the partial input and joins it with the rest (bash 4+), or reads the rest of a started line without a timeout (bash 3.2). A final request without a trailing newline is still answered when input ends.
 

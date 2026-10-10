@@ -1424,7 +1424,9 @@ mcp_core_cancel_escalate() {
 	local pid="$2"
 	local pgid="$3"
 
-	if mcp_core_process_alive "${pid}"; then
+	# The worker usually exits on TERM at once; the tool and the processes it
+	# started can outlive it in the same group, so check the group too.
+	if mcp_core_process_alive "${pid}" || mcp_core_group_alive "${pgid}"; then
 		mcp_core_send_signal_chain "${pid}" "${pgid}" KILL
 	fi
 	# If the worker died while holding the stdout lock, force-release it using the tracked pid.
@@ -1456,6 +1458,18 @@ mcp_core_send_signal_chain() {
 mcp_core_process_alive() {
 	local pid="$1"
 	kill -0 "${pid}" 2>/dev/null
+}
+
+mcp_core_group_alive() {
+	local pgid="$1"
+	if [ "${MCPBASH_SKIP_PROCESS_GROUP_LOOKUP:-0}" = "1" ] || [ -z "${pgid}" ]; then
+		return 1
+	fi
+	# Never probe (and so never signal) the server's own group.
+	if [ -n "${MCPBASH_MAIN_PGID:-}" ] && [ "${pgid}" = "${MCPBASH_MAIN_PGID}" ]; then
+		return 1
+	fi
+	kill -0 "-${pgid}" 2>/dev/null
 }
 
 mcp_core_get_id_key() {

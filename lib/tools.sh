@@ -1865,9 +1865,11 @@ mcp_tools_call() {
 	# shellcheck disable=SC2030,SC2031,SC2094
 	(
 		# Environment mutations here are intentionally scoped to this subshell.
-		# Ignore SIGTERM in this subshell - only the tool process should be killed
-		# The tool runs in its own process via with_timeout, which handles the signal
-		trap '' TERM
+		# Handle TERM (cancel signals the request's process group) by cleaning up
+		# and exiting. Don't ignore it: an ignored signal is inherited by every
+		# process started from here, so the tool, its children and the timeout
+		# watchdog could never be stopped with TERM.
+		trap 'cleanup_tool_temp_files; exit 143' TERM
 		set -o pipefail
 		cd "${MCPBASH_PROJECT_ROOT}" || exit 1
 		MCP_SDK="${MCPBASH_HOME}/sdk"

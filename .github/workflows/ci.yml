@@ -340,6 +340,7 @@ jobs:
             test_large_payloads.sh
             test_completion_registered_timeout.sh
             test_deprecation_notice.sh
+            test_tool_termination.sh
         run: |
           set -euo pipefail
           unset MCPBASH_CI_MODE
