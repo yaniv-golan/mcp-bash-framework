@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour changes to check before upgrading
 
-- **Tool policy denials:** a call refused by `MCPBASH_TOOL_ALLOWLIST` or `server.d/policy.sh` now returns a tool result with `isError: true` and type `policy_denied` instead of a JSON-RPC error, and a policy's custom error code is no longer sent.
+- **Tool policy denials:** a call refused by `MCPBASH_TOOL_ALLOWLIST` or `server.d/policy.sh` now returns a tool result with `isError: true` and type `policy_denied` instead of a JSON-RPC error, and a policy's custom error code is no longer sent. `mcp-bash run-tool` output for a denial no longer contains the `_mcpToolError` marker: test harnesses that detect a refused call through that marker must check `.isError` instead (`run-tool` still exits 1).
 
 ### Changed
 
