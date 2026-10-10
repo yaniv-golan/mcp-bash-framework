@@ -8,20 +8,18 @@
   },
   "outputSchema": {
     "type": "object",
-    "required": ["success", "result"],
     "properties": {
-      "success": {
-        "type": "boolean",
-        "description": "Whether the operation succeeded"
+      "message": {
+        "type": "string"
       },
-      "result": {
-        "type": "object",
-        "properties": {
-          "message": { "type": "string" },
-          "mode": { "type": "string" },
-          "quality": { "type": "string" },
-          "features": { "type": "string" }
-        }
+      "mode": {
+        "type": "string"
+      },
+      "quality": {
+        "type": "string"
+      },
+      "features": {
+        "type": "string"
       }
     }
   }

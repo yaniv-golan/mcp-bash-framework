@@ -8,4 +8,4 @@ source "${MCP_SDK:?MCP_SDK environment variable not set}/tool-sdk.sh"
 # Use mcp_args_require for required arguments (fails with -32602 if missing)
 value="$(mcp_args_require '.value')"
 
-mcp_result_success "$(mcp_json_obj message "You sent: ${value}")"
+mcp_result_json "$(mcp_json_obj message "You sent: ${value}")"

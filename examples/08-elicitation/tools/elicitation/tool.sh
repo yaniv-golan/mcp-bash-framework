@@ -7,7 +7,7 @@ source "${MCP_SDK:?MCP_SDK environment variable not set}/tool-sdk.sh"
 
 json_bin="${MCPBASH_JSON_TOOL_BIN:-}"
 if [[ -z "${json_bin}" ]] || ! command -v "${json_bin}" >/dev/null 2>&1; then
-	mcp_fail -32603 "JSON tooling unavailable for elicitation parsing"
+	mcp_fail --type internal "JSON tooling unavailable for elicitation parsing"
 fi
 
 # mcp_elicit_* print {"action": ...} and exit non-zero when no answer came back
@@ -20,7 +20,7 @@ confirm_fields="$("${json_bin}" -r '[.action, (.content.confirmed // false)] | @
 confirm_action="${confirm_fields%%$'\t'*}"
 
 if [[ "${confirm_action}" != "accept" ]]; then
-	mcp_result_success "$(mcp_json_obj message "Stopped: elicitation action=${confirm_action}")"
+	mcp_result_json "$(mcp_json_obj message "Stopped: elicitation action=${confirm_action}")"
 	exit 0
 fi
 
@@ -31,7 +31,7 @@ mode_action="${mode_fields%%$'\t'*}"
 mode_choice="${mode_fields#*$'\t'}"
 
 if [[ "${mode_action}" != "accept" ]]; then
-	mcp_result_success "$(mcp_json_obj message "Stopped after mode choice: action=${mode_action}")"
+	mcp_result_json "$(mcp_json_obj message "Stopped after mode choice: action=${mode_action}")"
 	exit 0
 fi
 
@@ -45,7 +45,7 @@ quality_action="${quality_fields%%$'\t'*}"
 quality_choice="${quality_fields#*$'\t'}"
 
 if [[ "${quality_action}" != "accept" ]]; then
-	mcp_result_success "$(mcp_json_obj message "Stopped after quality choice: action=${quality_action}")"
+	mcp_result_json "$(mcp_json_obj message "Stopped after quality choice: action=${quality_action}")"
 	exit 0
 fi
 
@@ -56,11 +56,11 @@ features_action="$("${json_bin}" -r '.action' <<<"${features_resp}")"
 features_choices="$("${json_bin}" -r '(.content.choices // []) | join(", ")' <<<"${features_resp}")"
 
 if [[ "${features_action}" != "accept" ]]; then
-	mcp_result_success "$(mcp_json_obj message "Stopped after features selection: action=${features_action}")"
+	mcp_result_json "$(mcp_json_obj message "Stopped after features selection: action=${features_action}")"
 	exit 0
 fi
 
-mcp_result_success "$(
+mcp_result_json "$(
 	mcp_json_obj \
 		message "Elicitation complete" \
 		mode "${mode_choice}" \

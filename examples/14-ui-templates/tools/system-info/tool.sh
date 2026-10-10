@@ -125,4 +125,4 @@ result=$(mcp_json_obj \
 	diskTotal "${disk_total}" \
 	diskPercent "${disk_pct}")
 
-mcp_result_success "${result}"
+mcp_result_json "${result}"

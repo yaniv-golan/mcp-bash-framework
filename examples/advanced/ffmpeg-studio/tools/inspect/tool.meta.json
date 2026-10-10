@@ -9,21 +9,12 @@
         "description": "Absolute or relative path that must resolve inside an allowed media root (configure via config/media_roots.json)."
       }
     },
-    "required": ["path"]
+    "required": [
+      "path"
+    ]
   },
   "outputSchema": {
     "type": "object",
-    "required": ["success", "result"],
-    "properties": {
-      "success": {
-        "type": "boolean",
-        "description": "Whether the operation succeeded"
-      },
-      "result": {
-        "type": "object",
-        "description": "ffprobe JSON output containing format and streams (on success) or error details (on failure)."
-      }
-    }
+    "description": "ffprobe JSON output containing format and streams (on success) or error details (on failure)."
   }
 }
-

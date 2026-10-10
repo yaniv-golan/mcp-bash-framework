@@ -7,21 +7,13 @@
   },
   "outputSchema": {
     "type": "object",
-    "required": ["success", "result"],
+    "required": [
+      "message"
+    ],
     "properties": {
-      "success": {
-        "type": "boolean",
-        "description": "Whether the operation succeeded"
-      },
-      "result": {
-        "type": "object",
-        "required": ["message"],
-        "properties": {
-          "message": {
-            "type": "string",
-            "description": "Greeting text"
-          }
-        }
+      "message": {
+        "type": "string",
+        "description": "Greeting text"
       }
     }
   },

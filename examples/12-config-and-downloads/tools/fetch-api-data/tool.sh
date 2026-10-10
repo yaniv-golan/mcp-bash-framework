@@ -10,7 +10,7 @@ source "${MCP_SDK:?MCP_SDK environment variable not set}/tool-sdk.sh"
 # - mcp_config_load: Load config from env var / file / defaults
 # - mcp_config_get: Extract values with fallbacks
 # - mcp_download_safe: SSRF-protected HTTPS downloads
-# - mcp_error --hint: LLM-friendly error messages
+# - mcp_fail --type ... --hint: LLM-friendly error results (ends the tool)
 # ============================================================
 
 # Load configuration with precedence: env var > file > example > defaults
@@ -30,7 +30,7 @@ url=$(mcp_args_require '.url')
 
 # Validate URL format
 if [[ ! "${url}" =~ ^https:// ]]; then
-	mcp_error "validation_error" "URL must use HTTPS protocol" \
+	mcp_fail --type "validation_error" "URL must use HTTPS protocol" \
 		--hint "Change the URL to start with https:// instead of http://" \
 		--data "$(mcp_json_obj received "${url}")"
 fi
@@ -58,7 +58,7 @@ if [[ $(echo "${result}" | jq -r '.success') == "true" ]]; then
 	bytes=$(echo "${result}" | jq -r '.bytes')
 	preview=$(head -c 500 "${tmp_file}" 2>/dev/null || echo "(binary content)")
 
-	mcp_result_success "$(mcp_json_obj \
+	mcp_result_json "$(mcp_json_obj \
 		bytes "${bytes}" \
 		preview "${preview}" \
 		url "${url}")"
@@ -70,27 +70,27 @@ else
 	case "${error_type}" in
 	redirect)
 		location=$(echo "${result}" | jq -r '.error.location // "unknown"')
-		mcp_error "redirect" "URL redirected to a different location" \
+		mcp_fail --type "redirect" "URL redirected to a different location" \
 			--hint "The URL redirected to ${location}. Try fetching that URL directly instead." \
 			--data "$(mcp_json_obj original_url "${url}" redirect_location "${location}")"
 		;;
 	host_blocked)
-		mcp_error "host_blocked" "Host is not in the allowlist" \
+		mcp_fail --type "host_blocked" "Host is not in the allowlist" \
 			--hint "Add '${host}' to MCPBASH_HTTPS_ALLOW_HOSTS or use a different URL from an allowed host" \
 			--data "$(mcp_json_obj blocked_host "${host}" url "${url}")"
 		;;
 	network_error)
-		mcp_error "network_error" "${error_msg}" \
+		mcp_fail --type "network_error" "${error_msg}" \
 			--hint "Check if the URL is accessible and try again. The server may be temporarily unavailable." \
 			--data "$(mcp_json_obj url "${url}")"
 		;;
 	size_exceeded)
-		mcp_error "size_exceeded" "Response exceeds maximum size" \
+		mcp_fail --type "size_exceeded" "Response exceeds maximum size" \
 			--hint "The response is larger than ${max_bytes} bytes. Try a different endpoint or increase max_bytes in config." \
 			--data "$(mcp_json_obj url "${url}" max_bytes "${max_bytes}")"
 		;;
 	*)
-		mcp_error "${error_type}" "${error_msg}" \
+		mcp_fail --type "${error_type}" "${error_msg}" \
 			--hint "Check the URL and try again" \
 			--data "$(mcp_json_obj url "${url}" error_type "${error_type}")"
 		;;

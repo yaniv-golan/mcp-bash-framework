@@ -17,29 +17,28 @@
         "description": "Output path (relative or absolute) constrained to allowed writable media roots."
       }
     },
-    "required": ["input", "time", "output"]
+    "required": [
+      "input",
+      "time",
+      "output"
+    ]
   },
   "outputSchema": {
     "type": "object",
-    "required": ["success", "result"],
     "properties": {
-      "success": {
-        "type": "boolean",
-        "description": "Whether the operation succeeded"
+      "message": {
+        "type": "string",
+        "description": "Confirmation describing where the frame was written."
       },
-      "result": {
-        "type": "object",
-        "properties": {
-          "message": {
-            "type": "string",
-            "description": "Confirmation describing where the frame was written."
-          },
-          "error": { "type": "string" },
-          "input": { "type": "string" },
-          "hint": { "type": "string" }
-        }
+      "error": {
+        "type": "string"
+      },
+      "input": {
+        "type": "string"
+      },
+      "hint": {
+        "type": "string"
       }
     }
   }
 }
-

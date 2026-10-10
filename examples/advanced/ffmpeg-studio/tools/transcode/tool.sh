@@ -11,7 +11,7 @@ source "${script_dir}/../../lib/roots.sh"
 
 json_bin="${MCPBASH_JSON_TOOL_BIN:-}"
 if [[ -z "${json_bin}" ]] || ! command -v "${json_bin}" >/dev/null 2>&1; then
-	mcp_fail -32603 "JSON tooling unavailable for argument parsing"
+	mcp_fail --type internal "JSON tooling unavailable for argument parsing"
 fi
 
 input_path="$(mcp_args_get '.input // empty' 2>/dev/null || true)"
@@ -37,7 +37,7 @@ if [[ -z "${duration}" ]] && [[ $# -ge 5 ]]; then
 fi
 
 if [[ -z "${input_path}" ]] || [[ -z "${output_path}" ]] || [[ -z "${preset}" ]]; then
-	mcp_fail_invalid_args "Missing required arguments: input, output, preset"
+	mcp_fail --type invalid_args "Missing required arguments: input, output, preset"
 fi
 
 full_input="$(mcp_ffmpeg_resolve_path "${input_path}" "read")"
@@ -45,29 +45,21 @@ full_output="$(mcp_ffmpeg_resolve_path "${output_path}" "write")"
 
 # Validation: Input exists → Tool Execution Error (LLM can choose a different file)
 if [[ ! -f "${full_input}" ]]; then
-	mcp_result_error "$(
-		mcp_json_obj \
-			error "Input file not found" \
-			input "${input_path}" \
-			hint "Check the file exists and is within allowed media roots"
-	)"
-	exit 0
+	mcp_fail --type not_found "Input file not found" \
+		--hint "Check the file exists and is within allowed media roots" \
+		--data "$(mcp_json_obj input "${input_path}")"
 fi
 
 # Validation: Output collision with elicitation-based confirmation
 if [[ -f "${full_output}" ]]; then
 	if [[ "${MCP_ELICIT_SUPPORTED:-0}" != "1" ]]; then
 		# Tool Execution Error: LLM can choose a different output path
-		mcp_result_error "$(
-			mcp_json_obj \
-				error "Output file already exists" \
-				output "${output_path}" \
-				hint "Choose a different output path or enable elicitation to confirm overwrite"
-		)"
-		exit 0
+		mcp_fail --type already_exists "Output file already exists" \
+			--hint "Choose a different output path or enable elicitation to confirm overwrite" \
+			--data "$(mcp_json_obj output "${output_path}")"
 	fi
 	if [[ -z "${json_bin}" ]]; then
-		mcp_fail -32603 "JSON tooling unavailable for elicitation parsing"
+		mcp_fail --type internal "JSON tooling unavailable for elicitation parsing"
 	fi
 	# Non-zero when no answer came back; branch on .action below, don't let set -e abort.
 	overwrite_resp="$(mcp_elicit_confirm "Output ${output_path} exists. Overwrite?")" || true
@@ -76,13 +68,9 @@ if [[ -f "${full_output}" ]]; then
 	overwrite_confirmed="${overwrite_fields#*$'\t'}"
 	if [[ "${overwrite_action}" != "accept" ]] || [[ "${overwrite_confirmed}" != "true" ]]; then
 		# Tool Execution Error: User declined, LLM can try different output
-		mcp_result_error "$(
-			mcp_json_obj \
-				error "Overwrite declined" \
-				output "${output_path}" \
-				hint "Choose a different output path"
-		)"
-		exit 0
+		mcp_fail --type declined "Overwrite declined" \
+			--hint "Choose a different output path" \
+			--data "$(mcp_json_obj output "${output_path}")"
 	fi
 fi
 
@@ -114,13 +102,9 @@ case "${preset}" in
 	;;
 *)
 	# Tool Execution Error: LLM can choose a valid preset
-	mcp_result_error "$(
-		mcp_json_obj \
-			error "Invalid preset" \
-			preset "${preset}" \
-			hint "Valid presets: 1080p, 720p, audio-only, gif"
-	)"
-	exit 0
+	mcp_fail --type invalid_args "Invalid preset" \
+		--hint "Valid presets: 1080p, 720p, audio-only, gif" \
+		--data "$(mcp_json_obj preset "${preset}")"
 	;;
 esac
 
@@ -164,7 +148,7 @@ while IFS= read -r line; do
 		kill "${ffmpeg_pid}" 2>/dev/null || true
 		wait "${ffmpeg_pid}" 2>/dev/null || true
 		rm -f "${full_output}"
-		mcp_fail -32001 "Cancelled"
+		mcp_fail --type cancelled "Cancelled"
 	fi
 done <"${progress_fifo}"
 
@@ -177,7 +161,7 @@ trap - EXIT INT TERM
 
 if [[ "${wait_status}" -ne 0 ]]; then
 	rm -f "${full_output}"
-	mcp_fail -32603 "Transcode failed (ffmpeg exit ${wait_status})"
+	mcp_fail --type internal "Transcode failed (ffmpeg exit ${wait_status})"
 fi
 
-mcp_result_success "$(mcp_json_obj message "Transcoding complete: ${output_path}")"
+mcp_result_json "$(mcp_json_obj message "Transcoding complete: ${output_path}")"
