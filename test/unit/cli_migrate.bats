@@ -12,6 +12,8 @@ setup() {
 	PROJ="${BATS_TEST_TMPDIR}/proj"
 	(cd "${BATS_TEST_TMPDIR}" && mcp-bash new proj >/dev/null 2>&1) || skip "mcp-bash new unavailable"
 	rm -rf "${PROJ}/tools/hello"
+	# Simulate a project created before 1.8 (new projects record API 2).
+	jq 'del(.mcpBash)' "${PROJ}/server.d/server.meta.json" >"${PROJ}/meta.tmp" && mv "${PROJ}/meta.tmp" "${PROJ}/server.d/server.meta.json"
 	mkdir -p "${PROJ}/tools/proj-a"
 	cat >"${PROJ}/tools/proj-a/tool.meta.json" <<'JSON'
 {

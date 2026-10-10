@@ -176,8 +176,12 @@ mig_call_argc() {
 # result's shape) or it forwards "$@"/$* (unknown arguments).
 mig_call_is_opaque() {
 	local name="$1" text="$2"
-	case "${text}" in
-	*'$('*"${name}"* | *'`'*"${name}"*) return 0 ;;
+	# Captured only when "$(" or a backtick directly wraps the call (other
+	# substitutions earlier on the line, e.g. X=$(a) || NAME, don't count).
+	local pre="${text%%"${name}"*}"
+	pre="${pre%"${pre##*[![:space:]]}"}"
+	case "${pre}" in
+	*'$(' | *'`') return 0 ;;
 	esac
 	local rest="${text#*"${name}"}"
 	case "${rest}" in
@@ -193,6 +197,17 @@ mig_replace_line() {
 	MIG_NEW_LINE="${text}" awk -v n="${n}" 'NR == n { print ENVIRON["MIG_NEW_LINE"]; next } { print }' "${file}" >"${tmp}" \
 		&& cat "${tmp}" >"${file}"
 	rm -f "${tmp}"
+}
+
+# Helper for rules: print the first non-blank, non-comment line after the
+# command that starts on line N of FILE (skipping its "\" continuation lines).
+mig_next_statement() {
+	awk -v n="$2" '
+		NR < n { next }
+		NR == n { cont = ($0 ~ /\\[[:space:]]*$/); next }
+		cont { cont = ($0 ~ /\\[[:space:]]*$/); next }
+		$0 ~ /^[[:space:]]*(#.*)?$/ { next }
+		{ print; exit }' "$1"
 }
 
 # Helper for rules: print line N of FILE.

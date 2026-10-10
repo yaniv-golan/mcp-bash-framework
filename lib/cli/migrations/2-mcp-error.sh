@@ -13,7 +13,7 @@ MIG_FIX='mcp_fail --type TYPE "MESSAGE" [--hint TEXT] [--data JSON]'
 mig_detect() {
 	local file="$1" line kind text next
 	mig_grep_word mcp_error "${file}" | while IFS=$'\t' read -r line kind text; do
-		next="$(awk -v n="${line}" 'NR > n && $0 !~ /^[[:space:]]*(#.*)?$/ { print; exit }' "${file}")"
+		next="$(mig_next_statement "${file}" "${line}")"
 		case "${next}" in
 		*[[:space:]]exit | *[[:space:]]exit[[:space:]]* | exit | exit[[:space:]]*)
 			printf '%s\tauto\t%s\n' "${line}" "${text}"
