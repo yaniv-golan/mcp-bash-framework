@@ -2,7 +2,7 @@
 name: mcp-bash
 description: Build, debug and package MCP servers written in Bash with the mcp-bash framework (mcp-bash-framework). Use whenever the user wants to create an MCP server from shell scripts or CLIs, add or fix tools, resources, prompts or completions in an mcp-bash project, wire one into Claude Desktop, Cursor or another client, figure out why a tool is "blocked by policy", can't see an environment variable or API key, or works in a terminal but not in Claude Desktop, when tool errors show only an exit code, when completions or suggestions don't appear in Claude Desktop, when wrapping an existing CLI (Python, Node, Go) as MCP tools, or to build an .mcpb bundle. Also use when a repo has server.d/server.meta.json, tools/*/tool.meta.json, mcp-bash.lock, a vendored .mcp-bash/ directory or mcpb.conf.
 metadata:
-  version: 0.2.0
+  version: 0.3.0
 ---
 
 # Building MCP servers with mcp-bash
@@ -43,6 +43,11 @@ guessing — it is short and current:
 
 ### Writing a tool
 
+Use the result and error helpers that mcp-bash 2.0 keeps (`mcp_result_json`,
+`mcp_result_text`, `mcp_fail --type`; available from 1.8.0). On an older framework, upgrade,
+or use `mcp_result_success` / `mcp_error`, which still work in 1.x but are removed in 2.0
+(`mcp-bash validate` lists them and `mcp-bash migrate` rewrites them).
+
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
@@ -52,19 +57,24 @@ query="$(mcp_args_get '.query')"                 # required: validate it yoursel
 limit="$(mcp_args_int '.limit' --default 10 --min 1 --max 100)"
 name="$(mcp_args_get '.name // "World"')"        # default for a string: put it in the filter
 
-[ -n "${query}" ] && [ "${query}" != "null" ] || mcp_fail_invalid_args "query is required"
+if [ -z "${query}" ] || [ "${query}" = "null" ]; then
+	mcp_fail --type invalid_args "query is required" --hint "Pass a search string in query"
+fi
 
-mcp_result_success "$(mcp_json_obj query "${query}" name "${name}")"
+mcp_result_json "$(mcp_json_obj query "${query}" name "${name}")"
 ```
 
 - **stdout is the result channel.** Anything else a command prints must go to stderr
   (`cmd >&2`), or the result is corrupt.
-- Errors the model should see and react to: `mcp_error "type" "message" --hint "what to do"`.
-  Bad arguments: `mcp_fail_invalid_args "msg"`.
-- **Result helpers don't end the tool.** `mcp_result_success`, `mcp_result_error` and
-  `mcp_error` print a result and return; in an early-return branch follow them with `exit 0`,
-  or the tool keeps going and prints a second result (or does the work it just refused).
-  `mcp_fail` and `mcp_fail_invalid_args` do exit.
+- **Results:** `mcp_result_json JSON` (the JSON becomes `structuredContent`, so an
+  `outputSchema` describes the JSON itself, with no `{success, result}` wrapper) or
+  `mcp_result_text TEXT`.
+- **Errors the model should see and react to:** `mcp_fail --type TYPE "message" --hint "what
+  to do"` (types such as `invalid_args`, `not_found`, `permission`, `unavailable`). It returns
+  an error result the model reads and **ends the tool**.
+- **The 1.x helpers don't end the tool.** If you maintain code that uses `mcp_result_success`,
+  `mcp_result_error` or `mcp_error`, follow them with `exit 0` in an early-return branch, or the
+  tool keeps going and prints a second result (or does the work it just refused).
 - Long work: `mcp_progress <pct> "msg"`, and check `mcp_is_cancelled` in loops.
 - Tool names: letters, digits, `_` and `-` only, up to 64 characters. **No dots** — Claude
   Desktop rejects them.
@@ -72,7 +82,7 @@ mcp_result_success "$(mcp_json_obj query "${query}" name "${name}")"
   above 2, so a CLI whose codes 3+ are permanent (auth, not found) runs three times and
   prints three JSON error documents into one stdout. That is invalid JSON, and the model sees
   only "exited with code 3". Don't retry permanent errors; use `set -uo pipefail` (no `-e`)
-  and return the CLI's message with `mcp_error`. Pattern: `examples/15-cli-wrapper`.
+  and return the CLI's message with `mcp_fail --type`. Pattern: `examples/15-cli-wrapper`.
 - **Never paste values into a jq program.** Use `--arg`/`--argjson`; an argument spliced
   into the filter is jq injection, and anything the tool can read (API keys) can leak.
 - **Confirming destructive actions with elicitation:** handle accept, decline, cancel and no
@@ -96,23 +106,28 @@ work".
   `MCPBASH_TOOL_ALLOWLIST` (`*` allows all; fine for a project you trust). In a client config
   that removed it, every call fails with "blocked by policy". `run-tool` needs `--allow-self`
   (or `--allow NAME` / `--allow-all`).
-- **A custom `server.d/policy.sh` must call the default first.** Defining
-  `mcp_tools_policy_check` *replaces* the built-in check, allowlist included:
+- **Project tool rules: use `mcp_tools_policy_project` (1.8.0+).** Define it in
+  `server.d/policy.sh`; it runs after the built-in allowlist check, so it can only narrow
+  access. Exit 0 allows; non-zero denies, and what it prints becomes the reason:
 
   ```bash
-  mcp_tools_policy_check() {
-  	mcp_tools_policy_check_default "$@" || return 1
-  	# project rules here
-  	return 0
+  mcp_tools_policy_project() {
+  	local tool="$1" args_json="$2"
+  	if [ "${MY_READ_ONLY:-false}" = "true" ] && [ "${tool}" = "my-delete" ]; then
+  		echo "Read-only mode: my-delete is disabled"
+  		return 1
+  	fi
   }
   ```
 
-  `mcp-bash validate` and `doctor` warn when the call is missing.
-- **A policy denial is a JSON-RPC error, which Claude Desktop hides.** Desktop shows only "The
-  connector returned an error or an invalid response"; the reason reaches neither the model
-  nor the user. For a refusal the model should explain (read-only mode, missing permission),
-  let the tool run and have it return `mcp_error "type" "why" --hint "what to do"` followed by
-  `exit 0`; keep `policy.sh` for hard blocks.
+  It runs in a subshell, so keep any state in files. The older way, redefining
+  `mcp_tools_policy_check`, *replaces* the built-in check, allowlist included, unless it
+  starts with `mcp_tools_policy_check_default "$@" || return 1`; `validate` and `doctor`
+  warn when that call is missing.
+- **Policy denials and Claude Desktop:** from 1.8.0 a denial is an error result whose text
+  the model and user see. Before 1.8.0 it was a JSON-RPC error that Desktop shows only as
+  "The connector returned an error or an invalid response"; on those versions, refusals the
+  model should explain belong in the tool itself (`mcp_error … ; exit 0`).
 - **Tools don't see your environment variables.** Tools run with a minimal environment (only
   framework `MCP_*` variables, `PATH`, `HOME`, `TMPDIR`, `LANG` and `MCPBASH_*`); resource
   providers and completion scripts get even less. An API key exported in the shell or set by
