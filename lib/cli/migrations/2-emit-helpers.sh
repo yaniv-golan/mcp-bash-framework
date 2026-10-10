@@ -5,8 +5,8 @@ MIG_ID=2-emit-helpers
 MIG_API=2
 MIG_KIND=manual
 MIG_SCOPE="project-sh"
-MIG_SUMMARY="mcp_emit_text, mcp_emit_json and mcp_result_text_with_resource are removed in 2.0"
+MIG_SUMMARY="mcp_emit_text and mcp_emit_json are removed in 2.0"
 MIG_FIX='mcp_result_text TEXT or mcp_result_json JSON'
 mig_detect() {
-	mig_grep_regex '(^|[^A-Za-z0-9_])(mcp_emit_text|mcp_emit_json|mcp_result_text_with_resource)([^A-Za-z0-9_]|$)' "$1"
+	mig_grep_regex '(^|[^A-Za-z0-9_])(mcp_emit_text|mcp_emit_json)([^A-Za-z0-9_]|$)' "$1"
 }

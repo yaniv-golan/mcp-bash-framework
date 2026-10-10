@@ -101,7 +101,7 @@ SH
 
 resolved() {
 	"${BASH}" -c '. "$1/lib/migrate_rules.sh"; mcp_migrate_detect_resolved "$2"' _ "${MCPBASH_HOME}" "$1" \
-		| awk -F'\t' '$1 ~ /result-success|envelope/ { print $3 ":" $4 ":" $2 }' | LC_ALL=C sort
+		| awk -F'\t' '$1 ~ /result-success|envelope|text-with-resource/ { print $3 ":" $4 ":" $2 }' | LC_ALL=C sort
 }
 
 envelope_tool() {
@@ -143,4 +143,14 @@ tools/b/tool.sh:2:auto"
 	assert_output "lib/common.sh:2:manual
 tools/a/tool.meta.json:3:manual
 tools/a/tool.sh:2:manual"
+}
+
+@test "migrate sets: a tool using mcp_result_text_with_resource keeps its envelope schema" {
+	root="${BATS_TEST_TMPDIR}/p"
+	envelope_tool "${root}" a no
+	printf '%s\n' 'mcp_result_text_with_resource "{}" --path /etc/hosts --mime text/plain' >>"${root}/tools/a/tool.sh"
+	run resolved "${root}"
+	assert_output "tools/a/tool.meta.json:3:manual
+tools/a/tool.sh:2:manual
+tools/a/tool.sh:3:manual"
 }
