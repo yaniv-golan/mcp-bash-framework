@@ -69,7 +69,7 @@ The text block carries what the model reads (the message, plus the hint when the
 
 ### SDK Support
 
-Return tool execution errors with `mcp_fail --type`. It returns the error result and **ends the tool**, so nothing after it runs. That holds inside `$(...)` too, for example in a helper function whose output you capture: the result travels to the framework through a side channel, and the non-zero exit ends the substitution (with `set -e`, the whole tool; without it, code after the substitution still runs, but the error result is what the client gets):
+Return tool execution errors with `mcp_fail --type`. It returns the error result and **ends the tool**, so nothing after it runs. Inside `$(...)` (a helper whose output you capture, or `mcp_args_require` and the other argument helpers) the result still reaches the client through a side channel, but the non-zero exit only ends the substitution. **With `set -e` that ends the tool; without it, the script carries on with an empty value.** A tool that runs without `-e` (for example a CLI wrapper) must stop explicitly: `path="$(mcp_args_require '.path')" || exit 1`.
 
 ```bash
 # Tool Execution Error (LLM can self-correct); ends the tool
