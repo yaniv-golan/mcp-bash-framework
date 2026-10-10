@@ -64,7 +64,7 @@
     app.ontoolresult = (result) => {
       console.log('Tool result:', result);
       if (result?.structuredContent) {
-        const data = result.structuredContent.result || result.structuredContent;
+        const data = result.structuredContent;
         render(data);
       }
     };
