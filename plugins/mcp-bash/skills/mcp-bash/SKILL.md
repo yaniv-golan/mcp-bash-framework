@@ -83,6 +83,8 @@ mcp_result_json "$(mcp_json_obj query "${query}" name "${name}")"
   prints three JSON error documents into one stdout. That is invalid JSON, and the model sees
   only "exited with code 3". Don't retry permanent errors; use `set -uo pipefail` (no `-e`)
   and return the CLI's message with `mcp_fail --type`. Pattern: `examples/15-cli-wrapper`.
+  Without `-e`, an argument helper or `mcp_fail --type` inside `$(...)` doesn't stop the
+  tool (the error result still wins); write `x="$(mcp_args_require '.x')" || exit 1`.
 - **Never paste values into a jq program.** Use `--arg`/`--argjson`; an argument spliced
   into the filter is jq injection, and anything the tool can read (API keys) can leak.
 - **Confirming destructive actions with elicitation:** handle accept, decline, cancel and no
