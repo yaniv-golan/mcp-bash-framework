@@ -12,6 +12,9 @@ MCPBASH_TEST_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/../.." && pwd)"
 # MCPBASH_PROJECT_ROOT is the project location (writable, where tools/prompts/resources live).
 export MCPBASH_HOME="${MCPBASH_TEST_ROOT}"
 export PATH="${MCPBASH_HOME}/bin:${PATH}"
+# Test workspaces contain the framework's own files, so the startup deprecation
+# scan would report on them in every test. test_deprecation_notice.sh turns it on.
+export MCPBASH_DEPRECATION_NOTICE="${MCPBASH_DEPRECATION_NOTICE:-false}"
 
 if [ -z "${MCPBASH_TOOL_ALLOWLIST:-}" ]; then
 	export MCPBASH_TOOL_ALLOWLIST="*"
@@ -245,12 +248,6 @@ test_tar_supports_flag() {
 
 test_compute_base_tar_key() {
 	if [ -n "${MCPBASH_BASE_TAR_KEY:-}" ] && [ -f "${MCPBASH_BASE_TAR:-}" ] && [ -f "${MCPBASH_BASE_TAR_META:-}" ]; then
-		printf '%s' "${MCPBASH_BASE_TAR_KEY}"
-		return 0
-	fi
-	if [ -z "${MCPBASH_BASE_TAR_KEY:-}" ] && [ -f "${MCPBASH_BASE_TAR_META:-}" ] && [ -f "${MCPBASH_BASE_TAR:-}" ]; then
-		MCPBASH_BASE_TAR_KEY="$(cat "${MCPBASH_BASE_TAR_META}")"
-		export MCPBASH_BASE_TAR_KEY
 		printf '%s' "${MCPBASH_BASE_TAR_KEY}"
 		return 0
 	fi

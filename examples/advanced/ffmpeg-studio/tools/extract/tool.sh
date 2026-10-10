@@ -24,7 +24,7 @@ if [[ -z "${output_path}" ]] && [[ $# -ge 3 ]]; then
 fi
 
 if [[ -z "${input_path}" ]] || [[ -z "${timestamp}" ]] || [[ -z "${output_path}" ]]; then
-	mcp_fail_invalid_args "Missing required arguments: input, time, output"
+	mcp_fail --type invalid_args "Missing required arguments: input, time, output"
 fi
 
 full_input="$(mcp_ffmpeg_resolve_path "${input_path}" "read")"
@@ -32,13 +32,9 @@ full_output="$(mcp_ffmpeg_resolve_path "${output_path}" "write")"
 
 # Validation: Input exists → Tool Execution Error (LLM can choose a different file)
 if [[ ! -f "${full_input}" ]]; then
-	mcp_result_error "$(
-		mcp_json_obj \
-			error "Input file not found" \
-			input "${input_path}" \
-			hint "Check the file exists and is within allowed media roots"
-	)"
-	exit 0
+	mcp_fail --type not_found "Input file not found" \
+		--hint "Check the file exists and is within allowed media roots" \
+		--data "$(mcp_json_obj input "${input_path}")"
 fi
 
 # Run ffmpeg to extract single frame (capture stderr for error reporting)
@@ -46,8 +42,8 @@ _stderr_file=$(mktemp)
 trap 'rm -f "$_stderr_file"' EXIT
 
 if ffmpeg -ss "${timestamp}" -i "${full_input}" -frames:v 1 -y "${full_output}" >/dev/null 2>"$_stderr_file"; then
-	mcp_result_success "$(mcp_json_obj message "Frame extracted to ${output_path}")"
+	mcp_result_json "$(mcp_json_obj message "Frame extracted to ${output_path}")"
 else
 	_stderr=$(cat "$_stderr_file")
-	mcp_fail -32603 "Failed to extract frame: ${_stderr:-unknown error}"
+	mcp_fail --type internal "Failed to extract frame: ${_stderr:-unknown error}"
 fi

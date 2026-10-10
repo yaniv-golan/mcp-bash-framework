@@ -53,6 +53,8 @@ jobs:
           sudo apt-get install -y shellcheck shfmt
       - name: Lint
         run: test/lint.sh
+      - name: Lint API usage (skill, scaffold, docs)
+        run: bash test/lint-api-usage.sh
       - name: Verify rendered README is up to date
         run: bash scripts/render-readme.sh --check
 
@@ -328,6 +330,7 @@ jobs:
             test_sigterm_prompt_exit.sh
             test_stdout_closed_exit.sh
             test_short_read_timeout_stays_up.sh
+            test_read_split_message.sh
             test_cancellation.sh
             test_cancel_malformed.sh
             test_cancel_eof_drain.sh
@@ -336,6 +339,8 @@ jobs:
             test_elicitation_modes.sh
             test_large_payloads.sh
             test_completion_registered_timeout.sh
+            test_deprecation_notice.sh
+            test_tool_termination.sh
         run: |
           set -euo pipefail
           unset MCPBASH_CI_MODE

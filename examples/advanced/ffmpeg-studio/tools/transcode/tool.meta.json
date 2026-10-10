@@ -14,7 +14,12 @@
       },
       "preset": {
         "type": "string",
-        "enum": ["1080p", "720p", "audio-only", "gif"],
+        "enum": [
+          "1080p",
+          "720p",
+          "audio-only",
+          "gif"
+        ],
         "description": "Transcoding preset configuration."
       },
       "start_time": {
@@ -26,31 +31,34 @@
         "description": "Duration to process (e.g. \"5\")."
       }
     },
-    "required": ["input", "output", "preset"]
+    "required": [
+      "input",
+      "output",
+      "preset"
+    ]
   },
   "outputSchema": {
     "type": "object",
-    "required": ["success", "result"],
     "properties": {
-      "success": {
-        "type": "boolean",
-        "description": "Whether the operation succeeded"
+      "message": {
+        "type": "string",
+        "description": "Summary of the completed transcode and output location."
       },
-      "result": {
-        "type": "object",
-        "properties": {
-          "message": {
-            "type": "string",
-            "description": "Summary of the completed transcode and output location."
-          },
-          "error": { "type": "string" },
-          "input": { "type": "string" },
-          "output": { "type": "string" },
-          "preset": { "type": "string" },
-          "hint": { "type": "string" }
-        }
+      "error": {
+        "type": "string"
+      },
+      "input": {
+        "type": "string"
+      },
+      "output": {
+        "type": "string"
+      },
+      "preset": {
+        "type": "string"
+      },
+      "hint": {
+        "type": "string"
       }
     }
   }
 }
-

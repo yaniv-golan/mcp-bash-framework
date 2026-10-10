@@ -22,14 +22,14 @@ fi
 
 # Missing required argument → Protocol Error (request structure issue)
 if [[ -z "${path}" ]]; then
-	mcp_fail_invalid_args "Missing required argument: path"
+	mcp_fail --type invalid_args "Missing required argument: path"
 fi
 
 # Enforce roots - path outside allowed roots → Tool Execution Error
 # The LLM can self-correct by choosing a path within allowed roots
 if ! mcp_roots_contains "${path}"; then
 	roots_list="$(mcp_roots_list 2>/dev/null | head -3 | tr '\n' ', ' | sed 's/,$//')"
-	mcp_error "permission_denied" "Path is outside allowed roots" \
+	mcp_fail --type "permission_denied" "Path is outside allowed roots" \
 		--hint "Try a path within: ${roots_list:-<no roots configured>}" \
 		--data "$(mcp_json_obj path "${path}")"
 fi
@@ -48,7 +48,7 @@ fi
 # File not found → Tool Execution Error
 # The LLM can self-correct by choosing a different file
 if [[ ! -f "${full_path}" ]]; then
-	mcp_error "not_found" "File not found" \
+	mcp_fail --type "not_found" "File not found" \
 		--hint "Check the path exists and is a regular file" \
 		--data "$(mcp_json_obj path "${path}")"
 fi
@@ -57,11 +57,11 @@ content="$(cat "${full_path}")"
 bytes="$(printf '%s' "${content}" | wc -c | tr -d ' ')"
 
 if [[ -n "${json_tool}" ]]; then
-	mcp_result_success "$("${json_tool}" -n \
+	mcp_result_json "$("${json_tool}" -n \
 		--arg path "${full_path}" \
 		--arg content "${content}" \
 		--argjson bytes "${bytes}" \
-		'{path:$path, bytes:$bytes, content:$content}')" || mcp_result_success "$(mcp_json_obj content "${content}")"
+		'{path:$path, bytes:$bytes, content:$content}')" || mcp_result_json "$(mcp_json_obj content "${content}")"
 else
-	mcp_result_success "$(mcp_json_obj content "${content}")"
+	mcp_result_json "$(mcp_json_obj content "${content}")"
 fi

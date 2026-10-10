@@ -58,23 +58,36 @@ mcp_timeout_terminate_worker() {
 		isolated="$(awk '{print $5}' "${state_file}" 2>/dev/null || echo "false")"
 	fi
 
+	# with_timeout stops the watchdog with TERM as soon as the worker exits.
+	# Finish the KILL pass first, or a child that ignores TERM survives.
+	trap '' TERM
+
 	# Only use process group signals if the worker is properly isolated.
 	# Otherwise, we'd kill the caller along with the tool!
+	local tree=""
 	if [ "${isolated}" = "true" ]; then
 		mcp_runtime_signal_group "${worker_pgid}" TERM "${worker_pid}" "${main_pgid}"
 	else
-		# Process not isolated - only signal the specific PID
-		kill -TERM "${worker_pid}" 2>/dev/null || true
+		# Not isolated: signal the worker and the processes it started, listed
+		# before any of them dies.
+		if declare -F mcp_runtime_descendants >/dev/null 2>&1; then
+			tree="$(mcp_runtime_descendants "${worker_pid}")"
+		fi
+		# shellcheck disable=SC2086 # tree is a space-separated pid list
+		kill -TERM "${worker_pid}" ${tree} 2>/dev/null || true
 	fi
 
 	sleep 1
 
-	if kill -0 "${worker_pid}" 2>/dev/null; then
-		if [ "${isolated}" = "true" ]; then
+	if [ "${isolated}" = "true" ]; then
+		if kill -0 "${worker_pid}" 2>/dev/null || kill -0 "-${worker_pgid}" 2>/dev/null; then
 			mcp_runtime_signal_group "${worker_pgid}" KILL "${worker_pid}" "${main_pgid}"
-		else
-			kill -KILL "${worker_pid}" 2>/dev/null || true
 		fi
+	else
+		local p
+		for p in ${worker_pid} ${tree}; do
+			kill -KILL "${p}" 2>/dev/null || true
+		done
 	fi
 }
 

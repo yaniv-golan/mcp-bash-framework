@@ -9,25 +9,27 @@
         "description": "File path to read (absolute or relative)"
       }
     },
-    "required": ["path"]
+    "required": [
+      "path"
+    ]
   },
   "outputSchema": {
     "type": "object",
-    "required": ["success", "result"],
     "properties": {
-      "success": {
-        "type": "boolean",
-        "description": "Whether the operation succeeded"
+      "path": {
+        "type": "string"
       },
-      "result": {
-        "type": "object",
-        "properties": {
-          "path": { "type": "string" },
-          "bytes": { "type": "integer" },
-          "content": { "type": "string" },
-          "error": { "type": "string" },
-          "hint": { "type": "string" }
-        }
+      "bytes": {
+        "type": "integer"
+      },
+      "content": {
+        "type": "string"
+      },
+      "error": {
+        "type": "string"
+      },
+      "hint": {
+        "type": "string"
       }
     }
   },

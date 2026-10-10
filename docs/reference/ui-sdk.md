@@ -449,8 +449,8 @@ mcp_provider_ui_read() {
 
   local content
   content="$(mcp_ui_get_content "${name}")" || {
-    mcp_result_error -32002 "UI resource not found: ${name}"
-    return
+    printf 'UI resource not found: %s\n' "${name}" >&2
+    return 3   # not found: the server answers -32002
   }
 
   local csp_meta

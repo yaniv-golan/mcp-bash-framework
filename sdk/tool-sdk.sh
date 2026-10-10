@@ -61,6 +61,22 @@ __mcp_sdk_load_ui_helpers() {
 
 __mcp_sdk_load_ui_helpers
 
+__mcp_sdk_load_tool_error() {
+	# Shared builder for isError tool results (mcp_tool_error_result).
+	if declare -F mcp_tool_error_result >/dev/null 2>&1; then
+		return 0
+	fi
+	local script_dir
+	script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+	local helper="${script_dir}/tool-error.sh"
+	if [ -f "${helper}" ]; then
+		# shellcheck disable=SC1090
+		. "${helper}"
+	fi
+}
+
+__mcp_sdk_load_tool_error
+
 __mcp_sdk_json_escape() {
 	# Return a quoted JSON string literal for the given value.
 	# Prefer the framework-selected JSON tool, then fall back to jq, then a
@@ -332,6 +348,52 @@ mcp_args_get() {
 	return "${rc}"
 }
 
+# End the tool with an error result the model can read (isError: true),
+# from anywhere, including inside $(...).
+# Usage: __mcp_sdk_end_with_error TYPE MESSAGE [--hint TEXT] [--data JSON]
+# The result goes to the framework's side channel (MCP_TOOL_ERROR_FILE): a
+# substitution's stdout is captured and its exit only ends the subshell, so
+# stdout can't carry it. The non-zero exit ends the subshell and, under
+# set -e, the tool; either way the framework then returns this result as the
+# tool's result. Outside the framework the result is printed instead.
+# If tool-error.sh isn't loaded (tool-sdk.sh copied alone), fall back to the
+# 1.x JSON-RPC error: -32602 for invalid_args, -32603 otherwise.
+__mcp_sdk_end_with_error() {
+	local err_type="${1:-internal}"
+	local message="${2:-Tool failed}"
+	shift 2 2>/dev/null || shift $#
+	if ! declare -F mcp_tool_error_result >/dev/null 2>&1; then
+		local fallback_data="" arg
+		while [ $# -gt 0 ]; do
+			arg="$1"
+			shift
+			if [ "${arg}" = "--data" ]; then
+				fallback_data="${1-}"
+				shift 2>/dev/null || true
+			fi
+		done
+		if [ "${err_type}" = "invalid_args" ]; then
+			mcp_fail -32602 "${message}" "${fallback_data}"
+		fi
+		mcp_fail -32603 "${message}" "${fallback_data}"
+	fi
+	local result
+	result="$(mcp_tool_error_result "${err_type}" "${message}" "$@")"
+	if [ -n "${MCP_TOOL_ERROR_FILE:-}" ] && [ -w "${MCP_TOOL_ERROR_FILE}" ] 2>/dev/null; then
+		printf '%s' "${result}" >"${MCP_TOOL_ERROR_FILE}" 2>/dev/null || true
+	else
+		printf '%s\n' "${result}"
+	fi
+	printf '%s\n' "${message}" >&2
+	exit 1
+}
+
+# The argument helpers below report bad arguments this way; the public
+# mcp_fail_invalid_args keeps its 1.x JSON-RPC error.
+__mcp_sdk_fail_invalid_args() {
+	__mcp_sdk_end_with_error invalid_args "${1:-Invalid params}"
+}
+
 mcp_args_require() {
 	local pointer="$1"
 	local message="${2:-}"
@@ -341,7 +403,7 @@ mcp_args_require() {
 		if [ -z "${message}" ]; then
 			message="${pointer} is required"
 		fi
-		mcp_fail_invalid_args "${message}"
+		__mcp_sdk_fail_invalid_args "${message}"
 	fi
 	printf '%s' "${raw}"
 }
@@ -379,9 +441,9 @@ mcp_args_bool() {
 			esac
 		fi
 		if [ "${MCPBASH_MODE:-full}" = "minimal" ]; then
-			mcp_fail_invalid_args "${pointer} requires JSON tooling or a default"
+			__mcp_sdk_fail_invalid_args "${pointer} requires JSON tooling or a default"
 		else
-			mcp_fail_invalid_args "${pointer} is required"
+			__mcp_sdk_fail_invalid_args "${pointer} is required"
 		fi
 	fi
 
@@ -426,7 +488,7 @@ mcp_args_int() {
 
 	if [ "${min_set}" = "true" ] && [ "${max_set}" = "true" ]; then
 		if ! [ "${min_value}" -le "${max_value}" ] 2>/dev/null; then
-			mcp_fail_invalid_args "mcp_args_int: --min cannot exceed --max"
+			__mcp_sdk_fail_invalid_args "mcp_args_int: --min cannot exceed --max"
 		fi
 	fi
 
@@ -437,25 +499,25 @@ mcp_args_int() {
 			raw="${default_value}"
 		else
 			if [ "${MCPBASH_MODE:-full}" = "minimal" ]; then
-				mcp_fail_invalid_args "${pointer} requires JSON tooling or a default"
+				__mcp_sdk_fail_invalid_args "${pointer} requires JSON tooling or a default"
 			else
-				mcp_fail_invalid_args "${pointer} is required"
+				__mcp_sdk_fail_invalid_args "${pointer} is required"
 			fi
 		fi
 	fi
 
 	if ! printf '%s' "${raw}" | LC_ALL=C grep -Eq '^-?[0-9]+$'; then
-		mcp_fail_invalid_args "${pointer} must be an integer"
+		__mcp_sdk_fail_invalid_args "${pointer} must be an integer"
 	fi
 
 	if [ "${min_set}" = "true" ]; then
 		if ! [ "${raw}" -ge "${min_value}" ] 2>/dev/null; then
-			mcp_fail_invalid_args "${pointer} must be >= ${min_value}"
+			__mcp_sdk_fail_invalid_args "${pointer} must be >= ${min_value}"
 		fi
 	fi
 	if [ "${max_set}" = "true" ]; then
 		if ! [ "${raw}" -le "${max_value}" ] 2>/dev/null; then
-			mcp_fail_invalid_args "${pointer} must be <= ${max_value}"
+			__mcp_sdk_fail_invalid_args "${pointer} must be <= ${max_value}"
 		fi
 	fi
 
@@ -621,6 +683,19 @@ mcp_with_retry() {
 }
 
 mcp_fail() {
+	# Frozen form (mcp-bash 1.8+, unchanged in 2.0):
+	#   mcp_fail --type TYPE MESSAGE [--hint TEXT] [--data JSON]
+	# Ends the tool with an error result the model can see (isError: true),
+	# also when called inside $(...), e.g. from a helper whose output is
+	# captured (see __mcp_sdk_end_with_error). The numeric form below
+	# (mcp_fail CODE MESSAGE [DATA]) is the 1.x protocol-error form and is
+	# removed in 2.0.
+	if [ "${1-}" = "--type" ]; then
+		local err_type="${2-}"
+		local err_message="${3-}"
+		shift 3 2>/dev/null || shift $#
+		__mcp_sdk_end_with_error "${err_type}" "${err_message}" "$@"
+	fi
 	local code="$1"
 	local message="${2:-}"
 	local data_raw="${3:-}"
@@ -743,7 +818,7 @@ mcp_require_path() {
 	done
 
 	if [ -z "${pointer}" ]; then
-		mcp_fail_invalid_args "mcp_require_path: argument pointer is required"
+		__mcp_sdk_fail_invalid_args "mcp_require_path: argument pointer is required"
 	fi
 
 	local raw_value
@@ -758,7 +833,7 @@ mcp_require_path() {
 		if [ "${roots_count}" -eq 1 ]; then
 			raw_value="$(mcp_roots_list | head -n1)"
 		else
-			mcp_fail_invalid_args "${pointer} is required when zero or multiple roots are configured"
+			__mcp_sdk_fail_invalid_args "${pointer} is required when zero or multiple roots are configured"
 		fi
 	fi
 
@@ -767,7 +842,7 @@ mcp_require_path() {
 			printf ''
 			return 0
 		fi
-		mcp_fail_invalid_args "${pointer} is required"
+		__mcp_sdk_fail_invalid_args "${pointer} is required"
 	fi
 
 	local normalized
@@ -777,7 +852,7 @@ mcp_require_path() {
 	roots_count="$(mcp_roots_count 2>/dev/null || printf '0')"
 	if [ "${roots_count}" -gt 0 ]; then
 		if ! mcp_roots_contains "${normalized}"; then
-			mcp_fail_invalid_args "${pointer} is outside configured MCP roots"
+			__mcp_sdk_fail_invalid_args "${pointer} is outside configured MCP roots"
 		fi
 	fi
 
@@ -1144,6 +1219,88 @@ mcp_byte_length() {
 #
 # Output: CallToolResult JSON to stdout
 # Returns: 0 always (MCP tool errors are expressed via isError, not exit codes)
+# mcp_result_text TEXT
+# Frozen (mcp-bash 1.8+, unchanged in 2.0). A successful result with one text
+# block and no structured content. Prints the result; does not end the tool.
+mcp_result_text() {
+	printf '{"content":[{"type":"text","text":%s}],"isError":false}' "$(__mcp_sdk_json_escape "${1-}")"
+}
+
+# mcp_result_json JSON [--max-text-bytes N]
+# Frozen (mcp-bash 1.8+, unchanged in 2.0). A successful result whose
+# structuredContent is exactly JSON (no {success, result} envelope); the text
+# block is the serialized JSON. When the text would exceed N bytes (default
+# MCPBASH_MAX_TEXT_BYTES, else 102400) it is replaced by a short summary,
+# since the data is in structuredContent.
+# Protocols before 2026-07-28 require structuredContent to be an object: for
+# those, a non-object value is sent as text only and is never summarised.
+# Invalid JSON gives an internal error result. Prints the result; does not
+# end the tool.
+mcp_result_json() {
+	local data="${1-}"
+	shift 2>/dev/null || true
+	local max_raw=""
+	while [ $# -gt 0 ]; do
+		case "$1" in
+		--max-text-bytes)
+			max_raw="${2-}"
+			shift 2 2>/dev/null || shift $#
+			;;
+		*) shift ;;
+		esac
+	done
+	local max_text_bytes
+	max_text_bytes=$(__mcp_sdk_uint_or_default "${max_raw}" "${MCPBASH_MAX_TEXT_BYTES:-102400}")
+	# Set per request by the server in 2.0; 1.x always serves legacy-era requests.
+	local era="${MCPBASH_PROTOCOL_ERA:-legacy}"
+
+	if [ "${MCPBASH_MODE:-full}" != "minimal" ] && [ -n "${MCPBASH_JSON_TOOL_BIN:-}" ]; then
+		local out
+		if out="$(printf '%s' "${data}" | "${MCPBASH_JSON_TOOL_BIN}" -c -s \
+			--argjson max "${max_text_bytes}" --arg era "${era}" '
+			if length != 1 then error("not a single value") else
+				.[0] as $d | ($d | tojson) as $t |
+				if ($d | type) == "object" or $era == "modern" then
+					{
+						content: [{type: "text", text: (
+							if ($t | utf8bytelength) <= $max then $t
+							else (
+								(if ($d | type) == "object" then "object with \($d | keys | length) keys"
+								elif ($d | type) == "array" then "array with \($d | length) items"
+								else ($d | type) end)
+								+ " (full data in structuredContent)")
+							end)}],
+						structuredContent: $d,
+						isError: false
+					}
+				else
+					{content: [{type: "text", text: $t}], isError: false}
+				end
+			end' 2>/dev/null)" && [ -n "${out}" ]; then
+			printf '%s' "${out}"
+		else
+			mcp_tool_error_result internal "mcp_result_json: argument is not a single JSON value"
+		fi
+		return 0
+	fi
+
+	# No JSON tool: can't validate; an object goes through as structuredContent.
+	local trimmed="${data#"${data%%[![:space:]]*}"}"
+	case "${trimmed}" in
+	"{"*)
+		printf '{"content":[{"type":"text","text":%s}],"structuredContent":%s,"isError":false}' \
+			"$(__mcp_sdk_json_escape "${data}")" "${data}"
+		;;
+	"")
+		mcp_tool_error_result internal "mcp_result_json: argument is not a single JSON value"
+		;;
+	*)
+		printf '{"content":[{"type":"text","text":%s}],"isError":false}' "$(__mcp_sdk_json_escape "${data}")"
+		;;
+	esac
+	return 0
+}
+
 mcp_result_success() {
 	local data="$1"
 	# Sanitize max_text_bytes to avoid set -e hazards from non-numeric input
@@ -2366,7 +2523,7 @@ mcp_download_safe_or_fail() {
 			printf '%s' "${result}" | sed -n 's/.*"path":"\([^"]*\)".*/\1/p'
 			return 0
 		fi
-		mcp_fail_invalid_args "Download failed (minimal mode - cannot parse error details)"
+		__mcp_sdk_fail_invalid_args "Download failed (minimal mode - cannot parse error details)"
 	fi
 
 	# Full mode: parse with jq (single call for efficiency)
@@ -2383,7 +2540,7 @@ mcp_download_safe_or_fail() {
 	IFS=$'\t' read -r success err_type err_msg path <<<"$parsed"
 
 	if [[ "$success" != "true" ]]; then
-		mcp_fail_invalid_args "Download failed (${err_type}): ${err_msg}"
+		__mcp_sdk_fail_invalid_args "Download failed (${err_type}): ${err_msg}"
 	fi
 
 	# Return the path using printf (not echo) to handle paths with -n, -e, or backslashes

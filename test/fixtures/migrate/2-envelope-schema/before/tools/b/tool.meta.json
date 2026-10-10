@@ -1,0 +1,14 @@
+{
+  "name": "b",
+  "inputSchema": {
+    "type": "object"
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "n": {
+        "type": "integer"
+      }
+    }
+  }
+}

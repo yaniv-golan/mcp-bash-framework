@@ -170,7 +170,7 @@
       console.log('Tool result:', result);
       if (result?.structuredContent) {
         // mcp_result_success wraps data in {success: true, result: ...}
-        const data = result.structuredContent.result || result.structuredContent;
+        const data = result.structuredContent;
         renderDashboard(data);
       } else if (result?.content) {
         const textContent = result.content.find(c => c.type === 'text');

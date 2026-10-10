@@ -224,6 +224,9 @@ mcp_elicitation_cancel_for_worker() {
 	local response_file
 	request_file="$(mcp_elicitation_request_path_for_worker "${key}")"
 	response_file="$(mcp_elicitation_response_path_for_worker "${key}")"
+	# Cancel escalation runs a second later, possibly after the server exited
+	# and removed its state directory; there is nothing left to answer then.
+	[ -d "${response_file%/*}" ] || return 0
 	rm -f "${request_file}"
 	printf '{"action":"cancel","content":null}' >"${response_file}"
 

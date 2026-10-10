@@ -132,6 +132,66 @@ mcp_core_bootstrap_state() {
 	: >"${MCP_PROGRESS_STREAM}"
 	: >"${MCP_LOG_STREAM}"
 	mcp_runtime_log_startup_summary
+	mcp_core_start_deprecation_notice
+}
+
+# Once a day, tell the operator on stderr when the project uses APIs that
+# change in mcp-bash 2.0. Best effort: the scan runs in the background, never
+# touches stdout, and any failure is silent. Skipped when the rule engine isn't
+# installed (vendored runtimes), for bundles (static registry, whose users
+# can't act on it), in minimal mode, and with MCPBASH_DEPRECATION_NOTICE=false.
+mcp_core_start_deprecation_notice() {
+	case "${MCPBASH_DEPRECATION_NOTICE:-true}" in
+	false | 0 | no | off) return 0 ;;
+	esac
+	[ "${MCPBASH_STATIC_REGISTRY:-0}" = "1" ] && return 0
+	mcp_runtime_is_minimal_mode && return 0
+	[ -f "${MCPBASH_HOME}/lib/migrate_rules.sh" ] || return 0
+	local project_root="${MCPBASH_PROJECT_ROOT:-}"
+	local registry_dir="${MCPBASH_REGISTRY_DIR:-}"
+	[ -n "${project_root}" ] && [ -d "${project_root}" ] || return 0
+	[ -n "${registry_dir}" ] && [ -d "${registry_dir}" ] && [ -w "${registry_dir}" ] || return 0
+
+	# The stamp holds the date of the last scan. Claim today's slot before
+	# scanning so servers started together report once, and a clean project
+	# is scanned at most once a day.
+	local stamp="${registry_dir}/deprecation-notice.stamp"
+	local today last=""
+	today="$(date +%Y-%m-%d 2>/dev/null)" || return 0
+	[ -n "${today}" ] || return 0
+	if [ -f "${stamp}" ]; then
+		last="$(head -n 1 "${stamp}" 2>/dev/null || true)"
+	fi
+	[ "${last}" = "${today}" ] && return 0
+	printf '%s\n' "${today}" >"${stamp}" 2>/dev/null || return 0
+
+	(
+		set +e
+		# shellcheck source=lib/migrate_rules.sh disable=SC1091
+		. "${MCPBASH_HOME}/lib/migrate_rules.sh" || exit 0
+		# One rule at a time, stopping as soon as the server is gone ($$ is the
+		# server's PID even in this subshell): background helpers must not
+		# outlive a server that was killed.
+		count=0
+		while IFS= read -r rule; do
+			kill -0 "$$" 2>/dev/null || exit 0
+			id="${rule##*/}"
+			id="${id%.sh}"
+			n="$(mcp_migrate_detect "${project_root}" --validate --only "${id}" 2>/dev/null | grep -c . 2>/dev/null)"
+			case "${n}" in '' | *[!0-9]*) n=0 ;; esac
+			count=$((count + n))
+		done <<EOF_RULES
+$(mcp_migrate_rule_files 2>/dev/null)
+EOF_RULES
+		kill -0 "$$" 2>/dev/null || exit 0
+		[ "${count}" -gt 0 ] || exit 0
+		noun="uses"
+		[ "${count}" -eq 1 ] && noun="use"
+		# shellcheck disable=SC2016  # Backticks are literal text.
+		printf 'mcp-bash: %s %s of APIs that change in mcp-bash 2.0; run `mcp-bash validate` for details\n' "${count}" "${noun}" >&2
+	) </dev/null >/dev/null &
+	# Not a worker: keep it out of `jobs -p`, so shutdown doesn't wait for it.
+	disown "$!" 2>/dev/null || true
 }
 
 mcp_core_has_resource_subscriptions() {
@@ -304,6 +364,16 @@ mcp_core_read_loop() {
 	# For EOF detection heuristic: track consecutive immediate returns
 	local immediate_returns=0
 
+	# A request whose bytes straddle the read timeout must not be split or lost.
+	# bash 4+ returns the bytes read so far with a timeout status; they are kept
+	# here and joined with the next read. bash 3.2 discards them instead, so on
+	# 3.2 only the first character is read with a timeout and the rest of the
+	# line with a blocking read (a client mid-request is alive; if it goes away,
+	# the read returns at end of input).
+	local partial=""
+	local first_char=""
+	local rest_status=0
+
 	while true; do
 		# Clear line before read to prevent stale data on timeout/EOF
 		line=""
@@ -315,7 +385,33 @@ mcp_core_read_loop() {
 
 			# Capture exit status in a way that prevents set -e from aborting on timeout/EOF
 			local read_status=0
-			IFS= read -t "${read_timeout}" -r line || read_status=$?
+			if [ "${BASH_VERSINFO[0]}" -ge 4 ]; then
+				IFS= read -t "${read_timeout}" -r line || read_status=$?
+				if [ "${read_status}" -gt 128 ]; then
+					# Timed out, possibly mid-line: keep the bytes, don't answer a
+					# fragment.
+					partial="${partial}${line}"
+					line=""
+				elif [ -n "${partial}" ]; then
+					# A full line, or end of input: join the kept bytes.
+					line="${partial}${line}"
+					partial=""
+				fi
+			else
+				first_char=""
+				IFS= read -t "${read_timeout}" -r -n 1 first_char || read_status=$?
+				if [ "${read_status}" -eq 0 ] && [ -n "${first_char}" ]; then
+					rest_status=0
+					IFS= read -r line || rest_status=$?
+					line="${first_char}${line}"
+					if [ "${rest_status}" -ne 0 ]; then
+						# End of input after a final line without a newline.
+						[ -n "${_MCPBASH_SIGNAL_RECEIVED}" ] || mcp_core_handle_line "${line}"
+						line=""
+						break
+					fi
+				fi
+			fi
 
 			read_end=$(date +%s)
 			read_elapsed=$((read_end - read_start))
@@ -330,14 +426,14 @@ mcp_core_read_loop() {
 					esac
 				fi
 
-				# Handle any partial line data (for EOF case)
-				[ -n "${line}" ] && mcp_core_handle_line "${line}"
-
 				# bash >= 4 reports a read timeout as >128, so status 1 is an
-				# unambiguous EOF. Stop now: on a FIFO whose writer closed, later
-				# reads time out instead of returning EOF again, which would starve
-				# the consecutive-quick-returns heuristic below.
+				# unambiguous EOF. Answer a final line that had no newline (with
+				# any bytes kept from earlier timeouts), then stop: on a FIFO whose
+				# writer closed, later reads time out instead of returning EOF
+				# again, which would starve the consecutive-quick-returns heuristic
+				# below.
 				if [ "${BASH_VERSINFO[0]}" -ge 4 ] && [ "${read_status}" -eq 1 ]; then
+					[ -n "${line}" ] && mcp_core_handle_line "${line}"
 					break
 				fi
 
@@ -1328,7 +1424,9 @@ mcp_core_cancel_escalate() {
 	local pid="$2"
 	local pgid="$3"
 
-	if mcp_core_process_alive "${pid}"; then
+	# The worker usually exits on TERM at once; the tool and the processes it
+	# started can outlive it in the same group, so check the group too.
+	if mcp_core_process_alive "${pid}" || mcp_core_group_alive "${pgid}"; then
 		mcp_core_send_signal_chain "${pid}" "${pgid}" KILL
 	fi
 	# If the worker died while holding the stdout lock, force-release it using the tracked pid.
@@ -1360,6 +1458,18 @@ mcp_core_send_signal_chain() {
 mcp_core_process_alive() {
 	local pid="$1"
 	kill -0 "${pid}" 2>/dev/null
+}
+
+mcp_core_group_alive() {
+	local pgid="$1"
+	if [ "${MCPBASH_SKIP_PROCESS_GROUP_LOOKUP:-0}" = "1" ] || [ -z "${pgid}" ]; then
+		return 1
+	fi
+	# Never probe (and so never signal) the server's own group.
+	if [ -n "${MCPBASH_MAIN_PGID:-}" ] && [ "${pgid}" = "${MCPBASH_MAIN_PGID}" ]; then
+		return 1
+	fi
+	kill -0 "-${pgid}" 2>/dev/null
 }
 
 mcp_core_get_id_key() {

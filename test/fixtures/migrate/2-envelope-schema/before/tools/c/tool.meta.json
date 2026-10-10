@@ -1,0 +1,20 @@
+{
+  "name": "c",
+  "outputSchema": {
+    "type": "object",
+    "required": [
+      "success"
+    ],
+    "properties": {
+      "success": {
+        "type": "boolean"
+      },
+      "result": {
+        "type": "object"
+      },
+      "error": {
+        "type": "object"
+      }
+    }
+  }
+}

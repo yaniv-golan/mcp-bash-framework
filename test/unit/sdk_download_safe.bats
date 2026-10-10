@@ -294,6 +294,7 @@ exit ${exit_code}
 EOF
 	chmod +x "${BATS_TEST_TMPDIR}/mock_provider/providers/https.sh"
 	cp "${MCPBASH_HOME}/sdk/tool-sdk.sh" "${BATS_TEST_TMPDIR}/mock_provider/"
+	cp "${MCPBASH_HOME}/sdk/tool-error.sh" "${BATS_TEST_TMPDIR}/mock_provider/"
 	cp "${MCPBASH_HOME}/VERSION" "${BATS_TEST_TMPDIR}/mock_provider/"
 }
 
@@ -726,6 +727,7 @@ exit 7
 EOF
 	chmod +x "${BATS_TEST_TMPDIR}/mock_redirect/providers/https.sh"
 	cp "${MCPBASH_HOME}/sdk/tool-sdk.sh" "${BATS_TEST_TMPDIR}/mock_redirect/"
+	cp "${MCPBASH_HOME}/sdk/tool-error.sh" "${BATS_TEST_TMPDIR}/mock_redirect/"
 	cp "${MCPBASH_HOME}/VERSION" "${BATS_TEST_TMPDIR}/mock_redirect/"
 }
 
@@ -862,7 +864,7 @@ EOF
 	[ "$path" = "${BATS_TEST_TMPDIR}/ff_out.txt" ] || fail "Expected path '${BATS_TEST_TMPDIR}/ff_out.txt', got '$path'"
 }
 
-@test "sdk_download_safe_or_fail: emits -32602 error on failure" {
+@test "sdk_download_safe_or_fail: ends the tool with an invalid_args error result on failure" {
 	create_mock_provider 5 "connection refused"
 
 	# Capture the MCP error output
@@ -874,8 +876,9 @@ EOF
 			--out "/tmp/out.txt" --allow "example.com"' 2>/dev/null || true
 	)
 
-	# mcp_fail_invalid_args outputs: {"code":-32602,"message":"...","data":null}
-	echo "$output" | jq -e '.code == -32602' >/dev/null
+	# An error result the model can read (isError, type invalid_args); outside
+	# the framework (no MCP_TOOL_ERROR_FILE) it is printed to stdout.
+	echo "$output" | jq -e '.isError == true and ._meta["mcpbash/error"].type == "invalid_args"' >/dev/null
 }
 
 @test "sdk_download_safe_or_fail: works in minimal mode" {
@@ -913,5 +916,5 @@ EOF
 	)
 
 	# Should include "redirect" in the error message
-	echo "$output" | jq -e '.message | test("redirect")' >/dev/null
+	echo "$output" | jq -e '._meta["mcpbash/error"].message | test("redirect")' >/dev/null
 }

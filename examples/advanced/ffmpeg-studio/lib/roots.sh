@@ -34,7 +34,7 @@ mcp_ffmpeg_require_roots() {
 	# Developer-friendly default: fall back to the example media folder so the
 	# example works out of the box without configuring roots.
 	local default_root
-	default_root="$(mcp_ffmpeg_normalize_path "${FFMPEG_STUDIO_ROOT}/media")" || mcp_fail -32603 "Unable to resolve default media root"
+	default_root="$(mcp_ffmpeg_normalize_path "${FFMPEG_STUDIO_ROOT}/media")" || mcp_fail --type internal "Unable to resolve default media root"
 	MCP_ROOTS_PATHS="${default_root}"
 	# shellcheck disable=SC2034  # Exported for downstream MCP tools
 	MCP_ROOTS_COUNT=1
@@ -46,7 +46,7 @@ mcp_ffmpeg_resolve_path() {
 	local user_path="$1"
 	local mode="${2:-read}" # read|write
 
-	[[ -n "${user_path}" ]] || mcp_fail_invalid_args "Path cannot be empty"
+	[[ -n "${user_path}" ]] || mcp_fail --type invalid_args "Path cannot be empty"
 
 	mcp_ffmpeg_require_roots
 
@@ -60,9 +60,9 @@ mcp_ffmpeg_resolve_path() {
 	local canonical=""
 
 	if [[ "${user_path}" == /* ]]; then
-		canonical="$(mcp_ffmpeg_normalize_path "${user_path}")" || mcp_fail -32603 "Unable to resolve path: ${user_path}"
+		canonical="$(mcp_ffmpeg_normalize_path "${user_path}")" || mcp_fail --type internal "Unable to resolve path: ${user_path}"
 		if ! mcp_roots_contains "${canonical}"; then
-			mcp_fail -32602 "Access denied: ${user_path} is outside allowed roots"
+			mcp_fail --type invalid_args "Access denied: ${user_path} is outside allowed roots"
 		fi
 	else
 		while IFS= read -r root; do
@@ -86,23 +86,23 @@ mcp_ffmpeg_resolve_path() {
 		done <<<"${MCP_ROOTS_PATHS}"
 
 		if [[ -z "${canonical}" ]]; then
-			mcp_fail -32602 "Access denied: ${user_path} is outside allowed roots"
+			mcp_fail --type invalid_args "Access denied: ${user_path} is outside allowed roots"
 		fi
 	fi
 
 	if [[ "${mode}" == "read" ]]; then
 		if [[ ! -f "${canonical}" ]]; then
-			mcp_fail -32602 "File not found: ${user_path}"
+			mcp_fail --type invalid_args "File not found: ${user_path}"
 		fi
 	else
 		local parent
 		parent="$(dirname "${canonical}")"
 		if ! mcp_roots_contains "${parent}"; then
-			mcp_fail -32602 "Access denied: ${parent} escapes allowed roots"
+			mcp_fail --type invalid_args "Access denied: ${parent} escapes allowed roots"
 		fi
 		if [[ ! -d "${parent}" ]]; then
 			if ! mkdir -p "${parent}"; then
-				mcp_fail -32603 "Unable to create parent directory: ${parent}"
+				mcp_fail --type internal "Unable to create parent directory: ${parent}"
 			fi
 		fi
 	fi

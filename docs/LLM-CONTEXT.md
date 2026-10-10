@@ -163,15 +163,12 @@ When tools work together in workflows, document the relationships:
 
 ### Workflow Hints in Output
 
-Tools can include workflow hints in their responses:
+Tools can include workflow hints in the data they return with `mcp_result_json`:
 
 ```json
 {
-  "success": true,
-  "result": {
-    "list": { "id": 123, "name": "Dealflow" },
-    "fields": ["Status", "Owner", "Value"]
-  },
+  "list": { "id": 123, "name": "Dealflow" },
+  "fields": ["Status", "Owner", "Value"],
   "_hints": {
     "nextSteps": [
       "Use 'list-export --list-id 123' to get entries",
@@ -330,13 +327,12 @@ source "${MCP_SDK:?}/tool-sdk.sh"
 uri="$(mcp_args_require '.uri')"
 
 # Delegate to provider
-content=$("${MCPBASH_PROJECT_ROOT}/providers/myapp.sh" "${uri}") || {
-  mcp_error "not_found" "Failed to read resource" \
+content=$("${MCPBASH_PROJECT_ROOT}/providers/myapp.sh" "${uri}") ||
+  mcp_fail --type not_found "Failed to read resource" \
     --hint "Check the URI is valid" \
     --data "$(mcp_json_obj uri "${uri}")"
-}
 
-mcp_result_success "$(mcp_json_obj content "${content}" uri "${uri}")"
+mcp_result_json "$(mcp_json_obj content "${content}" uri "${uri}")"
 ```
 
 This pattern ensures LLMs can access your domain documentation regardless of client `resources/read` support.
@@ -375,12 +371,12 @@ Include actionable context in discovery output:
 
 ## Error Messages for LLM Self-Correction
 
-When tools fail, error messages should help LLMs understand what went wrong and how to fix it. Use the `mcp_error` helper with `--hint` to provide actionable guidance:
+When tools fail, error messages should help LLMs understand what went wrong and how to fix it. Use `mcp_fail --type` with `--hint` to provide actionable guidance; it returns an error result the model can read (`isError: true`) and ends the tool:
 
 ### Basic Error (Less Helpful)
 
 ```bash
-mcp_error "validation_error" "Invalid date format"
+mcp_fail --type invalid_args "Invalid date format"
 ```
 
 The LLM knows something is wrong but must guess the correct format.
@@ -388,7 +384,7 @@ The LLM knows something is wrong but must guess the correct format.
 ### Error with Hint (More Helpful)
 
 ```bash
-mcp_error "validation_error" "Invalid date format" \
+mcp_fail --type invalid_args "Invalid date format" \
   --hint "Use ISO 8601 format: YYYY-MM-DD (e.g., 2025-01-15)" \
   --data "$(mcp_json_obj received "$date_input")"
 ```
@@ -404,21 +400,24 @@ The `--hint` flag provides explicit guidance the LLM can act on immediately.
 
 ### Error Response Structure
 
-The `mcp_error` helper produces consistent JSON:
+`mcp_fail --type` produces a result like this:
 
 ```json
 {
-  "success": false,
-  "error": {
-    "type": "validation_error",
-    "message": "Invalid date format",
-    "hint": "Use ISO 8601 format: YYYY-MM-DD (e.g., 2025-01-15)",
-    "received": "01/15/2025"
+  "content": [{"type": "text", "text": "Invalid date format\n\nHint: Use ISO 8601 format: YYYY-MM-DD (e.g., 2025-01-15)"}],
+  "isError": true,
+  "_meta": {
+    "mcpbash/error": {
+      "type": "invalid_args",
+      "message": "Invalid date format",
+      "hint": "Use ISO 8601 format: YYYY-MM-DD (e.g., 2025-01-15)",
+      "data": {"received": "01/15/2025"}
+    }
   }
 }
 ```
 
-The `hint` field is specifically designed for LLM consumption—keep it concise and actionable.
+The model reads the text block, so the hint is appended there; keep it concise and actionable. `_meta["mcpbash/error"]` carries the same details for programs.
 
 See [ERRORS.md](ERRORS.md) for the full list of recommended error types and when to use Protocol Errors vs Tool Execution Errors.
 
@@ -477,7 +476,7 @@ Use this checklist when documenting MCP tools for LLM consumption:
 ### Output
 - [ ] Output schema documented
 - [ ] Workflow hints included where helpful
-- [ ] Error messages use `mcp_error` with `--hint` for actionable guidance
+- [ ] Error messages use `mcp_fail --type` with `--hint` for actionable guidance
 - [ ] Hints include examples of valid inputs or alternative approaches
 
 ## Further Reading

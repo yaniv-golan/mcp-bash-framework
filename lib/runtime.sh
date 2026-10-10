@@ -1120,6 +1120,31 @@ mcp_runtime_set_process_group() {
 	return 1
 }
 
+mcp_runtime_descendants() {
+	# Print the pids of every descendant of PID, space-separated. Prints nothing
+	# where ps can't list pid/ppid pairs (Git Bash), so callers fall back to the
+	# pid alone. Take the list before signalling: once a parent dies, its
+	# children are reparented and can no longer be found this way.
+	local root="$1"
+	[ -n "${root}" ] || return 0
+	local table
+	table="$(ps -axo pid=,ppid= 2>/dev/null || true)"
+	[ -n "${table}" ] || return 0
+	printf '%s\n' "${table}" | awk -v root="${root}" '
+		{ kids[$2] = kids[$2] " " $1 }
+		END {
+			n = 1; queue[1] = root; out = ""
+			for (i = 1; i <= n; i++) {
+				m = split(kids[queue[i]], c, " ")
+				for (j = 1; j <= m; j++) {
+					if (c[j] in seen) continue
+					seen[c[j]] = 1; queue[++n] = c[j]; out = out " " c[j]
+				}
+			}
+			sub(/^ /, "", out); printf "%s", out
+		}'
+}
+
 mcp_runtime_lookup_pgid() {
 	local pid="$1"
 	local pgid=""

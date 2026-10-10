@@ -28,5 +28,8 @@ name="$(mcp_args_get '.name' --default 'World')"
 # mcp_progress 10 "Starting work"
 # mcp_log_info "tool" "args: ${MCP_TOOL_ARGS_JSON}"
 
-# Return result (uses {success, result} envelope pattern)
-mcp_result_success "$(mcp_json_obj message "Hello ${name}")"
+# Errors the model should see and correct (ends the tool):
+# [ -n "${name}" ] || mcp_fail --type invalid_args "name must not be empty" --hint "pass a name"
+
+# Return the result: structuredContent is exactly this JSON (matches outputSchema)
+mcp_result_json "$(mcp_json_obj message "Hello ${name}")"

@@ -5,7 +5,7 @@
 - Extract config values with `mcp_config_get` including default fallbacks
 - Securely fetch external URLs with `mcp_download_safe` (SSRF protection, retries)
 - Use `mcp_download_safe_or_fail` for fail-fast download pattern
-- Return LLM-friendly errors with `mcp_error --hint` for self-correction
+- Return LLM-friendly errors with `mcp_fail --type … --hint` for self-correction
 - Handle redirect responses gracefully
 
 **Prereqs**
@@ -21,10 +21,10 @@
 **Transcript**
 ```
 > tools/call {"name":"fetch-api-data","arguments":{"url":"https://httpbin.org/get"}}
-< {"result":{"content":[{"type":"text","text":"{\"success\":true,\"result\":{...}}"}]}}
+< {"result":{"content":[{"type":"text","text":"{\"bytes\":...,\"preview\":...,\"url\":...}"}],"structuredContent":{"bytes":...,"preview":"...","url":"https://httpbin.org/get"},"isError":false}}
 
 > tools/call {"name":"fetch-api-data","arguments":{"url":"https://httpbin.org/redirect/1"}}
-< {"result":{"content":[{"type":"text","text":"{\"success\":false,\"error\":{\"type\":\"redirect\",...}}"}],"isError":true}}
+< {"result":{"content":[{"type":"text","text":"URL redirected to a different location\n\nHint: The URL redirected to ... Try fetching that URL directly instead."}],"isError":true,"_meta":{"mcpbash/error":{"type":"redirect",...}}}}
 ```
 
 **Config precedence**

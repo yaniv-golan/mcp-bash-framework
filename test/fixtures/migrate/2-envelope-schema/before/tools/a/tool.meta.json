@@ -1,0 +1,26 @@
+{
+  "name": "a",
+  "inputSchema": {
+    "type": "object"
+  },
+  "outputSchema": {
+    "type": "object",
+    "required": [
+      "success",
+      "result"
+    ],
+    "properties": {
+      "success": {
+        "type": "boolean"
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "n": {
+            "type": "integer"
+          }
+        }
+      }
+    }
+  }
+}

@@ -18,6 +18,9 @@ existing_files=()
 while IFS= read -r -d '' path; do
 	case "${path}" in
 	*.orig) continue ;;
+	# Migration fixtures are sample user projects written in the old style on
+	# purpose; their findings are pinned by line number.
+	test/fixtures/migrate/*) continue ;;
 	esac
 	if [ -f "${path}" ]; then
 		existing_files+=("${path}")

@@ -42,13 +42,13 @@ mcp_elicit_titled_choice "Select quality" \
 **Example URL mode (SEP-1036):**
 ```bash
 # Secure out-of-band interaction (opens browser, data never passes through client)
-resp="$(mcp_elicit_url "Complete OAuth authorization" "https://auth.example.com/authorize?...")"
+resp="$(mcp_elicit_url "Complete OAuth authorization" "https://auth.example.com/authorize?...")" || true
 if [ "$(echo "$resp" | jq -r '.action')" = "accept" ]; then
-    # User completed the flow in browser
+    echo "User completed the flow in browser" >&2
 fi
 ```
 
 **Success criteria**
 - `tools/list` shows `example-elicitation`
 - Calling `example-elicitation` walks through all four elicitation types
-- Final output shows: `mode=X, quality=Y, features=[A, B]`
+- The final result's `structuredContent` holds `mode`, `quality` and `features` (e.g. `"features": "logging, caching"`)
