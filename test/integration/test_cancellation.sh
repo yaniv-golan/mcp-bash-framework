@@ -22,7 +22,10 @@ test_stage_workspace "${WORKSPACE}"
 # The tool runs for TOOL_SECS. A cancelled call must stay silent well past that,
 # so the test keeps reading for at least TOOL_SECS + GRACE_SECS after the calls
 # start, and GRACE_SECS after an uncancelled control call returns.
-TOOL_SECS=3
+# The server handles cancels one at a time and spends about 1s on each (TERM,
+# wait, KILL), so the third cancel lands ~3s after the calls; the tool must
+# outlast that by a wide margin on slow CI runners.
+TOOL_SECS=8
 GRACE_SECS=4
 
 mkdir -p "${WORKSPACE}/tools/slow"
