@@ -53,6 +53,8 @@ jobs:
           sudo apt-get install -y shellcheck shfmt
       - name: Lint
         run: test/lint.sh
+      - name: Lint API usage (skill, scaffold, docs)
+        run: bash test/lint-api-usage.sh
       - name: Verify rendered README is up to date
         run: bash scripts/render-readme.sh --check
 
