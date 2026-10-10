@@ -3,6 +3,7 @@
 # shellcheck disable=SC2034  # MIG_* are read by the engine that sources this file
 MIG_ID=2-ui-resource-uri
 MIG_API=2
+MIG_REPLACEMENT=none
 MIG_KIND=manual
 MIG_SCOPE="project-sh"
 MIG_SUMMARY="mcp_result_with_ui[_data] lose the unused resource_uri argument in 2.0 (and get a new name)"

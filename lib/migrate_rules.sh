@@ -11,6 +11,9 @@
 #   MIG_FIX      short replacement hint
 #   MIG_SCOPE    file classes to scan (see mcp_migrate_files)
 #   MIG_VALIDATE 0 to keep the rule out of `validate` (default 1)
+#   MIG_REPLACEMENT  frozen (default): the replacement already exists and is
+#                frozen; none: it only arrives with the next major version, so
+#                there is nothing to change yet (lints report, never fail)
 #   mig_detect FILE   prints one finding per line: LINE<TAB>KIND<TAB>TEXT
 #                     (KIND "-" = MIG_KIND; never empty: bash's read
 #                     collapses consecutive tabs)
