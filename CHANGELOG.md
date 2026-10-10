@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **New projects use the frozen helpers**: `mcp-bash new`, `init` and `scaffold tool` generate tools that return `mcp_result_json` with an `outputSchema` describing the data itself, show `mcp_fail --type` for errors, and record `"mcpBash": {"apiVersion": 2}` in `server.meta.json`.
+- **Examples and docs teach the frozen helpers**: BEST-PRACTICES adds "Migrating to the 2.0 helpers".
 - **Policy denials are tool results, not JSON-RPC errors**: A `tools/call` refused by the tool allowlist or a `server.d/policy.sh` rule returned a JSON-RPC error, which Claude Desktop shows only as "The connector returned an error or an invalid response", so neither the model nor the user saw why. It is now a tool result with `isError: true`, the denial message as text and `_meta["mcpbash/error"]` = `{"type":"policy_denied","message":…}` (plus the policy's data, if any). A policy's custom error code (for example `-32600`) is no longer sent. A rejected tool path, a missing executable and inherit mode without the allow flag stay JSON-RPC errors. `mcp-bash run-tool` prints the result and still exits 1.
 
 ### Added
@@ -27,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Two examples kept going after rejecting their input**: `examples/04-roots-basics` read a file after rejecting its path as outside the allowed roots, and `examples/12-config-and-downloads` downloaded an `http://` URL after rejecting it. Both used `mcp_error`, which reports an error but doesn't end the tool; they now use `mcp_fail --type`.
 - **A request split across the read timeout is answered**: With the timed read loop (the default outside CI mode), a request whose bytes arrived on both sides of the read timeout was lost. On bash 4+ each part was answered as a separate, unparseable message; on bash 3.2 the first part was discarded. The request itself was never answered, and the client waited indefinitely. The server now keeps the partial input and joins it with the rest (bash 4+), or reads the rest of a started line without a timeout (bash 3.2). A final request without a trailing newline is still answered when input ends.
 
 ## [1.7.0] - 2026-10-10
