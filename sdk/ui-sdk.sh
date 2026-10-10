@@ -39,6 +39,18 @@ mcp_client_supports_ui() {
 
 # --- Result helpers ---
 
+# Plain-text CallToolResult for clients without UI support. The fallback is
+# prose, not JSON, so it must not go through mcp_result_success (which expects
+# a JSON value and reports anything else as an error).
+__mcp_ui_text_result() {
+	if [ -n "${MCPBASH_JSON_TOOL_BIN:-}" ]; then
+		printf '%s' "$1" | "${MCPBASH_JSON_TOOL_BIN}" -R -s -c \
+			'{content: [{type: "text", text: .}], isError: false}'
+	else
+		printf '{"content":[{"type":"text","text":%s}],"isError":false}' "$(__mcp_sdk_json_escape "$1")"
+	fi
+}
+
 # Emit tool result with structured data for UI rendering
 # Usage: mcp_result_with_ui <resource_uri> <text_fallback> [structured_data]
 #
@@ -61,7 +73,7 @@ mcp_result_with_ui() {
 
 	# If client doesn't support UI, return text-only result
 	if ! mcp_client_supports_ui; then
-		mcp_result_success "${text_fallback}"
+		__mcp_ui_text_result "${text_fallback}"
 		return
 	fi
 
@@ -72,11 +84,8 @@ mcp_result_with_ui() {
 		printf '\n%s' "${structured_data}"
 	} | "${MCPBASH_JSON_TOOL_BIN}" -s \
 		'.[0] as $text | .[1] as $data
-		| {
-			content: [{type: "text", text: $text}],
-			structuredContent: (if $data != null then $data else null end),
-			isError: false
-		}'
+		| {content: [{type: "text", text: $text}], isError: false}
+		+ (if $data != null then {structuredContent: $data} else {} end)'
 }
 
 # Emit tool result with structured data for UI rendering
@@ -100,7 +109,7 @@ mcp_result_with_ui_data() {
 	local ui_data="$3"
 
 	if ! mcp_client_supports_ui; then
-		mcp_result_success "${text_fallback}"
+		__mcp_ui_text_result "${text_fallback}"
 		return
 	fi
 

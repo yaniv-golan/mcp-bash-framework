@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`mcp_result_with_ui` and `mcp_result_with_ui_data` work for clients without MCP Apps support**: They returned `isError: "Invalid JSON passed to mcp_result_success"` to every client without MCP Apps support; they now return the text fallback as a normal result. A UI result without data no longer sends `structuredContent: null`.
 - **`mcp-bash run-tool` finds tools added or changed since the last scan**: A registry cache loaded from disk counted as fresh for the registry TTL from the moment it was loaded, so a one-shot `run-tool` never rescanned, and a tool added after the cache was written was reported as "tool not found" until `mcp-bash registry refresh` was run. `run-tool` now rescans when anything under the tools directory is newer than the cache, and reuses the cache otherwise. `--no-refresh` still uses the cache as written.
 - **Clawdbot recipe renamed to OpenClaw**: Clawdbot is now OpenClaw and mcporter has moved to the openclaw organisation. The README recipe links to the new repositories and uses mcporter's current config shape (`mcpServers`, no `type` field); the config path `~/.mcporter/mcporter.json` is unchanged.
 - **MCP Apps specification links work again**: The links to the MCP Apps extension spec in `docs/concepts/mcp-apps.md` and `docs/guides/ui-resources.md` returned 404; they now point at https://modelcontextprotocol.io/extensions/apps/overview.
