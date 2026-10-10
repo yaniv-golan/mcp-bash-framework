@@ -56,7 +56,7 @@ check_fixture() {
 	assert_success
 	# lib/helpers.sh is a shared helper script: scanned. .mcp-bash and
 	# node_modules: never.
-	assert_output "lib/helpers.sh:2:auto
+	assert_output "lib/helpers.sh:2:manual
 tools/a/tool.sh:3:auto"
 }
 
@@ -97,4 +97,50 @@ mcp_tools_policy_check() {
 SH
 	run detect_rule 2-policy-replace "${root}"
 	assert_output "server.d/policy.sh:1:manual"
+}
+
+resolved() {
+	"${BASH}" -c '. "$1/lib/migrate_rules.sh"; mcp_migrate_detect_resolved "$2"' _ "${MCPBASH_HOME}" "$1" \
+		| awk -F'\t' '$1 ~ /result-success|envelope/ { print $3 ":" $4 ":" $2 }' | LC_ALL=C sort
+}
+
+envelope_tool() {
+	local root="$1" name="$2" ui="$3"
+	mkdir -p "${root}/tools/${name}/ui" "${root}/server.d"
+	printf '{"name":"x"}\n' >"${root}/server.d/server.meta.json"
+	printf '%s\n' '#!/usr/bin/env bash' 'mcp_result_success "{}"' >"${root}/tools/${name}/tool.sh"
+	printf '%s\n' '{' '"name": "t",' '"outputSchema": {"type":"object","required":["success"],"properties":{"success":{"type":"boolean"},"result":{"type":"object"}}}' '}' >"${root}/tools/${name}/tool.meta.json"
+	[ "${ui}" = "ui" ] && printf '%s\n' 'const d = r.structuredContent.result;' >"${root}/tools/${name}/ui/index.html"
+	return 0
+}
+
+@test "migrate sets: a tool's result call and outputSchema are auto together" {
+	root="${BATS_TEST_TMPDIR}/p"
+	envelope_tool "${root}" a no
+	run resolved "${root}"
+	assert_output "tools/a/tool.meta.json:3:auto
+tools/a/tool.sh:2:auto"
+}
+
+@test "migrate sets: a manual UI read makes the whole tool manual, other tools unaffected" {
+	root="${BATS_TEST_TMPDIR}/p"
+	envelope_tool "${root}" a ui
+	envelope_tool "${root}" b no
+	run resolved "${root}"
+	assert_output "tools/a/tool.meta.json:3:manual
+tools/a/tool.sh:2:manual
+tools/a/ui/index.html:1:manual
+tools/b/tool.meta.json:3:auto
+tools/b/tool.sh:2:auto"
+}
+
+@test "migrate sets: results returned from a shared script make every envelope change manual when schemas need changing" {
+	root="${BATS_TEST_TMPDIR}/p"
+	envelope_tool "${root}" a no
+	mkdir -p "${root}/lib"
+	printf '%s\n' 'reply() {' '	mcp_result_success "$1"' '}' >"${root}/lib/common.sh"
+	run resolved "${root}"
+	assert_output "lib/common.sh:2:manual
+tools/a/tool.meta.json:3:manual
+tools/a/tool.sh:2:manual"
 }

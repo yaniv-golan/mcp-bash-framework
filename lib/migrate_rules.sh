@@ -14,6 +14,8 @@
 #   MIG_REPLACEMENT  frozen (default): the replacement already exists and is
 #                frozen; none: it only arrives with the next major version, so
 #                there is nothing to change yet (lints report, never fail)
+#   MIG_SET      optional set name: findings of one set must be rewritten together
+#                (see mcp_migrate_detect_resolved)
 #   mig_detect FILE   prints one finding per line: LINE<TAB>KIND<TAB>TEXT
 #                     (KIND "-" = MIG_KIND; never empty: bash's read
 #                     collapses consecutive tabs)
@@ -113,6 +115,91 @@ mig_grep_regex() {
 	done
 }
 
+# Helper for rules: count the shell words passed to the first call of NAME on
+# a line of TEXT (up to the end of that simple command). Handles quotes and
+# nested $(...). Prints the count; prints nothing if NAME isn't called.
+mig_call_argc() {
+	local name="$1" text="$2"
+	local rest="" pre="${text%%"${name}"*}"
+	[ "${pre}" != "${text}" ] || return 0
+	rest="${text#*"${name}"}"
+	case "${rest}" in
+	'' | [[:space:]]* | ';'* | ')'*) ;;
+	*) return 0 ;; # NAME was a prefix of a longer word
+	esac
+	local i=0 n=${#rest} c count=0 in_word=0 sq=0 dq=0 depth=0 starts=0
+	while [ "${i}" -lt "${n}" ]; do
+		c="${rest:${i}:1}"
+		starts=0
+		if [ "${sq}" -eq 1 ]; then
+			[ "${c}" = "'" ] && sq=0
+		elif [ "${c}" = "\\" ]; then
+			i=$((i + 1))
+			starts=1
+		elif [ "${c}" = '"' ]; then
+			starts=1
+			if [ "${depth}" -eq 0 ]; then
+				dq=$((1 - dq))
+			fi
+		elif [ "${dq}" -eq 0 ] && [ "${depth}" -eq 0 ] && [ "${c}" = "'" ]; then
+			starts=1
+			sq=1
+		elif [ "${c}" = '$' ] && [ "${rest:$((i + 1)):1}" = '(' ]; then
+			starts=1
+			depth=$((depth + 1))
+			i=$((i + 1))
+		elif [ "${depth}" -gt 0 ]; then
+			case "${c}" in
+			'(') depth=$((depth + 1)) ;;
+			')') depth=$((depth - 1)) ;;
+			esac
+		elif [ "${dq}" -eq 1 ]; then
+			:
+		else
+			case "${c}" in
+			' ' | '	') in_word=0 ;;
+			';' | '&' | '|' | ')' | '#' | '}') break ;;
+			*) starts=1 ;;
+			esac
+		fi
+		if [ "${starts}" -eq 1 ] && [ "${in_word}" -eq 0 ]; then
+			in_word=1
+			count=$((count + 1))
+		fi
+		i=$((i + 1))
+	done
+	printf '%s\n' "${count}"
+}
+
+# Helper for rules: true when the call to NAME on this line can't be rewritten
+# blindly: its output is captured with $(...) (the caller post-processes the
+# result's shape) or it forwards "$@"/$* (unknown arguments).
+mig_call_is_opaque() {
+	local name="$1" text="$2"
+	case "${text}" in
+	*'$('*"${name}"* | *'`'*"${name}"*) return 0 ;;
+	esac
+	local rest="${text#*"${name}"}"
+	case "${rest}" in
+	*'"$@"'* | *'$@'* | *'"$*"'* | *'$*'* | *'${@}'*) return 0 ;;
+	esac
+	return 1
+}
+
+# Helper for rules: replace line N of FILE with TEXT (in place).
+mig_replace_line() {
+	local file="$1" n="$2" text="$3" tmp
+	tmp="$(mktemp "${file}.mig.XXXXXX")" || return 1
+	MIG_NEW_LINE="${text}" awk -v n="${n}" 'NR == n { print ENVIRON["MIG_NEW_LINE"]; next } { print }' "${file}" >"${tmp}" \
+		&& cat "${tmp}" >"${file}"
+	rm -f "${tmp}"
+}
+
+# Helper for rules: print line N of FILE.
+mig_line() {
+	awk -v n="$2" 'NR == n { print; exit }' "$1"
+}
+
 # Run every rule over ROOT. Prints findings, one per line:
 #   ID<TAB>KIND<TAB>FILE<TAB>LINE<TAB>SUMMARY<TAB>FIX<TAB>TEXT
 # Options: --validate (only rules with MIG_VALIDATE != 0), --only IDS, --skip IDS
@@ -171,4 +258,71 @@ mcp_migrate_detect() {
 			done
 		)
 	done
+}
+
+# Ids of the rules in set NAME, comma-separated with leading/trailing commas.
+mcp_migrate_set_ids() {
+	local name="$1" rule ids=","
+	while IFS= read -r rule; do
+		local set_name
+		set_name="$(
+			MIG_SET=""
+			# shellcheck disable=SC1090
+			. "${rule}" >/dev/null 2>&1
+			printf '%s' "${MIG_SET}"
+		)"
+		if [ "${set_name}" = "${name}" ]; then
+			local id="${rule##*/}"
+			ids="${ids}${id%.sh},"
+		fi
+	done < <(mcp_migrate_rule_files)
+	printf '%s\n' "${ids}"
+}
+
+# Like mcp_migrate_detect, but findings of the "envelope" set (result calls,
+# outputSchema, UI reads of .result) are auto only when they can all be
+# rewritten together:
+# - per tool (tools/<name>/): if any of the tool's envelope findings is
+#   manual, all of them are;
+# - envelope findings in shared scripts outside tools/<name>/ change every
+#   tool that uses them, so if there are any, all envelope findings are auto
+#   only when every one of them is auto and no outputSchema or UI read needs
+#   changing anywhere; otherwise all are manual.
+mcp_migrate_detect_resolved() {
+	local sets
+	sets="$(mcp_migrate_set_ids envelope)"
+	mcp_migrate_detect "$@" | awk -F'\t' -v OFS='\t' -v sets="${sets}" '
+		function key(file,   m) {
+			if (match(file, /^tools\/[^\/]+\//)) return substr(file, 1, RLENGTH)
+			return "shared"
+		}
+		{ line[NR] = $0; id[NR] = $1; kind[NR] = $2; file[NR] = $3 }
+		index(sets, "," $1 ",") > 0 {
+			inset[NR] = 1
+			k = key($3)
+			if ($2 == "manual") bad[k] = 1
+			if (k == "shared") shared = 1
+			else if ($1 != "2-result-success") structural = 1
+			if ($2 == "manual") anybad = 1
+		}
+		END {
+			for (i = 1; i <= NR; i++) {
+				if (inset[i]) {
+					k = key(file[i])
+					demote = 0
+					if (shared && (anybad || structural)) demote = 1
+					else if (!shared && bad[k]) demote = 1
+					if (demote && kind[i] == "auto") {
+						n = split(line[i], f, "\t")
+						f[2] = "manual"
+						f[7] = f[7] " (moves together with this tool'"'"'s other envelope changes)"
+						out = f[1]
+						for (j = 2; j <= n; j++) out = out OFS f[j]
+						print out
+						continue
+					}
+				}
+				print line[i]
+			}
+		}'
 }

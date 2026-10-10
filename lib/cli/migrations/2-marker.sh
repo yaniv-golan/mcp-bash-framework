@@ -16,3 +16,13 @@ mig_detect() {
 	"${bin}" -e '(.mcpBash.apiVersion // 0) >= 2' "${file}" >/dev/null 2>&1 && return 0
 	printf '1\t-\t%s\n' "no mcpBash.apiVersion"
 }
+mig_apply() {
+	local file="$1" bin="${MCPBASH_JSON_TOOL_BIN:-}" tmp
+	[ -n "${bin}" ] || bin="$(command -v jq 2>/dev/null || true)"
+	[ -n "${bin}" ] || return 1
+	tmp="$(mktemp "${file}.mig.XXXXXX")" || return 1
+	if "${bin}" '.mcpBash = ((.mcpBash // {}) + {apiVersion: 2})' "${file}" >"${tmp}" 2>/dev/null; then
+		cat "${tmp}" >"${file}"
+	fi
+	rm -f "${tmp}"
+}

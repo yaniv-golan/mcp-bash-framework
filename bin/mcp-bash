@@ -60,6 +60,9 @@ Usage:
   mcp-bash validate [--project-root DIR] [--fix] [--json]
                      [--explain-defaults] [--strict] [--inspector]
                            # validate project structure and metadata
+  mcp-bash migrate [--project-root DIR] [--write [--force]] [--only ID,..]
+                   [--skip ID,..] [--json] | --list | --explain ID
+                           # find (and fix) uses of APIs that change in 2.0
   mcp-bash config [--project-root DIR] [--show|--json|--client NAME|--wrapper|--wrapper-env|--inspector]
                            # print MCP client configuration snippets
   mcp-bash doctor [--json] [--dry-run|--fix] [--min-version X.Y.Z]
@@ -240,7 +243,7 @@ cli_cmd="${1-}"
 
 # Early check: CLI commands that need the full install (not available in vendored/embedded runtime)
 case "${cli_cmd}" in
-	init|validate|run-tool|config|doctor|new|registry|scaffold|vendor|bundle|publish)
+	init|validate|migrate|run-tool|config|doctor|new|registry|scaffold|vendor|bundle|publish)
 		_cli_file="${cli_cmd}"; [ "${_cli_file}" = "run-tool" ] && _cli_file="run_tool"
 		if [ ! -f "${MCPBASH_HOME}/lib/cli/${_cli_file}.sh" ]; then
 			printf 'Error: "%s" is not available in this installation.\n' "${cli_cmd}" >&2
@@ -266,6 +269,13 @@ if [ "${cli_cmd}" = "validate" ]; then
 	# shellcheck source=lib/cli/validate.sh disable=SC1091
 	. "${MCPBASH_HOME}/lib/cli/validate.sh"
 	mcp_cli_validate "$@"
+fi
+
+if [ "${cli_cmd}" = "migrate" ]; then
+	shift
+	# shellcheck source=lib/cli/migrate.sh disable=SC1091
+	. "${MCPBASH_HOME}/lib/cli/migrate.sh"
+	mcp_cli_migrate "$@"
 fi
 
 if [ "${cli_cmd}" = "run-tool" ]; then

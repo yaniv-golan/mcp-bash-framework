@@ -204,7 +204,7 @@ EOF
 		# shellcheck source=../migrate_rules.sh disable=SC1091
 		. "${MCPBASH_HOME}/lib/migrate_rules.sh"
 		local findings
-		findings="$(mcp_migrate_detect "${project_root}" --validate 2>/dev/null || true)"
+		findings="$(mcp_migrate_detect_resolved "${project_root}" --validate 2>/dev/null || true)"
 		if [ -n "${findings}" ]; then
 			local f_id f_kind f_file f_line f_summary f_fix f_text
 			while IFS=$'\t' read -r f_id f_kind f_file f_line f_summary f_fix f_text; do
