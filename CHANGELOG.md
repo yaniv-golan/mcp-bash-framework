@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Resources embedded in tool results can no longer be redirected by a symlink swap**: A tool's embedded resources (`MCP_TOOL_RESOURCES_FILE`, `mcp_result_text_with_resource`) were checked against the roots by path and then opened by name up to three times, for mime detection, the binary check and the content. Someone able to write inside a root could swap the file for a symlink after the check, and the tool result then carried the content of a file outside the roots. The file is now read once through the same verified read as `file://` resources, with the matched root, and detection and encoding use the bytes of that read. A file that isn't a regular file inside the roots when it is opened is skipped with a warning.
 
+### Changed
+
+- **Unknown methods before `initialize` get `-32601 Method not found`**: Newer clients, including Claude Code and Claude Desktop, probe with `server/discover` before `initialize` and fall back to `initialize` when it fails. The server answered every pre-`initialize` request it doesn't allow with `-32000 Server not initialized`, which some client versions handled badly. A method the server doesn't implement now gets `-32601`, and the server stays ready for `initialize`. Methods it does implement (for example `tools/list`) still get `-32000` before `initialize`.
+
 ### Fixed
 
 - **Cancellations no longer stall request handling**: Each `notifications/cancelled` sent TERM, then waited 1 second in the main loop before escalating to KILL. Cancels are handled one at a time, so N cancels delayed every other request, including `ping`, by N seconds. The escalation now runs in a background helper after the same grace period, and the server keeps answering at once.

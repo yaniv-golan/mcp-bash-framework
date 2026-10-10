@@ -140,7 +140,7 @@ Example `resources/read` error payload:
 | `-32602` | Invalid params (non-string `protocolVersion`, invalid cursor/log level, missing/invalid remote token) | `handlers/lifecycle.sh`, `handlers/completion.sh`, `handlers/logging.sh`, `lib/auth.sh`, registry cursors |
 | `-32603` | Internal errors (empty handler response, registry size/parse failures, tool output/stderr over limits, provider failures) | `lib/core.sh`, `lib/tools.sh`, `lib/resources.sh`, `lib/prompts.sh` |
 | `-32001` | Tool cancelled (SIGTERM/INT from client) | `lib/tools.sh` |
-| `-32000` | Server not initialized (any request other than `ping` before `initialize` completes) | `lib/core.sh` |
+| `-32000` | Server not initialized (a request for a method the server implements, other than `ping`, before `initialize` completes; an unknown method such as `server/discover` gets `-32601` instead) | `lib/core.sh` |
 | `-32002` | Resource not found (`resources/read`) | `lib/resources.sh` |
 | `-32003` | Server shutting down (rejecting new work) | `lib/core.sh` |
 | `-32005` | `exit` called before `shutdown` was requested | `handlers/lifecycle.sh` |

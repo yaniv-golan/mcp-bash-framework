@@ -283,7 +283,7 @@ Note: `mcp_result_error` expects a JSON object with `type` and `message` fields.
   - `-32601` → method not found / unsupported method.
   - `-32602` → invalid params (bad args, invalid cursor, invalid log level).
   - `-32603` → internal error (provider failure, output size limit, registry errors, empty handler response).
-  - `-32000` → server not initialized (`initialize` not completed).
+  - `-32000` → server not initialized (`initialize` not completed). Unknown methods before `initialize`, such as a client's `server/discover` probe, get `-32601`.
   - `-32001` → tool cancelled (SIGTERM/INT).
   - `-32002` → resource not found (`resources/read`).
   - `-32003` → server shutting down (rejecting new work).

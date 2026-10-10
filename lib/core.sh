@@ -888,7 +888,14 @@ mcp_core_dispatch_object() {
 
 	if [ "${MCPBASH_INITIALIZED}" != true ] && ! mcp_core_method_allowed_preinit "${method}"; then
 		if [ "${is_notification}" != "true" ]; then
-			mcp_core_emit_not_initialized "${id_json}"
+			# A method the server doesn't have is "not found" whatever the
+			# lifecycle state. Clients that probe with server/discover before
+			# initialize then see an unambiguous -32601 and fall back.
+			if mcp_core_resolve_handler "${method}"; then
+				mcp_core_emit_not_initialized "${id_json}"
+			else
+				mcp_core_emit_method_not_found "${id_json}"
+			fi
 		fi
 		return
 	fi

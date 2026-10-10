@@ -97,6 +97,7 @@ TESTS=(
 	"test_resource_template_read.sh"
 	"test_large_payloads.sh"
 	"test_lifecycle_gating.sh"
+	"test_preinit_discover_probe.sh"
 	"test_resources_providers.sh"
 	"test_minimal_mode.sh"
 	"test_protocol_unsupported_version.sh"
