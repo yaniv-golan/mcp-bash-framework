@@ -223,7 +223,7 @@ page="$(mcp_args_int '.page' --min 1)"  # Fails if missing or < 1
 
 ```bash
 # Extract with jq filter and default
-name="$(mcp_args_get '.name // "World"')"
+name="$(mcp_args_get '.name' --default 'World')"   # or '.name // "World"'
 
 # Extract nested value
 config="$(mcp_args_get '.options.config // empty')"
@@ -234,7 +234,7 @@ if [ "$(mcp_args_get '.debug // "false"')" = "true" ]; then
 fi
 ```
 
-> **Note**: `mcp_args_get` requires JSON tooling (jq/gojq). In minimal mode it returns exit code 1, which will terminate scripts using `set -e`. For minimal-mode compatibility, use `mcp_args_get ... 2>/dev/null || true` or prefer the typed helpers (`mcp_args_bool`, `mcp_args_int`) which accept `--default` values that work in minimal mode.
+> **Note**: Without `--default`, a missing value comes back as the string `null`. `--default VALUE` (1.7.0+) is used for a missing, null or empty value; `false` and `0` are kept. `mcp_args_get` requires JSON tooling (jq/gojq). In minimal mode it returns exit code 1 unless `--default` is given, which will terminate scripts using `set -e`. For minimal-mode compatibility, use `mcp_args_get ... 2>/dev/null || true` or prefer the typed helpers (`mcp_args_bool`, `mcp_args_int`) which accept `--default` values that work in minimal mode.
 
 #### Path validation with roots enforcement
 
@@ -717,19 +717,25 @@ mcp_log_info "mytool" "Using timeout=${timeout}, retries=${retries}"
 Request user input when the client supports elicitation:
 
 ```bash
+# Each helper prints {"action": ..., "content": ...} and exits non-zero when no
+# answer came back (unsupported client, timeout, cancelled call), so under
+# `set -e` add `|| true` and branch on .action.
+
 # Simple string input
-response="$(mcp_elicit_string "Enter your name:" "name")"
+response="$(mcp_elicit_string "Enter your name:" "name")" || true
 
 # Yes/no confirmation
-response="$(mcp_elicit_confirm "Proceed with deletion?")"
+response="$(mcp_elicit_confirm "Proceed with deletion?")" || true
 
 # Choice from options
-response="$(mcp_elicit_choice "Select environment:" "dev" "staging" "prod")"
+response="$(mcp_elicit_choice "Select environment:" "dev" "staging" "prod")" || true
 
 # Custom schema
 schema='{"type":"object","properties":{"port":{"type":"integer"}},"required":["port"]}'
-response="$(mcp_elicit "Configure server:" "${schema}")"
+response="$(mcp_elicit "Configure server:" "${schema}")" || true
 ```
+
+See [ELICITATION.md](ELICITATION.md#using-the-helpers-under-set--e) for a full branch-on-`.action` example.
 
 #### Complete tool example
 

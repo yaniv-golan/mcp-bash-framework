@@ -84,3 +84,32 @@ setup() {
 	run mcp_args_int '.num' --min 0
 	assert_failure
 }
+
+@test "sdk_args: get --default applies to a missing or null value" {
+	MCP_TOOL_ARGS_JSON='{}'
+	assert_equal "World" "$(mcp_args_get '.name' --default 'World')"
+	MCP_TOOL_ARGS_JSON='{"name":null}'
+	assert_equal "World" "$(mcp_args_get '.name' --default 'World')"
+	MCP_TOOL_ARGS_JSON='{"name":""}'
+	assert_equal "World" "$(mcp_args_get '.name' --default 'World')"
+}
+
+@test "sdk_args: get --default keeps real values" {
+	MCP_TOOL_ARGS_JSON='{"name":"Ann","flag":false,"word":"null","n":0}'
+	assert_equal "Ann" "$(mcp_args_get '.name' --default 'World')"
+	assert_equal "false" "$(mcp_args_get '.flag' --default 'true')"
+	assert_equal "null" "$(mcp_args_get '.word' --default 'x')"
+	assert_equal "0" "$(mcp_args_get '.n' --default '5')"
+	assert_equal '{"a":1}' "$(MCP_TOOL_ARGS_JSON='{"o":{"a":1}}' mcp_args_get '.o' --default '{}')"
+}
+
+@test "sdk_args: get without --default is unchanged" {
+	MCP_TOOL_ARGS_JSON='{}'
+	assert_equal "null" "$(mcp_args_get '.name')"
+}
+
+@test "sdk_args: get --default without a value fails" {
+	MCP_TOOL_ARGS_JSON='{}'
+	run mcp_args_get '.name' --default
+	assert_failure
+}

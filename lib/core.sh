@@ -23,11 +23,18 @@ MCPBASH_IDLE_TIMEOUT_TRIGGERED=false
 MCPBASH_ORPHAN_DETECTED=false
 _MCPBASH_SIGNAL_RECEIVED=""
 _MCPBASH_CLEANUP_DONE=false
+# Set just before each intended `exit 0`. Bash 3.2 runs the EXIT trap with
+# $? = 0 after a fatal shell error (an unbound variable under set -u, for
+# example), so a zero status without this flag means the server died.
+_MCPBASH_EXIT_CLEAN=false
 
 # EXIT trap handler with idempotency guard.
 # Ensures cleanup runs exactly once, whether from normal exit or signal.
 _mcp_exit_handler() {
 	local exit_code=$?
+	if [ "${exit_code}" -eq 0 ] && [ "${_MCPBASH_EXIT_CLEAN}" != "true" ]; then
+		exit_code=1
+	fi
 	if [ "${_MCPBASH_CLEANUP_DONE}" != "true" ]; then
 		_MCPBASH_CLEANUP_DONE=true
 		mcp_runtime_cleanup 2>/dev/null || true
@@ -286,6 +293,7 @@ mcp_core_read_loop() {
 	# runs after the pending `read` returns, so TERM/INT waited out the full
 	# read timeout (or, with a blocking read, the next input line). Exiting
 	# here still runs the EXIT trap (_mcp_exit_handler) for cleanup.
+	trap 'exit 129' HUP
 	trap 'exit 130' INT
 	trap 'exit 143' TERM
 
@@ -408,8 +416,9 @@ mcp_core_read_loop() {
 		mcp_core_handle_line "${line}"
 	done
 
-	# Restore default signal handling
-	trap - INT TERM
+	# Keep the exit traps: a signal while waiting for workers must still exit
+	# through the EXIT trap (cleanup). The default action would kill the server
+	# without removing its state directory.
 }
 
 mcp_core_finish_after_read_loop() {
@@ -429,6 +438,7 @@ mcp_core_finish_after_read_loop() {
 		mcp_core_wait_for_workers
 		mcp_runtime_cleanup
 		_MCPBASH_CLEANUP_DONE=true # Prevent double cleanup in EXIT trap
+		_MCPBASH_EXIT_CLEAN=true
 		exit 0
 	fi
 
@@ -436,6 +446,7 @@ mcp_core_finish_after_read_loop() {
 	mcp_core_wait_for_workers
 	mcp_runtime_cleanup
 	_MCPBASH_CLEANUP_DONE=true
+	_MCPBASH_EXIT_CLEAN=true
 	exit 0
 }
 
@@ -827,6 +838,7 @@ mcp_core_handle_line() {
 	if [ "${MCPBASH_EXIT_REQUESTED}" = true ]; then
 		mcp_core_wait_for_workers
 		mcp_runtime_cleanup
+		_MCPBASH_EXIT_CLEAN=true
 		exit 0
 	fi
 }
@@ -876,7 +888,14 @@ mcp_core_dispatch_object() {
 
 	if [ "${MCPBASH_INITIALIZED}" != true ] && ! mcp_core_method_allowed_preinit "${method}"; then
 		if [ "${is_notification}" != "true" ]; then
-			mcp_core_emit_not_initialized "${id_json}"
+			# A method the server doesn't have is "not found" whatever the
+			# lifecycle state. Clients that probe with server/discover before
+			# initialize then see an unambiguous -32601 and fall back.
+			if mcp_core_resolve_handler "${method}"; then
+				mcp_core_emit_not_initialized "${id_json}"
+			else
+				mcp_core_emit_method_not_found "${id_json}"
+			fi
 		fi
 		return
 	fi
@@ -1290,7 +1309,25 @@ mcp_core_cancel_request() {
 	fi
 
 	mcp_core_send_signal_chain "${pid}" "${pgid}" TERM
-	sleep 1
+	# Escalate from a helper so the main loop isn't held up: waiting here
+	# stalled all request handling for 1s per cancel, one cancel at a time.
+	# The double fork keeps the helper out of the job table, so it never
+	# counts as a worker; stdout goes to /dev/null so it can't hold the
+	# client's pipe open.
+	(
+		(
+			set +e
+			sleep 1
+			mcp_core_cancel_escalate "${key}" "${pid}" "${pgid}"
+		) >/dev/null </dev/null &
+	)
+}
+
+mcp_core_cancel_escalate() {
+	local key="$1"
+	local pid="$2"
+	local pgid="$3"
+
 	if mcp_core_process_alive "${pid}"; then
 		mcp_core_send_signal_chain "${pid}" "${pgid}" KILL
 	fi

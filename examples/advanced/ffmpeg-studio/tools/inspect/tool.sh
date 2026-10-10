@@ -41,6 +41,7 @@ if [[ ! -f "${full_path}" ]]; then
 			path "${path}" \
 			hint "Check the file exists and is within allowed media roots"
 	)"
+	exit 0
 fi
 
 # Run ffprobe (capture stderr for error reporting)

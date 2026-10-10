@@ -22,9 +22,8 @@ test_stage_workspace "${WORKSPACE}"
 # The tool runs for TOOL_SECS. A cancelled call must stay silent well past that,
 # so the test keeps reading for at least TOOL_SECS + GRACE_SECS after the calls
 # start, and GRACE_SECS after an uncancelled control call returns.
-# The server handles cancels one at a time and spends about 1s on each (TERM,
-# wait, KILL), so the third cancel lands ~3s after the calls; the tool must
-# outlast that by a wide margin on slow CI runners.
+# The tool must outlast the cancels by a wide margin on slow CI runners
+# (macOS runners are sometimes 2x slower).
 TOOL_SECS=8
 GRACE_SECS=4
 
@@ -57,15 +56,19 @@ exec 3>"${PIPE_IN}"
 exec 4<"${PIPE_OUT}"
 
 send() { printf '%s\n' "$1" >&3; }
+# test_read_line keeps a line split across a read timeout; a plain `read -t`
+# retry would drop it.
 read_resp() {
-	local line
-	read -r -t 1 -u 4 line && printf '%s' "${line}"
+	line=""
+	if test_read_line 4 1; then
+		line="${TEST_LINE}"
+	fi
 }
 
 send '{"jsonrpc":"2.0","id":"init","method":"initialize","params":{}}'
 init_deadline=$((SECONDS + 10))
 while [ "${SECONDS}" -lt "${init_deadline}" ]; do
-	line="$(read_resp || true)"
+	read_resp
 	[ -z "${line}" ] && continue
 	if [ "$(printf '%s' "${line}" | jq -c '.id' 2>/dev/null || true)" = '"init"' ]; then
 		break
@@ -97,7 +100,7 @@ seen_ids=""
 keep_seen=false
 deadline=$((calls_started + 30))
 while [ "${SECONDS}" -lt "${deadline}" ]; do
-	line="$(read_resp || true)"
+	read_resp
 	[ -z "${line}" ] && continue
 	id="$(printf '%s' "${line}" | jq -c 'if type == "object" and has("id") then .id else empty end' 2>/dev/null || true)"
 	[ -z "${id}" ] && continue
@@ -125,7 +128,7 @@ send '{"jsonrpc":"2.0","id":"ping","method":"ping"}'
 got_ping=false
 ping_deadline=$((SECONDS + 10))
 while [ "${SECONDS}" -lt "${ping_deadline}" ]; do
-	line="$(read_resp || true)"
+	read_resp
 	[ -z "${line}" ] && continue
 	if [ "$(printf '%s' "${line}" | jq -c '.id' 2>/dev/null || true)" = '"ping"' ]; then
 		got_ping=true

@@ -121,7 +121,7 @@ Note: `mcp_result_error` expects a JSON object with `type` and `message` fields.
   - Only `{{var}}` placeholders are substituted (values come from `prompts/get` `arguments`).
 - Completions:
   - Preferred: `server.d/register.json` → `{"version":1,"completions":[{"name":"ns.completion","path":"completions/name.sh","timeoutSecs":5}]}`.
-  - Or a script next to a prompt/resource: `prompts/<name>/<name>.completion.sh`; for a resource template, `resources/<template-name>.completion.sh` serves `ref/resource` requests for that template (what Claude Desktop sends). Lookup order and env in `docs/COMPLETION.md`; these time out after `MCPBASH_COMPLETION_TIMEOUT_SECS` (default 5).
+  - Or a script next to a prompt/resource: `prompts/<name>/<name>.completion.sh`; for a resource template, `resources/<template-name>.completion.sh` serves `ref/resource` requests for that template (MCP Inspector, Cursor and others; Claude Desktop 2.31226.1 sends no completion requests to extensions). Lookup order and env in `docs/COMPLETION.md`; these time out after `MCPBASH_COMPLETION_TIMEOUT_SECS` (default 5).
   - Registered completions without `timeoutSecs` time out after `MCPBASH_COMPLETION_REGISTERED_TIMEOUT_SECS` (default 30); `timeoutSecs: 0` disables the timeout.
   - Hook-based (`server.d/register.sh`, opt-in): `mcp_completion_manual_begin`, `mcp_completion_register_manual '{...}'`, `mcp_completion_manual_finalize`.
   - Completion script paths are resolved relative to `MCPBASH_PROJECT_ROOT`; scripts run under the provider env policy.
@@ -131,7 +131,7 @@ Note: `mcp_result_error` expects a JSON object with `type` and `message` fields.
 - SDK helpers live in `sdk/tool-sdk.sh` and require `MCP_SDK` to be set by the framework.
 - Args:
   - `mcp_args_raw` → raw JSON args string.
-  - `mcp_args_get '<jq_filter>'` → extract value via jq/gojq.
+  - `mcp_args_get '<jq_filter>' [--default VALUE]` → extract value via jq/gojq; a missing or null value prints `null` unless `--default` is given (the default also covers an empty string, and works in minimal mode).
 - Request metadata (`_meta` from tools/call):
   - `mcp_meta_raw` → raw JSON `_meta` string from the tools/call request.
   - `mcp_meta_get '<jq_filter>'` → extract value from `_meta` via jq/gojq.
@@ -283,7 +283,7 @@ Note: `mcp_result_error` expects a JSON object with `type` and `message` fields.
   - `-32601` → method not found / unsupported method.
   - `-32602` → invalid params (bad args, invalid cursor, invalid log level).
   - `-32603` → internal error (provider failure, output size limit, registry errors, empty handler response).
-  - `-32000` → server not initialized (`initialize` not completed).
+  - `-32000` → server not initialized (`initialize` not completed). Unknown methods before `initialize`, such as a client's `server/discover` probe, get `-32601`.
   - `-32001` → tool cancelled (SIGTERM/INT).
   - `-32002` → resource not found (`resources/read`).
   - `-32003` → server shutting down (rejecting new work).

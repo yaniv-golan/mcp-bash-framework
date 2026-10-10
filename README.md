@@ -16,6 +16,8 @@ Edit README.md.in and run: bash scripts/render-readme.sh
 > **Repository:** [`mcp-bash-framework`](https://github.com/yaniv-golan/mcp-bash-framework) &nbsp;•&nbsp; **CLI/Binary:** `mcp-bash`
 
 > **For AI agents:** Read [`llms.txt`](llms.txt) (compact) or [`llms-full.txt`](llms-full.txt) (detailed) for agent-optimized context — includes a step-by-step Quick Start, critical allowlist requirement, and CLI wrapper patterns.
+>
+> **Claude Code skill:** `/plugin install mcp-bash --marketplace yaniv-golan/mcp-bash-framework` installs a skill with the workflow and common traps for building mcp-bash servers. On older Claude Code: `/plugin marketplace add yaniv-golan/mcp-bash-framework`, then `/plugin install mcp-bash@mcp-bash`.
 
 ## Contents
 
@@ -392,12 +394,11 @@ Picking a wrapper:
   ) as server:
       ...
   ```
-- **Clawdbot**: Clawdbot uses [mcporter](https://github.com/steipete/mcporter) for MCP. Add to `~/.mcporter/mcporter.json`:
+- **OpenClaw** (formerly Clawdbot): [OpenClaw](https://github.com/openclaw/openclaw) uses [mcporter](https://github.com/openclaw/mcporter) for MCP. Add to `~/.mcporter/mcporter.json`:
   ```json
   {
-    "servers": {
+    "mcpServers": {
       "mcp-bash": {
-        "type": "stdio",
         "command": "/Users/you/.local/bin/mcp-bash",
         "env": {
           "MCPBASH_PROJECT_ROOT": "/Users/you/my-mcp-server",
@@ -407,7 +408,7 @@ Picking a wrapper:
     }
   }
   ```
-  Verify with `npx mcporter list mcp-bash`. Clawdbot agents call tools via the bundled `mcporter` skill.
+  Verify with `npx mcporter list mcp-bash`. OpenClaw agents call tools via its bundled `mcporter` skill.
 - **Highlight AI**: Go to Highlight → Settings → Connections → Add → Custom command:
   - **Connection name**: `mcp-bash`
   - **Command**: `/Users/you/.local/bin/mcp-bash`
@@ -422,7 +423,7 @@ Picking a wrapper:
 |--------|--------|----------------------|
 | Claude Desktop | Tested (macOS, Windows) | macOS: non-login shell PATH/env (use `config --wrapper-env`); macOS quarantine/TCC can block execution; restart required after config changes |
 | Claude CLI / Claude Code | Tested | Generally straightforward; ensure `MCPBASH_PROJECT_ROOT` points at your project |
-| Clawdbot | Config documented | Uses mcporter for MCP; config in `~/.mcporter/mcporter.json` |
+| OpenClaw (formerly Clawdbot) | Config documented | Uses mcporter for MCP; config in `~/.mcporter/mcporter.json` |
 | Highlight AI | Tested | UI-based config: Settings → Connections → Add → Custom command |
 | Cursor | Config documented | Config file location differs by install; use `mcp-bash config --client cursor` |
 | Windsurf (Cascade) | Config documented | Use the app's MCP config UI/file; see snippet in README |
@@ -516,7 +517,7 @@ mcp-bash run-tool my-tool --print-env --dry-run
 mcp-bash run-tool my-tool --dry-run
 ```
 
-Flags: `--args` (JSON object), `--roots` (comma-separated paths), `--dry-run`, `--timeout <secs>`, `--verbose` (stream tool stderr), `--no-refresh` (reuse cached registry), `--minimal` (force degraded mode), `--project-root <dir>`, `--print-env` (dump wiring without executing), `--allow-self` / `--allow TOOL` / `--allow-all` (allowlist this run; tools are denied by default), `--with-server-env` (source `server.d/env.sh` first), `--source FILE` (source a file first; repeatable). Elicitation is not supported in CLI mode.
+Flags: `--args` (JSON object), `--roots` (comma-separated paths), `--dry-run`, `--timeout <secs>`, `--verbose` (stream tool stderr), `--no-refresh` (reuse the cached registry; by default, run-tool rescans when anything under `tools/` is newer than the cache), `--minimal` (force degraded mode), `--project-root <dir>`, `--print-env` (dump wiring without executing), `--allow-self` / `--allow TOOL` / `--allow-all` (allowlist this run; tools are denied by default), `--with-server-env` (source `server.d/env.sh` first), `--source FILE` (source a file first; repeatable). Elicitation is not supported in CLI mode.
 
 The scaffolder and examples use per-tool directories (e.g., `tools/check-disk/tool.sh`); automatic discovery requires tools to live under subdirectories of `tools/` (root-level scripts are not discovered).
 

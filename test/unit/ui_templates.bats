@@ -232,3 +232,40 @@ setup() {
 		[[ "${out}" != *'ext-apps/+esm'* ]]
 	done
 }
+
+@test "templates: every result-reading template unwraps the SDK's {success,result} envelope" {
+	local out
+	for out in \
+		"$(mcp_ui_template_data_table '{"title":"T","columns":[]}')" \
+		"$(mcp_ui_template_progress '{"title":"P"}')" \
+		"$(mcp_ui_template_diff_viewer '{"title":"D"}')" \
+		"$(mcp_ui_template_tree_view '{"title":"T"}')" \
+		"$(mcp_ui_template_kanban '{"title":"K"}')"; do
+		[[ "${out}" == *'function mcpUnwrap('* ]]
+		# defined once and called at least once
+		[ "$(printf '%s' "${out}" | grep -o 'mcpUnwrap(' | wc -l | tr -d ' ')" -ge 2 ]
+	done
+}
+
+@test "templates: mcpUnwrap returns the payload of an envelope and leaves other data alone" {
+	command -v node >/dev/null 2>&1 || skip "node not available"
+	local html fn
+	html="$(mcp_ui_template_data_table '{"title":"T","columns":[]}')"
+	fn="$(printf '%s\n' "${html}" | sed -n '/mcp-unwrap:start/,/mcp-unwrap:end/p')"
+	[ -n "${fn}" ]
+	run node -e "${fn}
+const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const cases = [
+  [{success: true, result: {items: [1, 2]}}, {items: [1, 2]}],
+  [{success: true, result: [1, 2]}, [1, 2]],
+  [{items: [1]}, {items: [1]}],
+  [[{success: true, result: 1}], [{success: true, result: 1}]],
+  [{success: false, error: {message: 'x'}}, {success: false, error: {message: 'x'}}],
+  [null, null],
+];
+for (const [input, want] of cases) {
+  const got = mcpUnwrap(input);
+  if (!eq(got, want)) { console.error('bad', JSON.stringify(input), JSON.stringify(got)); process.exit(1); }
+}"
+	assert_success
+}

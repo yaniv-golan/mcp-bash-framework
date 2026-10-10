@@ -53,6 +53,26 @@ mcp_cli_run_tool_load_cache() {
 	MCP_TOOLS_TTL="${MCP_TOOLS_TTL:-31536000}"
 }
 
+# A cache loaded from disk counts as fresh for MCP_TOOLS_TTL from the moment it
+# is loaded, so a one-shot run-tool never rescanned and missed tools added or
+# changed since the last scan. Force a rescan when anything under the tools
+# directory (including the directory itself, whose mtime changes when entries
+# are added, removed or renamed) is newer than the cache; otherwise keep the
+# cache, so unchanged projects stay fast.
+mcp_cli_run_tool_mark_stale_cache() {
+	local cache_path="${MCPBASH_PROJECT_ROOT}/.registry/tools.json"
+	local tools_dir="${MCPBASH_TOOLS_DIR:-${MCPBASH_PROJECT_ROOT}/tools}"
+	[ -f "${cache_path}" ] || return 0
+	[ -d "${tools_dir}" ] || return 0
+	local newer=""
+	newer="$(find "${tools_dir}" -newer "${cache_path}" -print 2>/dev/null | head -n 1)" || newer=""
+	if [ -n "${newer}" ]; then
+		# shellcheck disable=SC2034  # Consumed by mcp_tools_refresh_registry
+		MCP_TOOLS_LAST_SCAN=0
+	fi
+	return 0
+}
+
 mcp_cli_run_tool_prepare_roots() {
 	local roots_arg="$1"
 	# shellcheck disable=SC2034  # Consumed by roots helpers after CLI setup
@@ -324,6 +344,8 @@ EOF
 
 	if [ "${no_refresh}" = "true" ]; then
 		mcp_cli_run_tool_load_cache || exit 1
+	else
+		mcp_cli_run_tool_mark_stale_cache
 	fi
 
 	if ! mcp_cli_run_tool_prepare_roots "${roots_arg}"; then

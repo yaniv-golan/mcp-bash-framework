@@ -2,7 +2,7 @@
 
 MCP Apps is an extension to the Model Context Protocol that enables servers to deliver interactive user interfaces to host applications. This allows tools to return rich UI components—dashboards, forms, visualizations, multi-step workflows—that render directly in conversations.
 
-> **Official Specification**: [MCP Apps Extension (Stable, 2026-01-26)](https://modelcontextprotocol.io/specification/2025-03-26/extensions/apps)
+> **Official Specification**: [MCP Apps Extension (Stable, 2026-01-26)](https://modelcontextprotocol.io/extensions/apps/overview)
 >
 > This document describes mcp-bash's implementation of the spec, plus convenience features we've added on top.
 
@@ -273,6 +273,6 @@ UIs can always display tool results; initiating requests (`callServerTool`, `rea
 
 ## References
 
-- [MCP Apps Extension Specification](https://modelcontextprotocol.io/specification/2025-03-26/extensions/apps) - Official stable spec
+- [MCP Apps Extension Specification](https://modelcontextprotocol.io/extensions/apps/overview) - Official stable spec
 - [MCP Apps SDK](https://www.npmjs.com/package/@modelcontextprotocol/ext-apps) - JavaScript SDK for UI ↔ host communication
 - [MCP Protocol Specification](https://modelcontextprotocol.io/specification) - Core MCP spec

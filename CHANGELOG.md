@@ -5,6 +5,38 @@ All notable changes to mcp-bash-framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`mcp-bash doctor` warns when the git provider is enabled but git is missing**: With `MCPBASH_ENABLE_GIT_PROVIDER=true` and no `git` on `PATH`, every git resource read fails at fetch time. Doctor now warns (`git.missing` in `--json`).
+- **Claude Code plugin with an mcp-bash skill**: The repository is now a plugin marketplace. `/plugin install mcp-bash --marketplace yaniv-golan/mcp-bash-framework` installs a skill that walks an agent through creating, testing, wiring and bundling an mcp-bash server, and lists the traps that fail silently (deny-by-default tools, `policy.sh`, the tool environment, bash 3.2 under Claude Desktop, completion script names).
+
+### Security
+
+- **Resources embedded in tool results can no longer be redirected by a symlink swap**: A tool's embedded resources (`MCP_TOOL_RESOURCES_FILE`, `mcp_result_text_with_resource`) were checked against the roots by path and then opened by name up to three times, for mime detection, the binary check and the content. Someone able to write inside a root could swap the file for a symlink after the check, and the tool result then carried the content of a file outside the roots. The file is now read once through the same verified read as `file://` resources, with the matched root, and detection and encoding use the bytes of that read. A file that isn't a regular file inside the roots when it is opened is skipped with a warning.
+
+### Changed
+
+- **Unknown methods before `initialize` get `-32601 Method not found`**: Newer clients, including Claude Code and Claude Desktop, probe with `server/discover` before `initialize` and fall back to `initialize` when it fails. The server answered every pre-`initialize` request it doesn't allow with `-32000 Server not initialized`, which some client versions handled badly. A method the server doesn't implement now gets `-32601`, and the server stays ready for `initialize`. Methods it does implement (for example `tools/list`) still get `-32000` before `initialize`.
+
+### Fixed
+
+- **Vendored runtimes and MCPB bundles include the whole SDK**: `mcp-bash vendor` and `mcp-bash bundle` copied only `sdk/tool-sdk.sh`, so `ui-sdk.sh` was missing and UI helpers such as `mcp_result_with_ui` did not exist in vendored and bundled projects. Every `sdk/*.sh` file is now embedded.
+- **Cancellations no longer stall request handling**: Each `notifications/cancelled` sent TERM, then waited 1 second in the main loop before escalating to KILL. Cancels are handled one at a time, so N cancels delayed every other request, including `ping`, by N seconds. The escalation now runs in a background helper after the same grace period, and the server keeps answering at once.
+- **Workers no longer spin when the server exits while they wait for a lock**: The lock root is inside the server's state directory, which cleanup removes on exit. A worker still waiting for a lock could then never create its lock directory and polled forever, starting a `sleep` every 20 ms. Lock waits now give up once the lock root is gone.
+- **Error results are no longer checked against `outputSchema`**: A tool that declares an `outputSchema` and returns an error result (`mcp_result_error`, or any result with `isError: true`) got `-32603 Tool output does not satisfy outputSchema` instead of its own error, so the model never saw the reason. The schema describes successful structured results, and the MCP SDKs skip it for errors; error results are now returned as they are.
+- **A fatal shell error in the server exits non-zero on bash 3.2**: Bash 3.2 reports status 0 to the EXIT trap after a fatal error such as an unbound variable, so the server exited 0 and hosts and CI saw success. Only the intended exits (end of input, `shutdown`/`exit`, idle timeout, orphan detection) now exit 0; any other zero status becomes 1.
+- **SIGHUP stops the server, and INT/TERM stop it at any point**: The server's HUP trap, and its INT/TERM traps outside the read loop, ran cleanup without exiting, so the server kept running without its state directory. HUP, INT and TERM now exit with 129, 130 and 143 at any point after startup, and cleanup runs once. A signal while the server waits for running tools after stdin closes also cleans up.
+- **The elicitation and ffmpeg-studio examples stop where they should**: The elicitation example (08) died under `set -e` when the client could not elicit; it now returns its own "Stopped" result. The ffmpeg-studio tools did not exit after an early error result, so `transcode` could continue to `ffprobe` and `ffmpeg -y` after an invalid preset or a declined overwrite, overwriting the file the user had refused to overwrite. `docs/ELICITATION.md` and `docs/BEST-PRACTICES.md` now show `|| true`, branching on `.action`, and that result helpers do not exit.
+- **Built-in UI templates unwrap the `{success, result}` envelope**: The data-table, progress, diff-viewer, tree-view and kanban templates read the raw structured content, so a table fed by `mcp_result_success` rendered nothing. They now unwrap the envelope and still accept the old shape.
+- **`mcp_result_with_ui` and `mcp_result_with_ui_data` work for clients without MCP Apps support**: They returned `isError: "Invalid JSON passed to mcp_result_success"` to every client without MCP Apps support; they now return the text fallback as a normal result. A UI result without data no longer sends `structuredContent: null`.
+- **`mcp-bash run-tool` finds tools added or changed since the last scan**: A registry cache loaded from disk counted as fresh for the registry TTL from the moment it was loaded, so a one-shot `run-tool` never rescanned, and a tool added after the cache was written was reported as "tool not found" until `mcp-bash registry refresh` was run. `run-tool` now rescans when anything under the tools directory is newer than the cache, and reuses the cache otherwise. `--no-refresh` still uses the cache as written.
+- **Clawdbot recipe renamed to OpenClaw**: Clawdbot is now OpenClaw and mcporter has moved to the openclaw organisation. The README recipe links to the new repositories and uses mcporter's current config shape (`mcpServers`, no `type` field); the config path `~/.mcporter/mcporter.json` is unchanged.
+- **MCP Apps specification links work again**: The links to the MCP Apps extension spec in `docs/concepts/mcp-apps.md` and `docs/guides/ui-resources.md` returned 404; they now point at https://modelcontextprotocol.io/extensions/apps/overview.
+- **`mcp_args_get --default` works**: The tool scaffold writes `mcp_args_get '.name' --default 'World'`, but `mcp_args_get` ignored the option, so every scaffolded tool returned the string `null` for a missing argument. `--default VALUE` is now used when the value is missing, null or an empty string (as `mcp_args_int` and `mcp_args_bool` do); `false`, `0` and the string `"null"` are kept. With `--default`, the helper also works in minimal mode. Tools copied from the scaffold are fixed without changes.
+- **The installer test no longer changes the developer's `mcp-bash` command**: `test/integration/test_installer.sh` ran the installer with the real `HOME`, so each run pointed `~/.local/bin/mcp-bash` at a test directory that was deleted afterwards. It now uses a temporary `HOME`.
+
 ## [1.6.0] - 2026-10-10
 
 ### Behaviour changes to check before upgrading

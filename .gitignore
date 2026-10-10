@@ -4,7 +4,6 @@ docs/internal/
 .cursor/
 # MCP registry caches
 **/.registry/
-AGENTS.md
 docs/.DS_Store
 .DS_Store
 **/.DS_Store
@@ -14,6 +13,8 @@ test-results/
 # npm dependencies (bats helpers)
 node_modules/
 docs/proposals/
-# Claude Code local settings
+# Claude Code local settings and agent worktrees
 .claude/settings.json
-CLAUDE.md
+.claude/settings.local.json
+.claude/worktrees/
+CLAUDE.local.md

@@ -1,0 +1,23 @@
+{
+  "name": "mcp-bash",
+  "owner": {
+    "name": "Yaniv Golan",
+    "email": "yaniv@golan.name"
+  },
+  "metadata": {
+    "description": "Skills for building MCP servers in Bash with mcp-bash-framework"
+  },
+  "plugins": [
+    {
+      "name": "mcp-bash",
+      "source": "./plugins/mcp-bash",
+      "description": "Build, debug and package MCP servers written in Bash with the mcp-bash framework",
+      "author": {
+        "name": "Yaniv Golan",
+        "email": "yaniv@golan.name"
+      },
+      "category": "developer-tools",
+      "tags": ["mcp", "bash", "mcp-server"]
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "name": "mcp-bash",
+  "version": "0.2.0",
+  "description": "Build, debug and package MCP servers written in Bash with the mcp-bash framework",
+  "author": {
+    "name": "Yaniv Golan",
+    "email": "yaniv@golan.name"
+  },
+  "homepage": "https://github.com/yaniv-golan/mcp-bash-framework",
+  "repository": "https://github.com/yaniv-golan/mcp-bash-framework",
+  "license": "MIT",
+  "keywords": ["mcp", "bash", "mcp-server", "model-context-protocol", "mcpb"],
+  "skills": "./skills"
+}

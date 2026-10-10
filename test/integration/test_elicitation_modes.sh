@@ -111,9 +111,10 @@ SH
 			break
 		fi
 
-		if ! IFS= read -r -t 1 line <&4; then
+		if ! test_read_line 4 1; then
 			continue
 		fi
+		line="${TEST_LINE}"
 
 		if printf '%s' "${line}" | jq -e '.method == "elicitation/create"' >/dev/null 2>&1; then
 			elicit_seen=1
@@ -188,9 +189,10 @@ SH
 			break
 		fi
 
-		if ! IFS= read -r -t 1 line <&6; then
+		if ! test_read_line 6 1; then
 			continue
 		fi
+		line="${TEST_LINE}"
 
 		if printf '%s' "${line}" | jq -e '.method == "elicitation/create"' >/dev/null 2>&1; then
 			elicit_seen=1

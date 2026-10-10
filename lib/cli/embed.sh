@@ -23,7 +23,7 @@ EMBED_REQUIRED_LIBS="require runtime meta_env json hash ids lock io paginate log
 # <verbose> is "true" or "false".
 #
 # Copies: bin/mcp-bash, lib/ (EMBED_REQUIRED_LIBS + cli/common + cli/health),
-#         handlers/*.sh, sdk/tool-sdk.sh, providers/*.sh, VERSION
+#         handlers/*.sh, sdk/*.sh, providers/*.sh, VERSION
 mcp_embed_framework() {
 	local dest_dir="$1"
 	local verbose="${2:-false}"
@@ -51,10 +51,9 @@ mcp_embed_framework() {
 	cp "${MCPBASH_HOME}/lib/cli/common.sh" "${framework_dir}/lib/cli/"
 	cp "${MCPBASH_HOME}/lib/cli/health.sh" "${framework_dir}/lib/cli/"
 
-	# Copy SDK
-	if [[ -f "${MCPBASH_HOME}/sdk/tool-sdk.sh" ]]; then
-		cp "${MCPBASH_HOME}/sdk/tool-sdk.sh" "${framework_dir}/sdk/"
-	fi
+	# Copy the whole SDK: tool-sdk.sh loads its siblings (ui-sdk.sh) by
+	# path, so a lone tool-sdk.sh is missing helpers.
+	cp "${MCPBASH_HOME}/sdk/"*.sh "${framework_dir}/sdk/"
 
 	# Copy all handlers
 	if [[ -d "${MCPBASH_HOME}/handlers" ]]; then
