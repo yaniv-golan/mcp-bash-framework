@@ -394,12 +394,11 @@ Picking a wrapper:
   ) as server:
       ...
   ```
-- **Clawdbot**: Clawdbot uses [mcporter](https://github.com/steipete/mcporter) for MCP. Add to `~/.mcporter/mcporter.json`:
+- **OpenClaw** (formerly Clawdbot): [OpenClaw](https://github.com/openclaw/openclaw) uses [mcporter](https://github.com/openclaw/mcporter) for MCP. Add to `~/.mcporter/mcporter.json`:
   ```json
   {
-    "servers": {
+    "mcpServers": {
       "mcp-bash": {
-        "type": "stdio",
         "command": "/Users/you/.local/bin/mcp-bash",
         "env": {
           "MCPBASH_PROJECT_ROOT": "/Users/you/my-mcp-server",
@@ -409,7 +408,7 @@ Picking a wrapper:
     }
   }
   ```
-  Verify with `npx mcporter list mcp-bash`. Clawdbot agents call tools via the bundled `mcporter` skill.
+  Verify with `npx mcporter list mcp-bash`. OpenClaw agents call tools via its bundled `mcporter` skill.
 - **Highlight AI**: Go to Highlight → Settings → Connections → Add → Custom command:
   - **Connection name**: `mcp-bash`
   - **Command**: `/Users/you/.local/bin/mcp-bash`
@@ -424,7 +423,7 @@ Picking a wrapper:
 |--------|--------|----------------------|
 | Claude Desktop | Tested (macOS, Windows) | macOS: non-login shell PATH/env (use `config --wrapper-env`); macOS quarantine/TCC can block execution; restart required after config changes |
 | Claude CLI / Claude Code | Tested | Generally straightforward; ensure `MCPBASH_PROJECT_ROOT` points at your project |
-| Clawdbot | Config documented | Uses mcporter for MCP; config in `~/.mcporter/mcporter.json` |
+| OpenClaw (formerly Clawdbot) | Config documented | Uses mcporter for MCP; config in `~/.mcporter/mcporter.json` |
 | Highlight AI | Tested | UI-based config: Settings → Connections → Add → Custom command |
 | Cursor | Config documented | Config file location differs by install; use `mcp-bash config --client cursor` |
 | Windsurf (Cascade) | Config documented | Use the app's MCP config UI/file; see snippet in README |
