@@ -16,6 +16,8 @@ Edit README.md.in and run: bash scripts/render-readme.sh
 > **Repository:** [`mcp-bash-framework`](https://github.com/yaniv-golan/mcp-bash-framework) &nbsp;•&nbsp; **CLI/Binary:** `mcp-bash`
 
 > **For AI agents:** Read [`llms.txt`](llms.txt) (compact) or [`llms-full.txt`](llms-full.txt) (detailed) for agent-optimized context — includes a step-by-step Quick Start, critical allowlist requirement, and CLI wrapper patterns.
+>
+> **Claude Code skill:** `/plugin install mcp-bash --marketplace yaniv-golan/mcp-bash-framework` installs a skill with the workflow and common traps for building mcp-bash servers. On older Claude Code: `/plugin marketplace add yaniv-golan/mcp-bash-framework`, then `/plugin install mcp-bash@mcp-bash`.
 
 ## Contents
 

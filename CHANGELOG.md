@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Claude Code plugin with an mcp-bash skill**: The repository is now a plugin marketplace. `/plugin install mcp-bash --marketplace yaniv-golan/mcp-bash-framework` installs a skill that walks an agent through creating, testing, wiring and bundling an mcp-bash server, and lists the traps that fail silently (deny-by-default tools, `policy.sh`, the tool environment, bash 3.2 under Claude Desktop, completion script names).
+
 ### Fixed
 
 - **The installer test no longer changes the developer's `mcp-bash` command**: `test/integration/test_installer.sh` ran the installer with the real `HOME`, so each run pointed `~/.local/bin/mcp-bash` at a test directory that was deleted afterwards. It now uses a temporary `HOME`.
