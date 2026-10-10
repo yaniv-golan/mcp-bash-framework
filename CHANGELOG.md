@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Vendored runtimes and MCPB bundles include the whole SDK**: `mcp-bash vendor` and `mcp-bash bundle` copied only `sdk/tool-sdk.sh`, so `ui-sdk.sh` was missing and UI helpers such as `mcp_result_with_ui` did not exist in vendored and bundled projects. Every `sdk/*.sh` file is now embedded.
 - **Cancellations no longer stall request handling**: Each `notifications/cancelled` sent TERM, then waited 1 second in the main loop before escalating to KILL. Cancels are handled one at a time, so N cancels delayed every other request, including `ping`, by N seconds. The escalation now runs in a background helper after the same grace period, and the server keeps answering at once.
 - **Workers no longer spin when the server exits while they wait for a lock**: The lock root is inside the server's state directory, which cleanup removes on exit. A worker still waiting for a lock could then never create its lock directory and polled forever, starting a `sleep` every 20 ms. Lock waits now give up once the lock root is gone.
 - **Error results are no longer checked against `outputSchema`**: A tool that declares an `outputSchema` and returns an error result (`mcp_result_error`, or any result with `isError: true`) got `-32603 Tool output does not satisfy outputSchema` instead of its own error, so the model never saw the reason. The schema describes successful structured results, and the MCP SDKs skip it for errors; error results are now returned as they are.
