@@ -108,6 +108,11 @@ work".
   ```
 
   `mcp-bash validate` and `doctor` warn when the call is missing.
+- **A policy denial is a JSON-RPC error, which Claude Desktop hides.** Desktop shows only "The
+  connector returned an error or an invalid response"; the reason reaches neither the model
+  nor the user. For a refusal the model should explain (read-only mode, missing permission),
+  let the tool run and have it return `mcp_error "type" "why" --hint "what to do"` followed by
+  `exit 0`; keep `policy.sh` for hard blocks.
 - **Tools don't see your environment variables.** Tools run with a minimal environment (only
   framework `MCP_*` variables, `PATH`, `HOME`, `TMPDIR`, `LANG` and `MCPBASH_*`); resource
   providers and completion scripts get even less. An API key exported in the shell or set by
@@ -137,9 +142,8 @@ work".
   it (and launchers you write yourself). Don't put configuration there and expect a client to
   see it.
 - **MCPB `user_config` booleans arrive as strings** (`"true"`/`"false"`), so `[ "$X" = 1 ]`
-  never fires. Accept `1`, `true` and `TRUE`.
-  (`MCPBASH_LOG_LEVEL` itself accepts `true`/`false`.) Claude Desktop 2.31226.1 has also been
-  seen saving a boolean toggle as `false` after the user switched it on, so check what arrived.
+  never fires. Accept `1`, `true` and `TRUE`. (`MCPBASH_LOG_LEVEL` itself accepts
+  `true`/`false`.)
 - **Claude Desktop runs the server with macOS `/bin/bash` 3.2** and a minimal `PATH`. Code
   that works in your terminal's bash 5 can fail there:
   - `"${arr[@]}"` on an empty array under `set -u` is an error; write `${arr[@]+"${arr[@]}"}`.
