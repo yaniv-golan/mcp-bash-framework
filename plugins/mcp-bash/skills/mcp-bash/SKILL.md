@@ -45,7 +45,7 @@ guessing — it is short and current:
 
 Use the result and error helpers that mcp-bash 2.0 keeps (`mcp_result_json`,
 `mcp_result_text`, `mcp_fail --type`; available from 1.8.0). On an older framework, upgrade,
-or use `mcp_result_success` / `mcp_error`, which still work in 1.x but are removed in 2.0
+or use `mcp_result_success` / `mcp_error`, which still work in 1.x but are removed in 2.0 <!-- lint-api-usage: allow -->
 (`mcp-bash validate` lists them and `mcp-bash migrate` rewrites them).
 
 ```bash
@@ -72,8 +72,8 @@ mcp_result_json "$(mcp_json_obj query "${query}" name "${name}")"
 - **Errors the model should see and react to:** `mcp_fail --type TYPE "message" --hint "what
   to do"` (types such as `invalid_args`, `not_found`, `permission`, `unavailable`). It returns
   an error result the model reads and **ends the tool**.
-- **The 1.x helpers don't end the tool.** If you maintain code that uses `mcp_result_success`,
-  `mcp_result_error` or `mcp_error`, follow them with `exit 0` in an early-return branch, or the
+- **The 1.x helpers don't end the tool.** If you maintain code that uses `mcp_result_success`, <!-- lint-api-usage: allow -->
+  `mcp_result_error` or `mcp_error`, follow them with `exit 0` in an early-return branch, or the <!-- lint-api-usage: allow -->
   tool keeps going and prints a second result (or does the work it just refused).
 - Long work: `mcp_progress <pct> "msg"`, and check `mcp_is_cancelled` in loops.
 - Tool names: letters, digits, `_` and `-` only, up to 64 characters. **No dots** — Claude
@@ -127,7 +127,7 @@ work".
 - **Policy denials and Claude Desktop:** from 1.8.0 a denial is an error result whose text
   the model and user see. Before 1.8.0 it was a JSON-RPC error that Desktop shows only as
   "The connector returned an error or an invalid response"; on those versions, refusals the
-  model should explain belong in the tool itself (`mcp_error … ; exit 0`).
+  model should explain belong in the tool itself (`mcp_error … ; exit 0`). <!-- lint-api-usage: allow -->
 - **Tools don't see your environment variables.** Tools run with a minimal environment (only
   framework `MCP_*` variables, `PATH`, `HOME`, `TMPDIR`, `LANG` and `MCPBASH_*`); resource
   providers and completion scripts get even less. An API key exported in the shell or set by
