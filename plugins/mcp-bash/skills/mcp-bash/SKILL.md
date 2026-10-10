@@ -163,9 +163,9 @@ work".
     such as `^[A-Za-z0-9_-]+(/[A-Za-z0-9_-]+)*$` is safest for paths.
   - A declared `mimeType` is reported as written, so drop a wrong `"mimeType": "text/plain"`
     rather than leaving it.
-- **"tool not found" right after adding a tool** usually means a cached registry. Run
-  `mcp-bash registry refresh`; a running client also needs to reconnect or receive
-  `list_changed`.
+- **"tool not found" right after adding a tool:** before mcp-bash 1.7.0, `run-tool` reused a
+  cached registry; run `mcp-bash registry refresh`. A running client sees new tools after it
+  reconnects or gets `list_changed`.
 - **`server.d/register.sh` only runs with `MCPBASH_ALLOW_PROJECT_HOOKS=true`.** Prefer the
   data-only `server.d/register.json`. Both are refused if group- or world-writable
   (`chmod g-w,o-w`).
