@@ -717,19 +717,25 @@ mcp_log_info "mytool" "Using timeout=${timeout}, retries=${retries}"
 Request user input when the client supports elicitation:
 
 ```bash
+# Each helper prints {"action": ..., "content": ...} and exits non-zero when no
+# answer came back (unsupported client, timeout, cancelled call), so under
+# `set -e` add `|| true` and branch on .action.
+
 # Simple string input
-response="$(mcp_elicit_string "Enter your name:" "name")"
+response="$(mcp_elicit_string "Enter your name:" "name")" || true
 
 # Yes/no confirmation
-response="$(mcp_elicit_confirm "Proceed with deletion?")"
+response="$(mcp_elicit_confirm "Proceed with deletion?")" || true
 
 # Choice from options
-response="$(mcp_elicit_choice "Select environment:" "dev" "staging" "prod")"
+response="$(mcp_elicit_choice "Select environment:" "dev" "staging" "prod")" || true
 
 # Custom schema
 schema='{"type":"object","properties":{"port":{"type":"integer"}},"required":["port"]}'
-response="$(mcp_elicit "Configure server:" "${schema}")"
+response="$(mcp_elicit "Configure server:" "${schema}")" || true
 ```
+
+See [ELICITATION.md](ELICITATION.md#using-the-helpers-under-set--e) for a full branch-on-`.action` example.
 
 #### Complete tool example
 

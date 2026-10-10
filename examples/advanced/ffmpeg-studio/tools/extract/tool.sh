@@ -38,6 +38,7 @@ if [[ ! -f "${full_input}" ]]; then
 			input "${input_path}" \
 			hint "Check the file exists and is within allowed media roots"
 	)"
+	exit 0
 fi
 
 # Run ffmpeg to extract single frame (capture stderr for error reporting)

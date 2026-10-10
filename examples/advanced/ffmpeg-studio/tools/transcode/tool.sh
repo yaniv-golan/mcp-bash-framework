@@ -51,6 +51,7 @@ if [[ ! -f "${full_input}" ]]; then
 			input "${input_path}" \
 			hint "Check the file exists and is within allowed media roots"
 	)"
+	exit 0
 fi
 
 # Validation: Output collision with elicitation-based confirmation
@@ -63,11 +64,13 @@ if [[ -f "${full_output}" ]]; then
 				output "${output_path}" \
 				hint "Choose a different output path or enable elicitation to confirm overwrite"
 		)"
+		exit 0
 	fi
 	if [[ -z "${json_bin}" ]]; then
 		mcp_fail -32603 "JSON tooling unavailable for elicitation parsing"
 	fi
-	overwrite_resp="$(mcp_elicit_confirm "Output ${output_path} exists. Overwrite?")"
+	# Non-zero when no answer came back; branch on .action below, don't let set -e abort.
+	overwrite_resp="$(mcp_elicit_confirm "Output ${output_path} exists. Overwrite?")" || true
 	overwrite_fields="$("${json_bin}" -r '[.action, (.content.confirmed // false)] | @tsv' <<<"${overwrite_resp}")"
 	overwrite_action="${overwrite_fields%%$'\t'*}"
 	overwrite_confirmed="${overwrite_fields#*$'\t'}"
@@ -79,6 +82,7 @@ if [[ -f "${full_output}" ]]; then
 				output "${output_path}" \
 				hint "Choose a different output path"
 		)"
+		exit 0
 	fi
 fi
 
@@ -116,6 +120,7 @@ case "${preset}" in
 			preset "${preset}" \
 			hint "Valid presets: 1080p, 720p, audio-only, gif"
 	)"
+	exit 0
 	;;
 esac
 

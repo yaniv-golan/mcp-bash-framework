@@ -42,7 +42,7 @@ The SDK exposes helpers in `sdk/tool-sdk.sh`:
 
 ```bash
 # Example: OAuth authorization
-resp="$(mcp_elicit_url "Authorize with GitHub" "https://github.com/login/oauth/authorize?...")"
+resp="$(mcp_elicit_url "Authorize with GitHub" "https://github.com/login/oauth/authorize?...")" || true
 if [ "$(echo "$resp" | jq -r '.action')" = "accept" ]; then
     echo "User completed authorization"
 fi
@@ -56,6 +56,21 @@ Set for tools:
 - `MCP_ELICIT_RESPONSE_FILE` – where the normalized response appears.
 
 The SDK handles writing/reading these files, timeouts, and cancellation. Tools should branch on `.action` (`accept`, `decline`, `cancel`, `error`) and only use `.content` when `action=accept`.
+
+### Using the helpers under `set -e`
+
+The helpers always print the `{"action": ...}` JSON, but they **exit non-zero** when no answer came back: the client can't elicit, the request timed out, or the tool call was cancelled. A real answer from the user (accept, decline or cancel) exits 0. Under `set -euo pipefail`, a plain `resp="$(mcp_elicit_confirm ...)"` therefore aborts the tool before it can look at `.action`, and the client gets a protocol error instead of your fallback. Add `|| true` and branch on `.action`:
+
+```bash
+resp="$(mcp_elicit_confirm "Delete 40 files?")" || true
+action="$(jq -r '.action' <<<"${resp}")"
+if [ "${action}" != "accept" ] || [ "$(jq -r '.content.confirmed' <<<"${resp}")" != "true" ]; then
+    mcp_result_error "$(mcp_json_obj error "Not confirmed" action "${action}")"
+    exit 0   # result helpers don't end the tool; stop here
+fi
+```
+
+`mcp_result_success` and `mcp_result_error` print the result but **do not exit**. In an early-return branch, follow them with `exit 0`, or the tool keeps running and prints a second result.
 
 ## Examples
 - `examples/08-elicitation` — minimal confirm + choice flow with fallback when elicitation is unsupported.
