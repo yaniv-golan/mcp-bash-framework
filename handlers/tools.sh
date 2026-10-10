@@ -121,6 +121,12 @@ mcp_handle_tools() {
 					message_raw="$(printf '%s' "${result_json}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.message // "Tool execution failed"')"
 					data="$(printf '%s' "${result_json}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.data // null')"
 				fi
+			elif [ -z "${result_json}" ] && [ "${_MCP_TOOLS_ERROR_CODE:-0}" != "0" ]; then
+				# Early refusals (inherit gate, path policy, missing executable) set
+				# only the error variables, as tools/list does; report them as-is.
+				code="${_MCP_TOOLS_ERROR_CODE}"
+				message_raw="${_MCP_TOOLS_ERROR_MESSAGE:-Tool execution failed}"
+				data="${_MCP_TOOLS_ERROR_DATA:-null}"
 			fi
 			# Normalize code
 			code="$(mcp_handler_normalize_error_code "${code}")"

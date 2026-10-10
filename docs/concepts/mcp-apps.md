@@ -260,16 +260,16 @@ See:
 
 ## Known Limitations
 
-Current Claude Desktop limitations (as of Jan 2026):
+Host limitations (varies by host and version):
 
 | Feature | Status | Notes |
 |---------|--------|-------|
 | Tool result display | ✅ Works | `ontoolresult` receives final result |
 | Real-time progress | ❌ Blocked | `notifications/progress` not forwarded to UIs |
-| UI-initiated tool calls | ❌ Blocked | `callServerTool()` rejected ([bug #386](https://github.com/modelcontextprotocol/ext-apps/issues/386)) |
-| UI resource polling | ❌ Blocked | `resources/read` rejected (same bug) |
+| UI-initiated tool calls | ⚠️ Host-dependent | `app.callServerTool({ name, arguments })`; works only where the host supports it |
+| UI resource polling | ⚠️ Host-dependent | `readServerResource()`; works only where the host supports it |
 
-UIs are currently **receive-only** - they can display tool results but cannot initiate requests.
+UIs can always display tool results; initiating requests (`callServerTool`, `readServerResource`) depends on host support.
 
 ## References
 

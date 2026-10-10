@@ -9,21 +9,21 @@ mcp-bash provides built-in templates for common UI patterns. Templates generate 
 | Template | Status | Description |
 |----------|--------|-------------|
 | `data-table` | ✅ Ready | Tabular data display |
-| `form` | ⚠️ Experimental | Input forms - submit blocked by [#386](https://github.com/modelcontextprotocol/ext-apps/issues/386) |
+| `form` | ⚠️ Experimental | Input forms - submit calls the tool via `callServerTool` (needs host support) |
 | `progress` | ⚠️ Experimental | Progress indicators - updates not forwarded to UIs |
 | `diff-viewer` | ⚠️ Experimental | Side-by-side diff comparison |
-| `tree-view` | ⚠️ Experimental | Hierarchical tree structures - selection blocked by [#386](https://github.com/modelcontextprotocol/ext-apps/issues/386) |
-| `kanban` | ⚠️ Experimental | Kanban board - drag-drop blocked by [#386](https://github.com/modelcontextprotocol/ext-apps/issues/386) |
+| `tree-view` | ⚠️ Experimental | Hierarchical tree structures - selection calls the tool via `callServerTool` (needs host support) |
+| `kanban` | ⚠️ Experimental | Kanban board - drag-drop calls the tool via `callServerTool` (needs host support) |
 
 ### Why are templates experimental?
 
-Claude Desktop currently has limitations that prevent full interactivity:
+Host support for full interactivity varies:
 
-1. **`callServerTool()` blocked** ([issue #386](https://github.com/modelcontextprotocol/ext-apps/issues/386)): UIs cannot call server tools, so form submission, tree selection, and kanban drag-drop don't work.
+1. **UI-initiated tool calls depend on host support**: interactive templates (form submit, tree selection, kanban drag-drop) call your tools with the MCP Apps SDK's `app.callServerTool({ name, arguments })`. Whether the call goes through is up to the host; if it rejects the request, the template shows or logs the error and nothing is persisted.
 
 2. **Progress notifications not forwarded**: UIs only receive `ontoolinput` (start) and `ontoolresult` (end) - no real-time progress updates.
 
-**What works today**: Display-only UIs that render tool results (like `data-table`).
+**What works everywhere**: Display-only UIs that render tool results (like `data-table`). Interactive templates work on hosts that allow UI-initiated tool calls.
 
 **What doesn't work**: Any UI that needs to send data back to the server.
 
@@ -47,7 +47,7 @@ When `template` is specified and no `index.html` exists, the template generates 
 
 ## Form Template
 
-> ⚠️ **Experimental**: Form submission requires `callServerTool()` which is currently blocked by [Claude Desktop bug #386](https://github.com/modelcontextprotocol/ext-apps/issues/386). Forms will render but Submit won't work.
+> ⚠️ **Experimental**: Form submission uses `callServerTool()`, which depends on host support for UI-initiated tool calls. Forms render everywhere; Submit works only where the host allows it.
 
 Interactive forms that submit to server tools.
 
@@ -234,7 +234,7 @@ Shows operation progress with optional cancellation.
 
 ## Diff Viewer Template
 
-> ⚠️ **Experimental**: Display works but any interactive features (navigation, actions) are blocked by [#386](https://github.com/modelcontextprotocol/ext-apps/issues/386).
+> ⚠️ **Experimental**: Display works but interactive features (navigation, actions) use `callServerTool()` and depend on host support for UI-initiated tool calls.
 
 Two-panel diff view with syntax highlighting.
 
@@ -290,7 +290,7 @@ Alternative format:
 
 ## Tree View Template
 
-> ⚠️ **Experimental**: Display and expand/collapse work (client-side), but `onSelectTool` is blocked by [#386](https://github.com/modelcontextprotocol/ext-apps/issues/386).
+> ⚠️ **Experimental**: Display and expand/collapse work (client-side), but `onSelectTool` is invoked via `callServerTool()` and depends on host support for UI-initiated tool calls.
 
 Hierarchical tree structure with expand/collapse.
 
@@ -355,7 +355,7 @@ Hierarchical tree structure with expand/collapse.
 
 ## Kanban Template
 
-> ⚠️ **Experimental**: Display works but `onMoveTool` and `onCardClickTool` are blocked by [#386](https://github.com/modelcontextprotocol/ext-apps/issues/386). Drag-drop will animate but changes won't persist.
+> ⚠️ **Experimental**: Display works but `onMoveTool` and `onCardClickTool` are invoked via `callServerTool()` and depend on host support for UI-initiated tool calls. If the host rejects them, drag-drop animates but changes won't persist.
 
 Column-based kanban board with drag-drop support.
 

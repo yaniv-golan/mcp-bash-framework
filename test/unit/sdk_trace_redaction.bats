@@ -33,10 +33,15 @@ setup() {
 		MCP_TOOL_META_JSON="{\"client_secret\":\"${secret_marker}\"}"
 		export MCP_TOOL_ARGS_JSON MCP_TOOL_META_JSON
 
-		# Route xtrace output to a file.
+		# Route xtrace output to a file. BASH_XTRACEFD needs bash 4.1; older
+		# shells (macOS /bin/bash 3.2) trace to stderr, so capture that instead.
 		: >"${trace_file}"
 		exec 9>"${trace_file}"
-		export BASH_XTRACEFD=9
+		if [ "${BASH_VERSINFO[0]}" -gt 4 ] || { [ "${BASH_VERSINFO[0]}" -eq 4 ] && [ "${BASH_VERSINFO[1]}" -ge 1 ]; }; then
+			export BASH_XTRACEFD=9
+		else
+			exec 2>&9
+		fi
 		export PS4='+ '
 		set -x
 
@@ -45,10 +50,10 @@ setup() {
 		. "${MCPBASH_HOME}/sdk/tool-sdk.sh"
 
 		# These should not cause the full JSON payload to be expanded in xtrace output.
-		mcp_args_raw >/dev/null 2>&1 || true
-		mcp_args_get '.token' >/dev/null 2>&1 || true
-		mcp_meta_raw >/dev/null 2>&1 || true
-		mcp_meta_get '.client_secret' >/dev/null 2>&1 || true
+		mcp_args_raw >/dev/null || true
+		mcp_args_get '.token' >/dev/null || true
+		mcp_meta_raw >/dev/null || true
+		mcp_meta_get '.client_secret' >/dev/null || true
 
 		set +x
 	)

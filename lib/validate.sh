@@ -64,17 +64,21 @@ mcp_validate_server_meta() {
 	local errors=0
 	local warnings=0
 	local server_meta="${MCPBASH_SERVER_DIR}/server.meta.json"
+	local meta_label="server.d"
+	if command -v mcp_runtime_server_dir_label >/dev/null 2>&1; then
+		meta_label="$(mcp_runtime_server_dir_label)"
+	fi
 
 	if [ -f "${server_meta}" ]; then
 		if [ "${json_tool_available}" = "true" ]; then
 			if ! "${MCPBASH_JSON_TOOL_BIN}" -e '.' "${server_meta}" >/dev/null 2>&1; then
-				printf '✗ server.d/server.meta.json - invalid JSON\n'
+				printf '✗ %s/server.meta.json - invalid JSON\n' "${meta_label}"
 				errors=$((errors + 1))
 			else
 				local srv_name
 				srv_name="$("${MCPBASH_JSON_TOOL_BIN}" -r '.name // ""' "${server_meta}" 2>/dev/null || printf '')"
 				if [ -z "${srv_name}" ]; then
-					printf '✗ server.d/server.meta.json - missing required "name" field\n'
+					printf '✗ %s/server.meta.json - missing required "name" field\n' "${meta_label}"
 					errors=$((errors + 1))
 				fi
 
@@ -82,7 +86,7 @@ mcp_validate_server_meta() {
 				local icons_result
 				icons_result="$(mcp_validate_icons "${MCPBASH_JSON_TOOL_BIN}" "${server_meta}")"
 				if [ "${icons_result}" != "ok" ]; then
-					printf '✗ server.d/server.meta.json - %s\n' "${icons_result}"
+					printf '✗ %s/server.meta.json - %s\n' "${meta_label}" "${icons_result}"
 					errors=$((errors + 1))
 				fi
 
@@ -92,11 +96,11 @@ mcp_validate_server_meta() {
 				while IFS=$'\t' read -r env_status env_key env_detail; do
 					case "${env_status}" in
 					error | invalid)
-						printf '✗ server.d/server.meta.json - env.%s: %s\n' "${env_key}" "${env_detail}"
+						printf '✗ %s/server.meta.json - env.%s: %s\n' "${meta_label}" "${env_key}" "${env_detail}"
 						env_errors=$((env_errors + 1))
 						;;
 					refused)
-						printf '⚠ server.d/server.meta.json - env.%s is ignored: only %s may be set there\n' "${env_key}" "${MCP_META_ENV_KEYS// /, }"
+						printf '⚠ %s/server.meta.json - env.%s is ignored: only %s may be set there\n' "${meta_label}" "${env_key}" "${MCP_META_ENV_KEYS// /, }"
 						warnings=$((warnings + 1))
 						;;
 					esac
@@ -104,15 +108,23 @@ mcp_validate_server_meta() {
 				errors=$((errors + env_errors))
 
 				if [ -n "${srv_name}" ] && [ "${icons_result}" = "ok" ] && [ "${env_errors}" -eq 0 ]; then
-					printf '✓ server.d/server.meta.json - valid\n'
+					printf '✓ %s/server.meta.json - valid\n' "${meta_label}"
 				fi
 			fi
 		else
-			printf '⚠ server.d/server.meta.json - skipped JSON validation (no jq/gojq)\n'
+			printf '⚠ %s/server.meta.json - skipped JSON validation (no jq/gojq)\n' "${meta_label}"
 			warnings=$((warnings + 1))
 		fi
 	else
-		printf '⚠ server.d/server.meta.json - missing (using smart defaults)\n'
+		printf '⚠ %s/server.meta.json - missing (using smart defaults)\n' "${meta_label}"
+		warnings=$((warnings + 1))
+	fi
+
+	# A policy.sh that redefines mcp_tools_policy_check without calling the
+	# default silently drops the deny-by-default allowlist.
+	command -v mcp_tools_policy_hook_bypasses_default >/dev/null 2>&1 || . "${MCPBASH_HOME}/lib/tools_policy.sh"
+	if mcp_tools_policy_hook_bypasses_default "${MCPBASH_SERVER_DIR}/policy.sh"; then
+		printf '⚠ %s/%s\n' "${meta_label}" 'policy.sh replaces the default tool policy (deny-by-default allowlist and tool path checks); start mcp_tools_policy_check with: mcp_tools_policy_check_default "$@" || return 1'
 		warnings=$((warnings + 1))
 	fi
 
@@ -366,6 +378,92 @@ mcp_validate_prompts() {
 	printf '%s %s %s\n' "${errors}" "${warnings}" "${fixes}"
 }
 
+# Warn when a resource's declared mimeType clearly disagrees with what
+# detection reports for its local file. Conservative on purpose: only when one
+# side is binary and the other text, or a declared text/plain is detected as a
+# more specific text type. Only file-provider resources with a readable local
+# file are checked, and only when file(1) is available.
+# Usage: mcp_validate_resource_mime <meta_path> <rel_meta>
+# Prints one warning line and returns 0 when it warns; returns 1 otherwise.
+mcp_validate_resource_mime() {
+	local meta_path="$1"
+	local rel_meta="$2"
+
+	if ! declare -F mcp_resource_detect_mime_full >/dev/null 2>&1; then
+		if [ -n "${MCPBASH_HOME:-}" ] && [ -f "${MCPBASH_HOME}/lib/resource_content.sh" ]; then
+			# shellcheck source=lib/resource_content.sh disable=SC1091
+			. "${MCPBASH_HOME}/lib/resource_content.sh"
+		else
+			return 1
+		fi
+	fi
+
+	local fields
+	fields="$("${MCPBASH_JSON_TOOL_BIN}" -r '
+		if (.mimeType | type) == "string" and (.mimeType | length) > 0 then
+			[(.name // "" | tostring), .mimeType, (.uri // "" | tostring), (.provider // "" | tostring)] | join("\u001f")
+		else empty end
+	' "${meta_path}" 2>/dev/null || true)"
+	[ -n "${fields}" ] || return 1
+
+	local name declared uri provider
+	IFS=$'\037' read -r name declared uri provider <<<"${fields}"
+	case "${provider}" in
+	"" | file) ;;
+	*) return 1 ;;
+	esac
+	case "${uri}" in
+	file://*) ;;
+	*) return 1 ;;
+	esac
+	local path="${uri#file://}"
+	if [ ! -f "${path}" ] || [ ! -r "${path}" ]; then
+		return 1
+	fi
+
+	local detected_full detected
+	detected_full="$(mcp_resource_detect_mime_full "${path}")"
+	detected="$(printf '%s' "${detected_full%%;*}" | awk '{$1=$1};1')"
+	[ -n "${detected}" ] || return 1
+
+	local declared_lower
+	declared_lower="$(printf '%s' "${declared}" | tr '[:upper:]' '[:lower:]')"
+	declared_lower="$(printf '%s' "${declared_lower%%;*}" | awk '{$1=$1};1')"
+
+	local declared_class="other" detected_class="other"
+	if mcp_resource_declared_mime_is_binary "${declared_lower}"; then
+		declared_class="binary"
+	elif ! mcp_resource_is_binary_mime "${declared_lower}"; then
+		declared_class="text"
+	fi
+	case "${detected_full}" in
+	*charset=binary*) detected_class="binary" ;;
+	*)
+		if mcp_resource_declared_mime_is_binary "${detected}"; then
+			detected_class="binary"
+		elif ! mcp_resource_is_binary_mime "${detected}"; then
+			detected_class="text"
+		fi
+		;;
+	esac
+
+	local mismatch="false"
+	if [ "${declared_class}" = "binary" ] && [ "${detected_class}" = "text" ]; then
+		mismatch="true"
+	elif [ "${declared_class}" = "text" ] && [ "${detected_class}" = "binary" ]; then
+		mismatch="true"
+	elif [ "${declared_lower}" = "text/plain" ]; then
+		case "${detected}" in
+		application/json | text/markdown | text/html | application/xml | text/xml) mismatch="true" ;;
+		esac
+	fi
+	[ "${mismatch}" = "true" ] || return 1
+
+	printf '⚠ %s - resource "%s" declares mimeType "%s" but its file is detected as "%s"; update mimeType or remove it to use detection\n' \
+		"${rel_meta}" "${name}" "${declared}" "${detected}"
+	return 0
+}
+
 mcp_validate_resources() {
 	local resources_root="$1"
 	local json_tool_available="$2"
@@ -453,6 +551,10 @@ mcp_validate_resources() {
 
 						if [ -n "${r_name}" ] && [ "${uri_valid}" = "true" ] && [ "${icons_result}" = "ok" ]; then
 							printf '✓ %s - valid\n' "${rel_meta}"
+						fi
+
+						if [ -n "${r_uri}" ] && mcp_validate_resource_mime "${meta_path}" "${rel_meta}"; then
+							warnings=$((warnings + 1))
 						fi
 					fi
 				else

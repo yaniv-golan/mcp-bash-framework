@@ -1024,7 +1024,7 @@ mcp_bundle_scan_tools_array() {
 		[[ -f "${meta_file}" ]] || continue
 		local entry
 		entry="$("${MCPBASH_JSON_TOOL_BIN}" -c '{name: .name, description: .description} | with_entries(select(.value != null))' "${meta_file}" 2>/dev/null)" || continue
-		tools_json="$(printf '%s' "${tools_json}" | "${MCPBASH_JSON_TOOL_BIN}" -c --argjson e "${entry}" '. + [$e]')"
+		tools_json="$(printf '%s\n%s' "${tools_json}" "${entry}" | "${MCPBASH_JSON_TOOL_BIN}" -c -s '.[0] + [.[1]]')"
 	done
 
 	printf '%s' "${tools_json}"
@@ -1111,7 +1111,11 @@ mcp_bundle_scan_prompts_array() {
 		if [[ -z "${text_content}" ]]; then
 			continue
 		fi
-		entry="$(printf '%s' "${entry}" | "${MCPBASH_JSON_TOOL_BIN}" -c --arg t "${text_content}" '. + {text: $t}')"
+		# The template text goes on stdin: it can outgrow one argument.
+		entry="$({
+			printf '%s\n' "${entry}"
+			printf '%s' "${text_content}" | "${MCPBASH_JSON_TOOL_BIN}" -R -s '.'
+		} | "${MCPBASH_JSON_TOOL_BIN}" -c -s '.[0] + {text: .[1]}')"
 
 		# Deduplicate: the expanded globs may match the same file twice
 		# (e.g. prompts/x/x.meta.json matches both */prompt.meta.json and */*.meta.json
@@ -1124,7 +1128,7 @@ mcp_bundle_scan_prompts_array() {
 			continue
 		fi
 
-		prompts_json="$(printf '%s' "${prompts_json}" | "${MCPBASH_JSON_TOOL_BIN}" -c --argjson e "${entry}" '. + [$e]')"
+		prompts_json="$(printf '%s\n%s' "${prompts_json}" "${entry}" | "${MCPBASH_JSON_TOOL_BIN}" -c -s '.[0] + [.[1]]')"
 	done
 
 	printf '%s' "${prompts_json}"
@@ -1182,8 +1186,10 @@ mcp_bundle_generate_manifest() {
 		if [[ -n "${RESOLVED_USER_CONFIG:-}" && "${RESOLVED_USER_CONFIG}" != "{}" ]]; then
 			user_config_arg="${RESOLVED_USER_CONFIG}"
 		fi
+		# The tool and prompt arrays go on stdin: prompt templates are inlined
+		# and can outgrow what one argument may hold.
 		manifest="$(
-			"${MCPBASH_JSON_TOOL_BIN}" -n \
+			printf '%s\n%s' "${tools_array_json}" "${prompts_array_json}" | "${MCPBASH_JSON_TOOL_BIN}" -s \
 				--arg name "${RESOLVED_NAME}" \
 				--arg version "${RESOLVED_VERSION}" \
 				--arg display_name "${RESOLVED_TITLE}" \
@@ -1206,8 +1212,6 @@ mcp_bundle_generate_manifest() {
 				--argjson platforms "${platforms_json}" \
 				--argjson tools_generated "${has_tools}" \
 				--argjson prompts_generated "${has_prompts}" \
-				--argjson tools_array "${tools_array_json}" \
-				--argjson prompts_array "${prompts_array_json}" \
 				--argjson icons_array "${RESOLVED_ICONS:-null}" \
 				--argjson screenshots_array "${RESOLVED_SCREENSHOTS:-null}" \
 				--argjson platform_overrides "${RESOLVED_PLATFORM_OVERRIDES:-null}" \
@@ -1217,7 +1221,8 @@ mcp_bundle_generate_manifest() {
 				--argjson user_config "${user_config_arg}" \
 				--arg env_map "${RESOLVED_USER_CONFIG_ENV_MAP:-}" \
 				--arg args_map "${RESOLVED_USER_CONFIG_ARGS_MAP:-}" \
-				'{
+				'.[0] as $tools_array | .[1] as $prompts_array
+			| {
 				manifest_version: "0.3",
 				name: $name,
 				version: $version,

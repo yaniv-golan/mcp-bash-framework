@@ -93,7 +93,10 @@ mcp_handle_resources() {
 			return 0
 		fi
 		subscription_id="$(mcp_resources_generate_subscription_id)"
+		local key
+		key="$(mcp_ids_key_from_json "${id}")"
 		if ! mcp_resources_read "${name}" "${uri}"; then
+			mcp_resources_subscription_settle_pending "${key}" || true
 			mcp_logging_error "${logger}" "Initial read failed code=${_MCP_RESOURCES_ERROR_CODE:-?} msg=${_MCP_RESOURCES_ERROR_MESSAGE:-?}"
 			local code
 			code="$(mcp_handler_normalize_error_code "${_MCP_RESOURCES_ERROR_CODE:-}")"
@@ -112,19 +115,26 @@ mcp_handle_resources() {
 		if [ -z "${effective_uri}" ]; then
 			effective_uri="${uri}"
 		fi
-		mcp_resources_subscription_store_payload "${subscription_id}" "${name}" "${effective_uri}" "${result_json}"
-		local key
-		key="$(mcp_ids_key_from_json "${id}")"
+		# The requested uri is kept too, so resources/unsubscribe {uri} matches
+		# even when the provider reports a different (canonical) uri.
+		mcp_resources_subscription_store_payload "${subscription_id}" "${name}" "${effective_uri}" "${result_json}" "${uri}"
+		# An unsubscribe for this uri dispatched after this subscribe may have
+		# finished before the record existed; it marked this request revoked.
+		if mcp_resources_subscription_settle_pending "${key}" "${subscription_id}"; then
+			mcp_logging_debug "${logger}" "Subscribe overtaken by unsubscribe subscription=${subscription_id}"
+		fi
 		if [ -n "${key}" ] && mcp_ids_is_cancelled_key "${key}"; then
 			mcp_logging_debug "${logger}" "Subscribe cancelled before response subscription=${subscription_id}"
 			if [ -n "${MCPBASH_STATE_DIR:-}" ]; then
-				rm -f "${MCPBASH_STATE_DIR}/resource_subscription.${subscription_id}"
+				mcp_resources_subscription_remove "${subscription_id}" || true
 			fi
 			printf '%s' "${MCPBASH_NO_RESPONSE}"
 			return 0
 		fi
 		local response_payload response
-		# MCP 2025-11-25: resources/subscribe returns only {subscriptionId}.
+		# MCP 2025-11-25: the result is EmptyResult. Result allows extra fields, so
+		# {subscriptionId} stays valid; it is an mcp-bash extension that clients
+		# may pass back to resources/unsubscribe instead of the uri.
 		response_payload="$("${MCPBASH_JSON_TOOL_BIN}" -n -c --arg sub "${subscription_id}" '{subscriptionId: $sub}')"
 		response="$(mcp_handler_success_response "${id}" "${response_payload}")"
 		mcp_logging_debug "${logger}" "Subscribe emitting response subscription=${subscription_id}"
@@ -135,15 +145,28 @@ mcp_handle_resources() {
 		printf '%s' "${MCPBASH_NO_RESPONSE}"
 		;;
 	resources/unsubscribe)
-		local subscription_id
+		# MCP 2025-11-25: params are {uri}; remove every subscription to that uri
+		# on this connection. subscriptionId (from the subscribe result) is still
+		# accepted as an mcp-bash extension. Unsubscribing something that is not
+		# subscribed succeeds with no effect: the spec defines no error for it,
+		# and the request is then idempotent for retrying clients.
+		local subscription_id unsubscribe_uri
+		unsubscribe_uri="$(mcp_json_extract_resource_uri "${json_payload}")"
 		subscription_id="$(mcp_json_extract_subscription_id "${json_payload}")"
-		if [ -z "${subscription_id}" ]; then
+		if [ -z "${unsubscribe_uri}" ] && [ -z "${subscription_id}" ]; then
 			local message
-			message=$(mcp_json_quote_text "subscriptionId required")
+			message=$(mcp_json_quote_text "Resource uri required")
 			mcp_handler_error_response "${id}" "-32602" "${message}"
 			return 0
 		fi
-		rm -f "${MCPBASH_STATE_DIR}/resource_subscription.${subscription_id}"
+		if [ -n "${MCPBASH_STATE_DIR:-}" ]; then
+			if [ -n "${unsubscribe_uri}" ]; then
+				mcp_resources_subscription_remove_by_uri "${unsubscribe_uri}" >/dev/null
+			fi
+			if [ -n "${subscription_id}" ]; then
+				mcp_resources_subscription_remove "${subscription_id}" || true
+			fi
+		fi
 		mcp_handler_success_response "${id}" "{}"
 		;;
 	resources/templates/list)

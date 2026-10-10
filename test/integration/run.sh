@@ -24,15 +24,25 @@ mkdir -p "${LOG_DIR}"
 
 # Track if any test failed - used to preserve logs on failure
 SUITE_FAILED=0
+# Set once the summary has been printed. bash 3.2 loses the status of a fatal
+# shell error (unbound variable under set -u, a parse error) when an EXIT trap
+# runs, and exits 0; the trap uses this to turn that into a failure.
+SUITE_COMPLETED=0
 
 cleanup_suite_tmp() {
+	local rc=$?
+	if [ "${SUITE_COMPLETED}" != "1" ] && [ "${rc}" -eq 0 ]; then
+		printf 'Integration runner stopped before the summary (bash %s); failing.\n' "${BASH_VERSION}" >&2
+		rc=1
+		SUITE_FAILED=1
+	fi
 	# Always preserve logs on failure or if explicitly requested
-	if [ "${KEEP_INTEGRATION_LOGS}" = "1" ] || [ "${SUITE_FAILED}" -ne 0 ]; then
-		return
+	if [ "${KEEP_INTEGRATION_LOGS}" != "1" ] && [ "${SUITE_FAILED}" -eq 0 ]; then
+		if [ -n "${SUITE_TMP}" ] && [ -d "${SUITE_TMP}" ]; then
+			rm -rf "${SUITE_TMP}" 2>/dev/null || true
+		fi
 	fi
-	if [ -n "${SUITE_TMP}" ] && [ -d "${SUITE_TMP}" ]; then
-		rm -rf "${SUITE_TMP}" 2>/dev/null || true
-	fi
+	exit "${rc}"
 }
 trap cleanup_suite_tmp EXIT INT TERM
 
@@ -51,6 +61,15 @@ TESTS=(
 	"test_core_errors.sh"
 	"test_completion.sh"
 	"test_completion_prompt_script.sh"
+	"test_completion_resource_template.sh"
+	"test_discovery_skips_completion_scripts.sh"
+	"test_stdin_eof_shutdown.sh"
+	"test_background_loops_exit.sh"
+	"test_sigterm_prompt_exit.sh"
+	"test_stdout_closed_exit.sh"
+	"test_short_read_timeout_stays_up.sh"
+	"test_trace_bash32.sh"
+	"test_completion_registered_timeout.sh"
 	"test_conformance_strict_shapes.sh"
 	"test_installer.sh"
 	"test_tools.sh"
@@ -59,24 +78,35 @@ TESTS=(
 	"test_windows_env_size_providers.sh"
 	"test_windows_registry_large_icons.sh"
 	"test_tools_policy.sh"
+	"test_project_level_providers.sh"
 	"test_meta_env.sh"
+	"test_ui_meta_env.sh"
+	"test_env_mcp_names.sh"
 	"test_tools_errors.sh"
+	"test_tools_refusals.sh"
 	"test_tools_schema.sh"
 	"test_prompts.sh"
 	"test_project_hooks_disabled.sh"
 	"test_register_json.sh"
 	"test_resources.sh"
+	"test_resource_subscriptions.sh"
 	"test_resource_annotations.sh"
+	"test_resource_mime_declared.sh"
 	"test_resource_templates.sh"
+	"test_resource_template_read.sh"
+	"test_large_payloads.sh"
 	"test_lifecycle_gating.sh"
 	"test_resources_providers.sh"
 	"test_minimal_mode.sh"
-	"test_protocol_reject_unknown.sh"
+	"test_protocol_unsupported_version.sh"
+	"test_runtime_dirs.sh"
 	"test_registry_refresh.sh"
 	"test_registry_limits.sh"
 	"test_progress_logs.sh"
 	"test_notification_dedup.sh"
 	"test_cancellation.sh"
+	"test_cancel_malformed.sh"
+	"test_cancel_eof_drain.sh"
 	"test_cli_guards.sh"
 	"test_cli_init_new.sh"
 	"test_cli_init_config_doctor.sh"
@@ -125,7 +155,7 @@ apply_only_and_skip_filters() {
 			fi
 			local already=false
 			local s
-			for s in "${selected[@]}"; do
+			for s in ${selected[@]+"${selected[@]}"}; do
 				if [ "${s}" = "${token}" ]; then
 					already=true
 					break
@@ -147,20 +177,24 @@ apply_only_and_skip_filters() {
 			fi
 			local -a filtered=()
 			local s
-			for s in "${selected[@]}"; do
+			for s in ${selected[@]+"${selected[@]}"}; do
 				if [ "${s}" != "${token}" ]; then
 					filtered+=("${s}")
 				fi
 			done
-			selected=("${filtered[@]}")
+			selected=(${filtered[@]+"${filtered[@]}"})
 		done
 	fi
 
-	TESTS=("${selected[@]}")
+	TESTS=(${selected[@]+"${selected[@]}"})
 }
 
 apply_only_and_skip_filters
 total="${#TESTS[@]}"
+if [ "${total}" -eq 0 ]; then
+	printf 'No integration tests selected (MCPBASH_INTEGRATION_ONLY/SKIP).\n' >&2
+	exit 1
+fi
 
 get_test_desc() {
 	local script="$1"
@@ -328,6 +362,7 @@ if [ "${KEEP_INTEGRATION_LOGS}" != "1" ] && [ "${failed}" -eq 0 ]; then
 	log_note="${LOG_DIR} (will be removed on success; preserved on failure)"
 fi
 
+SUITE_COMPLETED=1
 printf '\nIntegration summary: %d passed, %d failed (logs: %s, elapsed: %ss)\n' "${passed}" "${failed}" "${log_note}" "${suite_elapsed}"
 
 if [ "${failed}" -ne 0 ]; then

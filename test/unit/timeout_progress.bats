@@ -193,11 +193,12 @@ teardown() {
 	export MCP_PROGRESS_STREAM="${progress_file}"
 	: > "${progress_file}"
 
-	# Tool that emits progress continuously past hard cap
+	# Tool that emits progress continuously past hard cap. Write several times a
+	# second so a stalled CI runner can't open a 2s gap and read as idle.
 	with_timeout 2 -- bash -c '
-		for i in $(seq 1 20); do
+		for i in $(seq 1 100); do
 			echo "{\"progress\":$i}" >> "'"${progress_file}"'"
-			sleep 1
+			sleep 0.2
 		done
 	' || true
 

@@ -140,40 +140,54 @@ if [ -z "${html_path}" ] || [ ! -f "${html_path}" ]; then
 	exit 3
 fi
 
-# Reject symlinks (security: prevent path swapping attacks)
-if [ -L "${html_path}" ]; then
-	printf '%s\n' "Symlinks not allowed for UI resources" >&2
-	exit 2
+# Read through the verified-open helper (lib/file_read.sh): the file is opened
+# once, the open descriptor must be the regular, non-symlink file that was
+# checked, and the size limit applies to that descriptor. UI directories are not
+# a confinement boundary (a UI directory may itself be a symlink); only the
+# final component is guarded.
+if ! declare -F mcp_file_read_verified >/dev/null 2>&1; then
+	file_read_lib=""
+	if [ -n "${MCPBASH_HOME:-}" ] && [ -f "${MCPBASH_HOME}/lib/file_read.sh" ]; then
+		file_read_lib="${MCPBASH_HOME}/lib/file_read.sh"
+	else
+		self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P)" || self_dir=""
+		if [ -n "${self_dir}" ] && [ -f "${self_dir}/../lib/file_read.sh" ]; then
+			file_read_lib="${self_dir}/../lib/file_read.sh"
+		fi
+	fi
+	if [ -z "${file_read_lib}" ]; then
+		printf '%s\n' "UI provider: lib/file_read.sh not found; refusing unverified read" >&2
+		exit 2
+	fi
+	# shellcheck source=lib/file_read.sh
+	# shellcheck disable=SC1091
+	. "${file_read_lib}"
 fi
 
-# Check size limits if configured
-max_size="${MCPBASH_MAX_UI_RESOURCE_BYTES:-1048576}"  # Default 1MB
-if command -v stat >/dev/null 2>&1; then
-	# Portable stat: try GNU format first, fall back to BSD format
-	file_size=""
-	if file_size="$(stat -c%s "${html_path}" 2>/dev/null)"; then
-		: # GNU stat worked
-	elif file_size="$(stat -f%z "${html_path}" 2>/dev/null)"; then
-		: # BSD stat worked
-	fi
-
-	if [ -n "${file_size}" ] && [ "${file_size}" -gt "${max_size}" ]; then
-		printf '%s\n' "UI resource too large: ${file_size} bytes (max: ${max_size})" >&2
-		exit 3
-	fi
-fi
-
-# Output HTML content
-# Use fd 3 to prevent race conditions (same pattern as file provider)
-if ! exec 3<"${html_path}"; then
+if ! canonical_path="$(mcp_file_read_canonical_path "${html_path}")"; then
+	printf '%s\n' "UI resource not found: ${resource_name}" >&2
 	exit 3
 fi
 
-# Final symlink check after open (TOCTOU protection)
-if [ -L "${html_path}" ]; then
-	exec 3<&-
+max_size="${MCPBASH_MAX_UI_RESOURCE_BYTES:-1048576}" # Default 1MB
+status=0
+mcp_file_read_verified "${canonical_path}" "${max_size}" || status=$?
+case "${status}" in
+0) exit 0 ;;
+3)
+	printf '%s\n' "UI resource not found: ${resource_name}" >&2
+	exit 3
+	;;
+4)
+	printf '%s\n' "UI resource too large (max: ${max_size} bytes)" >&2
+	exit 3
+	;;
+5)
+	printf '%s\n' "UI provider: cannot verify the opened file on this platform (needs stat and /dev/fd); refusing" >&2
 	exit 2
-fi
-
-cat <&3
-exec 3<&-
+	;;
+*)
+	printf '%s\n' "Symlinks not allowed for UI resources" >&2
+	exit 2
+	;;
+esac

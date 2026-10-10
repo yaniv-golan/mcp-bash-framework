@@ -13,23 +13,13 @@ setup() {
 	FAKE_HOME="${BATS_TEST_TMPDIR}/home"
 	mkdir -p "${FAKE_HOME}/lib"
 
-	# Minimal policy shim so the provider sources our resolver.
-	cat >"${FAKE_HOME}/lib/policy.sh" <<'EOF'
+	# Policy shim: the real library, with the resolver replaced by a stub.
+	cat >"${FAKE_HOME}/lib/policy.sh" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
-
-mcp_policy_normalize_host() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
-mcp_policy_extract_host_from_url() {
-	local url="$1"
-	local authority="${url#*://}"
-	authority="${authority%%/*}"
-	authority="${authority%%\?*}"
-	authority="${authority%%\#*}"
-	authority="${authority##*@}"
-	printf '%s' "${authority%%:*}" | tr '[:upper:]' '[:lower:]'
-}
-mcp_policy_host_is_private() { return 1; }
-mcp_policy_host_allowed() { return 0; }
+. '${MCPBASH_HOME}/lib/policy.sh'
+EOF
+	cat >>"${FAKE_HOME}/lib/policy.sh" <<'EOF'
 mcp_policy_resolve_ips() {
 	# Provide two public IPs; fake curl will fail the first and succeed the second.
 	printf '%s\n' "203.0.113.10" "203.0.113.11"

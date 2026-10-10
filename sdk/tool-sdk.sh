@@ -67,13 +67,15 @@ __mcp_sdk_json_escape() {
 	# best-effort manual escape (ASCII control chars + quotes + backslashes).
 	local value="${1-}"
 
+	# The value goes on stdin, not as an argument, so its length is not capped
+	# by argv limits (128 KiB per argument on Linux).
 	if [ -n "${MCPBASH_JSON_TOOL_BIN:-}" ] && command -v "${MCPBASH_JSON_TOOL_BIN}" >/dev/null 2>&1; then
-		"${MCPBASH_JSON_TOOL_BIN}" -n --arg val "${value}" '$val'
+		printf '%s' "${value}" | "${MCPBASH_JSON_TOOL_BIN}" -R -s '.'
 		return 0
 	fi
 
 	if command -v jq >/dev/null 2>&1; then
-		jq -n --arg val "${value}" '$val'
+		printf '%s' "${value}" | jq -R -s '.'
 		return 0
 	fi
 
@@ -1300,15 +1302,18 @@ mcp_error() {
 				: # valid JSON, data_json now holds normalized form
 			else
 				# Invalid JSON - wrap raw value for debugging
-				data_json=$("${MCPBASH_JSON_TOOL_BIN}" -n -c --arg raw "$data" '{"_invalid_json": $raw}')
+				data_json=$(printf '%s' "$data" | "${MCPBASH_JSON_TOOL_BIN}" -c -R -s '{"_invalid_json": .}')
 			fi
 		fi
-		error_json=$("${MCPBASH_JSON_TOOL_BIN}" -n -c \
+		# Message and data go on stdin: either can outgrow one argument.
+		error_json=$({
+			printf '%s' "$message" | "${MCPBASH_JSON_TOOL_BIN}" -R -s '.'
+			printf '\n%s' "$data_json"
+		} | "${MCPBASH_JSON_TOOL_BIN}" -c -s \
 			--arg type "$error_type" \
-			--arg message "$message" \
 			--arg hint "$hint" \
-			--argjson data "$data_json" \
-			'{type: $type, message: $message} +
+			'.[0] as $message | .[1] as $data
+       | {type: $type, message: $message} +
        (if $hint != "" then {hint: $hint} else {} end) +
        (if $data != null then {data: $data} else {} end)')
 	else
@@ -1341,31 +1346,14 @@ mcp_error() {
 	mcp_result_error "$error_json"
 }
 
-# Lazy-load resource content helpers (lib/resource_content.sh)
-# Called only when MIME auto-detection is needed
-# Uses function-existence pattern (like __mcp_sdk_load_progress_passthrough at line 33)
-__mcp_sdk_load_resource_helpers() {
-	# Check if already loaded via function existence (consistent with existing SDK pattern)
-	if declare -F mcp_resource_detect_mime >/dev/null 2>&1; then
-		return 0
-	fi
-	local script_dir lib_path
-	script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-	lib_path="${script_dir}/../lib/resource_content.sh"
-	if [[ -f "$lib_path" ]]; then
-		# shellcheck source=lib/resource_content.sh disable=SC1091
-		. "$lib_path"
-	fi
-	return 0 # Best-effort; MIME detection may still fail if file doesn't exist
-}
-
 # mcp_result_text_with_resource <text_or_json> [--path <file>] [--mime <type>] [--uri <uri>]
 # Combine text output with optional embedded resources in a single call.
 #
 # Arguments:
 #   $1       - Text content or JSON object (passed to mcp_result_success)
 #   --path   - File path to embed as resource (repeatable)
-#   --mime   - MIME type for preceding --path (auto-detect if omitted)
+#   --mime   - MIME type for preceding --path, reported as given. If omitted,
+#              the server detects it. Detection always decides text vs blob.
 #   --uri    - Custom URI for preceding --path (auto-generate if omitted)
 #
 # Output: CallToolResult JSON to stdout
@@ -1430,7 +1418,7 @@ mcp_result_text_with_resource() {
 			# Build JSON array in memory, then write once
 			local json_array="["
 			local sep=""
-			local i path mime uri uri_json
+			local i path mime uri uri_json mime_json
 
 			for ((i = 0; i < ${#res_paths[@]}; i++)); do
 				path="${res_paths[$i]:-}"
@@ -1449,23 +1437,15 @@ mcp_result_text_with_resource() {
 					continue
 				fi
 
-				# Auto-detect MIME if not provided (lazy-load resource helpers)
-				if [[ -z "$mime" ]]; then
-					__mcp_sdk_load_resource_helpers
-					# Use declare -F (not command -v) to check for shell functions
-					if declare -F mcp_resource_detect_mime >/dev/null 2>&1; then
-						mime="$(mcp_resource_detect_mime "$path" "application/octet-stream")"
-					else
-						mime="application/octet-stream"
-						mcp_log_debug "sdk" "mcp_result_text_with_resource: MIME auto-detect unavailable, using ${mime}"
-					fi
-				fi
-
-				# Build JSON object for this resource
+				# Build JSON object for this resource. Without --mime, mimeType
+				# stays null and the server detects it; with --mime, the value
+				# is declared and becomes the reported label.
 				uri_json="null"
 				[[ -n "$uri" ]] && uri_json="$(__mcp_sdk_json_escape "$uri")"
+				mime_json="null"
+				[[ -n "$mime" ]] && mime_json="$(__mcp_sdk_json_escape "$mime")"
 
-				json_array+="${sep}{\"path\":$(__mcp_sdk_json_escape "$path"),\"mimeType\":$(__mcp_sdk_json_escape "$mime"),\"uri\":${uri_json}}"
+				json_array+="${sep}{\"path\":$(__mcp_sdk_json_escape "$path"),\"mimeType\":${mime_json},\"uri\":${uri_json}}"
 				sep=","
 			done
 
@@ -1663,7 +1643,10 @@ mcp_config_get() {
 		return 1
 	fi
 
-	local config="${MCP_CONFIG_JSON:-{}}"
+	# Default "{}" set separately; inside the expansion it would append a
+	# stray "}" to a set value.
+	local config="${MCP_CONFIG_JSON:-}"
+	[[ -n "$config" ]] || config="{}"
 	local json_tool="${MCPBASH_JSON_TOOL_BIN:-}"
 	local result
 

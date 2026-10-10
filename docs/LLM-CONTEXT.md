@@ -258,6 +258,8 @@ Use a project-level provider for dynamic documentation. A client-supplied `help:
 {"name": "help-fields", "uriTemplate": "help://fields/{list_id}", "mimeType": "text/markdown"}
 ```
 
+A read of `help://fields/42` is matched back to this template, so the response is labelled `text/markdown` and the provider also receives `MCP_RESOURCE_TEMPLATE_NAME=help-fields` and `MCP_RESOURCE_TEMPLATE_VARS={"list_id":"42"}`. Still validate `$1`: matching is not a security check.
+
 **File:** `providers/help.sh`
 ```bash
 #!/usr/bin/env bash

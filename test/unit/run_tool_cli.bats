@@ -85,6 +85,28 @@ EOF
 	assert_contains "ROOTS=none" "${env_output}"
 }
 
+@test "run_tool_cli: print-env shows env policy with source, never values" {
+	printf '%s\n' '{"name":"cli-runner","env":{"MCPBASH_TOOL_ENV_MODE":"allowlist","MCPBASH_TOOL_ENV_ALLOWLIST":"SENTINEL_API_KEY"}}' >"${PROJECT_ROOT}/server.d/server.meta.json"
+	SENTINEL_API_KEY="sk-sentinel-secret-value" run "${MCPBASH_HOME}/bin/mcp-bash" run-tool test.echo --print-env
+	assert_success
+	assert_contains "tools: mode allowlist (from server.meta.json)" "${output}"
+	assert_contains "providers: mode isolate (from default)" "${output}"
+	assert_contains "SENTINEL_API_KEY: set" "${output}"
+	# Must say what the report does not cover.
+	assert_contains "--with-server-env" "${output}"
+	assert_contains "server.d/policy.sh" "${output}"
+	if printf '%s' "${output}" | grep -q "sk-sentinel-secret-value"; then
+		printf 'secret value leaked: %s\n' "${output}" >&2
+		return 1
+	fi
+}
+
+@test "run_tool_cli: print-env policy source is launch env when the operator sets it" {
+	MCPBASH_TOOL_ENV_MODE=inherit run "${MCPBASH_HOME}/bin/mcp-bash" run-tool test.echo --print-env
+	assert_success
+	assert_contains "tools: mode inherit (from launch env)" "${output}"
+}
+
 @test "run_tool_cli: dry-run does not execute tool" {
 	run "${MCPBASH_HOME}/bin/mcp-bash" run-tool test.sideeffect --dry-run
 	assert_success

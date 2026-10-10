@@ -53,6 +53,8 @@ If `mcpb.conf` is not present, values are resolved from:
 4. Git config (for author info)
 5. Git remote (for repository URL)
 
+`bundle` always reads and packages `server.d/` and ignores `MCPBASH_SERVER_DIR`: the runtime inside a bundle uses the default `<bundle>/server.d`. Keep bundled projects on the default layout.
+
 ## Command-Line Options
 
 ```bash
@@ -303,7 +305,7 @@ The manifest supports these variables in env/args and user_config defaults:
 - `${pathSeparator}` or `${/}` - Platform path separator (`:` or `;`)
 
 How Claude Desktop applies these (read from Desktop 2.31226.0):
-- **Unset optional settings stay literal.** A `${user_config.KEY}` with no saved value and no `default` is left as the literal text `${user_config.KEY}`. The generated `run-server.sh` unsets any variable whose value is such a placeholder, so tools see it as unset rather than as a bogus value. Give a `default` when you need a known value.
+- **Unset optional settings stay literal.** A `${user_config.KEY}` with no saved value and no `default` is left as the literal text `${user_config.KEY}`. The generated `run-server.sh` unsets any variable whose value is such a placeholder, so tools see it as unset rather than as a bogus value. With `MCPBASH_LOG_LEVEL=debug` it writes the cleared variable names (never values) to stderr. Give a `default` when you need a known value.
 - **`$` sequences in values are altered.** Substitution does not escape `$$`, `$&`, `` $` `` or `$'` in a value, so a secret containing `$$` arrives with a single `$`. Avoid these sequences in values that must arrive verbatim.
 - **The server gets a small environment.** Besides `mcp_config.env`, Desktop passes only a short list of host variables: HOME, LOGNAME, PATH, SHELL, TERM and USER on macOS and Linux; on Windows, APPDATA, HOMEDRIVE, HOMEPATH, LOCALAPPDATA, PATH, PROCESSOR_ARCHITECTURE, SYSTEMDRIVE, SYSTEMROOT, TEMP, USERNAME, USERPROFILE and PROGRAMFILES. PATH includes the login-shell PATH. Windows does not pass TMP, so `run-server.sh` sets TMP from TEMP when it is missing.
 

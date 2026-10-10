@@ -13,6 +13,13 @@ MCP_UI_TTL="${MCP_UI_TTL:-5}"
 MCP_UI_LAST_SCAN=""
 MCP_UI_LOGGER="${MCP_UI_LOGGER:-mcp.ui}"
 
+# Verified file reads (static UI HTML is served through mcp_file_read_verified).
+if ! declare -F mcp_file_read_verified >/dev/null 2>&1; then
+	# shellcheck source=lib/file_read.sh
+	# shellcheck disable=SC1091
+	. "${MCPBASH_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/lib/file_read.sh"
+fi
+
 # Configuration defaults
 MCPBASH_MAX_UI_RESOURCE_BYTES="${MCPBASH_MAX_UI_RESOURCE_BYTES:-1048576}"  # 1MB
 MCPBASH_UI_CACHE_MAX_TEMPLATES="${MCPBASH_UI_CACHE_MAX_TEMPLATES:-50}"
@@ -177,11 +184,12 @@ mcp_ui_generate_registry() {
 	timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%S)"
 
 	local registry_json
-	registry_json="$("${MCPBASH_JSON_TOOL_BIN}" -n \
-		--argjson resources "${resources}" \
+	# The resource list goes on stdin: it grows with the number of UIs.
+	registry_json="$(printf '%s' "${resources}" | "${MCPBASH_JSON_TOOL_BIN}" \
 		--arg hash "${hash}" \
 		--arg timestamp "${timestamp}" \
-		'{
+		'. as $resources
+		| {
 			version: 1,
 			hash: $hash,
 			timestamp: $timestamp,
@@ -362,7 +370,11 @@ mcp_ui_get_content() {
 	if [ "${has_html}" = "true" ]; then
 		local html_path="${dir}/${entrypoint}"
 		if [ -f "${html_path}" ]; then
-			cat "${html_path}"
+			# Open once and verify the descriptor (no symlink swapped in,
+			# size limit applied to what is actually read).
+			local canonical_path=""
+			canonical_path="$(mcp_file_read_canonical_path "${html_path}")" || return 1
+			mcp_file_read_verified "${canonical_path}" "${MCPBASH_MAX_UI_RESOURCE_BYTES}" || return 1
 			return 0
 		fi
 	fi

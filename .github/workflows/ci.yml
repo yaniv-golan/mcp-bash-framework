@@ -193,6 +193,166 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: test/conformance/run.sh
 
+  # Integration suite on the code path real users run. MCPBASH_CI_MODE turns
+  # off the idle/orphan checks, which switches the server to blocking reads; the
+  # timed-read loop (default for users) is only exercised without it. Runs under
+  # bash 5 on both platforms, with a per-test deadline so a hang fails fast.
+  integration-real-mode:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use bash 5 (macOS ships bash 3.2)
+        if: runner.os == 'macOS'
+        run: |
+          set -euo pipefail
+          brew list bash >/dev/null 2>&1 || brew install bash
+          echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
+      - name: Install jq
+        if: runner.os == 'Linux'
+        run: command -v jq >/dev/null || sudo apt-get install -y jq
+      - name: Check bash version
+        run: |
+          set -euo pipefail
+          bash --version | head -1
+          major="$(bash -c 'echo ${BASH_VERSINFO[0]}')"
+          if [ "${major}" -lt 4 ]; then
+            echo "::error::expected bash >= 4 on PATH for this job, got ${major}"
+            exit 1
+          fi
+      - name: Integration suite (CI mode off)
+        env:
+          MCPBASH_INTEGRATION_TEST_TIMEOUT_SECONDS: "300"
+          MCPBASH_LOG_DIR: ${{ runner.temp }}/mcpbash-logs
+          MCPBASH_LOG_TIMESTAMP: "true"
+          MCPBASH_KEEP_LOGS: "true"
+          MCPBASH_INTEGRATION_TMP: ${{ runner.temp }}/mcpbash-integration
+        run: |
+          set -euo pipefail
+          unset MCPBASH_CI_MODE
+          test/integration/run.sh
+      - name: Upload integration logs on failure
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-real-mode-logs-${{ matrix.os }}
+          path: |
+            ${{ runner.temp }}/mcpbash-integration/logs/
+            ${{ runner.temp }}/mcpbash-logs
+          retention-days: 7
+
+  # macOS GUI hosts (Claude Desktop and other Electron/Node apps) resolve the
+  # "#!/usr/bin/env bash" shebang to /bin/bash 3.2. The unit job runs only on
+  # Ubuntu, and the macOS integration job runs in CI mode (blocking reads), so
+  # the timed-read loop was never exercised on 3.2. This job puts a shim dir
+  # first on PATH whose only entry is bash -> /bin/bash, so bats, the test
+  # scripts, bin/mcp-bash and the tools it runs all execute under 3.2 whatever
+  # bash the runner image puts on PATH. Every step after "Put /bin/bash first
+  # on PATH" runs under 3.2 too.
+  bash32-macos:
+    runs-on: macos-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install bats and helpers
+        run: |
+          set -euo pipefail
+          npm ci
+          echo "${PWD}/node_modules/.bin" >> "$GITHUB_PATH"
+      - name: Put /bin/bash first on PATH
+        run: |
+          set -euo pipefail
+          shim="${RUNNER_TEMP}/bash32-shim"
+          mkdir -p "${shim}"
+          ln -sf /bin/bash "${shim}/bash"
+          echo "${shim}" >> "$GITHUB_PATH"
+      - name: Check that bash 3.2 is in use
+        run: |
+          set -euo pipefail
+          for probe in "bash" "env bash" "/usr/bin/env bash"; do
+            major="$(${probe} -c 'echo ${BASH_VERSINFO[0]}')"
+            echo "${probe}: bash major ${major}"
+            if [ "${major}" != "3" ]; then
+              echo "::error::expected ${probe} to resolve to /bin/bash 3.2, got major ${major}"
+              exit 1
+            fi
+          done
+          # The server itself: start bin/mcp-bash and read its executable.
+          tmp="$(mktemp -d)"
+          mkfifo "${tmp}/in"
+          MCPBASH_PROJECT_ROOT="${PWD}/examples/00-hello-tool" bin/mcp-bash <"${tmp}/in" >/dev/null 2>"${tmp}/stderr" &
+          pid=$!
+          exec 7>"${tmp}/in"
+          sleep 2
+          exe="$(lsof -a -p "${pid}" -d txt -Fn 2>/dev/null | sed -n 's/^n//p' | head -n 1)"
+          exec 7>&-
+          wait "${pid}" || true
+          echo "server executable: ${exe}"
+          if [ "${exe}" != "/bin/bash" ]; then
+            cat "${tmp}/stderr" >&2 || true
+            echo "::error::bin/mcp-bash did not run under /bin/bash"
+            exit 1
+          fi
+      - name: Unit tests (bash 3.2)
+        run: test/unit/run.sh
+      - name: Upload unit test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-results-bash32
+          path: test-results/
+          retention-days: 7
+      # CI mode off: the timed-read loop and its 3.2 EOF heuristic are only
+      # exercised without MCPBASH_CI_MODE. These tests cover the read loop,
+      # lifecycle, signals, and stdout/stdin closing.
+      - name: Integration subset (bash 3.2, CI mode off)
+        env:
+          MCPBASH_INTEGRATION_TEST_TIMEOUT_SECONDS: "300"
+          MCPBASH_LOG_DIR: ${{ runner.temp }}/mcpbash-logs
+          MCPBASH_LOG_TIMESTAMP: "true"
+          MCPBASH_KEEP_LOGS: "true"
+          MCPBASH_INTEGRATION_TMP: ${{ runner.temp }}/mcpbash-integration
+          MCPBASH_INTEGRATION_ONLY: >-
+            test_trace_bash32.sh
+            test_lifecycle_gating.sh
+            test_stdin_eof_shutdown.sh
+            test_background_loops_exit.sh
+            test_sigterm_prompt_exit.sh
+            test_stdout_closed_exit.sh
+            test_short_read_timeout_stays_up.sh
+            test_cancellation.sh
+            test_cancel_malformed.sh
+            test_cancel_eof_drain.sh
+            test_resource_subscriptions.sh
+            test_elicitation_modes.sh
+            test_large_payloads.sh
+            test_completion_registered_timeout.sh
+        run: |
+          set -euo pipefail
+          unset MCPBASH_CI_MODE
+          log="${RUNNER_TEMP}/integration-bash32.log"
+          test/integration/run.sh 2>&1 | tee "${log}"
+          # bash 3.2 can exit 0 after a fatal shell error when an EXIT trap
+          # runs; require the summary line as well as the exit status.
+          grep -Eq '^Integration summary: [1-9][0-9]* passed, 0 failed' "${log}"
+      - name: Upload integration logs on failure
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-bash32-logs
+          path: |
+            ${{ runner.temp }}/mcpbash-integration/logs/
+            ${{ runner.temp }}/mcpbash-logs
+            ${{ runner.temp }}/integration-bash32.log
+          retention-days: 7
+
   # Windows integration tests - runs in parallel but does not block release
   integration-windows:
     runs-on: windows-latest
@@ -407,7 +567,7 @@ jobs:
   release:
     # Only run on version tags, after all tests pass
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [lint, unit, integration, bundle-sanity, compatibility]
+    needs: [lint, unit, integration, integration-real-mode, bash32-macos, bundle-sanity, compatibility]
     runs-on: ubuntu-latest
     permissions:
       contents: write

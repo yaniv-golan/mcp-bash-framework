@@ -106,9 +106,43 @@ mcp_cli_run_tool_source_env() {
 		printf 'run-tool: sourcing %s\n' "${resolved}" >&2
 	fi
 
+	# Check syntax first. On bash 3.2 a parse error inside a sourced file (for
+	# example a malformed [[ ]]) aborts the shell under set -e, and the EXIT
+	# trap then turns that into exit status 0, so run-tool reported success.
+	if ! "${BASH:-bash}" -n "${resolved}"; then
+		printf 'run-tool: syntax error in env file: %s\n' "${resolved}" >&2
+		return 1
+	fi
+
 	# Source the file in current shell context
 	# shellcheck disable=SC1090
 	. "${resolved}"
+}
+
+# Print the tool/provider env policy for --print-env. Names and states only;
+# values are never printed. Reflects the launch env plus server.meta.json as
+# this process sees them now, before --with-server-env / --source files and
+# before server.d/policy.sh run.
+mcp_cli_run_tool_print_env_policy() {
+	mcp_require meta_env mcp_meta_env_report
+	printf 'ENV_POLICY (launch env + server.meta.json only; does not include --with-server-env or --source files, or server.d/policy.sh):\n'
+	local kind a b c scope_label
+	while IFS=$'\t' read -r kind a b c; do
+		case "${a}" in
+		TOOL) scope_label="tools" ;;
+		PROVIDER) scope_label="providers" ;;
+		*) scope_label="${a}" ;;
+		esac
+		case "${kind}" in
+		switch) printf '  MCPBASH_IGNORE_META_ENV is set: server.meta.json env is ignored\n' ;;
+		policy) printf '  %s: mode %s (from %s)\n' "${scope_label}" "${b}" "${c}" ;;
+		name) printf '    %s: %s\n' "${b}" "${c}" ;;
+		badname) printf '    %s: allowlist entry %s is not a valid variable name and is skipped\n' "${scope_label}" "${b}" ;;
+		inherit) printf '  %s: inherit mode without MCPBASH_%s_ENV_INHERIT_ALLOW=true will be refused\n' "${scope_label}" "${a}" ;;
+		refused) printf '  server.meta.json env.%s is ignored (not settable there)\n' "${a}" ;;
+		invalid | error) printf '  server.meta.json env.%s: %s\n' "${a}" "${b}" ;;
+		esac
+	done < <(mcp_meta_env_report)
 }
 
 mcp_cli_run_tool() {
@@ -201,7 +235,7 @@ Usage:
 Invoke a tool directly with the same env wiring used by the server.
 
 Options:
-  --with-server-env  Source server.d/env.sh before tool execution
+  --with-server-env  Source env.sh from the server dir (server.d, or MCPBASH_SERVER_DIR) before tool execution
   --source FILE      Source FILE before tool execution (repeatable;
                      sourced after --with-server-env, in order specified)
 
@@ -319,7 +353,8 @@ EOF
 			will_source_server_env="true"
 		fi
 		if [ "${will_source_server_env}" = "true" ]; then
-			local server_env="${MCPBASH_PROJECT_ROOT}/server.d/env.sh"
+			local server_env
+			server_env="$(mcp_runtime_effective_server_dir)/env.sh"
 			if [ -f "${server_env}" ]; then
 				printf 'WILL_SOURCE_SERVER_ENV=%s\n' "${server_env}"
 			else
@@ -350,6 +385,7 @@ EOF
 		else
 			printf 'ROOTS=none\n'
 		fi
+		mcp_cli_run_tool_print_env_policy
 		exit 0
 	fi
 
@@ -360,7 +396,8 @@ EOF
 
 	# Source server.d/env.sh if requested
 	if [ "${with_server_env}" = "true" ]; then
-		local server_env="${MCPBASH_PROJECT_ROOT}/server.d/env.sh"
+		local server_env
+		server_env="$(mcp_runtime_effective_server_dir)/env.sh"
 		if [ -f "${server_env}" ]; then
 			mcp_cli_run_tool_source_env "${server_env}" "${verbose}" || exit 1
 		fi
@@ -430,6 +467,10 @@ EOF
 	else
 		if [ -n "${_MCP_TOOLS_RESULT:-}" ]; then
 			printf '%s\n' "${_MCP_TOOLS_RESULT}"
+		elif [ "${_MCP_TOOLS_ERROR_CODE:-0}" != "0" ] && [ -n "${_MCP_TOOLS_ERROR_MESSAGE:-}" ]; then
+			# Early refusals (inherit gate, path policy, missing executable) set only
+			# the error variables.
+			printf 'run-tool: %s\n' "${_MCP_TOOLS_ERROR_MESSAGE}"
 		else
 			printf 'run-tool: tool execution failed\n'
 		fi

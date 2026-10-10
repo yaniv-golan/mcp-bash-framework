@@ -42,7 +42,10 @@ mcp_extensions_write_ui_mimetypes() {
 # Initialize extension capabilities from client capabilities JSON
 # Called from handlers/lifecycle.sh during initialize
 mcp_extensions_init() {
-	local client_caps="${1:-{}}"
+	# Default "{}" set separately: written inside the expansion, bash ends it
+	# at the first "}" and appends a stray "}" to a set value.
+	local client_caps="${1:-}"
+	[ -n "${client_caps}" ] || client_caps="{}"
 	MCPBASH_CLIENT_SUPPORTS_UI=0
 
 	# Check for io.modelcontextprotocol/ui extension

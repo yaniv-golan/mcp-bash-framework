@@ -14,7 +14,7 @@ fi
 # Required framework lib files to embed.
 # Must stay in sync with the direct '. "${MCPBASH_HOME}/lib/..."' sources in bin/mcp-bash.
 # Enforced by test/unit/bundle_libs_sync.bats.
-EMBED_REQUIRED_LIBS="require runtime meta_env json hash ids lock io paginate logging auth uri policy tools_policy registry spec tools resources prompts completion timeout elicitation roots rpc core handler_helpers validate path resource_content resource_providers progress progress-passthrough capabilities ui ui-templates"
+EMBED_REQUIRED_LIBS="require runtime meta_env json hash ids lock io paginate logging auth uri policy tools_policy registry spec tools resources prompts completion timeout elicitation roots rpc core handler_helpers validate path resource_content resource_match resource_providers progress progress-passthrough capabilities file_read ui ui-templates"
 
 # mcp_embed_framework <dest_dir> <verbose>
 #
@@ -119,12 +119,21 @@ fi
 # Claude Desktop leaves "${user_config.<key>}" as literal text when an optional
 # setting has no value and no default. Unset such variables so tools never see
 # the placeholder as a real value (for example as an API key).
+_mcpb_cleared=""
 for _mcpb_var in $(compgen -e); do
   case "${!_mcpb_var-}" in
-  '${user_config.'*) unset "${_mcpb_var}" 2>/dev/null || true ;;
+  '${user_config.'*)
+    if unset "${_mcpb_var}" 2>/dev/null; then
+      _mcpb_cleared="${_mcpb_cleared:+${_mcpb_cleared} }${_mcpb_var}"
+    fi
+    ;;
   esac
 done
-unset _mcpb_var
+# Names only, never values. Debug level so a missing setting is diagnosable.
+if [[ "${MCPBASH_LOG_LEVEL:-}" == "debug" && -n "${_mcpb_cleared}" ]]; then
+  printf 'mcp-bash: run-server: cleared unexpanded user_config placeholders: %s\n' "${_mcpb_cleared}" >&2
+fi
+unset _mcpb_var _mcpb_cleared
 
 # Windows hosts pass TEMP but not TMP; many tools read TMP.
 if [[ -z "${TMP:-}" && -n "${TEMP:-}" ]]; then

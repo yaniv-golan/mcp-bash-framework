@@ -66,10 +66,13 @@ mcp_result_with_ui() {
 	fi
 
 	# Return result with structured data (host knows UI from tool definition)
-	"${MCPBASH_JSON_TOOL_BIN}" -n \
-		--arg text "${text_fallback}" \
-		--argjson data "${structured_data}" \
-		'{
+	# Text and data go on stdin: either can outgrow one argument.
+	{
+		printf '%s' "${text_fallback}" | "${MCPBASH_JSON_TOOL_BIN}" -R -s '.'
+		printf '\n%s' "${structured_data}"
+	} | "${MCPBASH_JSON_TOOL_BIN}" -s \
+		'.[0] as $text | .[1] as $data
+		| {
 			content: [{type: "text", text: $text}],
 			structuredContent: (if $data != null then $data else null end),
 			isError: false
@@ -102,10 +105,13 @@ mcp_result_with_ui_data() {
 	fi
 
 	# Return result with structured data (host knows UI from tool definition)
-	"${MCPBASH_JSON_TOOL_BIN}" -n \
-		--arg text "${text_fallback}" \
-		--argjson data "${ui_data}" \
-		'{
+	# Text and data go on stdin: either can outgrow one argument.
+	{
+		printf '%s' "${text_fallback}" | "${MCPBASH_JSON_TOOL_BIN}" -R -s '.'
+		printf '\n%s' "${ui_data}"
+	} | "${MCPBASH_JSON_TOOL_BIN}" -s \
+		'.[0] as $text | .[1] as $data
+		| {
 			content: [{type: "text", text: $text}],
 			structuredContent: $data,
 			isError: false

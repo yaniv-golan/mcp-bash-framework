@@ -251,25 +251,6 @@ repo_path="$(mcp_require_path '.repoPath' --default-to-single-root)"
 optional_path="$(mcp_require_path '.outputPath' --allow-empty)"
 ```
 
-#### Centralized tool policy (server.d/policy.sh)
-
-- Use `server.d/policy.sh` with `mcp_tools_policy_check()` to gate tool invocations in one place (read-only modes, allowlists, audit hooks). The framework sources this once per process and calls it before every tool run.
-- Keep the hook fast and deterministic; it runs on every invocation.
-- Use `-32602` for policy/invalid-params blocks; `-32600` for capability/auth failures.
-- Example read-only mode:
-
-```bash
-# server.d/policy.sh
-mcp_tools_policy_check() {
-	local tool_name="$1"
-	if [ "${MYPROJECT_READ_ONLY:-0}" = "1" ] && [[ "${tool_name}" != myProj.get* ]]; then
-		mcp_tools_error -32602 "Read-only mode: ${tool_name} disabled"
-		return 1
-	fi
-	return 0
-}
-```
-
 This single helper replaces 15-20 lines of boilerplate:
 
 ```bash
@@ -293,6 +274,28 @@ fi
 
 # AFTER: One line with mcp_require_path
 repo_path="$(mcp_require_path '.repoPath' --default-to-single-root)"
+```
+
+#### Centralized tool policy (server.d/policy.sh)
+
+- Use `server.d/policy.sh` with `mcp_tools_policy_check()` to gate tool invocations in one place (read-only modes, allowlists, audit hooks). The framework sources this once per process and calls it before every tool run.
+- Keep the hook fast and deterministic; it runs on every invocation.
+- Use `-32602` for policy/invalid-params blocks; `-32600` for capability/auth failures.
+- Defining `mcp_tools_policy_check` **replaces** the built-in policy, including the deny-by-default allowlist (`MCPBASH_TOOL_ALLOWLIST`) and tool path checks, so start it with `mcp_tools_policy_check_default "$@" || return 1` and add your rules after it; `mcp-bash validate` and `doctor` warn when it doesn't. This guards against accidentally widening access, not against a hostile project: `policy.sh` is trusted shell code sourced at startup and can redefine anything.
+- Example read-only mode:
+
+```bash
+# server.d/policy.sh
+mcp_tools_policy_check() {
+	# Keep the default policy (deny-by-default allowlist, tool path checks).
+	mcp_tools_policy_check_default "$@" || return 1
+	local tool_name="$1"
+	if [ "${MYPROJECT_READ_ONLY:-0}" = "1" ] && [[ "${tool_name}" != myProj.get* ]]; then
+		mcp_tools_error -32602 "Read-only mode: ${tool_name} disabled"
+		return 1
+	fi
+	return 0
+}
 ```
 
 #### External dependency health checks (server.d/health-checks.sh)
@@ -475,9 +478,10 @@ mcp_result_text_with_resource \
 See [Embedding resources in tool responses](#embedding-resources-in-tool-responses) for full documentation.
 
 **Manual approach** (for advanced cases):
-- Write to `MCP_TOOL_RESOURCES_FILE` directly. TSV format: `path<TAB>mimeType<TAB>uri` (mime/uri optional).
+- Write to `MCP_TOOL_RESOURCES_FILE` directly. TSV format: `path<TAB>mimeType<TAB>uri` (mime/uri optional; leave the mime column empty to keep a uri).
 - JSON format is also accepted: `[{"path":"/tmp/result.png","mimeType":"image/png","uri":"file:///tmp/result.png"}]`
-- Binary files are base64-encoded into the `blob` field; text stays in `text`.
+- A non-empty `mimeType` is reported as given; leave it empty or `null` to let the server detect it.
+- Detection decides the encoding either way: binary files are base64-encoded into the `blob` field; text stays in `text`.
 - Keep paths inside allowed roots; invalid/unreadable entries are skipped (debug logs will mention the skip).
 
 #### Error handling
@@ -605,18 +609,18 @@ result=$(mcp_download_safe --url "$url" --out "/tmp/data.json" --allow "example.
 **Error types** (in `.error.type`):
 - `invalid_url` – URL is empty or not https://
 - `invalid_params` – Invalid/missing parameters (e.g., missing --out, non-numeric --timeout)
-- `host_blocked` – Host is private, obfuscated, or not in allowlist
+- `host_blocked` – Host is private, resolves to a private address, is a non-canonical IP literal, is not in allowlist, or the URL port is not a plain decimal 1-65535 without leading zeros
 - `provider_unavailable` – HTTPS provider not found or curl missing
-- `network_error` – Connection failed (retries exhausted)
+- `network_error` – Host did not resolve, or connection failed (retries exhausted)
 - `size_exceeded` – Response exceeds --max-bytes limit
 - `write_error` – Could not write to output path
 - `provider_error` – Provider script failed unexpectedly
 - `redirect` – URL returned 3xx redirect (location in `.error.location`)
 
 **Security features**:
-- SSRF protection: Blocks private IPs (127.x, 10.x, 192.168.x, etc.) and DNS rebinding
+- SSRF protection: Blocks private, loopback, link-local, CGNAT and other special IPv4/IPv6 ranges (see [SECURITY.md](SECURITY.md)); the host is resolved once and curl is pinned to the vetted addresses, and an unresolvable host is never fetched
 - Deny-by-default: Requires explicit host allowlist
-- Obfuscated IP detection: Rejects integer/hex IP literals
+- Obfuscated IP detection: Rejects any IPv4 literal that is not a canonical dotted quad (octal, hex, short or integer forms)
 - No redirects: Prevents redirect-based SSRF attacks
 - Automatic retry: Exponential backoff for transient failures
 
@@ -1455,11 +1459,14 @@ mcp_result_text_with_resource '{"status":"complete"}' \
   --path /tmp/data.csv --mime text/csv \
   --path /tmp/chart.png --mime image/png
 
-# MIME auto-detection (requires `file` command)
-mcp_result_text_with_resource '{"done":true}' --path /tmp/output.txt
+# No --mime: the server detects the type (requires the `file` command)
+mcp_result_text_with_resource '{"done":true}' --path /tmp/output.json
 ```
 
-Resources are embedded in the `content[]` array alongside the text. MIME type is auto-detected if `--mime` is omitted (requires `file` command; falls back to `application/octet-stream`).
+Resources are embedded in the `content[]` array alongside the text.
+- **With `--mime`:** the value is declared and reported exactly as given.
+- **Without `--mime`:** the helper writes no type and the server detects it with `file --mime`; without `file`, the type is `text/plain`.
+- **Encoding:** detection always decides whether the content is sent as `text` or as a base64 `blob`, so `--mime text/plain` on a PDF still sends a blob. Pass `--mime` only when detection gets the label wrong, for example `text/markdown`, which `file` reports as `text/plain`.
 
 **Note:** Resources require `MCP_TOOL_RESOURCES_FILE` to be set (automatic in tool context). Outside tool context, resources are logged as warnings and skipped.
 

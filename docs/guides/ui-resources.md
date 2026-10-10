@@ -186,7 +186,7 @@ Every UI resource needs a `ui.meta.json` file:
 mcp-bash uses [jsdelivr](https://cdn.jsdelivr.net) to load the official MCP Apps SDK directly in the browser without a build step:
 
 ```javascript
-import { App } from 'https://cdn.jsdelivr.net/npm/@modelcontextprotocol/ext-apps/+esm';
+import { App } from 'https://cdn.jsdelivr.net/npm/@modelcontextprotocol/ext-apps@2.0.3/+esm';
 ```
 
 **Why CDN instead of bundling?**
@@ -233,7 +233,7 @@ mcp-bash is a pure Bash framework - adding a JavaScript build step would contrad
   <div id="weather-data">Loading...</div>
 
   <script type="module">
-    import { App } from 'https://cdn.jsdelivr.net/npm/@modelcontextprotocol/ext-apps/+esm';
+    import { App } from 'https://cdn.jsdelivr.net/npm/@modelcontextprotocol/ext-apps@2.0.3/+esm';
 
     // Create app instance with metadata
     const app = new App({ name: "Weather Dashboard", version: "1.0.0" });
@@ -540,7 +540,7 @@ Due to current Claude Desktop implementation limitations:
 
 - **Real-time progress updates**: UIs cannot receive `notifications/progress` during tool execution. The UI only receives `ontoolinput` when the tool starts and `ontoolresult` when it completes.
 
-- **UI-initiated requests**: The MCP Apps SDK methods `callServerTool()` and `resources/read` are blocked by a [Claude Desktop bug](https://github.com/modelcontextprotocol/ext-apps/issues/386). UIs cannot poll for data or call other tools.
+- **UI-initiated requests**: UIs call tools with `app.callServerTool({ name, arguments })` (there is no `callTool`), which depends on host support; check the host's MCP Apps capabilities before relying on polling or UI-driven tool calls.
 
 **Workarounds**:
 - Use indeterminate progress (spinner) while waiting for results

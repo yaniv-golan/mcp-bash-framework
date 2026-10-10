@@ -34,7 +34,8 @@ mcp_session_start() {
 }
 
 mcp_session_call() {
-	local name="$1" args="${2:-{}}"
+	local no_args='{}'
+	local name="$1" args="${2:-${no_args}}"
 	((MCP_SESSION_ID++))
 	_mcp_send "{\"jsonrpc\":\"2.0\",\"id\":${MCP_SESSION_ID},\"method\":\"tools/call\",\"params\":{\"name\":\"${name}\",\"arguments\":${args}}}"
 	_mcp_recv_response "${MCP_SESSION_ID}"

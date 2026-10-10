@@ -16,7 +16,7 @@
 
 - `name` must be unique. Clients reference it via `params.ref` in `completion/complete` requests.
 - `path` is relative to `MCPBASH_PROJECT_ROOT` for `manual` providers.
-- `timeoutSecs` is optional; defaults to no per-request timeout (global watchdogs still apply).
+- `timeoutSecs` is optional. An explicit value always wins: a positive number is the limit in seconds, and `0` means no timeout. A negative or non-numeric value is rejected with a warning and treated as unset. When unset, the completion gets `MCPBASH_COMPLETION_REGISTERED_TIMEOUT_SECS` seconds (default 30; `0` disables; a non-number or more than 6 digits falls back to 30). A timed-out completion returns an error to the client. Per-prompt and per-resource scripts use `MCPBASH_COMPLETION_TIMEOUT_SECS` instead (default 5).
 - The registry rejects duplicates, missing paths, or buffer overflows (guarded by `MCPBASH_MANUAL_BUFFER_MAX_BYTES`).
 
 ## Client request shape (MCP 2025-11-25)
@@ -56,11 +56,13 @@ A completion script can sit next to a prompt or resource instead of being regist
 3. `prompts/pick/pick.completion.sh`
 4. `prompts/pick/pick.completion`
 
-Resources work the same way, relative to `resources/`. A `register.json` entry with the same name takes precedence.
+Resources work the same way, relative to `resources/`. A resource template has no content file, so its script is found by template name: `resources/<name>.completion.sh` (or `.completion`), or `resources/<name>/<name>.completion.sh` (or `.completion`). A `ref/resource` request matches a template when its `uri` is the template's `uriTemplate` (what clients send for template arguments) or a URI the template matches. A `register.json` entry with the same name takes precedence. Prompt and resource discovery skip these scripts, so they never appear as prompts or resources themselves.
 
-- The request's `ref.name` is the prompt (or resource) name.
+**Client support:** Claude Desktop (checked in 2.31226.0) never sends `completion/complete` for prompt arguments; its prompt form shows plain inputs. Its bundled agent requests completions only for resource-template arguments (`ref/resource`). Per-prompt completions therefore help other clients only. For Desktop users, list valid values in the argument's `description`.
+
+- `MCP_COMPLETION_NAME` is the prompt, resource or template name. `MCP_COMPLETION_ARGS_JSON` `.argument.name` says which argument is being completed (for a template, which variable).
 - Scripts run from the project root, under the provider env policy (`MCPBASH_PROVIDER_ENV_*`). To read a secret such as an API key, allowlist it, for example with `MCPBASH_PROVIDER_ENV_ALLOWLIST` in `server.meta.json` `"env"`.
-- They receive the manual-provider variables below plus, for prompts, `MCP_PROMPT_REL_PATH`, `MCP_PROMPT_PATH` and `MCP_PROMPT_METADATA`; for resources, `MCP_RESOURCE_REL_PATH`, `MCP_RESOURCE_PATH`, `MCP_RESOURCE_URI`, `MCP_RESOURCE_PROVIDER` and `MCP_RESOURCE_METADATA`.
+- They receive the manual-provider variables below plus, for prompts, `MCP_PROMPT_REL_PATH`, `MCP_PROMPT_PATH` and `MCP_PROMPT_METADATA`; for resources, `MCP_RESOURCE_REL_PATH`, `MCP_RESOURCE_PATH`, `MCP_RESOURCE_URI`, `MCP_RESOURCE_PROVIDER` and `MCP_RESOURCE_METADATA`. For a template, `MCP_RESOURCE_URI` is the `uriTemplate`, `MCP_RESOURCE_METADATA` is the template entry, and the path and provider variables are empty.
 - They time out after `MCPBASH_COMPLETION_TIMEOUT_SECS` seconds (default 5; `0` disables). Completions run on every keystroke, so keep them fast. A timed-out script returns an error to the client.
 
 ## Script Contract (manual provider)
@@ -68,7 +70,7 @@ Resources work the same way, relative to `resources/`. A `register.json` entry w
 Environment variables:
 - `MCP_COMPLETION_NAME` – completion name (string).
 - `MCP_COMPLETION_ARGS_JSON` – JSON object derived from the request params:
-  - a normalized object that includes `query`/`prefix` (from `params.argument.value`) plus `ref` and `context.arguments`
+  - a normalized object that includes `query`/`prefix` (from `params.argument.value`), `argument` (`{name, value}`), plus `ref` and `context.arguments`
 - `MCP_COMPLETION_LIMIT` – max suggestions requested (int; capped at 100).
 - `MCP_COMPLETION_OFFSET` – pagination offset (int).
 - `MCP_COMPLETION_ARGS_HASH` – opaque hash for cursor binding.
@@ -76,7 +78,9 @@ Environment variables:
 Recommended parsing:
 ```bash
 # Prefer .query; fall back to .prefix; treat missing as empty string.
-query="$(printf '%s' "${MCP_COMPLETION_ARGS_JSON:-{}}" | jq -r '(.query // .prefix // "")')"
+args="${MCP_COMPLETION_ARGS_JSON:-}"
+[ -n "${args}" ] || args='{}'
+query="$(printf '%s' "${args}" | jq -r '(.query // .prefix // "")')"
 ```
 
 Stdout (any of):

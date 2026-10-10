@@ -5,7 +5,10 @@ set -euo pipefail
 # Reads MCP_COMPLETION_ARGS_JSON and returns suggestions based on `.query` / `.prefix`.
 
 bin="${MCPBASH_JSON_TOOL_BIN:-jq}"
-args="${MCP_COMPLETION_ARGS_JSON:-{}}"
+args="${MCP_COMPLETION_ARGS_JSON:-}"
+if [ -z "${args}" ]; then
+	args='{}'
+fi
 query="$(printf '%s' "${args}" | "${bin}" -r '(.query // .prefix // "")' 2>/dev/null || printf '')"
 
 # Small static catalog; filter by substring.

@@ -7,7 +7,10 @@ if [ -z "${json_bin}" ]; then
 	exit 0
 fi
 
-args_json="${MCP_COMPLETION_ARGS_JSON:-{}}"
+args_json="${MCP_COMPLETION_ARGS_JSON:-}"
+if [ -z "${args_json}" ]; then
+	args_json='{}'
+fi
 query="$("${json_bin}" -r '(.query // .prefix // "")' <<<"${args_json}" 2>/dev/null || printf '')"
 
 limit="${MCP_COMPLETION_LIMIT:-5}"

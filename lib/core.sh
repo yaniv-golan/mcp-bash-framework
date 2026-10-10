@@ -13,6 +13,8 @@ MCPBASH_SHUTDOWN_WATCHDOG_CANCEL=""
 MCPBASH_EXIT_REQUESTED=false
 MCPBASH_PROGRESS_FLUSHER_PID=""
 MCPBASH_RESOURCE_POLL_PID=""
+# Set when a resources/subscribe is dispatched; see mcp_core_maybe_start_background_workers.
+MCPBASH_RESOURCE_POLL_WANTED=false
 MCPBASH_LAST_REGISTRY_POLL=""
 
 # Zombie process mitigation (idle timeout + orphan detection)
@@ -148,8 +150,11 @@ mcp_core_maybe_start_background_workers() {
 		fi
 	fi
 
-	# Start resource subscription polling only when there are subscriptions.
-	if mcp_core_has_resource_subscriptions; then
+	# Start resource subscription polling once a subscribe has been dispatched
+	# or a subscription record exists. resources/subscribe runs in a worker, so
+	# its record usually does not exist yet when this runs right after dispatch;
+	# waiting for the record would delay polling until the next client message.
+	if [ "${MCPBASH_RESOURCE_POLL_WANTED}" = "true" ] || mcp_core_has_resource_subscriptions; then
 		mcp_core_start_resource_poll
 	fi
 }
@@ -277,10 +282,12 @@ mcp_core_read_loop() {
 		use_timeout="false"
 	fi
 
-	# Set up signal traps to distinguish signals from timeout/EOF
-	# (portable across bash 3.2+ since we can't rely on exit code 142)
-	trap '_MCPBASH_SIGNAL_RECEIVED=INT' INT
-	trap '_MCPBASH_SIGNAL_RECEIVED=TERM' TERM
+	# Exit straight from the signal trap. A trap that only records the signal
+	# runs after the pending `read` returns, so TERM/INT waited out the full
+	# read timeout (or, with a blocking read, the next input line). Exiting
+	# here still runs the EXIT trap (_mcp_exit_handler) for cleanup.
+	trap 'exit 130' INT
+	trap 'exit 143' TERM
 
 	# Track idle time using wall clock for accuracy
 	local idle_start
@@ -318,14 +325,27 @@ mcp_core_read_loop() {
 				# Handle any partial line data (for EOF case)
 				[ -n "${line}" ] && mcp_core_handle_line "${line}"
 
-				# Timing heuristic for EOF detection (bash 3.2 compatibility):
-				# If read returned very quickly relative to timeout, it's likely EOF.
-				local quick_threshold=2
-				if [ "${read_timeout}" -le 2 ]; then
-					quick_threshold=1
+				# bash >= 4 reports a read timeout as >128, so status 1 is an
+				# unambiguous EOF. Stop now: on a FIFO whose writer closed, later
+				# reads time out instead of returning EOF again, which would starve
+				# the consecutive-quick-returns heuristic below.
+				if [ "${BASH_VERSINFO[0]}" -ge 4 ] && [ "${read_status}" -eq 1 ]; then
+					break
 				fi
 
-				if [ "${read_elapsed}" -le "${quick_threshold}" ]; then
+				# Timing heuristic for EOF detection (bash 3.2 compatibility).
+				# On bash >= 4 a status > 128 is a timeout, never EOF.
+				# On bash 3.2 a timeout also returns 1, but only after the full
+				# timeout: whole-second `date` deltas for a read that waited
+				# read_timeout seconds are >= read_timeout, while EOF returns at
+				# once. So "quick" means strictly less than the timeout; a fixed
+				# threshold misread 1-2s timeouts as EOF and exited idle servers.
+				local quick_return=false
+				if [ "${BASH_VERSINFO[0]}" -lt 4 ] && [ "${read_elapsed}" -lt "${read_timeout}" ]; then
+					quick_return=true
+				fi
+
+				if [ "${quick_return}" = "true" ]; then
 					immediate_returns=$((immediate_returns + 1))
 					# 3 consecutive immediate returns = definitely EOF
 					if [ ${immediate_returns} -ge 3 ]; then
@@ -430,8 +450,11 @@ mcp_core_wait_for_workers() {
 	fi
 
 	for pid in ${pids}; do
-		wait "${pid}"
-		exit_code=$?
+		# A cancelled or timed-out worker ends with a signal status (143, 137).
+		# Under set -e a bare wait would end the drain there, dropping the
+		# results of the workers still running.
+		exit_code=0
+		wait "${pid}" || exit_code=$?
 		# Ignore normal exits and missing jobs (127) to avoid noisy logs on shells without full job control.
 		if [ "${exit_code}" -ne 0 ] && [ "${exit_code}" -ne 127 ]; then
 			printf '%s\n' "mcp-bash: background worker ${pid} exited with status ${exit_code}" >&2
@@ -875,6 +898,17 @@ mcp_core_dispatch_object() {
 	handler="${MCPBASH_RESOLVED_HANDLER}"
 	async="${MCPBASH_RESOLVED_ASYNC}"
 
+	if [ "${method}" = "resources/subscribe" ]; then
+		MCPBASH_RESOURCE_POLL_WANTED=true
+	fi
+	case "${method}" in
+	resources/subscribe | resources/unsubscribe)
+		# Runs here, in request order, before either worker starts; see
+		# mcp_resources_subscription_note_dispatch.
+		mcp_resources_subscription_note_dispatch "${method}" "${json_line}" "${id_json}" || true
+		;;
+	esac
+
 	if [ "${async}" = "true" ]; then
 		mcp_core_spawn_worker "${handler}" "${method}" "${json_line}" "${id_json}"
 	else
@@ -1213,7 +1247,11 @@ mcp_core_handle_cancel_notification() {
 		return 0
 	fi
 
-	cancel_id="$(mcp_json_extract_cancel_id "${json_line}")"
+	# The extractor fails when there is no usable id (missing, null or false
+	# requestId, non-object params) and always in minimal mode. A notification
+	# gets no response, so such a cancel is dropped; under set -e an unguarded
+	# failure here would end the server.
+	cancel_id="$(mcp_json_extract_cancel_id "${json_line}")" || cancel_id=""
 	if [ -z "${cancel_id}" ]; then
 		return 0
 	fi
@@ -1294,7 +1332,7 @@ mcp_core_get_id_key() {
 
 mcp_core_method_allowed_preinit() {
 	case "$1" in
-	initialize | notifications/initialized | notifications/cancelled | shutdown | exit)
+	initialize | notifications/initialized | notifications/cancelled | ping | shutdown | exit)
 		return 0
 		;;
 	*)
@@ -1556,6 +1594,9 @@ mcp_core_start_progress_flusher() {
 		# fail (e.g., Git Bash background quirks).
 		set +e
 		while :; do
+			# $$ is the server's PID even in this subshell. Exit with it: a server
+			# killed without cleanup (SIGKILL, crash) cannot stop this loop.
+			kill -0 "$$" 2>/dev/null || exit 0
 			if [ "${MCPBASH_ENABLE_LIVE_PROGRESS:-false}" = "true" ]; then
 				mcp_core_flush_worker_streams_once || true
 			fi
@@ -1609,8 +1650,13 @@ mcp_core_start_resource_poll() {
 	fi
 
 	(
+		# Like the flusher: one failed iteration (for example a record removed
+		# by an unsubscribe mid-poll) must not end polling for the session.
+		set +e
 		while :; do
-			mcp_resources_poll_subscriptions
+			# Exit with the server ($$ is its PID here too); see the flusher.
+			kill -0 "$$" 2>/dev/null || exit 0
+			mcp_resources_poll_subscriptions || true
 			sleep "${interval}"
 		done
 	) &

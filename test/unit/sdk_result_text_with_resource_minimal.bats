@@ -101,18 +101,29 @@ jq_get() {
 # Test 4: MIME fallback in minimal mode
 # ============================================================================
 
-@test "sdk_result_text_with_resource_minimal: MIME fallback when auto-detect unavailable" {
+@test "sdk_result_text_with_resource_minimal: no --mime leaves mimeType null" {
 	local test_file="${TEST_TMPDIR}/test.bin"
 	printf '\x00\x01\x02' > "${test_file}"
 
-	# In minimal mode, MIME detection will use fallback
+	# The SDK no longer guesses: the server detects the type when it embeds.
 	result=$(mcp_result_text_with_resource '{"done":true}' --path "${test_file}")
 	jq_check "$result" '.isError == false'
 
-	# Should have a MIME type (fallback to application/octet-stream)
+	local res_content
+	res_content=$(cat "${MCP_TOOL_RESOURCES_FILE}")
+	jq_check "$res_content" '.[0] | has("mimeType") and .mimeType == null'
+}
+
+@test "sdk_result_text_with_resource_minimal: --mime is written as given" {
+	local test_file="${TEST_TMPDIR}/test.md"
+	printf '# hi\n' > "${test_file}"
+
+	result=$(mcp_result_text_with_resource '{"done":true}' --path "${test_file}" --mime "text/markdown")
+	jq_check "$result" '.isError == false'
+
 	local res_content
 	res_content=$(cat "${MCP_TOOL_RESOURCES_FILE}")
 	local mime
 	mime=$(jq_get "$res_content" '.[0].mimeType')
-	assert_equal "application/octet-stream" "$mime"
+	assert_equal "text/markdown" "$mime"
 }

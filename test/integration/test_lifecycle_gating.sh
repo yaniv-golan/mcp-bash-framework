@@ -64,6 +64,19 @@ run_requests "${WORKSPACE}/preinit.ndjson" "${WORKSPACE}/preinit.resp"
 resp_file="${WORKSPACE}/preinit.resp"
 assert_error_code "${resp_file}" "pre" "-32000" "Server not initialized"
 
+# 1b) Ping before initialize is allowed (MCP lifecycle: only pings before the
+#     initialize response); other requests still get -32000.
+cat <<'JSON' >"${WORKSPACE}/preinit-ping.ndjson"
+{"jsonrpc":"2.0","id":"ping-first","method":"ping"}
+{"jsonrpc":"2.0","id":"pre2","method":"tools/list"}
+JSON
+run_requests "${WORKSPACE}/preinit-ping.ndjson" "${WORKSPACE}/preinit-ping.resp"
+resp_file="${WORKSPACE}/preinit-ping.resp"
+if ! jq -e 'select(.id=="ping-first") | .result == {} and (has("error") | not)' "${resp_file}" >/dev/null; then
+	test_fail "ping before initialize did not return {} result"
+fi
+assert_error_code "${resp_file}" "pre2" "-32000" "Server not initialized"
+
 # 2) Double initialize should error on second call.
 cat <<'JSON' >"${WORKSPACE}/double-init.ndjson"
 {"jsonrpc":"2.0","id":"init1","method":"initialize","params":{}}

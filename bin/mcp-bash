@@ -49,6 +49,7 @@ Usage:
                            [--timeout SECS] [--verbose] [--no-refresh]
                            [--minimal] [--project-root DIR] [--print-env]
                            [--allow-self] [--allow TOOL] [--allow-all]
+                           [--with-server-env] [--source FILE]...
   mcp-bash scaffold tool <name> [--ui]
   mcp-bash scaffold prompt <name>
   mcp-bash scaffold resource <name>
@@ -57,11 +58,13 @@ Usage:
   mcp-bash scaffold ui [name] --tool T  # create UI for tool T (name defaults to T)
   mcp-bash scaffold test   # create test harness for project
   mcp-bash validate [--project-root DIR] [--fix] [--json]
-                     [--explain-defaults] [--strict]
+                     [--explain-defaults] [--strict] [--inspector]
                            # validate project structure and metadata
-  mcp-bash config [--project-root DIR] [--show|--json|--client NAME|--wrapper|--inspector]
+  mcp-bash config [--project-root DIR] [--show|--json|--client NAME|--wrapper|--wrapper-env|--inspector]
                            # print MCP client configuration snippets
-  mcp-bash doctor          # diagnose environment and installation issues
+  mcp-bash doctor [--json] [--dry-run|--fix] [--min-version X.Y.Z]
+                           # diagnose environment and installation issues
+                           # (see mcp-bash doctor --help for upgrade options)
   mcp-bash registry refresh [--project-root DIR] [--no-notify] [--quiet] [--filter PATH]
   mcp-bash registry status [--project-root DIR]
   mcp-bash vendor [--output DIR] [--upgrade] [--verify] [--dry-run] [--verbose]

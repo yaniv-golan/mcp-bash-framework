@@ -361,7 +361,7 @@ mcp_ui_template_form() {
 	# JavaScript for form handling with MCP Apps SDK
 	cat <<SCRIPT
   <script type="module">
-    import { App } from 'https://cdn.jsdelivr.net/npm/@modelcontextprotocol/ext-apps/+esm';
+    import { App } from 'https://cdn.jsdelivr.net/npm/@modelcontextprotocol/ext-apps@2.0.3/+esm';
 
     const form = document.getElementById('form');
     const app = new App({ name: "Form App", version: "1.0.0" });
@@ -390,7 +390,11 @@ mcp_ui_template_form() {
       const finalArgs = { ...submitArgs, ...data };
 
       try {
-        const result = await app.callTool('${submit_tool}', finalArgs);
+        const result = await app.callServerTool({ name: '${submit_tool}', arguments: finalArgs });
+        if (result && result.isError) {
+          const detail = (result.content || []).map((c) => c.text || '').join(' ').trim();
+          throw new Error(detail || 'Tool returned an error');
+        }
         showMessage('Form submitted successfully');
         app.sendMessage('Form submitted: ' + JSON.stringify(data));
       } catch (err) {
@@ -449,7 +453,7 @@ mcp_ui_template_data_table() {
 	# JavaScript for data table
 	cat <<SCRIPT
   <script type="module">
-    import { App } from 'https://cdn.jsdelivr.net/npm/@modelcontextprotocol/ext-apps/+esm';
+    import { App } from 'https://cdn.jsdelivr.net/npm/@modelcontextprotocol/ext-apps@2.0.3/+esm';
 
     const columns = ${columns};
     const tbody = document.getElementById('tableBody');
@@ -544,7 +548,7 @@ mcp_ui_template_progress() {
 	# JavaScript for progress tracking
 	cat <<SCRIPT
   <script type="module">
-    import { App } from 'https://cdn.jsdelivr.net/npm/@modelcontextprotocol/ext-apps/+esm';
+    import { App } from 'https://cdn.jsdelivr.net/npm/@modelcontextprotocol/ext-apps@2.0.3/+esm';
 
     const progressFill = document.getElementById('progressFill');
     const progressPercent = document.getElementById('progressPercent');
@@ -596,7 +600,10 @@ mcp_ui_template_progress() {
         const confirmMsg = '${cancel_confirm}';
         if (confirm(confirmMsg)) {
           try {
-            await app.callTool('${cancel_tool}', {});
+            const cancelResult = await app.callServerTool({ name: '${cancel_tool}', arguments: {} });
+            if (cancelResult && cancelResult.isError) {
+              throw new Error('Cancel tool returned an error');
+            }
             app.sendMessage('Operation cancelled');
           } catch (err) {
             console.error('Cancel failed:', err);
@@ -790,7 +797,7 @@ DIFF_STYLES
 	# JavaScript for diff viewer
 	cat <<SCRIPT
   <script type="module">
-    import { App } from 'https://cdn.jsdelivr.net/npm/@modelcontextprotocol/ext-apps/+esm';
+    import { App } from 'https://cdn.jsdelivr.net/npm/@modelcontextprotocol/ext-apps@2.0.3/+esm';
 
     const diffPanels = document.getElementById('diffPanels');
     const leftContent = document.getElementById('leftContent');
@@ -1051,7 +1058,7 @@ TREE_STYLES
 	# JavaScript for tree view
 	cat <<SCRIPT
   <script type="module">
-    import { App } from 'https://cdn.jsdelivr.net/npm/@modelcontextprotocol/ext-apps/+esm';
+    import { App } from 'https://cdn.jsdelivr.net/npm/@modelcontextprotocol/ext-apps@2.0.3/+esm';
 
     const treeRoot = document.getElementById('treeRoot');
     const treeStats = document.getElementById('treeStats');
@@ -1173,7 +1180,7 @@ TREE_STYLES
 
             const nodeId = content.dataset.nodeId;
             if (onSelectTool) {
-              app.callTool(onSelectTool, { nodeId });
+              app.callServerTool({ name: onSelectTool, arguments: { nodeId } }).catch((err) => console.error('Select failed:', err));
             }
             app.sendMessage('Selected: ' + nodeId);
           }
@@ -1373,7 +1380,7 @@ KANBAN_STYLES
 	# JavaScript for kanban board
 	cat <<SCRIPT
   <script type="module">
-    import { App } from 'https://cdn.jsdelivr.net/npm/@modelcontextprotocol/ext-apps/+esm';
+    import { App } from 'https://cdn.jsdelivr.net/npm/@modelcontextprotocol/ext-apps@2.0.3/+esm';
 
     const kanbanBoard = document.getElementById('kanbanBoard');
     const columnsConfig = ${columns_config};
@@ -1447,7 +1454,7 @@ KANBAN_STYLES
         card.addEventListener('click', () => {
           const cardId = card.dataset.cardId;
           if (onCardClickTool) {
-            app.callTool(onCardClickTool, { cardId });
+            app.callServerTool({ name: onCardClickTool, arguments: { cardId } }).catch((err) => console.error('Card click failed:', err));
           }
           app.sendMessage('Card clicked: ' + cardId);
         });
@@ -1499,7 +1506,7 @@ KANBAN_STYLES
 
                 // Notify server
                 if (onMoveTool) {
-                  app.callTool(onMoveTool, { cardId, fromColumn: oldColumn, toColumn: newColumn });
+                  app.callServerTool({ name: onMoveTool, arguments: { cardId, fromColumn: oldColumn, toColumn: newColumn } }).catch((err) => console.error('Move failed:', err));
                 }
                 app.sendMessage('Moved card ' + cardId + ' to ' + newColumn);
 

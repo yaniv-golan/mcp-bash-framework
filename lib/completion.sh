@@ -214,9 +214,12 @@ mcp_completion_apply_manual_json() {
 		fi
 		timeout="$(printf '%s' "${entry}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.timeoutSecs // ""' 2>/dev/null || printf '')"
 		local timeout_arg=""
-		if [ -n "${timeout}" ] && [[ "${timeout}" =~ ^-?[0-9]+$ ]]; then
+		if [ -n "${timeout}" ] && [[ "${timeout}" =~ ^[0-9]+$ ]] && [ "${#timeout}" -le 6 ]; then
 			timeout_arg="true"
 		else
+			if [ -n "${timeout}" ]; then
+				mcp_logging_warning "${MCP_COMPLETION_LOGGER}" "Completion ${name}: ignoring invalid timeoutSecs '${timeout}' (expected a non-negative whole number); using the default"
+			fi
 			timeout=""
 		fi
 		if ! "${MCPBASH_JSON_TOOL_BIN}" -n \
@@ -444,6 +447,24 @@ mcp_completion_resource_script() {
 	return 1
 }
 
+# Resource templates have no content path, so their completion script is found
+# by template name: resources/<name>.completion[.sh] or
+# resources/<name>/<name>.completion[.sh] (the scaffold's directory layout).
+mcp_completion_template_script() {
+	local name="$1"
+	case "${name}" in
+	'' | .* | */* | *..*) return 1 ;;
+	esac
+	local candidate
+	for candidate in "${name}.completion.sh" "${name}.completion" "${name}/${name}.completion.sh" "${name}/${name}.completion"; do
+		if [ -x "${MCPBASH_RESOURCES_DIR}/${candidate}" ]; then
+			printf '%s' "${candidate}"
+			return 0
+		fi
+	done
+	return 1
+}
+
 # Timeout for per-prompt and per-resource completion scripts, which have no
 # registration entry to carry timeoutSecs. Completions run on every keystroke,
 # so a hung script must not hold a worker. Operators can change it with
@@ -455,6 +476,30 @@ mcp_completion_default_timeout() {
 	esac
 	[ "${value}" -eq 0 ] && value=""
 	printf '%s' "${value}"
+}
+
+# Timeout for registered completions that do not set timeoutSecs. Override with
+# MCPBASH_COMPLETION_REGISTERED_TIMEOUT_SECS (whole seconds; 0 disables).
+mcp_completion_registered_default_timeout() {
+	local value="${MCPBASH_COMPLETION_REGISTERED_TIMEOUT_SECS:-30}"
+	case "${value}" in
+	'' | *[!0-9]* | ???????*) value=30 ;; # not a number, or more than 6 digits
+	esac
+	[ "${value}" -eq 0 ] && value=""
+	printf '%s' "${value}"
+}
+
+# Effective timeout for a registered completion entry. An explicit timeoutSecs
+# wins, and 0 means "no timeout". Absent or invalid values use the default.
+mcp_completion_registered_timeout() {
+	local entry="$1" value
+	value="$(printf '%s' "${entry}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.timeoutSecs // ""' 2>/dev/null || true)"
+	if [ -n "${value}" ] && [[ "${value}" =~ ^[0-9]+$ ]] && [ "${#value}" -le 6 ]; then
+		[ "${value}" -eq 0 ] && value=""
+		printf '%s' "${value}"
+		return 0
+	fi
+	mcp_completion_registered_default_timeout
 }
 
 mcp_completion_select_provider() {
@@ -483,7 +528,7 @@ mcp_completion_select_provider() {
 		MCP_COMPLETION_PROVIDER_TYPE="manual"
 		MCP_COMPLETION_PROVIDER_SCRIPT="${script_rel}"
 		MCP_COMPLETION_PROVIDER_SCRIPT_KEY="manual:${script_rel}"
-		MCP_COMPLETION_PROVIDER_TIMEOUT="$(printf '%s' "${entry}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.timeoutSecs // ""' 2>/dev/null)"
+		MCP_COMPLETION_PROVIDER_TIMEOUT="$(mcp_completion_registered_timeout "${entry}")"
 		return 0
 	fi
 
@@ -513,6 +558,18 @@ mcp_completion_select_provider() {
 		fi
 	fi
 
+	if metadata="$(mcp_resources_template_metadata_for_name "${name}")"; then
+		if script_rel="$(mcp_completion_template_script "${name}")"; then
+			MCP_COMPLETION_PROVIDER_TYPE="resource"
+			MCP_COMPLETION_PROVIDER_METADATA="${metadata}"
+			MCP_COMPLETION_PROVIDER_SCRIPT="${script_rel}"
+			MCP_COMPLETION_PROVIDER_RESOURCE_URI="$(printf '%s' "${metadata}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.uriTemplate // ""' 2>/dev/null)"
+			MCP_COMPLETION_PROVIDER_SCRIPT_KEY="resource:${script_rel}"
+			MCP_COMPLETION_PROVIDER_TIMEOUT="$(mcp_completion_default_timeout)"
+			return 0
+		fi
+	fi
+
 	MCP_COMPLETION_PROVIDER_TYPE="builtin"
 	# shellcheck disable=SC2034
 	MCP_COMPLETION_PROVIDER_SCRIPT_KEY="builtin:${name}"
@@ -524,9 +581,9 @@ mcp_completion_normalize_output() {
 	local limit="${2:-5}"
 	local start="${3:-0}"
 	local out=""
+	# The script output goes on stdin: it can outgrow what one argument may hold.
 	if ! out="$(
-		"${MCPBASH_JSON_TOOL_BIN}" -n -c \
-			--arg raw "${script_output}" \
+		printf '%s' "${script_output}" | "${MCPBASH_JSON_TOOL_BIN}" -c -R -s \
 			--argjson limit "${limit}" \
 			--argjson start "${start}" '
 				def parse($text):
@@ -543,7 +600,8 @@ mcp_completion_normalize_output() {
 					else error("suggestions must be string[]")
 					end;
 
-				(parse($raw)) as $payload
+				. as $raw
+				| (parse($raw)) as $payload
 				| if $payload == null then
 					{suggestions: [], hasMore: false, next: null, cursor: ""}
 				elif ($payload | type) == "array" then
@@ -593,17 +651,15 @@ mcp_completion_builtin_generate() {
 	fi
 	base="${base_candidate}"
 
+	# The client's query goes on stdin: it can outgrow what one argument may hold.
 	printf '%s' "$(
-		"${MCPBASH_JSON_TOOL_BIN}" -n -c \
-			--arg base "${base}" \
-			--arg base_snippet "${base} snippet" \
-			--arg base_example "${base} example" \
+		printf '%s' "${base}" | "${MCPBASH_JSON_TOOL_BIN}" -c -R -s \
 			--argjson limit "${limit}" \
 			--argjson offset "${offset}" '
 				[
-					$base,
-					$base_snippet,
-					$base_example
+					.,
+					. + " snippet",
+					. + " example"
 				] as $candidates
 				| ($candidates[$offset:$offset+$limit]) as $limited
 				| ($limited | length) as $count
@@ -839,7 +895,11 @@ mcp_completion_add_text() {
 		mcp_completion_has_more=true
 		return 1
 	fi
-	if ! mcp_completion_suggestions="$(printf '%s' "${mcp_completion_suggestions}" | "${MCPBASH_JSON_TOOL_BIN}" -c --arg text "${text}" '. + [$text]' 2>/dev/null)"; then
+	# Both go on stdin: the list can outgrow what one argument may hold.
+	if ! mcp_completion_suggestions="$({
+		printf '%s\n' "${mcp_completion_suggestions}"
+		printf '%s' "${text}" | "${MCPBASH_JSON_TOOL_BIN}" -R -s '.'
+	} | "${MCPBASH_JSON_TOOL_BIN}" -c -s '.[0] + [.[1]]' 2>/dev/null)"; then
 		mcp_completion_suggestions="[]"
 		return 1
 	fi
@@ -856,11 +916,14 @@ mcp_completion_add_json() {
 	fi
 	# Legacy internal completion items were content objects; completions are now string-only.
 	# Accept only JSON strings here (callers should use mcp_completion_add_text for plain strings).
+	# Both go on stdin: the list can outgrow what one argument may hold.
 	if ! mcp_completion_suggestions="$(
-		"${MCPBASH_JSON_TOOL_BIN}" -n -c \
-			--argjson list "${mcp_completion_suggestions}" \
-			--arg raw "${json_payload:-""}" '
-				(try ($raw | fromjson) catch null) as $payload
+		{
+			printf '%s\n' "${mcp_completion_suggestions}"
+			printf '%s' "${json_payload:-""}" | "${MCPBASH_JSON_TOOL_BIN}" -R -s '.'
+		} | "${MCPBASH_JSON_TOOL_BIN}" -c -s '
+				.[0] as $list | .[1] as $raw
+				| (try ($raw | fromjson) catch null) as $payload
 				| if $payload == null then error("invalid json") else . end
 				| if ($payload | type) != "string" then error("completion items must be strings") else . end
 				| ($list // []) + [$payload]
@@ -879,12 +942,13 @@ mcp_completion_finalize() {
 	fi
 	local cursor="${mcp_completion_cursor}"
 	local out=""
+	# The suggestions go on stdin: they can outgrow what one argument may hold.
 	if ! out="$(
-		"${MCPBASH_JSON_TOOL_BIN}" -n -c \
-			--argjson suggestions "${mcp_completion_suggestions}" \
+		printf '%s' "${mcp_completion_suggestions}" | "${MCPBASH_JSON_TOOL_BIN}" -c \
 			--argjson has_more "${has_more_json}" \
 			--arg cursor "${cursor}" '
-				def base:
+				. as $suggestions
+				| def base:
 					{completion: {values: $suggestions, hasMore: ($has_more == true)}};
 				if $cursor == "" then
 					base

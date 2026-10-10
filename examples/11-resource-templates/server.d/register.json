@@ -3,7 +3,7 @@
   "resourceTemplates": [
     {
       "name": "project-files",
-      "uriTemplate": "file:///{path}",
+      "uriTemplate": "file:///{+path}",
       "description": "Manual override with annotations applied",
       "annotations": {"audience": ["assistant"]}
     },

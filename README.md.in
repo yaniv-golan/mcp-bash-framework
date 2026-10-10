@@ -82,7 +82,7 @@ mcp-bash targets the **2025-11-25** MCP specification with negotiated downgrades
 | Utilities | ✅ Full | Progress, cancellation, logging, completion |
 | Elicitation | ✅ Full | Form, URL, enum, multi-choice modes |
 | Roots | ✅ Full | Server→client request, listChanged |
-| MCP Apps (UI) | ⚠️ Partial | `ui://` resources, templates; interactivity blocked by [host bug](https://github.com/modelcontextprotocol/ext-apps/issues/386) |
+| MCP Apps (UI) | ⚠️ Partial | `ui://` resources, templates; UI-initiated tool calls depend on host support |
 
 **Not yet implemented:** Audio content, sampling. Tasks (async job/poll) and server-identity discovery are HTTP-oriented and not applicable to stdio.
 
@@ -169,7 +169,7 @@ bash install.sh --verify <sha256-from-SHA256SUMS> --version @VERSION@
 
 ### 1.5 Verify It Works (30 seconds)
 
-Security defaults: hooks are disabled unless `MCPBASH_ALLOW_PROJECT_HOOKS=true`, and tools require an explicit allowlist (`MCPBASH_TOOL_ALLOWLIST=*` to allow all in trusted projects).
+Security defaults: the `server.d/register.sh` hook is disabled unless `MCPBASH_ALLOW_PROJECT_HOOKS=true` (`server.d/policy.sh` and `register.json` are always loaded), and tools require an explicit allowlist (`MCPBASH_TOOL_ALLOWLIST=*` to allow all in trusted projects).
 
 ```bash
 mcp-bash doctor
@@ -270,7 +270,7 @@ mcp-bash is **secure by default**. Here's what that means:
 | Layer | Default | What it does |
 |-------|---------|--------------|
 | **Tool allowlist** | Deny all | Tools won't run unless explicitly listed in `MCPBASH_TOOL_ALLOWLIST` |
-| **Hooks** | Disabled | Project hooks (`server.d/*.sh`) are ignored unless `MCPBASH_ALLOW_PROJECT_HOOKS=true` |
+| **Hooks** | Disabled | `server.d/register.sh` is not executed unless `MCPBASH_ALLOW_PROJECT_HOOKS=true`. `server.d/policy.sh` is always sourced, so treat it as trusted code; `server.d/health-checks.sh` runs only under `mcp-bash --health`; `server.d/env.sh` is only sourced by `run-tool --with-server-env` |
 | **Tool environment** | Minimal | Tools inherit only essential vars (`PATH`, `HOME`, `TMPDIR`, `LANG`, Windows system vars, and `MCP_*`/`MCPBASH_*`). Use `MCPBASH_TOOL_ENV_MODE` to change, or declare it in `server.meta.json` `"env"` |
 
 ### Quick reference
@@ -285,7 +285,7 @@ MCPBASH_TOOL_ALLOWLIST="tool1,tool2"
 # Allow all tools (trusted projects only)
 MCPBASH_TOOL_ALLOWLIST="*"
 
-# Enable project hooks (server.d/*.sh)
+# Enable the registration hook (server.d/register.sh)
 MCPBASH_ALLOW_PROJECT_HOOKS=true
 
 # Tool environment modes
@@ -505,10 +505,10 @@ Use `run-tool` to invoke a single tool without starting the full MCP server. Thi
 
 ```bash
 # Basic invocation (project inferred from CWD or MCPBASH_PROJECT_ROOT)
-mcp-bash run-tool my-tool --args '{"value":"hello"}'
+mcp-bash run-tool my-tool --allow-self --args '{"value":"hello"}'
 
 # Simulate roots (comma-separated), stream stderr, override timeout, or print env
-mcp-bash run-tool my-tool --args '{"value":"hi"}' --roots /tmp/project,/data/shared --verbose --timeout 15
+mcp-bash run-tool my-tool --allow-self --args '{"value":"hi"}' --roots /tmp/project,/data/shared --verbose --timeout 15
 # Inspect wiring without executing
 mcp-bash run-tool my-tool --print-env --dry-run
 
@@ -516,7 +516,7 @@ mcp-bash run-tool my-tool --print-env --dry-run
 mcp-bash run-tool my-tool --dry-run
 ```
 
-Flags: `--args` (JSON object), `--roots` (comma-separated paths), `--dry-run`, `--timeout <secs>`, `--verbose` (stream tool stderr), `--no-refresh` (reuse cached registry), `--minimal` (force degraded mode), `--project-root <dir>`, `--print-env` (dump wiring without executing). Elicitation is not supported in CLI mode.
+Flags: `--args` (JSON object), `--roots` (comma-separated paths), `--dry-run`, `--timeout <secs>`, `--verbose` (stream tool stderr), `--no-refresh` (reuse cached registry), `--minimal` (force degraded mode), `--project-root <dir>`, `--print-env` (dump wiring without executing), `--allow-self` / `--allow TOOL` / `--allow-all` (allowlist this run; tools are denied by default), `--with-server-env` (source `server.d/env.sh` first), `--source FILE` (source a file first; repeatable). Elicitation is not supported in CLI mode.
 
 The scaffolder and examples use per-tool directories (e.g., `tools/check-disk/tool.sh`); automatic discovery requires tools to live under subdirectories of `tools/` (root-level scripts are not discovered).
 
@@ -568,11 +568,13 @@ Paths are resolved relative to `MCPBASH_PROJECT_ROOT`, and registry refreshes pi
 
 ## Tool Policy Hook (optional)
 
-Projects can gate tool execution centrally by adding `server.d/policy.sh` with `mcp_tools_policy_check()`. The framework calls this before every tool run (default: allow all).
+Projects can gate tool execution centrally by adding `server.d/policy.sh` with `mcp_tools_policy_check()`. The framework calls this before every tool run. The built-in policy denies every tool unless it is allowlisted (`MCPBASH_TOOL_ALLOWLIST`, or `--allow-self` for `run-tool`).
 
 ```bash
 # server.d/policy.sh
 mcp_tools_policy_check() {
+	# Keep the default policy (deny-by-default allowlist, tool path checks).
+	mcp_tools_policy_check_default "$@" || return 1
 	local tool_name="$1"
 	if [ "${MYPROJECT_READ_ONLY:-0}" = "1" ] && [[ "${tool_name}" != myProj.get* ]]; then
 		mcp_tools_error -32602 "Read-only mode: ${tool_name} disabled"
@@ -581,6 +583,8 @@ mcp_tools_policy_check() {
 	return 0
 }
 ```
+
+Defining `mcp_tools_policy_check` **replaces** the built-in policy, including the deny-by-default allowlist (`MCPBASH_TOOL_ALLOWLIST`) and tool path checks, so start it with `mcp_tools_policy_check_default "$@" || return 1` and add your rules after it; `mcp-bash validate` and `doctor` warn when it doesn't. This guards against accidentally widening access, not against a hostile project: `policy.sh` is trusted shell code sourced at startup and can redefine anything.
 
 Use `-32602` for policy/invalid-params blocks, `-32600` for capability/auth failures. Keep logic lightweight; the hook runs on every invocation.
 
@@ -601,7 +605,7 @@ The [`examples/`](examples/) directory shows common patterns end-to-end:
 | [**08-elicitation**](examples/08-elicitation/) | Client-driven elicitation prompts that gate tool execution. |
 | [**09-registry-overrides**](examples/09-registry-overrides/) | Declarative registry overrides, live progress streaming, and a custom resource provider. |
 | [**10-completions**](examples/10-completions/) | Completion registration, query filtering, and pagination/hasMore. |
-| [**11-resource-templates**](examples/11-resource-templates/) | Resource template discovery, manual overrides, and client-side expansion. |
+| [**11-resource-templates**](examples/11-resource-templates/) | Resource template discovery, manual overrides, client-side expansion, and template-aware reads. |
 | [**Advanced: ffmpeg-studio**](examples/advanced/ffmpeg-studio/) | Real-world application: video processing pipeline with media inspection (optional, heavy deps). |
 
 ## Features at a Glance
@@ -769,7 +773,7 @@ See [docs/WINDOWS.md](docs/WINDOWS.md) for full guidance and workarounds.
 - [**Roots**](docs/ROOTS.md) - Roots/list flow, env wiring, validation, and fallbacks.
 - [**Completions**](docs/COMPLETION.md) - Manual registration, provider types, pagination, and script contracts.
 - [**Registry**](docs/REGISTRY.md) - Registry envelopes, TTL, manual registration, and cache formats.
-- [**Resource Templates**](docs/RESOURCE-TEMPLATES.md) - Auto/manual discovery, pagination, collisions, and client-side expansion.
+- [**Resource Templates**](docs/RESOURCE-TEMPLATES.md) - Auto/manual discovery, pagination, collisions, client-side expansion, and template-aware `resources/read`.
 - [**Limits & Performance**](docs/LIMITS.md) - Concurrency, payload ceilings, throttling.
 - [**Errors**](docs/ERRORS.md) - Protocol errors vs tool execution errors (SEP-1303).
 - [**Best Practices**](docs/BEST-PRACTICES.md) - Development, testing, operations guidance.

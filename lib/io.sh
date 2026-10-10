@@ -422,7 +422,18 @@ mcp_io_write_payload() {
 		return 1
 	fi
 
-	if ! printf '%s\n' "${normalized}"; then
+	# bash 3.2 keeps the bytes of a failed builtin printf in its stdout buffer,
+	# and every later $(...) inherits and flushes them into its result. After a
+	# write to a closed stdout (host ignoring SIGPIPE) the server then built
+	# paths out of the payload and spun forever. Writing from a subshell leaves
+	# the stale buffer in the child. bash 4+ discards it, so no fork there.
+	local write_ok=true
+	if [ "${BASH_VERSINFO[0]}" -lt 4 ]; then
+		(printf '%s\n' "${normalized}") || write_ok=false
+	else
+		printf '%s\n' "${normalized}" || write_ok=false
+	fi
+	if [ "${write_ok}" != true ]; then
 		mcp_io_handle_corruption "stdout write failure" "${key}" "${category}" "${normalized}"
 		return 1
 	fi

@@ -130,8 +130,20 @@ Entries describe resources and providers. Paths are relative to `MCPBASH_RESOURC
 - Metadata that cannot be parsed (missing `uri` or `uriTemplate`, unsupported `provider`, non-object `arguments`, unreadable `.meta.json`) is skipped and logged as a warning through the structured logging subsystem.
 - When no `provider` is specified, the scanner infers one from the URI scheme (`file://`, `git+https://`, `https://`, `ui://`). Any other scheme maps to a project provider of the same name when `${MCPBASH_PROVIDERS_DIR}/<scheme>.sh` exists (e.g., `myapi://status` → `providers/myapi.sh`); otherwise it defaults to `file` and is rejected if the provider script is unavailable. The file name must match the scheme exactly, including case. Manual registration (`register.sh` / `register.json`) does not infer custom providers: set `provider` explicitly.
 - Discovery records `name`, `description`, `path`, `uri`, `mimeType`, and `provider`; argument/template schemas are not persisted today.
+- **`mimeType` is a label; detection decides the encoding.**
+  - **Declared:** when a resource sets a non-empty string `mimeType` (in `.meta.json`, `mcp_register_resource` in `register.sh`, or `register.json`), `resources/read` reports it exactly as written.
+  - **Omitted:** detection (`file --mime`) labels the content; without `file`, the label is `text/plain`.
+  - **Encoding:** either way, detection decides whether content is sent as `text` or as a base64 `blob`. Content is a blob when `file` reports a binary type, when the first 1 KB holds a NUL byte, or when the declared type is a binary class (`image/*`, `audio/*`, `video/*`, `application/pdf`, `application/octet-stream`, zip/gzip/bzip2/xz). A declared `text/plain` on a PDF is still sent as a blob, and a declared text type the framework does not know (such as `application/toml`) stays text.
+  - **Inline headers:** the inline `# mcp:` header does not read `mimeType`, so those resources are always labelled by detection. Use a `.meta.json` file to declare one.
+  - **Registry flag:** the registry marks declared entries with an internal `mimeTypeDeclared: true`, computed by the framework (a value supplied in `register.json` is ignored). `resources/list` does not expose it. Caches written by older versions have no flag and are treated as undeclared.
+  - **Validation:** `mcp-bash validate` warns when a file-provider resource's declared `mimeType` clearly disagrees with its file, for example `text/plain` on a PDF or on JSON.
 - The `file` provider fails closed if no resource roots are configured; missing/non-existent roots are ignored, so ensure allowed roots exist before use.
 - Subscription notifications (`notifications/resources/updated`) are spec-shaped and only include `params.uri`; clients should call `resources/read` to fetch the updated content.
+- **Subscriptions:**
+  - `resources/subscribe` takes `{uri}` (or a registered `name`). Its result carries an extra `subscriptionId`; the spec result is empty, and extra fields are allowed.
+  - `resources/unsubscribe` takes `{uri}`, as in the spec, and removes every subscription to that uri on the connection. It also accepts `{subscriptionId}` to remove one subscription.
+  - Unsubscribing a uri or id that is not subscribed succeeds with no effect. A request with neither field returns `-32602`.
+  - Polling starts as soon as the first `resources/subscribe` arrives, so a client that subscribes and then waits still receives updates. The interval is `MCPBASH_RESOURCES_POLL_INTERVAL_SECS` (default `2`).
 
 ## Project-Level Providers
 
@@ -229,10 +241,9 @@ Entries describe resource template patterns, sorted by `name`, and are refreshed
   "items": [
     {
       "name": "project-files",
-      "uriTemplate": "file:///{path}",
+      "uriTemplate": "file:///{+path}",
       "title": "Project Files",
-      "description": "Access any file in the project",
-      "mimeType": "application/octet-stream"
+      "description": "Access any file in the project"
     },
     {
       "name": "logs-by-date",
@@ -245,11 +256,11 @@ Entries describe resource template patterns, sorted by `name`, and are refreshed
 }
 ```
 
-Registry fields mirror the MCP `ResourceTemplate` schema, plus `generatedAt`, `hash`, and `total`.
+Registry fields mirror the MCP `ResourceTemplate` schema, plus `generatedAt`, `hash`, and `total`. Set `mimeType` on a template only if every match has that type; a catch-all such as `file:///{+path}` should leave it out.
 
 ## Resource Templates
 
-The MCP protocol supports **resource templates** — parameterized resources using [RFC 6570 URI templates](https://datatracker.ietf.org/doc/html/rfc6570) (e.g., `file:///{path}`, `logs/{date}.log`). Templates expose families of URIs without enumerating every instance.
+The MCP protocol supports **resource templates** — parameterized resources using [RFC 6570 URI templates](https://datatracker.ietf.org/doc/html/rfc6570) (e.g., `file:///{+path}`, `logs/{date}.log`). Templates expose families of URIs without enumerating every instance.
 
 Key behaviors:
 - Auto-discovery scans `resources/*.meta.json` for `uriTemplate` (string) and ignores entries with `uri` set. If both are present, the entry is skipped with a warning.
@@ -258,6 +269,7 @@ Key behaviors:
 - Discovery results are cached in `.registry/resource-templates.json` with hash-based pagination. TTL is controlled via `MCP_RESOURCES_TEMPLATES_TTL` (default 5s).
 - Changes to templates trigger the existing `notifications/resources/list_changed` path (`MCP_RESOURCES_CHANGED` flag is shared with resources).
 - `resources/templates/list` supports the same `limit` extension as other list endpoints and exposes the full count via `result._meta["mcpbash/total"]`; cursor decoding uses the templates registry hash so stale cursors are rejected after changes.
+- `resources/read` matches a URI against these entries when no resource has that name or exact URI. A matched template's `mimeType` is reported as the content's type, and its name and variables reach the provider as `MCP_RESOURCE_TEMPLATE_NAME` and `MCP_RESOURCE_TEMPLATE_VARS`. Only `{v}`, `{+v}` and `{#v}` are matched; see [RESOURCE-TEMPLATES.md](RESOURCE-TEMPLATES.md#reading-expanded-uris). The registry format is unchanged.
 
 ## Declarative registration (`server.d/register.json`)
 

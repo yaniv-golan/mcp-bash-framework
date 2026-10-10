@@ -24,6 +24,7 @@ TESTS=(
 	"test_concurrency.sh"
 	"test_long_running.sh"
 	"test_output_guard.sh"
+	"test_symlink_race.sh"
 )
 
 passed=0

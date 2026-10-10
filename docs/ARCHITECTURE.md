@@ -76,16 +76,16 @@ Stable modules live under `bin/` and `lib/`, protocol handlers under `handlers/`
 - Responses flow through `rpc_send_line` to guarantee single-line JSON with newline termination and carriage-return scrubbing.
 
 ## Worker model
-- The main loop handles lifecycle/ping/logging synchronously; async methods (`tools/*`, `resources/*`, `prompts/get`, `completion/complete`) spawn workers with per-request state under `${TMPDIR}/mcpbash.state.<ppid>.<bashpid>.<seed>`.
+- The main loop handles lifecycle/ping/logging synchronously; async methods (`tools/*`, `resources/*`, `prompts/get`, `completion/complete`) spawn workers with per-request state under a private `mktemp -d` directory, `${TMPDIR}/mcpbash.state.<ppid>.<bashpid>.XXXXXX`.
 - Workers run in isolated subshells with request-scoped env and use `lib/ids.sh` to encode ids, track `pid.*` and `cancelled.*` markers, and clean up after completion.
-- `lib/lock.sh`/`lib/io.sh` enforce mkdir-based stdout locks under `${TMPDIR}/mcpbash.locks`, strip CR, and validate UTF-8 so each response emits exactly one JSON line.
+- `lib/lock.sh`/`lib/io.sh` enforce mkdir-based stdout locks under the instance lock root (`<state dir>/locks` unless `MCPBASH_LOCK_ROOT` is set), strip CR, and validate UTF-8 so each response emits exactly one JSON line.
 - Cancellation writes `notifications/cancelled`, marks ids, and escalates TERM → KILL on the worker process group; cancellation checks happen while holding the stdout lock.
 - Minimal mode activates when JSON tooling is unavailable; tools/resources/prompts/completion decline requests while lifecycle/ping/logging stay available.
 
 ## Timeouts and cleanup
 - `with_timeout <seconds> -- <command…>` (from `lib/timeout.sh`) runs a watchdog that sends TERM then KILL if a worker outlives the timeout.
 - Async paths honor `params.timeoutSecs` when jq/gojq is present and wrap tool/resource/prompt/completion handlers with `with_timeout`; minimal mode skips per-request overrides.
-- `bin/mcp-bash` traps `EXIT INT TERM` to run `mcp_runtime_cleanup`, removing `${TMPDIR}/mcpbash.state.*` and `${TMPDIR}/mcpbash.locks`.
+- `bin/mcp-bash` traps `EXIT INT TERM` to run `mcp_runtime_cleanup`, removing its own state dir and lock root (never through a symlink). CLI commands remove their private state dir on exit.
 
 ## Handler notes
 

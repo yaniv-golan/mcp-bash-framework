@@ -11,6 +11,7 @@
 : "${MCPBASH_LOCK_ROOT:=}"
 : "${MCPBASH_STATE_DIR:=}"
 : "${MCPBASH_STATE_SEED:=}"
+: "${MCPBASH_STATE_DIR_CREATED:=false}"
 : "${MCPBASH_CLEANUP_REGISTERED:=false}"
 : "${MCPBASH_JOB_CONTROL_ENABLED:=false}"
 : "${MCPBASH_LOG_JSON_TOOL:=quiet}"
@@ -163,6 +164,45 @@ mcp_runtime_find_project_root() {
 	return 1
 }
 
+# The server dir the runtime uses: MCPBASH_SERVER_DIR, else <root>/server.d.
+# Usage: mcp_runtime_effective_server_dir [project_root]
+mcp_runtime_effective_server_dir() {
+	local root="${1:-${MCPBASH_PROJECT_ROOT:-.}}"
+	printf '%s' "${MCPBASH_SERVER_DIR:-${root%/}/server.d}"
+}
+
+# A user-visible label for the server dir: "server.d" by default, the path
+# relative to the project root when MCPBASH_SERVER_DIR is inside it, otherwise
+# just its basename. Never an absolute path (messages can reach MCP clients).
+# Usage: mcp_runtime_server_dir_label [project_root]
+mcp_runtime_server_dir_label() {
+	local root="${1:-${MCPBASH_PROJECT_ROOT:-}}"
+	local dir="${MCPBASH_SERVER_DIR:-}"
+	if [ -z "${dir}" ]; then
+		printf 'server.d'
+		return 0
+	fi
+	root="${root%/}"
+	dir="${dir%/}"
+	local rel=""
+	if [ -n "${root}" ]; then
+		case "${dir}" in
+		"${root}/"*) rel="${dir#"${root}"/}" ;;
+		esac
+		if [ -z "${rel}" ]; then
+			# macOS: /var vs /private/var and similar symlinked prefixes.
+			local phys_root phys_dir
+			phys_root="$(mcp_path_normalize --physical "${root}" 2>/dev/null || printf '%s' "${root}")"
+			phys_dir="$(mcp_path_normalize --physical "${dir}" 2>/dev/null || printf '%s' "${dir}")"
+			case "${phys_dir}" in
+			"${phys_root}/"*) rel="${phys_dir#"${phys_root}"/}" ;;
+			esac
+		fi
+	fi
+	[ -n "${rel}" ] || rel="$(basename "${dir}")"
+	printf '%s' "${rel}"
+}
+
 mcp_runtime_project_not_found_error() {
 	cat >&2 <<'EOF'
 Error: No MCP project found.
@@ -247,9 +287,61 @@ EOF
 	fi
 }
 
+mcp_runtime_make_private_dir() {
+	# Create <base>/<prefix>.XXXXXX with mktemp -d (unpredictable, mode 0700)
+	# and print its path. Fails rather than reuse anything that already exists.
+	local base="$1"
+	local prefix="$2"
+	local dir=""
+	# The base (MCPBASH_TMP_ROOT, RUNNER_TEMP, TMPDIR, /tmp) is the trust root;
+	# create it if missing, as the old mkdir -p of the state dir did.
+	if [ ! -d "${base}" ]; then
+		(umask 077 && mkdir -p "${base}") >/dev/null 2>&1 || return 1
+	fi
+	dir="$( (umask 077 && mktemp -d "${base}/${prefix}.XXXXXX") 2>/dev/null)" || return 1
+	if [ -z "${dir}" ] || [ -L "${dir}" ] || [ ! -d "${dir}" ]; then
+		return 1
+	fi
+	printf '%s' "${dir}"
+}
+
+mcp_runtime_report_symlink_dir() {
+	printf '%s\n' "mcp-bash: refusing to use ${1}=${2}: it is a symlink. Point it at a real directory." >&2
+}
+
+mcp_runtime_prepare_override_dir() {
+	# Ensure an operator-chosen directory exists and is a real directory, not a
+	# symlink. Checked before and after creation.
+	local label="$1"
+	local dir="$2"
+	if [ -L "${dir}" ]; then
+		mcp_runtime_report_symlink_dir "${label}" "${dir}"
+		return 1
+	fi
+	if ! (umask 077 && mkdir -p "${dir}") >/dev/null 2>&1; then
+		printf '%s\n' "mcp-bash: unable to create ${label} directory: ${dir}" >&2
+		printf '%s\n' "mcp-bash: set MCPBASH_TMP_ROOT to a short, writable directory (Windows path length limits may apply)." >&2
+		return 1
+	fi
+	if [ -L "${dir}" ]; then
+		mcp_runtime_report_symlink_dir "${label}" "${dir}"
+		return 1
+	fi
+	if [ ! -d "${dir}" ]; then
+		printf '%s\n' "mcp-bash: ${label} is not a directory: ${dir}" >&2
+		return 1
+	fi
+	return 0
+}
+
 mcp_runtime_init_paths() {
 	local mode="${1:-server}"
 	local allow_bootstrap="${2:-}"
+
+	# Set only by resources/read on a template match (via the provider's
+	# env_pairs). Drop host values before any child starts: MCP_RESOURCE_* passes
+	# the curated provider/tool env, and inherit mode keeps everything.
+	unset MCP_RESOURCE_TEMPLATE_NAME MCP_RESOURCE_TEMPLATE_VARS 2>/dev/null || true
 
 	# CI mode: set safe defaults only when unset.
 	if [ "${MCPBASH_CI_MODE:-false}" = "true" ]; then
@@ -326,88 +418,86 @@ mcp_runtime_init_paths() {
 		MCPBASH_TMP_ROOT="${tmp}"
 	fi
 
-	# State/lock paths - mode-dependent
-	if [ "${mode}" = "cli" ]; then
-		# CLI: simpler paths, shared locks, no cleanup needed
-		if [ -z "${MCPBASH_STATE_DIR}" ]; then
-			MCPBASH_STATE_DIR="${MCPBASH_TMP_ROOT}/mcpbash.state.$$"
-		fi
-		if [ -z "${MCPBASH_LOCK_ROOT}" ]; then
-			MCPBASH_LOCK_ROOT="${MCPBASH_TMP_ROOT}/mcpbash.locks"
-		fi
+	# State/lock directories.
+	#
+	# Defaults are created with mktemp -d (unpredictable name, mode 0700), so a
+	# local user cannot pre-create or symlink them in a shared temp dir. The lock
+	# root lives inside the state dir in both modes; nothing shares a lock root
+	# across processes by default (server instances never did, and the old CLI
+	# ${MCPBASH_TMP_ROOT}/mcpbash.locks only serialised CLI-vs-CLI registry
+	# writes). Operator overrides (MCPBASH_STATE_DIR / MCPBASH_LOCK_ROOT) are
+	# trusted but must not be symlinks.
+	local pid_component=""
+	if [ -n "${BASHPID-}" ]; then
+		pid_component="${BASHPID}"
 	else
-		# Server: instance-isolated paths with cleanup
-		if [ -z "${MCPBASH_STATE_SEED}" ]; then
-			MCPBASH_STATE_SEED="${RANDOM}" # STATE_SEED initialized once per boot.
-		fi
-		local pid_component=""
-		if [ -n "${BASHPID-}" ]; then
-			pid_component="${BASHPID}"
-		else
-			pid_component="$$"
-		fi
-		if [ -z "${MCPBASH_STATE_DIR}" ]; then
-			MCPBASH_STATE_DIR="${MCPBASH_TMP_ROOT}/mcpbash.state.${PPID}.${pid_component}.${MCPBASH_STATE_SEED}"
-		fi
-		# Default lock root is instance-scoped to avoid cross-process interference (e.g., lingering servers on Windows).
-		if [ -z "${MCPBASH_LOCK_ROOT}" ]; then
-			MCPBASH_LOCK_ROOT="${MCPBASH_STATE_DIR}/locks"
-		fi
+		pid_component="$$"
+	fi
+	local state_tag
+	if [ "${mode}" = "cli" ]; then
+		state_tag="$$"
+	else
+		state_tag="${PPID}.${pid_component}"
 	fi
 
-	# Ensure state/lock roots exist. These are required for handler output capture,
-	# watchdog cancellation, and lock operations. If creation fails (often due to
-	# Windows path length issues), retry once with a shorter temp base.
-	local created="false"
-	local attempted=""
-	local base
-	for base in "${MCPBASH_TMP_ROOT}" "${RUNNER_TEMP:-}" "${TMPDIR:-}" "/tmp"; do
-		[ -z "${base}" ] && continue
-		base="$(mcp_runtime_posix_path "${base%/}")"
-		if [ -n "${attempted}" ] && [ "${attempted}" = "${base}" ]; then
-			continue
-		fi
-		attempted="${base}"
-
-		if [ "${base}" != "${MCPBASH_TMP_ROOT}" ]; then
-			MCPBASH_TMP_ROOT="${base}"
-			if [ "${mode}" = "cli" ]; then
-				MCPBASH_STATE_DIR="${MCPBASH_TMP_ROOT}/mcpbash.state.$$"
-				MCPBASH_LOCK_ROOT="${MCPBASH_TMP_ROOT}/mcpbash.locks"
-			else
-				MCPBASH_STATE_DIR="${MCPBASH_TMP_ROOT}/mcpbash.state.${PPID}.${pid_component}.${MCPBASH_STATE_SEED}"
-				MCPBASH_LOCK_ROOT="${MCPBASH_STATE_DIR}/locks"
+	MCPBASH_STATE_DIR_CREATED="false"
+	if [ -n "${MCPBASH_STATE_DIR}" ]; then
+		mcp_runtime_prepare_override_dir "MCPBASH_STATE_DIR" "${MCPBASH_STATE_DIR}" || exit 1
+	else
+		# Retry with fallback bases when creation fails (often Windows path
+		# length limits).
+		local created="false"
+		local attempted=""
+		local base state_dir
+		for base in "${MCPBASH_TMP_ROOT}" "${RUNNER_TEMP:-}" "${TMPDIR:-}" "/tmp"; do
+			[ -z "${base}" ] && continue
+			base="$(mcp_runtime_posix_path "${base%/}")"
+			if [ -n "${attempted}" ] && [ "${attempted}" = "${base}" ]; then
+				continue
 			fi
+			attempted="${base}"
+			if state_dir="$(mcp_runtime_make_private_dir "${base}" "mcpbash.state.${state_tag}")"; then
+				MCPBASH_TMP_ROOT="${base}"
+				MCPBASH_STATE_DIR="${state_dir}"
+				MCPBASH_STATE_DIR_CREATED="true"
+				created="true"
+				break
+			fi
+		done
+		if [ "${created}" != "true" ]; then
+			printf '%s\n' "mcp-bash: unable to create a private state directory under ${MCPBASH_TMP_ROOT}" >&2
+			printf '%s\n' "mcp-bash: set MCPBASH_TMP_ROOT to a short, writable directory (Windows path length limits may apply)." >&2
+			exit 1
 		fi
-
-		if (umask 077 && mkdir -p "${MCPBASH_STATE_DIR}" && mkdir -p "${MCPBASH_LOCK_ROOT}") >/dev/null 2>&1; then
-			created="true"
-			break
-		fi
-	done
-
-	if [ "${created}" != "true" ]; then
-		printf '%s\n' "mcp-bash: unable to create state directory: ${MCPBASH_STATE_DIR}" >&2
-		printf '%s\n' "mcp-bash: set MCPBASH_TMP_ROOT to a short, writable directory (Windows path length limits may apply)." >&2
-		exit 1
 	fi
 
-	# Log directory (CI mode only): default to a dedicated path when unset.
-	if [ "${MCPBASH_CI_MODE:-false}" = "true" ] && [ -z "${MCPBASH_LOG_DIR}" ]; then
-		local log_pid_component
-		if [ -n "${BASHPID-}" ]; then
-			log_pid_component="${BASHPID}"
-		else
-			log_pid_component="$$"
-		fi
-		local log_seed="${MCPBASH_STATE_SEED:-${log_pid_component}}"
-		MCPBASH_LOG_DIR="${MCPBASH_TMP_ROOT}/mcpbash.logs.${PPID}.${log_pid_component}.${log_seed}"
+	if [ -z "${MCPBASH_LOCK_ROOT}" ]; then
+		MCPBASH_LOCK_ROOT="${MCPBASH_STATE_DIR}/locks"
 	fi
+	mcp_runtime_prepare_override_dir "MCPBASH_LOCK_ROOT" "${MCPBASH_LOCK_ROOT}" || exit 1
+
+	# CLI commands have no server cleanup trap; remove the private state dir on
+	# exit unless the caller already owns the EXIT trap.
+	if [ "${mode}" = "cli" ] && [ "${MCPBASH_STATE_DIR_CREATED}" = "true" ] && [ -z "$(trap -p EXIT)" ]; then
+		trap 'mcp_runtime_cleanup_cli_state' EXIT
+	fi
+
+	# Log directory. CI mode defaults to a fresh private dir; an explicit
+	# MCPBASH_LOG_DIR is trusted but must not be a symlink.
 	if [ -n "${MCPBASH_LOG_DIR}" ]; then
 		MCPBASH_LOG_DIR="$(mcp_runtime_posix_path "${MCPBASH_LOG_DIR}")"
-	fi
-	if [ -n "${MCPBASH_LOG_DIR}" ]; then
+		if [ -L "${MCPBASH_LOG_DIR}" ]; then
+			mcp_runtime_report_symlink_dir "MCPBASH_LOG_DIR" "${MCPBASH_LOG_DIR}"
+			exit 1
+		fi
 		(umask 077 && mkdir -p "${MCPBASH_LOG_DIR}") >/dev/null 2>&1 || true
+	elif [ "${MCPBASH_CI_MODE:-false}" = "true" ]; then
+		local log_dir=""
+		if log_dir="$(mcp_runtime_make_private_dir "${MCPBASH_TMP_ROOT}" "mcpbash.logs.${state_tag}")"; then
+			MCPBASH_LOG_DIR="${log_dir}"
+		else
+			printf '%s\n' "mcp-bash: unable to create a CI log directory under ${MCPBASH_TMP_ROOT}; continuing without MCPBASH_LOG_DIR" >&2
+		fi
 	fi
 
 	# Content directories: explicit override → project default
@@ -505,18 +595,18 @@ mcp_runtime_cleanup() {
 		return
 	fi
 
-	if [ -n "${MCPBASH_STATE_DIR}" ] && [ -d "${MCPBASH_STATE_DIR}" ]; then
+	if [ -n "${MCPBASH_STATE_DIR}" ] && { [ -d "${MCPBASH_STATE_DIR}" ] || [ -L "${MCPBASH_STATE_DIR}" ]; }; then
 		if [ "${MCPBASH_KEEP_LOGS:-false}" = "true" ]; then
 			if mcp_runtime_log_allowed; then
 				printf 'mcp-bash: state preserved at %s\n' "${MCPBASH_STATE_DIR}" >&2
 			fi
 		else
-			mcp_runtime_safe_rmrf "${MCPBASH_STATE_DIR}"
+			mcp_runtime_safe_rmrf "${MCPBASH_STATE_DIR}" || true
 		fi
 	fi
 
-	if [ -n "${MCPBASH_LOCK_ROOT}" ] && [ -d "${MCPBASH_LOCK_ROOT}" ]; then
-		mcp_runtime_safe_rmrf "${MCPBASH_LOCK_ROOT}"
+	if [ -n "${MCPBASH_LOCK_ROOT}" ] && { [ -d "${MCPBASH_LOCK_ROOT}" ] || [ -L "${MCPBASH_LOCK_ROOT}" ]; }; then
+		mcp_runtime_safe_rmrf "${MCPBASH_LOCK_ROOT}" || true
 	fi
 
 	mcp_runtime_cleanup_bootstrap
@@ -528,6 +618,10 @@ mcp_runtime_safe_rmrf() {
 		printf '%s\n' "mcp-bash: refusing to remove unsafe path '${target:-/}'" >&2
 		return 1
 	fi
+	if [ -L "${target}" ]; then
+		printf '%s\n' "mcp-bash: refusing to remove '${target}': it is a symlink" >&2
+		return 1
+	fi
 	case "${target}" in
 	"${MCPBASH_TMP_ROOT}"/mcpbash.state.* | "${MCPBASH_TMP_ROOT}"/mcpbash.locks* | "${MCPBASH_TMP_ROOT}"/mcpbash.bootstrap.*)
 		rm -rf "${target}"
@@ -537,6 +631,21 @@ mcp_runtime_safe_rmrf() {
 		return 1
 		;;
 	esac
+}
+
+mcp_runtime_cleanup_cli_state() {
+	# EXIT trap for CLI commands: remove the private state dir created by
+	# mcp_runtime_init_paths "cli" (its lock root lives inside it).
+	if [ "${MCPBASH_STATE_DIR_CREATED}" != "true" ] || [ -z "${MCPBASH_STATE_DIR}" ]; then
+		return 0
+	fi
+	if [ "${MCPBASH_PRESERVE_STATE:-}" = "true" ] || [ "${MCPBASH_KEEP_LOGS:-false}" = "true" ]; then
+		return 0
+	fi
+	if [ -d "${MCPBASH_STATE_DIR}" ] || [ -L "${MCPBASH_STATE_DIR}" ]; then
+		mcp_runtime_safe_rmrf "${MCPBASH_STATE_DIR}" >/dev/null 2>&1 || true
+	fi
+	return 0
 }
 
 mcp_runtime_cleanup_bootstrap() {
@@ -611,9 +720,19 @@ mcp_env_apply_curated_policy() {
 		provider:PATH | provider:HOME | provider:TMPDIR | provider:TMP | provider:TEMP | provider:LANG | provider:LC_ALL) ;;
 		provider:USERPROFILE | provider:APPDATA | provider:SYSTEMROOT | provider:MSYSTEM | provider:MSYS2_ARG_CONV_EXCL) ;;
 		provider:LC_*) ;;
-		provider:MCP_*) ;;
+		# Framework-owned MCP_* families only; keep in sync with lib/tools.sh (tool
+		# env) and lib/meta_env.sh (reserved names). Other MCP_* names need the
+		# allowlist.
+		provider:MCP_SDK | provider:MCP_TOOL_* | provider:MCP_ELICIT_* | provider:MCP_PROGRESS_*) ;;
+		provider:MCP_LOG_STREAM | provider:MCP_CANCEL_FILE | provider:MCP_ROOTS_* | provider:MCP_RESOURCES_ROOTS) ;;
+		provider:MCP_COMPLETION_* | provider:MCP_PROMPT_* | provider:MCP_RESOURCE_*) ;;
+		provider:MCP_CONFIG_JSON | provider:MCP_TRANSPORT | provider:MCP_PATH_DEBUG) ;;
 		provider:MCPBASH_HOME | provider:MCPBASH_PROJECT_ROOT | provider:MCPBASH_RESOURCES_DIR | provider:MCPBASH_PROMPTS_DIR) ;;
 		provider:MCPBASH_ENABLE_GIT_PROVIDER | provider:MCPBASH_GIT_* | provider:MCPBASH_HTTPS_*) ;;
+		# The remote-access secret and its keys: never passed, even if allowlisted.
+		provider:MCPBASH_REMOTE_TOKEN*)
+			to_unset+=("${env_key}")
+			;;
 		provider:*)
 			if [ "${env_mode}" = "allowlist" ]; then
 				case "${allowlist_names}" in
@@ -1108,8 +1227,12 @@ mcp_runtime_load_server_meta() {
 	[ -z "${MCPBASH_SERVER_TITLE}" ] && MCPBASH_SERVER_TITLE="${default_title}"
 
 	export MCPBASH_SERVER_NAME MCPBASH_SERVER_VERSION MCPBASH_SERVER_TITLE
-	export MCPBASH_SERVER_DESCRIPTION MCPBASH_SERVER_WEBSITE_URL MCPBASH_SERVER_ICONS
-	export MCPBASH_SERVER_INSTRUCTIONS
+	export MCPBASH_SERVER_DESCRIPTION MCPBASH_SERVER_WEBSITE_URL
+	# Icons and instructions stay unexported: only this process reads them, and
+	# an exported value is copied into every child. Linux refuses to start any
+	# program when one environment string exceeds 128 KiB, so a long
+	# server.instructions.md would stop the server from running anything.
+	export -n MCPBASH_SERVER_ICONS MCPBASH_SERVER_INSTRUCTIONS 2>/dev/null || true
 }
 
 mcp_runtime_titlecase() {

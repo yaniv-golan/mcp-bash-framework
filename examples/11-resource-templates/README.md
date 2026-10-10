@@ -3,7 +3,7 @@
 **What you’ll learn**
 - Discovering templates from `resources/*.meta.json` (no `uri` required)
 - Manual template registration and override precedence
-- Expanding templates client-side and reading the concrete URI
+- Expanding templates client-side and reading the concrete URI, which the server matches back to its template (`{+path}` spans `/`)
 
 **Prereqs**
 - Bash 3.2+
@@ -17,7 +17,7 @@
 **Transcript**
 ```
 > resources/templates/list
-< {"result":{"resourceTemplates":[{"name":"project-files","uriTemplate":"file:///{path}",...},{"name":"repo-tree",...},{"name":"logs-by-date",...}]}}
+< {"result":{"resourceTemplates":[{"name":"project-files","uriTemplate":"file:///{+path}",...},{"name":"repo-tree",...},{"name":"logs-by-date",...}]}}
 > resources/read {"uri":"file://./resources/example.txt"}
 < {"result":{"contents":[{"type":"text","text":"This file is reachable via the project-files template"}]}}
 ```

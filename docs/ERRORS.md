@@ -137,10 +137,10 @@ Example `resources/read` error payload:
 | `-32700` | Parse errors and invalid JSON normalization | `lib/core.sh` |
 | `-32600` | Invalid request (missing method, batch arrays when disabled) | `lib/core.sh` |
 | `-32601` | Unknown or disallowed method (`notifications/message` from client, missing handler) | `lib/core.sh`, `handlers/*` |
-| `-32602` | Invalid params (unsupported protocol version, invalid cursor/log level, missing/invalid remote token) | `handlers/lifecycle.sh`, `handlers/completion.sh`, `handlers/logging.sh`, `lib/auth.sh`, registry cursors |
+| `-32602` | Invalid params (non-string `protocolVersion`, invalid cursor/log level, missing/invalid remote token) | `handlers/lifecycle.sh`, `handlers/completion.sh`, `handlers/logging.sh`, `lib/auth.sh`, registry cursors |
 | `-32603` | Internal errors (empty handler response, registry size/parse failures, tool output/stderr over limits, provider failures) | `lib/core.sh`, `lib/tools.sh`, `lib/resources.sh`, `lib/prompts.sh` |
 | `-32001` | Tool cancelled (SIGTERM/INT from client) | `lib/tools.sh` |
-| `-32000` | Server not initialized (`initialize` not completed) | `lib/core.sh` |
+| `-32000` | Server not initialized (any request other than `ping` before `initialize` completes) | `lib/core.sh` |
 | `-32002` | Resource not found (`resources/read`) | `lib/resources.sh` |
 | `-32003` | Server shutting down (rejecting new work) | `lib/core.sh` |
 | `-32005` | `exit` called before `shutdown` was requested | `handlers/lifecycle.sh` |
@@ -149,12 +149,13 @@ Size guardrails: `mcp_core_guard_response_size` rejects oversized responses with
 
 ## Resource provider exit codes
 - `file.sh`: `2` outside allowed roots → `-32603`; `3` missing file → `-32002`.
-- `git.sh`: `4` invalid URI or missing git → `-32602`; `5` clone/fetch failure → `-32603`.
-- `https.sh`: `4` invalid URI or missing curl → `-32602`; `5` network/timeout → `-32603`; `6` payload exceeds `MCPBASH_HTTPS_MAX_BYTES` → `-32603`.
+- `git.sh`: `4` invalid URI, blocked host (policy, or resolves to a blocked address), missing git, or git older than 2.37 → `-32602`; `5` host does not resolve, or clone/fetch failure → `-32603`.
+- `https.sh`: `4` invalid URI, blocked host (policy, or resolves to a blocked address) or missing curl → `-32602`; `5` host does not resolve, network/timeout → `-32603`; `6` payload exceeds `MCPBASH_HTTPS_MAX_BYTES` → `-32603`.
 - Any other provider exit code maps to `-32603` with stderr text when available.
 
 ## Troubleshooting Quick Hits
-- **Unsupported protocol (`-32602`)**: Client requested an older MCP version. Update the client or request `2025-11-25`/`2025-06-18`/`2025-03-26`/`2024-11-05`.
+- **Unsupported protocol version**: Not an error. When a client requests a version the server does not support, `initialize` succeeds with the latest supported version (`2025-11-25`) and the server logs `client requested unsupported protocol version …` to stderr. If the client then disconnects, update it or have it request `2025-11-25`/`2025-06-18`/`2025-03-26`/`2024-11-05`.
+- **Invalid protocol version (`-32602`)**: `protocolVersion` was not a string. `error.data.supported` lists the accepted versions and `error.data.requested` echoes the value sent.
 - **Invalid cursor (`-32602`)**: Drop the cursor to restart pagination; ensure clients do not cache cursors across registry refreshes.
 - **Tool timed out (`isError: true`, `structuredContent.error.type: "timeout"`)**: The tool exceeded its time limit. Check `structuredContent.error.reason` for context:
   - `"fixed"` – Static timeout elapsed (progress-aware timeout disabled).

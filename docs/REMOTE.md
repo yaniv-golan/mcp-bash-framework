@@ -36,6 +36,7 @@ These gateways are **optional** and external to mcp-bash. You do not need Python
 - Generate at least 256 bits of entropy (`openssl rand -base64 32` → ~44 chars). Rotate on a schedule (e.g., every 90 days); rotation requires clients to reconnect so the proxy can send the new token.
 - Keep the token base64-safe. Do not log or echo it; payload debug logs redact the token but should be disabled in production.
 - Per-request enforcement only; there is no session binding or downgrade to unauthenticated traffic.
+- Tools never see the token: both `_meta` keys are deleted before `_meta` is passed to a tool (`MCP_TOOL_META_JSON`/`MCP_TOOL_META_FILE`), and `MCPBASH_REMOTE_TOKEN*` is removed from tool and provider environments unless the operator chose `inherit` mode.
 
 ### Header → _meta mapping
 

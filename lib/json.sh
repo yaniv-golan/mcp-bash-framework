@@ -30,30 +30,34 @@ mcp_json_quote_text() {
 	for ((i = 0; i < length; i++)); do
 		char="${input:i:1}"
 		case "${char}" in
+		# Single quotes keep backslashes literal: '\' is one backslash, and
+		# '\n' is the two characters backslash and n (the JSON escape).
 		'"')
 			parts+=('\"')
 			;;
-		'\\')
-			parts+=('\\\\')
+		'\')
+			parts+=('\\')
 			;;
 		$'\b')
-			parts+=('\\b')
+			parts+=('\b')
 			;;
 		$'\f')
-			parts+=('\\f')
+			parts+=('\f')
 			;;
 		$'\n')
-			parts+=('\\n')
+			parts+=('\n')
 			;;
 		$'\r')
-			parts+=('\\r')
+			parts+=('\r')
 			;;
 		$'\t')
-			parts+=('\\t')
+			parts+=('\t')
 			;;
 		*)
 			LC_ALL=C printf -v code '%d' "'${char}"
-			if [ "${code}" -lt 32 ]; then
+			# bash 3.2 reports bytes >= 0x80 as negative (signed char); those
+			# start non-ASCII characters and are kept as-is, not escaped.
+			if [ "${code}" -ge 0 ] && [ "${code}" -lt 32 ]; then
 				LC_ALL=C printf -v hex '%02X' "${code}"
 				parts+=("\\u00${hex}")
 			else
@@ -63,7 +67,9 @@ mcp_json_quote_text() {
 		esac
 	done
 	local joined=""
-	printf -v joined '%s' "${parts[@]}"
+	# Empty input leaves parts empty; bash 3.2 treats "${parts[@]}" of an
+	# empty array as unbound under set -u, so expand it only when set.
+	printf -v joined '%s' ${parts[@]+"${parts[@]}"}
 	printf '"%s"' "${joined}"
 }
 
@@ -71,7 +77,8 @@ mcp_json_escape_string() {
 	local value="$1"
 
 	if [ "${MCPBASH_JSON_TOOL:-none}" != "none" ]; then
-		"${MCPBASH_JSON_TOOL_BIN}" -n --arg v "${value}" '$v'
+		# On stdin, not as an argument, so length is not capped by argv limits.
+		printf '%s' "${value}" | "${MCPBASH_JSON_TOOL_BIN}" -R -s '.'
 		return 0
 	fi
 
@@ -605,7 +612,8 @@ mcp_json_minimal_process_pair() {
 	return 0
 }
 
-mcp_json_minimal_extract_param_string() {
+mcp_json_minimal_extract_param_raw() {
+	# Print the raw (trimmed) JSON text of params.<key>; return 1 when absent.
 	local param_key="$1"
 	if [ "${MCP_JSON_CACHE_HAS_PARAMS}" != "true" ]; then
 		return 1
@@ -639,18 +647,26 @@ mcp_json_minimal_extract_param_string() {
 		fi
 		local name="${key:1:${#key}-2}"
 		if [ "${name}" = "${param_key}" ]; then
-			local unquoted
-			if ! unquoted="$(mcp_json_minimal_unquote "${value}")"; then
-				IFS=$' \t\n'
-				return 1
-			fi
 			IFS=$' \t\n'
-			printf '%s' "${unquoted}"
+			printf '%s' "${value}"
 			return 0
 		fi
 	done
 	IFS=$' \t\n'
 	return 1
+}
+
+mcp_json_minimal_extract_param_string() {
+	local param_key="$1"
+	local value unquoted
+	if ! value="$(mcp_json_minimal_extract_param_raw "${param_key}")"; then
+		return 1
+	fi
+	if ! unquoted="$(mcp_json_minimal_unquote "${value}")"; then
+		return 1
+	fi
+	printf '%s' "${unquoted}"
+	return 0
 }
 
 mcp_json_minimal_find_colon() {
@@ -821,9 +837,12 @@ mcp_json_extract_cancel_id() {
 		return 1
 	fi
 
+	# Print the id in compact JSON form ("slow" keeps its quotes), the same form
+	# mcp_json_extract_id gives the request. Worker keys are built from that
+	# form, so a raw string here would never match a running worker.
 	case "${MCPBASH_JSON_TOOL}" in
 	gojq | jq)
-		if ! printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -er '.params.requestId // .params.id' 2>/dev/null; then
+		if ! printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -ec '.params.requestId // .params.id' 2>/dev/null; then
 			return 1
 		fi
 		;;
@@ -834,6 +853,9 @@ mcp_json_extract_cancel_id() {
 }
 
 mcp_json_extract_protocol_version() {
+	# Print params.protocolVersion. A missing or null value prints nothing and
+	# returns 0 (callers treat that as "use the default"). A value that is
+	# present but not a string prints its compact JSON text and returns 2.
 	local json="$1"
 
 	if mcp_runtime_is_minimal_mode; then
@@ -841,18 +863,51 @@ mcp_json_extract_protocol_version() {
 			printf ''
 			return 1
 		fi
-		if mcp_json_minimal_extract_param_string "protocolVersion"; then
+		local raw=""
+		if ! raw="$(mcp_json_minimal_extract_param_raw "protocolVersion")" || [ -z "${raw}" ] || [ "${raw}" = "null" ]; then
+			printf ''
 			return 0
 		fi
-		printf ''
-		return 0
+		if [ "${raw:0:1}" = '"' ]; then
+			if mcp_json_minimal_unquote "${raw}"; then
+				return 0
+			fi
+			printf ''
+			return 0
+		fi
+		# Only echo scalars the minimal parser can vouch for; anything else is
+		# reported as null so the error payload stays valid JSON.
+		case "${raw}" in
+		true | false) printf '%s' "${raw}" ;;
+		*)
+			if mcp_json_minimal_is_number "${raw}"; then
+				printf '%s' "${raw}"
+			else
+				printf 'null'
+			fi
+			;;
+		esac
+		return 2
 	fi
 
 	case "${MCPBASH_JSON_TOOL}" in
 	gojq | jq)
-		if ! printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -er '.params.protocolVersion // empty' 2>/dev/null; then
+		local tagged=""
+		if ! tagged="$(printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -r '(.params.protocolVersion?) as $v | if $v == null then "M" elif ($v | type) == "string" then "S" + $v else "X" + ($v | tojson) end' 2>/dev/null)"; then
 			printf ''
+			return 0
 		fi
+		case "${tagged}" in
+		S*)
+			printf '%s' "${tagged#S}"
+			return 0
+			;;
+		X*)
+			printf '%s' "${tagged#X}"
+			return 2
+			;;
+		esac
+		printf ''
 		;;
 	*)
 		printf ''
@@ -1339,8 +1394,14 @@ mcp_json_icons_resolve_local_files() {
 				fi
 
 				# Build icon object with data URI
-				icon="$(printf '%s' "${icon}" | "${MCPBASH_JSON_TOOL_BIN}" -c --arg src "${data_uri}" --arg mime "${mime_type}" '
-					del(._local, ._base) | .src = $src | if .mimeType then . else .mimeType = $mime end
+				# The data URI goes on stdin (as a JSON string): it can outgrow
+				# what one argument may hold.
+				icon="$({
+					printf '%s\n' "${icon}"
+					printf '%s' "${data_uri}" | "${MCPBASH_JSON_TOOL_BIN}" -R -s '.'
+				} | "${MCPBASH_JSON_TOOL_BIN}" -c -s --arg mime "${mime_type}" '
+					.[1] as $src | .[0]
+					| del(._local, ._base) | .src = $src | if .mimeType then . else .mimeType = $mime end
 				')"
 			else
 				# File not found - keep original src, remove markers

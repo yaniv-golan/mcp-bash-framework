@@ -60,6 +60,9 @@ if [ -z "${path}" ]; then
 	exit 3
 fi
 roots_input="${MCP_RESOURCES_ROOTS:-${MCPBASH_RESOURCES_DIR:-${MCPBASH_PROJECT_ROOT:-}}}"
+# Set by check_allowed to the canonical root that contains the path (empty when
+# the root is "/" or is the file itself); the verified read re-checks it by inode.
+matched_root=""
 check_allowed() {
 	local candidate="$1"
 	local allowed=false
@@ -76,15 +79,18 @@ check_allowed() {
 		fi
 		if [ "${candidate}" = "${check_root}" ]; then
 			allowed=true
+			matched_root=""
 			break
 		fi
 		if [ "${check_root}" = "/" ]; then
 			allowed=true
+			matched_root=""
 			break
 		fi
 		local prefix="${check_root}/"
 		if [ "${candidate:0:${#prefix}}" = "${prefix}" ]; then
 			allowed=true
+			matched_root="${check_root}"
 			break
 		fi
 	done <<<"$(printf '%s\n' "${roots_input}" | tr ':' '\n')"
@@ -102,18 +108,35 @@ if [ ! -f "${path}" ]; then
 	exit 3
 fi
 
-# Reject symlinks up front; prevents swapping a validated path to an external target.
-if [ -L "${path}" ]; then
+# Read through the verified-open helper: it pins the parent directory and checks
+# by inode that it is inside the matched root, opens the file once, and confirms
+# the open descriptor is the regular file that was checked before streaming it.
+# A symlink swapped in at any point (file or parent directory) is refused.
+file_read_lib=""
+if [ -n "${MCPBASH_HOME:-}" ] && [ -f "${MCPBASH_HOME}/lib/file_read.sh" ]; then
+	file_read_lib="${MCPBASH_HOME}/lib/file_read.sh"
+else
+	self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P)" || self_dir=""
+	if [ -n "${self_dir}" ] && [ -f "${self_dir}/../lib/file_read.sh" ]; then
+		file_read_lib="${self_dir}/../lib/file_read.sh"
+	fi
+fi
+if [ -z "${file_read_lib}" ]; then
+	printf '%s\n' "file provider: lib/file_read.sh not found; refusing unverified read" >&2
 	exit 2
 fi
+# shellcheck source=lib/file_read.sh
+# shellcheck disable=SC1091
+. "${file_read_lib}"
 
-if ! exec 3<"${path}"; then
-	exit 3
-fi
-
-if [ -L "${path}" ]; then
-	exec 3<&-
+status=0
+mcp_file_read_verified "${path}" "" "${matched_root}" || status=$?
+case "${status}" in
+0) exit 0 ;;
+3) exit 3 ;;
+5)
+	printf '%s\n' "file provider: cannot verify the opened file on this platform (needs stat and /dev/fd); refusing" >&2
 	exit 2
-fi
-cat <&3
-exec 3<&-
+	;;
+*) exit 2 ;;
+esac
