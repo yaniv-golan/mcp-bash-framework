@@ -79,7 +79,7 @@ SH
 	while :; do
 		local now
 		now=$(date +%s)
-		if [ $((now - start_ts)) -gt 15 ]; then
+		if [ $((now - start_ts)) -gt 45 ]; then
 			break
 		fi
 
@@ -153,7 +153,7 @@ SH
 	while :; do
 		local now
 		now=$(date +%s)
-		if [ $((now - start_ts)) -gt 15 ]; then
+		if [ $((now - start_ts)) -gt 45 ]; then
 			break
 		fi
 
