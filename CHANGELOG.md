@@ -21,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`mcp_tool_error_result` builds a tool error result**: `mcp_tool_error_result TYPE MESSAGE [--hint HINT] [--data JSON]` (in `sdk/tool-error.sh`, loaded by `tool-sdk.sh`) prints a result with `isError: true`, the message and hint as text the model reads, and the details under `_meta["mcpbash/error"]`, with no `structuredContent`. It is the shared shape for tool errors and policy denials. Existing helpers (`mcp_error`, `mcp_result_error`) are unchanged.
 
+### Fixed
+
+- **A request split across the read timeout is answered**: With the timed read loop (the default outside CI mode), a request whose bytes arrived on both sides of the read timeout was lost. On bash 4+ each part was answered as a separate, unparseable message; on bash 3.2 the first part was discarded. The request itself was never answered, and the client waited indefinitely. The server now keeps the partial input and joins it with the rest (bash 4+), or reads the rest of a started line without a timeout (bash 3.2). A final request without a trailing newline is still answered when input ends.
+
 ## [1.7.0] - 2026-10-10
 
 ### Added

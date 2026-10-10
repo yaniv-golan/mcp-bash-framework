@@ -69,6 +69,7 @@ TESTS=(
 	"test_normal_exit_status.sh"
 	"test_stdout_closed_exit.sh"
 	"test_short_read_timeout_stays_up.sh"
+	"test_read_split_message.sh"
 	"test_trace_bash32.sh"
 	"test_completion_registered_timeout.sh"
 	"test_conformance_strict_shapes.sh"

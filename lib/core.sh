@@ -304,6 +304,16 @@ mcp_core_read_loop() {
 	# For EOF detection heuristic: track consecutive immediate returns
 	local immediate_returns=0
 
+	# A request whose bytes straddle the read timeout must not be split or lost.
+	# bash 4+ returns the bytes read so far with a timeout status; they are kept
+	# here and joined with the next read. bash 3.2 discards them instead, so on
+	# 3.2 only the first character is read with a timeout and the rest of the
+	# line with a blocking read (a client mid-request is alive; if it goes away,
+	# the read returns at end of input).
+	local partial=""
+	local first_char=""
+	local rest_status=0
+
 	while true; do
 		# Clear line before read to prevent stale data on timeout/EOF
 		line=""
@@ -315,7 +325,33 @@ mcp_core_read_loop() {
 
 			# Capture exit status in a way that prevents set -e from aborting on timeout/EOF
 			local read_status=0
-			IFS= read -t "${read_timeout}" -r line || read_status=$?
+			if [ "${BASH_VERSINFO[0]}" -ge 4 ]; then
+				IFS= read -t "${read_timeout}" -r line || read_status=$?
+				if [ "${read_status}" -gt 128 ]; then
+					# Timed out, possibly mid-line: keep the bytes, don't answer a
+					# fragment.
+					partial="${partial}${line}"
+					line=""
+				elif [ -n "${partial}" ]; then
+					# A full line, or end of input: join the kept bytes.
+					line="${partial}${line}"
+					partial=""
+				fi
+			else
+				first_char=""
+				IFS= read -t "${read_timeout}" -r -n 1 first_char || read_status=$?
+				if [ "${read_status}" -eq 0 ] && [ -n "${first_char}" ]; then
+					rest_status=0
+					IFS= read -r line || rest_status=$?
+					line="${first_char}${line}"
+					if [ "${rest_status}" -ne 0 ]; then
+						# End of input after a final line without a newline.
+						[ -n "${_MCPBASH_SIGNAL_RECEIVED}" ] || mcp_core_handle_line "${line}"
+						line=""
+						break
+					fi
+				fi
+			fi
 
 			read_end=$(date +%s)
 			read_elapsed=$((read_end - read_start))
@@ -330,14 +366,14 @@ mcp_core_read_loop() {
 					esac
 				fi
 
-				# Handle any partial line data (for EOF case)
-				[ -n "${line}" ] && mcp_core_handle_line "${line}"
-
 				# bash >= 4 reports a read timeout as >128, so status 1 is an
-				# unambiguous EOF. Stop now: on a FIFO whose writer closed, later
-				# reads time out instead of returning EOF again, which would starve
-				# the consecutive-quick-returns heuristic below.
+				# unambiguous EOF. Answer a final line that had no newline (with
+				# any bytes kept from earlier timeouts), then stop: on a FIFO whose
+				# writer closed, later reads time out instead of returning EOF
+				# again, which would starve the consecutive-quick-returns heuristic
+				# below.
 				if [ "${BASH_VERSINFO[0]}" -ge 4 ] && [ "${read_status}" -eq 1 ]; then
+					[ -n "${line}" ] && mcp_core_handle_line "${line}"
 					break
 				fi
 

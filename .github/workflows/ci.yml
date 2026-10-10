@@ -328,6 +328,7 @@ jobs:
             test_sigterm_prompt_exit.sh
             test_stdout_closed_exit.sh
             test_short_read_timeout_stays_up.sh
+            test_read_split_message.sh
             test_cancellation.sh
             test_cancel_malformed.sh
             test_cancel_eof_drain.sh
