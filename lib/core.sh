@@ -286,6 +286,7 @@ mcp_core_read_loop() {
 	# runs after the pending `read` returns, so TERM/INT waited out the full
 	# read timeout (or, with a blocking read, the next input line). Exiting
 	# here still runs the EXIT trap (_mcp_exit_handler) for cleanup.
+	trap 'exit 129' HUP
 	trap 'exit 130' INT
 	trap 'exit 143' TERM
 
@@ -408,8 +409,9 @@ mcp_core_read_loop() {
 		mcp_core_handle_line "${line}"
 	done
 
-	# Restore default signal handling
-	trap - INT TERM
+	# Keep the exit traps: a signal while waiting for workers must still exit
+	# through the EXIT trap (cleanup). The default action would kill the server
+	# without removing its state directory.
 }
 
 mcp_core_finish_after_read_loop() {

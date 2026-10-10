@@ -201,7 +201,13 @@ main() {
 	mcp_runtime_detect_json_tool
 	mcp_runtime_log_batch_mode
 
-	trap 'mcp_runtime_cleanup' EXIT INT TERM HUP
+	# Signals exit (128 + signal number); `exit` runs the EXIT trap, which cleans
+	# up once. A signal trap that only ran cleanup left the server running
+	# without its state directory.
+	trap 'mcp_runtime_cleanup' EXIT
+	trap 'exit 129' HUP
+	trap 'exit 130' INT
+	trap 'exit 143' TERM
 
 	if mcp_runtime_is_minimal_mode; then
 		# Warn about reduced capability surface.
