@@ -66,6 +66,7 @@ TESTS=(
 	"test_stdin_eof_shutdown.sh"
 	"test_background_loops_exit.sh"
 	"test_sigterm_prompt_exit.sh"
+	"test_normal_exit_status.sh"
 	"test_stdout_closed_exit.sh"
 	"test_short_read_timeout_stays_up.sh"
 	"test_trace_bash32.sh"

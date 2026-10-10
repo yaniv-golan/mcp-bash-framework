@@ -23,11 +23,18 @@ MCPBASH_IDLE_TIMEOUT_TRIGGERED=false
 MCPBASH_ORPHAN_DETECTED=false
 _MCPBASH_SIGNAL_RECEIVED=""
 _MCPBASH_CLEANUP_DONE=false
+# Set just before each intended `exit 0`. Bash 3.2 runs the EXIT trap with
+# $? = 0 after a fatal shell error (an unbound variable under set -u, for
+# example), so a zero status without this flag means the server died.
+_MCPBASH_EXIT_CLEAN=false
 
 # EXIT trap handler with idempotency guard.
 # Ensures cleanup runs exactly once, whether from normal exit or signal.
 _mcp_exit_handler() {
 	local exit_code=$?
+	if [ "${exit_code}" -eq 0 ] && [ "${_MCPBASH_EXIT_CLEAN}" != "true" ]; then
+		exit_code=1
+	fi
 	if [ "${_MCPBASH_CLEANUP_DONE}" != "true" ]; then
 		_MCPBASH_CLEANUP_DONE=true
 		mcp_runtime_cleanup 2>/dev/null || true
@@ -431,6 +438,7 @@ mcp_core_finish_after_read_loop() {
 		mcp_core_wait_for_workers
 		mcp_runtime_cleanup
 		_MCPBASH_CLEANUP_DONE=true # Prevent double cleanup in EXIT trap
+		_MCPBASH_EXIT_CLEAN=true
 		exit 0
 	fi
 
@@ -438,6 +446,7 @@ mcp_core_finish_after_read_loop() {
 	mcp_core_wait_for_workers
 	mcp_runtime_cleanup
 	_MCPBASH_CLEANUP_DONE=true
+	_MCPBASH_EXIT_CLEAN=true
 	exit 0
 }
 
@@ -829,6 +838,7 @@ mcp_core_handle_line() {
 	if [ "${MCPBASH_EXIT_REQUESTED}" = true ]; then
 		mcp_core_wait_for_workers
 		mcp_runtime_cleanup
+		_MCPBASH_EXIT_CLEAN=true
 		exit 0
 	fi
 }
