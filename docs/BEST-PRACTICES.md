@@ -223,7 +223,7 @@ page="$(mcp_args_int '.page' --min 1)"  # Fails if missing or < 1
 
 ```bash
 # Extract with jq filter and default
-name="$(mcp_args_get '.name // "World"')"
+name="$(mcp_args_get '.name' --default 'World')"   # or '.name // "World"'
 
 # Extract nested value
 config="$(mcp_args_get '.options.config // empty')"
@@ -234,7 +234,7 @@ if [ "$(mcp_args_get '.debug // "false"')" = "true" ]; then
 fi
 ```
 
-> **Note**: `mcp_args_get` requires JSON tooling (jq/gojq). In minimal mode it returns exit code 1, which will terminate scripts using `set -e`. For minimal-mode compatibility, use `mcp_args_get ... 2>/dev/null || true` or prefer the typed helpers (`mcp_args_bool`, `mcp_args_int`) which accept `--default` values that work in minimal mode.
+> **Note**: Without `--default`, a missing value comes back as the string `null`. `--default VALUE` (1.7.0+) is used for a missing, null or empty value; `false` and `0` are kept. `mcp_args_get` requires JSON tooling (jq/gojq). In minimal mode it returns exit code 1 unless `--default` is given, which will terminate scripts using `set -e`. For minimal-mode compatibility, use `mcp_args_get ... 2>/dev/null || true` or prefer the typed helpers (`mcp_args_bool`, `mcp_args_int`) which accept `--default` values that work in minimal mode.
 
 #### Path validation with roots enforcement
 

@@ -257,9 +257,35 @@ mcp_meta_get() {
 }
 
 # Extract a value from the arguments JSON using a jq filter (returns empty string if unavailable).
+# --default VALUE is printed instead when the filter yields nothing, null or an empty
+# string (like mcp_args_int and mcp_args_bool); false and the string "null" are kept.
 mcp_args_get() {
 	local filter="$1"
+	shift || true
+	local default_set="false"
+	local default_value=""
+	while [ "$#" -gt 0 ]; do
+		case "$1" in
+		--default)
+			if [ "$#" -lt 2 ]; then
+				__mcp_sdk_warn "mcp_args_get: --default needs a value"
+				return 1
+			fi
+			default_set="true"
+			default_value="$2"
+			shift
+			;;
+		*)
+			__mcp_sdk_warn "mcp_args_get: unknown option $1"
+			;;
+		esac
+		shift
+	done
 	if [ "${MCPBASH_MODE:-full}" = "minimal" ]; then
+		if [ "${default_set}" = "true" ]; then
+			printf '%s' "${default_value}"
+			return 0
+		fi
 		__mcp_sdk_warn "mcp_args_get: JSON tooling unavailable; use mcp_args_raw instead"
 		printf ''
 		return 1
@@ -277,13 +303,23 @@ mcp_args_get() {
 	local rc=0
 	local result=""
 	if command -v "${MCPBASH_JSON_TOOL_BIN:-}" >/dev/null 2>&1; then
-		result="$(printf '%s' "${payload}" | "${MCPBASH_JSON_TOOL_BIN}" -rc "${filter}" 2>/dev/null)" || rc=$?
+		local program="${filter}"
+		if [ "${default_set}" = "true" ]; then
+			# Drop real nulls (the string "null" stays) so a missing value prints nothing.
+			program="(${filter}) | select(. != null)"
+		fi
+		result="$(printf '%s' "${payload}" | "${MCPBASH_JSON_TOOL_BIN}" -rc "${program}" 2>/dev/null)" || rc=$?
 		if [ "${rc}" -ne 0 ]; then
 			# Log parse error for debugging (stderr goes to server log, not tool output)
 			__mcp_sdk_warn "mcp_args_get: jq error (rc=${rc}) filter=${filter} payload_len=${#payload}"
 			result=""
 		fi
+		if [ "${default_set}" = "true" ] && [ "${rc}" -eq 0 ]; then
+			[ -n "${result}" ] || result="${default_value}"
+		fi
 		printf '%s' "${result}"
+	elif [ "${default_set}" = "true" ]; then
+		printf '%s' "${default_value}"
 	else
 		__mcp_sdk_warn "mcp_args_get: JSON tooling unavailable; use mcp_args_raw instead"
 		printf ''

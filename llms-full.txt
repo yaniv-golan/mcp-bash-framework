@@ -131,7 +131,7 @@ Note: `mcp_result_error` expects a JSON object with `type` and `message` fields.
 - SDK helpers live in `sdk/tool-sdk.sh` and require `MCP_SDK` to be set by the framework.
 - Args:
   - `mcp_args_raw` → raw JSON args string.
-  - `mcp_args_get '<jq_filter>'` → extract value via jq/gojq.
+  - `mcp_args_get '<jq_filter>' [--default VALUE]` → extract value via jq/gojq; a missing or null value prints `null` unless `--default` is given (the default also covers an empty string, and works in minimal mode).
 - Request metadata (`_meta` from tools/call):
   - `mcp_meta_raw` → raw JSON `_meta` string from the tools/call request.
   - `mcp_meta_get '<jq_filter>'` → extract value from `_meta` via jq/gojq.

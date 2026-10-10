@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`mcp_args_get --default` works**: The tool scaffold writes `mcp_args_get '.name' --default 'World'`, but `mcp_args_get` ignored the option, so every scaffolded tool returned the string `null` for a missing argument. `--default VALUE` is now used when the value is missing, null or an empty string (as `mcp_args_int` and `mcp_args_bool` do); `false`, `0` and the string `"null"` are kept. With `--default`, the helper also works in minimal mode. Tools copied from the scaffold are fixed without changes.
 - **The installer test no longer changes the developer's `mcp-bash` command**: `test/integration/test_installer.sh` ran the installer with the real `HOME`, so each run pointed `~/.local/bin/mcp-bash` at a test directory that was deleted afterwards. It now uses a temporary `HOME`.
 
 ## [1.6.0] - 2026-10-10

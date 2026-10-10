@@ -119,9 +119,9 @@ work".
     symlink, then run `run-tool`.
 - **Never write `"${x:-{}}"`.** Bash ends the expansion at the first `}` and appends a stray
   `}` when `x` is set. Use `local d='{}'; x="${x:-$d}"`.
-- **Defaults on `mcp_args_get`:** put them in the jq filter (`'.name // "World"'`). A missing
-  argument otherwise comes back as the string `null`. (`mcp_args_int` and `mcp_args_bool` do
-  take `--default`.)
+- **Defaults on `mcp_args_get`:** `--default` works from mcp-bash 1.7.0; older versions
+  ignore it silently, and a missing argument comes back as the string `null`. The filter form
+  `'.name // "World"'` works on every version.
 - **Completion scripts are found by name, next to what they complete:**
   `prompts/<name>/<name>.completion.sh` for a prompt; `resources/<template-name>.completion.sh`
   (or `resources/<name>/<name>.completion.sh`) for a resource template, which is what Claude
