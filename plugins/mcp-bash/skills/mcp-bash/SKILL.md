@@ -1,8 +1,8 @@
 ---
 name: mcp-bash
-description: Build, debug and package MCP servers written in Bash with the mcp-bash framework (mcp-bash-framework). Use whenever the user wants to create an MCP server from shell scripts or CLIs, add or fix tools, resources, prompts or completions in an mcp-bash project, wire one into Claude Desktop, Cursor or another client, figure out why a tool is "blocked by policy", can't see an environment variable or API key, or works in a terminal but not in Claude Desktop, or build an .mcpb bundle. Also use when a directory has server.d/server.meta.json or tools/*/tool.meta.json.
+description: Build, debug and package MCP servers written in Bash with the mcp-bash framework (mcp-bash-framework). Use whenever the user wants to create an MCP server from shell scripts or CLIs, add or fix tools, resources, prompts or completions in an mcp-bash project, wire one into Claude Desktop, Cursor or another client, figure out why a tool is "blocked by policy", can't see an environment variable or API key, or works in a terminal but not in Claude Desktop, when tool errors show only an exit code, when completions or suggestions don't appear in Claude Desktop, when wrapping an existing CLI (Python, Node, Go) as MCP tools, or to build an .mcpb bundle. Also use when a repo has server.d/server.meta.json, tools/*/tool.meta.json, mcp-bash.lock, a vendored .mcp-bash/ directory or mcpb.conf.
 metadata:
-  version: 0.1.0
+  version: 0.2.0
 ---
 
 # Building MCP servers with mcp-bash
@@ -22,9 +22,8 @@ guessing — it is short and current:
 
 ## Workflow
 
-1. **Check the framework.** `mcp-bash --version`. If missing, install it with the verified
-   steps in the README (download `install.sh` and `SHA256SUMS`, check, run). Don't pipe an
-   unverified script into bash on the user's behalf without saying so.
+1. **Check the framework.** `mcp-bash --version`. If missing, use the README's verified
+   install (checksum-checked `install.sh`) or `brew install yaniv-golan/mcp-bash/mcp-bash`.
 2. **Create the project.** `mcp-bash new <name>` (new directory) or `mcp-bash init` (current
    one). Commands run inside the project find it by walking up to `server.d/server.meta.json`.
 3. **Scaffold, don't hand-write.** `mcp-bash scaffold tool|resource|prompt|completion <name>`.
@@ -65,6 +64,16 @@ mcp_result_success "$(mcp_json_obj query "${query}" name "${name}")"
 - Long work: `mcp_progress <pct> "msg"`, and check `mcp_is_cancelled` in loops.
 - Tool names: letters, digits, `_` and `-` only, up to 64 characters. **No dots** — Claude
   Desktop rejects them.
+- **Wrapping a CLI:** pass its error through once. `mcp_with_retry` retries every exit code
+  above 2, so a CLI whose codes 3+ are permanent (auth, not found) runs three times and
+  prints three JSON error documents into one stdout. That is invalid JSON, and the model sees
+  only "exited with code 3". Don't retry permanent errors; use `set -uo pipefail` (no `-e`)
+  and return the CLI's message with `mcp_error`. Pattern: `examples/15-cli-wrapper`.
+- **Never paste values into a jq program.** Use `--arg`/`--argjson`; an argument spliced
+  into the filter is jq injection, and anything the tool can read (API keys) can leak.
+- **Confirming destructive actions with elicitation:** handle accept, decline, cancel and no
+  answer as four separate outcomes, and raise the tool's `timeoutSecs` (for example 120) so a
+  person has time to answer.
 - After changing `inputSchema`, update the sample arguments in `tools/<name>/smoke.sh` if the
   scaffold created one.
 
@@ -104,11 +113,21 @@ work".
   }
   ```
 
-  Only those four keys are allowed, and they hold variable **names, never values**. A variable
-  of your own named `MCP_something` also needs the allowlist. Check the result with
-  `mcp-bash run-tool <name> --print-env` (names only, never values).
+  - Only those four keys are allowed, and they hold variable **names, never values**.
+  - `MCPBASH_*` and framework `MCP_*` names are reserved: listing one makes the whole list
+    invalid (ignored with a warning, and `mcp-bash bundle` fails). Your own `MCP_something`
+    variables are fine and do need listing.
+  - A mode or allowlist set in the **launch environment** (client config, a wrapper script)
+    replaces the `server.meta.json` value for that scope; the two are not merged. If a
+    launcher sets one, keep the two lists identical.
+  - Use `"env"` in `server.meta.json` rather than Claude Desktop `platform_overrides.<os>.env`,
+    which replaces the base `env` instead of adding to it.
+  - Check with `mcp-bash run-tool <name> --print-env` (names only, never values).
 - **`server.d/env.sh` is not loaded by the server.** Only `run-tool --with-server-env` reads
-  it. Don't put configuration there and expect a client to see it.
+  it (and launchers you write yourself). Don't put configuration there and expect a client to
+  see it.
+- **MCPB `user_config` booleans arrive as strings** (`"true"`/`"false"`), so `[ "$X" = 1 ]`
+  never fires. Accept `1`, `true` and `TRUE`.
 - **Claude Desktop runs the server with macOS `/bin/bash` 3.2** and a minimal `PATH`. Code
   that works in your terminal's bash 5 can fail there:
   - `"${arr[@]}"` on an empty array under `set -u` is an error; write `${arr[@]+"${arr[@]}"}`.
@@ -122,30 +141,49 @@ work".
 - **Defaults on `mcp_args_get`:** `--default` works from mcp-bash 1.7.0; older versions
   ignore it silently, and a missing argument comes back as the string `null`. The filter form
   `'.name // "World"'` works on every version.
-- **Completion scripts are found by name, next to what they complete:**
-  `prompts/<name>/<name>.completion.sh` for a prompt; `resources/<template-name>.completion.sh`
-  (or `resources/<name>/<name>.completion.sh`) for a resource template, which is what Claude
-  Desktop asks for. The argument being completed is `.argument.name` in
-  `MCP_COMPLETION_ARGS_JSON`. Details: `docs/COMPLETION.md`.
-- **Resource templates:** use `{+path}` for values containing `/` (`file:///{+path}`); `{v}`
-  stops at `/`. A declared `mimeType` is reported as written, so drop a wrong
-  `"mimeType": "text/plain"` rather than leaving it.
+- **Completions:**
+  - Scripts are found by name next to what they complete:
+    `prompts/<name>/<name>.completion.sh`, or `resources/<template-name>.completion.sh` (or
+    `resources/<name>/<name>.completion.sh`) for a resource template. The argument being
+    completed is `.argument.name` in `MCP_COMPLETION_ARGS_JSON`. See `docs/COMPLETION.md`.
+  - **Claude Desktop only asks for resource-template completions** (`ref/resource`), not for
+    prompt arguments, so a prompt completion script never runs there. Other clients may
+    differ.
+  - A script is killed after 5 s (`MCPBASH_COMPLETION_TIMEOUT_SECS`), and a non-zero exit
+    becomes a JSON-RPC error instead of an empty list. Fail soft: trap errors, print
+    `{"suggestions":[],"hasMore":false}` and exit 0; give inner CLI calls a short timeout and
+    no retries.
+- **Executable bits must be in git** (mode `100755`), not just on disk: `validate --fix`
+  repairs your checkout, not a fresh clone. Check with `git ls-files -s`.
+- **Resource templates:**
+  - Use `{+path}` for values containing `/` (`file:///{+path}`); `{v}` stops at `/`.
+  - The provider gets the concrete URI as `$1`, percent-encoded. Decode `%HH` once with a
+    decoder of your own (not `printf %b`, which mangles `100% Club` and `\c`). Then reject
+    empty values, values starting with `-`, control characters and `..`; a strict pattern
+    such as `^[A-Za-z0-9_-]+(/[A-Za-z0-9_-]+)*$` is safest for paths.
+  - A declared `mimeType` is reported as written, so drop a wrong `"mimeType": "text/plain"`
+    rather than leaving it.
 - **"tool not found" right after adding a tool** usually means a cached registry. Run
   `mcp-bash registry refresh`; a running client also needs to reconnect or receive
   `list_changed`.
 - **`server.d/register.sh` only runs with `MCPBASH_ALLOW_PROJECT_HOOKS=true`.** Prefer the
-  data-only `server.d/register.json`.
+  data-only `server.d/register.json`. Both are refused if group- or world-writable
+  (`chmod g-w,o-w`).
+- **Bundles ship a pre-built registry.** `mcp-bash bundle` regenerates `.registry/`; if it
+  warns that pre-generation failed, fix that before shipping, or Claude Desktop serves stale
+  tools, prompts and resources.
+- **Smaller traps:** a helper function named `jq` recurses (call `command jq` inside it);
+  `local LC_ALL=C` inside a command substitution has been flaky under bash 5.3 (set it on the
+  command instead).
 
 ## Debugging
 
 - `mcp-bash doctor` — install, versions, JSON tool, effective env policy, policy.sh check.
-  (Shows local paths; fine to read, think before pasting it publicly.)
 - `mcp-bash validate --explain-defaults` — what the project resolves to.
 - `mcp-bash run-tool <name> --allow-self --verbose --args '…'` — the tool's stderr inline.
 - `mcp-bash run-tool <name> --print-env` — which variables the tool will get.
 - `mcp-bash debug` as the client's command (instead of the plain binary) — logs every
   message; the log path is printed to stderr at startup. See `docs/DEBUGGING.md`.
-- `mcp-bash config --inspector` — a ready command for the MCP Inspector.
 
 When a tool works under `run-tool` but not in the client, the difference is almost always
 the environment: the allowlist in the client config, `MCPBASH_PROJECT_ROOT`, the env policy,

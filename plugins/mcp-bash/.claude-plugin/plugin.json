@@ -1,6 +1,6 @@
 {
   "name": "mcp-bash",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Build, debug and package MCP servers written in Bash with the mcp-bash framework",
   "author": {
     "name": "Yaniv Golan",
