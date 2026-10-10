@@ -40,6 +40,23 @@ mcp_ui_generate_from_template() {
 
 # --- Common HTML helpers ---
 
+# JavaScript helper shared by the templates that read tool results.
+# mcp_result_success wraps a tool's data as {success: true, result: <data>};
+# the templates want <data>. Anything else is returned unchanged.
+_mcp_ui_js_unwrap() {
+	cat <<'JS'
+    // mcp-unwrap:start
+    function mcpUnwrap(data) {
+      if (data && typeof data === 'object' && !Array.isArray(data)
+          && data.success === true && Object.prototype.hasOwnProperty.call(data, 'result')) {
+        return data.result;
+      }
+      return data;
+    }
+    // mcp-unwrap:end
+JS
+}
+
 # Generate HTML document header with MCP Apps theming support
 _mcp_ui_html_header() {
 	local title="$1"
@@ -454,6 +471,7 @@ mcp_ui_template_data_table() {
 	cat <<SCRIPT
   <script type="module">
     import { App } from 'https://cdn.jsdelivr.net/npm/@modelcontextprotocol/ext-apps@2.0.3/+esm';
+$(_mcp_ui_js_unwrap)
 
     const columns = ${columns};
     const tbody = document.getElementById('tableBody');
@@ -491,6 +509,7 @@ mcp_ui_template_data_table() {
           }
         }
       }
+      data = mcpUnwrap(data);
       if (data) {
         const items = data.items || (Array.isArray(data) ? data : [data]);
         renderTable(items);
@@ -549,6 +568,7 @@ mcp_ui_template_progress() {
 	cat <<SCRIPT
   <script type="module">
     import { App } from 'https://cdn.jsdelivr.net/npm/@modelcontextprotocol/ext-apps@2.0.3/+esm';
+$(_mcp_ui_js_unwrap)
 
     const progressFill = document.getElementById('progressFill');
     const progressPercent = document.getElementById('progressPercent');
@@ -582,7 +602,7 @@ mcp_ui_template_progress() {
     const app = new App({ name: "Progress Tracker", version: "1.0.0" });
     app.ontoolresult = (result) => {
       if (result?.structuredContent) {
-        const data = result.structuredContent;
+        const data = mcpUnwrap(result.structuredContent);
         completedSteps.push(data.message || data.step || JSON.stringify(data));
         renderSteps();
       } else if (result?.content) {
@@ -798,6 +818,7 @@ DIFF_STYLES
 	cat <<SCRIPT
   <script type="module">
     import { App } from 'https://cdn.jsdelivr.net/npm/@modelcontextprotocol/ext-apps@2.0.3/+esm';
+$(_mcp_ui_js_unwrap)
 
     const diffPanels = document.getElementById('diffPanels');
     const leftContent = document.getElementById('leftContent');
@@ -902,6 +923,7 @@ DIFF_STYLES
           }
         }
       }
+      data = mcpUnwrap(data);
       if (data) {
         const leftLines = (data.left || data.original || '').split('\\n');
         const rightLines = (data.right || data.modified || '').split('\\n');
@@ -1059,6 +1081,7 @@ TREE_STYLES
 	cat <<SCRIPT
   <script type="module">
     import { App } from 'https://cdn.jsdelivr.net/npm/@modelcontextprotocol/ext-apps@2.0.3/+esm';
+$(_mcp_ui_js_unwrap)
 
     const treeRoot = document.getElementById('treeRoot');
     const treeStats = document.getElementById('treeStats');
@@ -1218,6 +1241,7 @@ TREE_STYLES
           }
         }
       }
+      data = mcpUnwrap(data);
       if (data) {
         treeData = data;
         renderTree(treeData);
@@ -1381,6 +1405,7 @@ KANBAN_STYLES
 	cat <<SCRIPT
   <script type="module">
     import { App } from 'https://cdn.jsdelivr.net/npm/@modelcontextprotocol/ext-apps@2.0.3/+esm';
+$(_mcp_ui_js_unwrap)
 
     const kanbanBoard = document.getElementById('kanbanBoard');
     const columnsConfig = ${columns_config};
@@ -1538,6 +1563,7 @@ KANBAN_STYLES
           }
         }
       }
+      data = mcpUnwrap(data);
       if (data) {
         renderBoard(Array.isArray(data) ? data : data.cards || []);
       }
