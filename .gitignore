@@ -4,7 +4,6 @@ docs/internal/
 .cursor/
 # MCP registry caches
 **/.registry/
-AGENTS.md
 docs/.DS_Store
 .DS_Store
 **/.DS_Store
@@ -18,4 +17,4 @@ docs/proposals/
 .claude/settings.json
 .claude/settings.local.json
 .claude/worktrees/
-CLAUDE.md
+CLAUDE.local.md
