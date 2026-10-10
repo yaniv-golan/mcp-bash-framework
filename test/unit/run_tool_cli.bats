@@ -125,6 +125,29 @@ EOF
 	assert_output --partial "tool not found"
 }
 
+@test "run_tool_cli: finds a tool added after the registry was cached" {
+	run "${MCPBASH_HOME}/bin/mcp-bash" run-tool test.echo --args '{"value":"ok"}'
+	assert_success
+	[ -f "${PROJECT_ROOT}/.registry/tools.json" ]
+
+	mkdir -p "${PROJECT_ROOT}/tools/added"
+	cat >"${PROJECT_ROOT}/tools/added/tool.meta.json" <<'EOF'
+{"name": "test.added", "description": "Added after the first run", "inputSchema": {"type": "object"}}
+EOF
+	cat >"${PROJECT_ROOT}/tools/added/tool.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+source "${MCP_SDK}/tool-sdk.sh"
+mcp_emit_json "$(mcp_json_obj message "added")"
+EOF
+	chmod +x "${PROJECT_ROOT}/tools/added/tool.sh"
+
+	run "${MCPBASH_HOME}/bin/mcp-bash" run-tool test.added
+	assert_success
+	assert_output --partial 'added'
+	refute_output --partial 'tool not found'
+}
+
 @test "run_tool_cli: invalid args must be rejected" {
 	run "${MCPBASH_HOME}/bin/mcp-bash" run-tool test.echo --args '"not-an-object"'
 	assert_failure

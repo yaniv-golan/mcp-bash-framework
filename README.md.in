@@ -517,7 +517,7 @@ mcp-bash run-tool my-tool --print-env --dry-run
 mcp-bash run-tool my-tool --dry-run
 ```
 
-Flags: `--args` (JSON object), `--roots` (comma-separated paths), `--dry-run`, `--timeout <secs>`, `--verbose` (stream tool stderr), `--no-refresh` (reuse cached registry), `--minimal` (force degraded mode), `--project-root <dir>`, `--print-env` (dump wiring without executing), `--allow-self` / `--allow TOOL` / `--allow-all` (allowlist this run; tools are denied by default), `--with-server-env` (source `server.d/env.sh` first), `--source FILE` (source a file first; repeatable). Elicitation is not supported in CLI mode.
+Flags: `--args` (JSON object), `--roots` (comma-separated paths), `--dry-run`, `--timeout <secs>`, `--verbose` (stream tool stderr), `--no-refresh` (reuse the cached registry; by default, run-tool rescans when anything under `tools/` is newer than the cache), `--minimal` (force degraded mode), `--project-root <dir>`, `--print-env` (dump wiring without executing), `--allow-self` / `--allow TOOL` / `--allow-all` (allowlist this run; tools are denied by default), `--with-server-env` (source `server.d/env.sh` first), `--source FILE` (source a file first; repeatable). Elicitation is not supported in CLI mode.
 
 The scaffolder and examples use per-tool directories (e.g., `tools/check-disk/tool.sh`); automatic discovery requires tools to live under subdirectories of `tools/` (root-level scripts are not discovered).
 
