@@ -79,6 +79,7 @@ TESTS=(
 	"test_windows_env_size_providers.sh"
 	"test_windows_registry_large_icons.sh"
 	"test_tools_policy.sh"
+	"test_tools_policy_denied.sh"
 	"test_project_level_providers.sh"
 	"test_meta_env.sh"
 	"test_ui_meta_env.sh"

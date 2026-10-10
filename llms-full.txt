@@ -27,7 +27,7 @@ Pure Bash MCP server framework. Bash≥3.2 + jq/gojq. Stdio transport only.
   - `tools/<name>/tool.sh` + `tools/<name>/tool.meta.json`.
   - `resources/<name>.meta.json` + content files.
   - `prompts/<name>.meta.json` + template files.
-  - `server.d/register.json` (preferred, data-only) or `server.d/register.sh` (runs only when `MCPBASH_ALLOW_PROJECT_HOOKS=true`); both require safe ownership/permissions (not group/world-writable). `server.d/server.meta.json` (identity, plus optional `"env"` tool/provider env policy). `server.d/env.sh` is sourced only by `mcp-bash run-tool --with-server-env`, never by the server. Optional `server.d/policy.sh` (defines `mcp_tools_policy_check` to allow/deny tools centrally).
+  - `server.d/register.json` (preferred, data-only) or `server.d/register.sh` (runs only when `MCPBASH_ALLOW_PROJECT_HOOKS=true`); both require safe ownership/permissions (not group/world-writable). `server.d/server.meta.json` (identity, plus optional `"env"` tool/provider env policy). `server.d/env.sh` is sourced only by `mcp-bash run-tool --with-server-env`, never by the server. Optional `server.d/policy.sh` restricts tools centrally: prefer `mcp_tools_policy_project TOOL_NAME ARGS_JSON` (runs after the built-in allowlist and path checks; exit 0 allows, non-zero denies with its stdout as the message; runs in a subshell, so keep state in files). Redefining `mcp_tools_policy_check` replaces the built-in checks and must call `mcp_tools_policy_check_default "$@" || return 1` first. Denials reach the client as an `isError` tool result with `_meta["mcpbash/error"].type` = `policy_denied`.
   - `providers/<scheme>.sh` (project resource providers for custom URI schemes).
   - `config/roots.json`, `.registry/` (registry cache, not committed).
 

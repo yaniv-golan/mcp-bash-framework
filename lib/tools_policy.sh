@@ -128,11 +128,54 @@ mcp_tools_policy_init() {
 
 # Default policy: deny unless explicitly allowed via MCPBASH_TOOL_ALLOWLIST or
 # MCPBASH_TOOL_ALLOW_DEFAULT=allow|all (see docs/ENV_REFERENCE.md), plus tool
-# path validation. server.d/policy.sh may redefine mcp_tools_policy_check(); a
+# path validation, then the project's restrict-only hook
+# (mcp_tools_policy_project) when server.d/policy.sh defines one.
+# server.d/policy.sh may instead redefine mcp_tools_policy_check(); a
 # redefinition REPLACES this check, so it should call
 # `mcp_tools_policy_check_default "$@" || return 1` first and add its own rules.
+# Args: $1 tool name, $2 tool metadata JSON, $3 call arguments JSON.
 mcp_tools_policy_check() {
-	mcp_tools_policy_check_default "$@"
+	mcp_tools_policy_check_default "$@" || return 1
+	mcp_tools_policy_run_project_hook "$@"
+}
+
+# Run the project's restrict-only hook, if server.d/policy.sh defines one:
+#   mcp_tools_policy_project TOOL_NAME ARGS_JSON
+# Exit 0 allows the call; any other status denies it, and what the hook printed
+# on stdout becomes the denial message the model and the user see. The hook runs
+# inside $(...): the server's stdout is the protocol channel, so the hook must
+# never write to it, and variables it sets don't survive the call (keep any
+# state in files). On allow its output is discarded. On deny trailing newlines
+# are dropped and the message is capped at 1 KiB; an empty message becomes
+# "Tool '<name>' denied by server policy".
+mcp_tools_policy_run_project_hook() {
+	declare -F mcp_tools_policy_project >/dev/null 2>&1 || return 0
+	local name="$1"
+	local args_json="${3:-}"
+	[ -n "${args_json}" ] || args_json='{}'
+	local hook_out=""
+	local hook_rc=0
+	hook_out="$(mcp_tools_policy_project "${name}" "${args_json}")" || hook_rc=$?
+	[ "${hook_rc}" -ne 0 ] || return 0
+
+	local message="${hook_out}"
+	local byte_len
+	byte_len="$(printf '%s' "${message}" | LC_ALL=C wc -c | tr -d ' ')"
+	if [ "${byte_len:-0}" -gt 1024 ]; then
+		# Cut at 1 KiB, then drop a character the cut split, so the message
+		# stays valid UTF-8 (the server drops non-UTF-8 output).
+		message="$(printf '%s' "${message}" | head -c 1024)"
+		if command -v iconv >/dev/null 2>&1; then
+			message="$(printf '%s' "${message}" | iconv -c -f UTF-8 -t UTF-8 2>/dev/null)" || true
+		fi
+	fi
+	if [ -z "${message}" ]; then
+		message="Tool '${name}' denied by server policy"
+	fi
+	_MCP_TOOLS_ERROR_CODE=-32602
+	_MCP_TOOLS_ERROR_MESSAGE="${message}"
+	_MCP_TOOLS_ERROR_DATA=""
+	return 1
 }
 
 # Static check (never sources the file): does this policy.sh redefine
@@ -222,6 +265,9 @@ mcp_tools_policy_check_default() {
 	if [ -n "${path_rel}" ]; then
 		path_abs="${MCPBASH_TOOLS_DIR%/}/${path_rel}"
 		if ! mcp_tools_validate_path "${path_abs}"; then
+			# A broken install, not a decision about the call: reported as a
+			# JSON-RPC error, not as a policy_denied tool result.
+			_MCP_TOOLS_POLICY_REFUSAL="config"
 			_MCP_TOOLS_ERROR_CODE=-32602
 			_MCP_TOOLS_ERROR_MESSAGE="Tool '${name}' path rejected by policy"
 			return 1

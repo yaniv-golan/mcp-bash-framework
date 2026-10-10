@@ -485,6 +485,11 @@ EOF
 	if mcp_tools_call "${tool_name}" "${args_json}" "${effective_timeout}" "{}"; then
 		result_json="${_MCP_TOOLS_RESULT:-}"
 		printf '%s\n' "${result_json}"
+		# A policy denial is a normal tool result for clients, but the tool
+		# never ran: keep the non-zero exit run-tool has always given it.
+		if [ "${_MCP_TOOLS_POLICY_DENIED:-false}" = "true" ]; then
+			exit 1
+		fi
 		exit 0
 	else
 		if [ -n "${_MCP_TOOLS_RESULT:-}" ]; then

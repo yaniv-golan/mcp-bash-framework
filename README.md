@@ -569,25 +569,30 @@ Paths are resolved relative to `MCPBASH_PROJECT_ROOT`, and registry refreshes pi
 
 ## Tool Policy Hook (optional)
 
-Projects can gate tool execution centrally by adding `server.d/policy.sh` with `mcp_tools_policy_check()`. The framework calls this before every tool run. The built-in policy denies every tool unless it is allowlisted (`MCPBASH_TOOL_ALLOWLIST`, or `--allow-self` for `run-tool`).
+Projects can restrict tool execution centrally in `server.d/policy.sh`. The built-in policy runs first and denies every tool unless it is allowlisted (`MCPBASH_TOOL_ALLOWLIST`, or `--allow-self` for `run-tool`); a project rule can only narrow that further.
+
+The preferred form is the restrict-only hook `mcp_tools_policy_project`. The framework calls it after the built-in checks pass, with the tool name and the call's arguments (JSON):
 
 ```bash
 # server.d/policy.sh
-mcp_tools_policy_check() {
-	# Keep the default policy (deny-by-default allowlist, tool path checks).
-	mcp_tools_policy_check_default "$@" || return 1
-	local tool_name="$1"
-	if [ "${MYPROJECT_READ_ONLY:-0}" = "1" ] && [[ "${tool_name}" != myProj.get* ]]; then
-		mcp_tools_error -32602 "Read-only mode: ${tool_name} disabled"
+mcp_tools_policy_project() {
+	local tool_name="$1" args_json="$2"
+	if [ "${MYPROJECT_READ_ONLY:-0}" = "1" ] && [[ "${tool_name}" != myproj-get* ]]; then
+		printf 'Read-only mode: %s is disabled. Ask the user to turn off read-only mode.\n' "${tool_name}"
 		return 1
 	fi
 	return 0
 }
 ```
 
-Defining `mcp_tools_policy_check` **replaces** the built-in policy, including the deny-by-default allowlist (`MCPBASH_TOOL_ALLOWLIST`) and tool path checks, so start it with `mcp_tools_policy_check_default "$@" || return 1` and add your rules after it; `mcp-bash validate` and `doctor` warn when it doesn't. This guards against accidentally widening access, not against a hostile project: `policy.sh` is trusted shell code sourced at startup and can redefine anything.
+- Exit 0 allows the call. Any other status denies it, and what the hook printed becomes the message the model and the user see (trailing newlines dropped, capped at 1 KiB; with no output it is `Tool '<name>' denied by server policy`). Output on allow is discarded.
+- The hook runs in a subshell (`$(...)`), because the server's stdout is the protocol channel. Variables it sets don't survive between calls: keep any state in files.
 
-Use `-32602` for policy/invalid-params blocks, `-32600` for capability/auth failures. Keep logic lightweight; the hook runs on every invocation.
+A denial, whether from the allowlist or a project rule, comes back as a tool result with `isError: true` and `_meta["mcpbash/error"].type` = `policy_denied`, not as a JSON-RPC error, so clients such as Claude Desktop show the reason. A rejected tool path (a broken install) is still a JSON-RPC error.
+
+Older projects define `mcp_tools_policy_check` instead. That still works, but it **replaces** the built-in policy, including the deny-by-default allowlist (`MCPBASH_TOOL_ALLOWLIST`) and tool path checks, so it must start with `mcp_tools_policy_check_default "$@" || return 1`; `mcp-bash validate` and `doctor` warn when it doesn't. Its denial message (`mcp_tools_error CODE "message" [data]`) and data are kept; the code is not, since a tool result has none. If `policy.sh` defines both, `mcp_tools_policy_check` wins and the project hook is not called. Either way this guards against accidentally widening access, not against a hostile project: `policy.sh` is trusted shell code sourced at startup and can redefine anything.
+
+Keep the logic lightweight; the hook runs on every invocation.
 
 ## Learn by Example
 

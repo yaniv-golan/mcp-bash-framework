@@ -7,7 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Behaviour changes to check before upgrading
+
+- **Tool policy denials:** a call refused by `MCPBASH_TOOL_ALLOWLIST` or `server.d/policy.sh` now returns a tool result with `isError: true` and type `policy_denied` instead of a JSON-RPC error, and a policy's custom error code is no longer sent.
+
+### Changed
+
+- **Policy denials are tool results, not JSON-RPC errors**: A `tools/call` refused by the tool allowlist or a `server.d/policy.sh` rule returned a JSON-RPC error, which Claude Desktop shows only as "The connector returned an error or an invalid response", so neither the model nor the user saw why. It is now a tool result with `isError: true`, the denial message as text and `_meta["mcpbash/error"]` = `{"type":"policy_denied","message":…}` (plus the policy's data, if any). A policy's custom error code (for example `-32600`) is no longer sent. A rejected tool path, a missing executable and inherit mode without the allow flag stay JSON-RPC errors. `mcp-bash run-tool` prints the result and still exits 1.
+
 ### Added
+
+- **`mcp_tools_policy_project` restrict-only policy hook**: `server.d/policy.sh` can define `mcp_tools_policy_project TOOL_NAME ARGS_JSON`, called after the built-in allowlist and path checks, so it can only narrow access. Exit 0 allows; any other status denies, and the hook's stdout becomes the denial message (trailing newlines dropped, capped at 1 KiB, `Tool '<name>' denied by server policy` when empty). It runs in a subshell so it can never write to the protocol stream; keep any state in files. Redefining `mcp_tools_policy_check` still works as before.
 
 - **`mcp_tool_error_result` builds a tool error result**: `mcp_tool_error_result TYPE MESSAGE [--hint HINT] [--data JSON]` (in `sdk/tool-error.sh`, loaded by `tool-sdk.sh`) prints a result with `isError: true`, the message and hint as text the model reads, and the details under `_meta["mcpbash/error"]`, with no `structuredContent`. It is the shared shape for tool errors and policy denials. Existing helpers (`mcp_error`, `mcp_result_error`) are unchanged.
 

@@ -673,6 +673,24 @@ mcp_tools_error() {
 	_MCP_TOOLS_ERROR_DATA="${3:-}"
 }
 
+# Set _MCP_TOOLS_RESULT to a policy_denied tool result (isError: true) built by
+# the shared SDK builder, and mark the call as denied for `mcp-bash run-tool`.
+# Usage: mcp_tools_policy_denied_result <message> [data_json]
+mcp_tools_policy_denied_result() {
+	local message="$1"
+	local data="${2:-null}"
+	if ! declare -F mcp_tool_error_result >/dev/null 2>&1; then
+		# shellcheck source=../sdk/tool-error.sh disable=SC1091
+		. "${MCPBASH_HOME}/sdk/tool-error.sh"
+	fi
+	if [ -n "${data}" ] && [ "${data}" != "null" ]; then
+		_MCP_TOOLS_RESULT="$(mcp_tool_error_result policy_denied "${message}" --data "${data}")"
+	else
+		_MCP_TOOLS_RESULT="$(mcp_tool_error_result policy_denied "${message}")"
+	fi
+	_MCP_TOOLS_POLICY_DENIED=true
+}
+
 # Emit error JSON to stdout for propagation through command substitution.
 # Usage: _mcp_tools_emit_error <code> <message> [data]
 # The data argument should be valid JSON (object, string, null, etc.)
@@ -1633,14 +1651,24 @@ mcp_tools_call() {
 
 	# Initialize and enforce project policy (server.d/policy.sh can override).
 	mcp_tools_policy_init
-	if ! mcp_tools_policy_check "${name}" "${metadata}"; then
+	_MCP_TOOLS_POLICY_REFUSAL=""
+	_MCP_TOOLS_POLICY_DENIED=false
+	if ! mcp_tools_policy_check "${name}" "${metadata}" "${args_json}"; then
 		if [ "${_MCP_TOOLS_ERROR_CODE:-0}" -eq 0 ]; then
 			mcp_tools_error -32602 "Tool '${name}' blocked by policy"
 		fi
 		local policy_data="${_MCP_TOOLS_ERROR_DATA:-null}"
 		[ -z "${policy_data}" ] && policy_data="null"
-		_mcp_tools_emit_error "${_MCP_TOOLS_ERROR_CODE}" "${_MCP_TOOLS_ERROR_MESSAGE}" "${policy_data}"
-		return 1
+		if [ "${_MCP_TOOLS_POLICY_REFUSAL}" = "config" ]; then
+			_mcp_tools_emit_error "${_MCP_TOOLS_ERROR_CODE}" "${_MCP_TOOLS_ERROR_MESSAGE}" "${policy_data}"
+			return 1
+		fi
+		# A policy denial (allowlist or project rule) is a tool result with
+		# isError, not a JSON-RPC error: clients such as Claude Desktop show
+		# JSON-RPC errors only as a generic failure, so the model and the user
+		# never saw why the call was refused.
+		mcp_tools_policy_denied_result "${_MCP_TOOLS_ERROR_MESSAGE}" "${policy_data}"
+		return 0
 	fi
 
 	# Checked after policy.sh has run, so a mode it sets is gated too. Warn once

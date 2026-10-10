@@ -89,13 +89,20 @@ cat <<'REQ' >"${POLICY_ROOT}/requests-deny.ndjson"
 REQ
 POLICY_READ_ONLY=1 test_run_mcp "${POLICY_ROOT}" "${POLICY_ROOT}/requests-deny.ndjson" "${POLICY_ROOT}/responses-deny.ndjson"
 deny_resp="$(grep '"id":"call-deny"' "${POLICY_ROOT}/responses-deny.ndjson" | head -n1)"
-deny_code="$(echo "${deny_resp}" | jq -r '.error.code // empty')"
-deny_msg="$(echo "${deny_resp}" | jq -r '.error.message // empty')"
-
-test_assert_eq "-32602" "${deny_code}" "expected policy violation to surface as -32602"
-if [[ "${deny_msg}" != *"disabled by policy"* ]]; then
-	test_fail "expected policy message, got: ${deny_msg}"
-fi
+# Policy denials are tool results with isError (type policy_denied), so clients
+# show the reason; they are not JSON-RPC errors.
+assert_policy_denied() {
+	local resp="$1" want_msg="$2" label="$3"
+	if ! echo "${resp}" | jq -e '(.error | not) and .result.isError == true and .result._meta["mcpbash/error"].type == "policy_denied"' >/dev/null; then
+		test_fail "${label}: expected a policy_denied isError result, got: ${resp}"
+	fi
+	local text
+	text="$(echo "${resp}" | jq -r '.result.content[0].text // empty')"
+	if [[ "${text}" != *"${want_msg}"* ]]; then
+		test_fail "${label}: expected message '${want_msg}', got: ${text}"
+	fi
+}
+assert_policy_denied "${deny_resp}" "disabled by policy" "read-only denial"
 
 # Capability/auth gate with data payload
 cat <<'REQ' >"${POLICY_ROOT}/requests-auth.ndjson"
@@ -106,14 +113,11 @@ REQ
 POLICY_REQUIRE_AUTH=1 POLICY_MAX_TIMEOUT=0 POLICY_READ_ONLY=0 \
 	test_run_mcp "${POLICY_ROOT}" "${POLICY_ROOT}/requests-auth.ndjson" "${POLICY_ROOT}/responses-auth.ndjson"
 auth_resp="$(grep '"id":"call-auth"' "${POLICY_ROOT}/responses-auth.ndjson" | head -n1)"
-auth_code="$(echo "${auth_resp}" | jq -r '.error.code // empty')"
-auth_msg="$(echo "${auth_resp}" | jq -r '.error.message // empty')"
-auth_reason="$(echo "${auth_resp}" | jq -r '.error.data.reason // empty')"
-test_assert_eq "-32600" "${auth_code}" "expected capability/auth gate to surface as -32600"
-if [[ "${auth_msg}" != *"Capability required"* ]]; then
-	test_fail "expected auth message, got: ${auth_msg}"
-fi
-test_assert_eq "auth" "${auth_reason}" "expected error.data.reason to propagate"
+# The policy's own code (-32600) has no place in a tool result; its message
+# and data still arrive.
+assert_policy_denied "${auth_resp}" "Capability required" "auth gate"
+auth_reason="$(echo "${auth_resp}" | jq -r '.result._meta["mcpbash/error"].data.reason // empty')"
+test_assert_eq "auth" "${auth_reason}" "expected the policy's data to propagate"
 
 # Metadata-driven denial (timeout)
 mkdir -p "${POLICY_ROOT}/tools/slow"
@@ -144,11 +148,6 @@ REQ
 POLICY_MAX_TIMEOUT=10 POLICY_REQUIRE_AUTH=0 POLICY_READ_ONLY=0 \
 	test_run_mcp "${POLICY_ROOT}" "${POLICY_ROOT}/requests-timeout.ndjson" "${POLICY_ROOT}/responses-timeout.ndjson"
 timeout_resp="$(grep '"id":"call-timeout"' "${POLICY_ROOT}/responses-timeout.ndjson" | head -n1)"
-timeout_code="$(echo "${timeout_resp}" | jq -r '.error.code // empty')"
-timeout_msg="$(echo "${timeout_resp}" | jq -r '.error.message // empty')"
-timeout_data="$(echo "${timeout_resp}" | jq -r '.error.data.timeout // empty')"
-test_assert_eq "-32602" "${timeout_code}" "expected timeout policy to surface as -32602"
-if [[ "${timeout_msg}" != *"policy timeout"* ]]; then
-	test_fail "expected timeout policy message, got: ${timeout_msg}"
-fi
-test_assert_eq "20" "${timeout_data}" "expected error.data.timeout to propagate"
+assert_policy_denied "${timeout_resp}" "policy timeout" "timeout policy"
+timeout_data="$(echo "${timeout_resp}" | jq -r '.result._meta["mcpbash/error"].data.timeout // empty')"
+test_assert_eq "20" "${timeout_data}" "expected the policy's data to propagate"
