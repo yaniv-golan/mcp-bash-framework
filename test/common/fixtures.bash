@@ -8,6 +8,8 @@ MCPBASH_TEST_ROOT="${MCPBASH_TEST_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../
 # Export canonical environment variables consumed by the server and helpers.
 export MCPBASH_HOME="${MCPBASH_TEST_ROOT}"
 export PATH="${MCPBASH_HOME}/bin:${PATH}"
+# Keep the startup deprecation scan out of unit tests (it reports on stderr).
+export MCPBASH_DEPRECATION_NOTICE="${MCPBASH_DEPRECATION_NOTICE:-false}"
 
 if [ -z "${MCPBASH_TOOL_ALLOWLIST:-}" ]; then
 	export MCPBASH_TOOL_ALLOWLIST="*"

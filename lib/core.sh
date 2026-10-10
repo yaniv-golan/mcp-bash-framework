@@ -132,6 +132,66 @@ mcp_core_bootstrap_state() {
 	: >"${MCP_PROGRESS_STREAM}"
 	: >"${MCP_LOG_STREAM}"
 	mcp_runtime_log_startup_summary
+	mcp_core_start_deprecation_notice
+}
+
+# Once a day, tell the operator on stderr when the project uses APIs that
+# change in mcp-bash 2.0. Best effort: the scan runs in the background, never
+# touches stdout, and any failure is silent. Skipped when the rule engine isn't
+# installed (vendored runtimes), for bundles (static registry, whose users
+# can't act on it), in minimal mode, and with MCPBASH_DEPRECATION_NOTICE=false.
+mcp_core_start_deprecation_notice() {
+	case "${MCPBASH_DEPRECATION_NOTICE:-true}" in
+	false | 0 | no | off) return 0 ;;
+	esac
+	[ "${MCPBASH_STATIC_REGISTRY:-0}" = "1" ] && return 0
+	mcp_runtime_is_minimal_mode && return 0
+	[ -f "${MCPBASH_HOME}/lib/migrate_rules.sh" ] || return 0
+	local project_root="${MCPBASH_PROJECT_ROOT:-}"
+	local registry_dir="${MCPBASH_REGISTRY_DIR:-}"
+	[ -n "${project_root}" ] && [ -d "${project_root}" ] || return 0
+	[ -n "${registry_dir}" ] && [ -d "${registry_dir}" ] && [ -w "${registry_dir}" ] || return 0
+
+	# The stamp holds the date of the last scan. Claim today's slot before
+	# scanning so servers started together report once, and a clean project
+	# is scanned at most once a day.
+	local stamp="${registry_dir}/deprecation-notice.stamp"
+	local today last=""
+	today="$(date +%Y-%m-%d 2>/dev/null)" || return 0
+	[ -n "${today}" ] || return 0
+	if [ -f "${stamp}" ]; then
+		last="$(head -n 1 "${stamp}" 2>/dev/null || true)"
+	fi
+	[ "${last}" = "${today}" ] && return 0
+	printf '%s\n' "${today}" >"${stamp}" 2>/dev/null || return 0
+
+	(
+		set +e
+		# shellcheck source=lib/migrate_rules.sh disable=SC1091
+		. "${MCPBASH_HOME}/lib/migrate_rules.sh" || exit 0
+		# One rule at a time, stopping as soon as the server is gone ($$ is the
+		# server's PID even in this subshell): background helpers must not
+		# outlive a server that was killed.
+		count=0
+		while IFS= read -r rule; do
+			kill -0 "$$" 2>/dev/null || exit 0
+			id="${rule##*/}"
+			id="${id%.sh}"
+			n="$(mcp_migrate_detect "${project_root}" --validate --only "${id}" 2>/dev/null | grep -c . 2>/dev/null)"
+			case "${n}" in '' | *[!0-9]*) n=0 ;; esac
+			count=$((count + n))
+		done <<EOF_RULES
+$(mcp_migrate_rule_files 2>/dev/null)
+EOF_RULES
+		kill -0 "$$" 2>/dev/null || exit 0
+		[ "${count}" -gt 0 ] || exit 0
+		noun="uses"
+		[ "${count}" -eq 1 ] && noun="use"
+		# shellcheck disable=SC2016  # Backticks are literal text.
+		printf 'mcp-bash: %s %s of APIs that change in mcp-bash 2.0; run `mcp-bash validate` for details\n' "${count}" "${noun}" >&2
+	) </dev/null >/dev/null &
+	# Not a worker: keep it out of `jobs -p`, so shutdown doesn't wait for it.
+	disown "$!" 2>/dev/null || true
 }
 
 mcp_core_has_resource_subscriptions() {

@@ -118,6 +118,7 @@ TESTS=(
 	"test_cli_config_variants.sh"
 	"test_cli_run_tool_allow_self.sh"
 	"test_cli_validate.sh"
+	"test_deprecation_notice.sh"
 	"test_project_root_detection.sh"
 	"test_elicitation.sh"
 	"test_elicitation_modes.sh"

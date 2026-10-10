@@ -16,6 +16,7 @@ Authoritative list of supported environment variables. Defaults shown are the sh
 | `MCPBASH_REGISTRY_MAX_BYTES` | `104857600` | Registry size guard (bytes). |
 | `MCPBASH_REGISTRY_REFRESH_PATH` | (unset) | Limit registry refresh to a subpath (must be a literal subpath of the default scan dir; no glob semantics). |
 | `MCPBASH_STATIC_REGISTRY` | (unset) | When `1`, skip runtime discovery and use pre-generated `.registry/*.json` cache directly. Designed for bundle deployments. Skips `register.sh` (shell code) but honors `register.json` (data-only). Falls back to normal discovery if cache missing. CLI `registry refresh` still works (overrides static mode). |
+| `MCPBASH_DEPRECATION_NOTICE` | `true` | When the project uses APIs that change in mcp-bash 2.0, the server prints one line to stderr at startup, at most once a day (stamp: `deprecation-notice.stamp` in the registry dir). `false` turns it off. Skipped for bundles (`MCPBASH_STATIC_REGISTRY=1`), vendored runtimes, minimal mode and a read-only registry dir. Details: `mcp-bash validate`. |
 | `MCPBASH_MAX_CONCURRENT_REQUESTS` | `16` | Worker slot cap. |
 | `MCPBASH_MAX_TEXT_BYTES` | `102400` | Max bytes for `content[].text` in `mcp_result_json` before the text is replaced by a short summary (the data stays in `structuredContent`; 100KB default ensures LLMs see full data). |
 | `MCPBASH_MAX_TOOL_OUTPUT_SIZE` | `10485760` | Tool stdout limit (bytes). |

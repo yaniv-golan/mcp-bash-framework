@@ -12,6 +12,9 @@ MCPBASH_TEST_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/../.." && pwd)"
 # MCPBASH_PROJECT_ROOT is the project location (writable, where tools/prompts/resources live).
 export MCPBASH_HOME="${MCPBASH_TEST_ROOT}"
 export PATH="${MCPBASH_HOME}/bin:${PATH}"
+# Test workspaces contain the framework's own files, so the startup deprecation
+# scan would report on them in every test. test_deprecation_notice.sh turns it on.
+export MCPBASH_DEPRECATION_NOTICE="${MCPBASH_DEPRECATION_NOTICE:-false}"
 
 if [ -z "${MCPBASH_TOOL_ALLOWLIST:-}" ]; then
 	export MCPBASH_TOOL_ALLOWLIST="*"
