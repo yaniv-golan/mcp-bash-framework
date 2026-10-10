@@ -60,6 +60,17 @@ mcp_doctor_git_pin_issue() {
 		"${version:-(unknown version)}" "${MCPBASH_POLICY_GIT_PIN_MIN_VERSION}" "${MCPBASH_POLICY_GIT_PIN_MIN_VERSION}"
 }
 
+# With the git provider enabled in this shell but no git on PATH, every git://
+# resource read is refused at fetch time. Prints the warning message and
+# returns 0 in that case; returns 1 otherwise.
+mcp_doctor_git_missing_issue() {
+	[ "${MCPBASH_ENABLE_GIT_PROVIDER:-false}" = "true" ] || return 1
+	command -v git >/dev/null 2>&1 && return 1
+	command -v mcp_policy_git_supports_pinning >/dev/null 2>&1 || . "${MCPBASH_HOME}/lib/policy.sh"
+	printf 'MCPBASH_ENABLE_GIT_PROVIDER=true but git is not on PATH: git resource reads will fail; install git >= %s or unset MCPBASH_ENABLE_GIT_PROVIDER' \
+		"${MCPBASH_POLICY_GIT_PIN_MIN_VERSION:-2.37}"
+}
+
 # Render the tool/provider env policy (text mode). Names and states only; values
 # are never printed. Results describe this shell, not the host that launches the
 # server (for example Claude Desktop, which injects its own variables).
@@ -586,6 +597,11 @@ EOF
 		if git_pin_message="$(mcp_doctor_git_pin_issue)"; then
 			warnings=$((warnings + 1))
 			add_finding "git.version_unpinnable" "warning" "${git_pin_message}" "false" ""
+		fi
+		local git_missing_message=""
+		if git_missing_message="$(mcp_doctor_git_missing_issue)"; then
+			warnings=$((warnings + 1))
+			add_finding "git.missing" "warning" "${git_missing_message}" "false" ""
 		fi
 
 		if project_root="$(mcp_doctor_find_project_root 2>/dev/null)"; then
@@ -1311,6 +1327,11 @@ EOF
 	local git_pin_message=""
 	if git_pin_message="$(mcp_doctor_git_pin_issue)"; then
 		printf '  ⚠ %s\n' "${git_pin_message}"
+		warnings=$((warnings + 1))
+	fi
+	local git_missing_message=""
+	if git_missing_message="$(mcp_doctor_git_missing_issue)"; then
+		printf '  ⚠ %s\n' "${git_missing_message}"
 		warnings=$((warnings + 1))
 	fi
 

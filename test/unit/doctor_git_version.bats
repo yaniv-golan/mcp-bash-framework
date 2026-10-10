@@ -30,6 +30,35 @@ EOF
 	chmod 700 "${BIN_DIR}/git"
 }
 
+# make_path_without_git: NOGIT_DIR mirrors every command on PATH except git, so
+# doctor runs with git genuinely absent (macOS ships /usr/bin/git, so dropping
+# a directory from PATH is not enough).
+make_path_without_git() {
+	NOGIT_DIR="${BATS_TEST_TMPDIR}/nogit-bin"
+	mkdir -p "${NOGIT_DIR}"
+	local dir entry name
+	local IFS=':'
+	for dir in ${PATH}; do
+		[ -d "${dir}" ] || continue
+		for entry in "${dir}"/*; do
+			name="${entry##*/}"
+			[ "${name}" = "git" ] && continue
+			[ -x "${entry}" ] && [ ! -d "${entry}" ] || continue
+			[ -e "${NOGIT_DIR}/${name}" ] || ln -s "${entry}" "${NOGIT_DIR}/${name}"
+		done
+	done
+}
+
+# run_doctor_without_git <enable-git-provider> [doctor args...]
+run_doctor_without_git() {
+	local enable="$1"
+	shift
+	run env PATH="${NOGIT_DIR}" \
+		HOME="${BATS_TEST_TMPDIR}/home" \
+		MCPBASH_ENABLE_GIT_PROVIDER="${enable}" \
+		"${MCPBASH_HOME}/bin/mcp-bash" doctor "$@"
+}
+
 # run_doctor <enable-git-provider> [doctor args...]
 run_doctor() {
 	local enable="$1"
@@ -81,4 +110,35 @@ assert_json_finding_count() {
 	refute_output --partial "older than 2.37"
 	run_doctor false --json
 	assert_json_finding_count 0
+}
+
+# count_git_missing: number of git.missing warnings in doctor --json output.
+count_git_missing() {
+	local got=""
+	if got="$(printf '%s\n' "${output}" | "${TEST_JSON_TOOL_BIN}" -e \
+		'.findings | map(select(.id == "git.missing" and .severity == "warning")) | length' 2>/dev/null)"; then
+		printf '%s' "${got}"
+		return 0
+	fi
+	[ "$(bash -c 'printf %s "${BASH_VERSINFO[0]}"')" -lt 4 ] || fail "doctor --json output is not valid JSON: ${output}"
+	printf '%s\n' "${output}" | grep -c '"git.missing"' || true
+}
+
+@test "doctor_git_version: warns when the git provider is enabled and git is missing" {
+	make_path_without_git
+	run env PATH="${NOGIT_DIR}" bash -c 'command -v git'
+	assert_failure
+	run_doctor_without_git true
+	assert_output --partial "git is not on PATH"
+	assert_output --partial "MCPBASH_ENABLE_GIT_PROVIDER"
+	run_doctor_without_git true --json
+	assert_equal "$(count_git_missing)" "1"
+}
+
+@test "doctor_git_version: no missing-git warning when the git provider is off" {
+	make_path_without_git
+	run_doctor_without_git false
+	refute_output --partial "git is not on PATH"
+	run_doctor_without_git false --json
+	assert_equal "$(count_git_missing)" "0"
 }

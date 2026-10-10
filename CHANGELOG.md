@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`mcp-bash doctor` warns when the git provider is enabled but git is missing**: With `MCPBASH_ENABLE_GIT_PROVIDER=true` and no `git` on `PATH`, every git resource read fails at fetch time. Doctor now warns (`git.missing` in `--json`).
 - **Claude Code plugin with an mcp-bash skill**: The repository is now a plugin marketplace. `/plugin install mcp-bash --marketplace yaniv-golan/mcp-bash-framework` installs a skill that walks an agent through creating, testing, wiring and bundling an mcp-bash server, and lists the traps that fail silently (deny-by-default tools, `policy.sh`, the tool environment, bash 3.2 under Claude Desktop, completion script names).
 
 ### Security
