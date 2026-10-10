@@ -3,8 +3,8 @@
 # Each case compares the helper's output, canonicalised (keys sorted), to a
 # golden file under test/fixtures/contract/. The 2.0 branch must keep these
 # passing unchanged; only additive optional flags may be added.
-# Regenerate a golden file only with an ADR and a migrate unit (see
-# docs/internal supersede plan, Frozen API).
+# Regenerate a golden file only with a recorded design decision and a
+# migrate rule.
 
 load '../../node_modules/bats-support/load'
 load '../../node_modules/bats-assert/load'
