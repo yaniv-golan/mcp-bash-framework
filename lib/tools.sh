@@ -848,6 +848,12 @@ mcp_tools_validate_output_schema() {
 		return 1
 	fi
 
+	# An error result (a CallToolResult with isError: true) carries no structured
+	# result, so outputSchema does not apply; the MCP SDKs skip it too.
+	if printf '%s' "${structured_json}" | "${MCPBASH_JSON_TOOL_BIN}" -e 'type == "object" and .isError == true' >/dev/null 2>&1; then
+		return 0
+	fi
+
 	# Write schema to temp file to avoid shell quoting issues with --argjson
 	# Run validation using jq -s pattern (avoid --slurpfile for Windows/gojq compatibility)
 	# If tool output is already a CallToolResult (has content array), extract structuredContent for validation
