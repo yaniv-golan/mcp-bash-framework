@@ -5,6 +5,12 @@ All notable changes to mcp-bash-framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **The installer test no longer changes the developer's `mcp-bash` command**: `test/integration/test_installer.sh` ran the installer with the real `HOME`, so each run pointed `~/.local/bin/mcp-bash` at a test directory that was deleted afterwards. It now uses a temporary `HOME`.
+
 ## [1.6.0] - 2026-10-10
 
 ### Behaviour changes to check before upgrading

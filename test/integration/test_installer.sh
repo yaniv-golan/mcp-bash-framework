@@ -18,6 +18,14 @@ test_require_command git
 test_create_tmpdir
 INSTALL_ROOT="${TEST_TMPDIR}/install-root"
 
+# The installer symlinks ~/.local/bin/mcp-bash and may edit shell rc files, so
+# give it a throwaway HOME: with the real one, every run repointed the
+# developer's mcp-bash at a test directory that is deleted afterwards.
+REAL_HOME="${HOME}"
+real_link_before="$(readlink "${REAL_HOME}/.local/bin/mcp-bash" 2>/dev/null || true)"
+export HOME="${TEST_TMPDIR}/home"
+mkdir -p "${HOME}"
+
 # Unset MCPBASH_HOME for tests that should succeed (policy refusal test sets it explicitly)
 unset MCPBASH_HOME
 
@@ -137,5 +145,10 @@ fi
 if ! printf '%s' "${err_output}" | grep -q "${FAKE_SHA}"; then
 	test_fail "verification error should include expected SHA value"
 fi
+
+printf ' -> installer symlinks into the test HOME, not the real one\n'
+assert_file_exists "${HOME}/.local/bin/mcp-bash"
+real_link_after="$(readlink "${REAL_HOME}/.local/bin/mcp-bash" 2>/dev/null || true)"
+assert_eq "${real_link_before}" "${real_link_after}" "installer test changed the real ~/.local/bin/mcp-bash"
 
 printf 'Installer integration test passed.\n'
