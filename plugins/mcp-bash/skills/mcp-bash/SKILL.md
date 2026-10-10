@@ -61,6 +61,10 @@ mcp_result_success "$(mcp_json_obj query "${query}" name "${name}")"
   (`cmd >&2`), or the result is corrupt.
 - Errors the model should see and react to: `mcp_error "type" "message" --hint "what to do"`.
   Bad arguments: `mcp_fail_invalid_args "msg"`.
+- **Result helpers don't end the tool.** `mcp_result_success`, `mcp_result_error` and
+  `mcp_error` print a result and return; in an early-return branch follow them with `exit 0`,
+  or the tool keeps going and prints a second result (or does the work it just refused).
+  `mcp_fail` and `mcp_fail_invalid_args` do exit.
 - Long work: `mcp_progress <pct> "msg"`, and check `mcp_is_cancelled` in loops.
 - Tool names: letters, digits, `_` and `-` only, up to 64 characters. **No dots** — Claude
   Desktop rejects them.
@@ -73,7 +77,10 @@ mcp_result_success "$(mcp_json_obj query "${query}" name "${name}")"
   into the filter is jq injection, and anything the tool can read (API keys) can leak.
 - **Confirming destructive actions with elicitation:** handle accept, decline, cancel and no
   answer as four separate outcomes, and raise the tool's `timeoutSecs` (for example 120) so a
-  person has time to answer.
+  person has time to answer. The `mcp_elicit*` helpers return non-zero when no answer came
+  back (client without elicitation, timeout, cancelled call), so under `set -e` write
+  `resp="$(mcp_elicit_confirm "Delete it?")" || true` and branch on `.action`; otherwise the
+  tool dies at the prompt. See "Using the helpers under `set -e`" in `docs/ELICITATION.md`.
 - After changing `inputSchema`, update the sample arguments in `tools/<name>/smoke.sh` if the
   scaffold created one.
 
