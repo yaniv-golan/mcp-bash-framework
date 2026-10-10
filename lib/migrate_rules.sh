@@ -121,8 +121,14 @@ mcp_migrate_detect() {
 	while [ $# -gt 0 ]; do
 		case "$1" in
 		--validate) validate_only=1 ;;
-		--only) only="${2-}"; shift ;;
-		--skip) skip="${2-}"; shift ;;
+		--only)
+			only="${2-}"
+			shift
+			;;
+		--skip)
+			skip="${2-}"
+			shift
+			;;
 		esac
 		shift
 	done
@@ -149,16 +155,16 @@ mcp_migrate_detect() {
 			for class in ${MIG_SCOPE}; do
 				mcp_migrate_files "${class}" "${root}"
 			done | LC_ALL=C sort -u | while IFS= read -r rel; do
-					case "${rel}" in *$'\t'* | *$'\n'*) continue ;; esac
-					local abs="${root}/${rel}"
-					case "${rel}" in /*) abs="${rel}" ;; esac
-					mig_detect "${abs}" | while IFS=$'\t' read -r line kind text; do
-						[ -n "${line}" ] || continue
-						case "${kind}" in '' | -) kind="${MIG_KIND}" ;; esac
-						text="${text//$'\t'/ }"
-						printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-							"${id}" "${kind}" "${rel}" "${line}" "${MIG_SUMMARY}" "${MIG_FIX}" "${text}"
-					done
+				case "${rel}" in *$'\t'* | *$'\n'*) continue ;; esac
+				local abs="${root}/${rel}"
+				case "${rel}" in /*) abs="${rel}" ;; esac
+				mig_detect "${abs}" | while IFS=$'\t' read -r line kind text; do
+					[ -n "${line}" ] || continue
+					case "${kind}" in '' | -) kind="${MIG_KIND}" ;; esac
+					text="${text//$'\t'/ }"
+					printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+						"${id}" "${kind}" "${rel}" "${line}" "${MIG_SUMMARY}" "${MIG_FIX}" "${text}"
+				done
 			done
 		)
 	done

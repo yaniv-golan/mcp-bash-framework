@@ -15,7 +15,8 @@ mig_detect() {
 		next="$(awk -v n="${line}" 'NR > n && $0 !~ /^[[:space:]]*(#.*)?$/ { print; exit }' "${file}")"
 		case "${next}" in
 		*[[:space:]]exit | *[[:space:]]exit[[:space:]]* | exit* | *[[:space:]]return | *[[:space:]]return[[:space:]]* | return*)
-			printf '%s\tauto\t%s\n' "${line}" "${text}" ;;
+			printf '%s\tauto\t%s\n' "${line}" "${text}"
+			;;
 		*) printf '%s\tmanual\t%s (no exit after it: code below still runs today)\n' "${line}" "${text}" ;;
 		esac
 	done
