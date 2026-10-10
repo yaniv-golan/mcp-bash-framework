@@ -61,6 +61,22 @@ __mcp_sdk_load_ui_helpers() {
 
 __mcp_sdk_load_ui_helpers
 
+__mcp_sdk_load_tool_error() {
+	# Shared builder for isError tool results (mcp_tool_error_result).
+	if declare -F mcp_tool_error_result >/dev/null 2>&1; then
+		return 0
+	fi
+	local script_dir
+	script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+	local helper="${script_dir}/tool-error.sh"
+	if [ -f "${helper}" ]; then
+		# shellcheck disable=SC1090
+		. "${helper}"
+	fi
+}
+
+__mcp_sdk_load_tool_error
+
 __mcp_sdk_json_escape() {
 	# Return a quoted JSON string literal for the given value.
 	# Prefer the framework-selected JSON tool, then fall back to jq, then a
