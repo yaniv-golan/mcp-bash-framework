@@ -36,3 +36,12 @@ load '../common/fixtures'
 	run mcp-bash vendor --verify --output "${dest}"
 	assert_success
 }
+
+@test "vendor: the error-result builder is defined when a tool sources the vendored SDK" {
+	dest="${BATS_TEST_TMPDIR}/project"
+	mkdir -p "${dest}"
+	run mcp-bash vendor --output "${dest}"
+	assert_success
+	run bash -c '. "$1/.mcp-bash/sdk/tool-sdk.sh" && declare -F mcp_tool_error_result' _ "${dest}"
+	assert_success
+}

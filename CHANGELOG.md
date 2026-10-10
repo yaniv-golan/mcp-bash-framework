@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **`mcp_tool_error_result` builds a tool error result**: `mcp_tool_error_result TYPE MESSAGE [--hint HINT] [--data JSON]` (in `sdk/tool-error.sh`, loaded by `tool-sdk.sh`) prints a result with `isError: true`, the message and hint as text the model reads, and the details under `_meta["mcpbash/error"]`, with no `structuredContent`. It is the shared shape for tool errors and policy denials. Existing helpers (`mcp_error`, `mcp_result_error`) are unchanged.
+
 ## [1.7.0] - 2026-10-10
 
 ### Added
