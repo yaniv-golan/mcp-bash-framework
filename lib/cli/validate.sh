@@ -17,6 +17,7 @@ mcp_cli_validate() {
 	local explain_defaults="false"
 	local strict="false"
 	local inspector="false"
+	local deprecations_as_errors="false"
 
 	while [ $# -gt 0 ]; do
 		case "$1" in
@@ -39,15 +40,24 @@ mcp_cli_validate() {
 		--inspector)
 			inspector="true"
 			;;
+		--deprecations-as-errors)
+			deprecations_as_errors="true"
+			;;
 		--help | -h)
 			cat <<'EOF'
 Usage:
   mcp-bash validate [--project-root DIR] [--fix] [--json]
                      [--explain-defaults] [--strict] [--inspector]
+                     [--deprecations-as-errors]
 
 Validate the current MCP project structure and metadata.
 
 Options:
+  --strict     Treat warnings as errors. Deprecations are counted
+               separately and do not fail --strict.
+  --deprecations-as-errors
+               Fail when the project uses APIs that change in the next
+               major version (see `mcp-bash migrate`).
   --inspector  Show command to run MCP Inspector CLI for strict schema
                validation. The inspector catches schema violations that
                basic validation may miss.
@@ -187,6 +197,37 @@ EOF
 	warnings=$((warnings + $2))
 	fixes_applied=$((fixes_applied + $3))
 
+	# Deprecations: uses of APIs that change in the next major version.
+	# Counted on their own (not as warnings), so --strict keeps its meaning.
+	local deprecations=0
+	if [ -f "${MCPBASH_HOME}/lib/migrate_rules.sh" ]; then
+		# shellcheck source=../migrate_rules.sh disable=SC1091
+		. "${MCPBASH_HOME}/lib/migrate_rules.sh"
+		local findings
+		findings="$(mcp_migrate_detect "${project_root}" --validate 2>/dev/null || true)"
+		if [ -n "${findings}" ]; then
+			local f_id f_kind f_file f_line f_summary f_fix f_text
+			while IFS=$'\t' read -r f_id f_kind f_file f_line f_summary f_fix f_text; do
+				[ -n "${f_id}" ] || continue
+				deprecations=$((deprecations + 1))
+				if [ "${json_mode}" = "true" ]; then
+					local obj
+					obj="$(printf '{"level":"deprecation","section":"deprecations","id":%s,"kind":%s,"file":%s,"line":%s,"message":%s,"fix":%s,"text":%s}' \
+						"$(mcp_json_quote_text "${f_id}")" "$(mcp_json_quote_text "${f_kind}")" \
+						"$(mcp_json_quote_text "${f_file}")" "${f_line}" \
+						"$(mcp_json_quote_text "${f_summary}")" "$(mcp_json_quote_text "${f_fix}")" \
+						"$(mcp_json_quote_text "${f_text}")")"
+					messages_json="$(append_to_array "${messages_json}" "${obj}")"
+				else
+					printf '⚠ %s:%s %s [%s]\n    fix: %s\n' "${f_file}" "${f_line}" "${f_summary}" "${f_id}" "${f_fix}"
+				fi
+			done <<<"${findings}"
+		fi
+	fi
+	if [ "${deprecations_as_errors}" = "true" ]; then
+		errors=$((errors + deprecations))
+	fi
+
 	if [ "${json_mode}" != "true" ]; then
 		printf '\n'
 	fi
@@ -216,6 +257,7 @@ EOF
 				--arg errors "${errors}" \
 				--arg warnings "${warnings}" \
 				--arg fixes "${fixes_applied}" \
+				--arg deprecations "${deprecations}" \
 				--arg strict "${strict}" \
 				--argjson defaults "${server_defaults:-"{}"}" \
 				--argjson messages "${messages_json}" \
@@ -223,6 +265,7 @@ EOF
 				| .errors = (.errors|tonumber)
 				| .warnings = (.warnings|tonumber)
 				| .fixesApplied = (.fixes|tonumber)
+				| .deprecations = (.deprecations|tonumber)
 				| .strict = (.strict == "true")
 				| .defaults = $defaults
 				| .messages = $messages' 2>/dev/null || printf '')"
@@ -235,6 +278,7 @@ EOF
   "errors": ${errors},
   "warnings": ${warnings},
   "fixesApplied": ${fixes_applied},
+  "deprecations": ${deprecations},
   "strict": ${strict},
   "defaults": ${server_defaults:-"{}"},
   "messages": ${messages_json}
@@ -265,6 +309,9 @@ EOF
 	fi
 
 	printf 'All checks passed (warnings: %d).\n' "${warnings}"
+	if [ "${deprecations}" -gt 0 ]; then
+		printf '%d deprecation(s): APIs that change in mcp-bash 2.0. Run '\''mcp-bash migrate'\'' for details.\n' "${deprecations}"
+	fi
 
 	# Show MCP Inspector instructions if requested
 	if [ "${inspector}" = "true" ]; then
