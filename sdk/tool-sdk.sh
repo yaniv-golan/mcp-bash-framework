@@ -348,6 +348,33 @@ mcp_args_get() {
 	return "${rc}"
 }
 
+# End the tool with an invalid_args error result the model can read
+# (isError: true), from anywhere, including inside $(...).
+# The result goes to the framework's side channel (MCP_TOOL_ERROR_FILE): a
+# substitution's stdout is captured and its exit only ends the subshell, so
+# stdout can't carry it. The non-zero exit ends the subshell and, under
+# set -e, the tool; the framework then returns the result as the tool's.
+# Used by the argument helpers below; the public mcp_fail_invalid_args keeps
+# its 1.x JSON-RPC error.
+__mcp_sdk_fail_invalid_args() {
+	local message="${1:-Invalid params}"
+	# SDK loaded without its sibling tool-error.sh (copied alone): fall back
+	# to the 1.x JSON-RPC error rather than failing on a missing function.
+	if ! declare -F mcp_tool_error_result >/dev/null 2>&1; then
+		mcp_fail_invalid_args "${message}"
+	fi
+	local result
+	result="$(mcp_tool_error_result invalid_args "${message}")"
+	if [ -n "${MCP_TOOL_ERROR_FILE:-}" ] && [ -w "${MCP_TOOL_ERROR_FILE}" ] 2>/dev/null; then
+		printf '%s' "${result}" >"${MCP_TOOL_ERROR_FILE}" 2>/dev/null || true
+	else
+		# Outside the framework (e.g. sourced in a test), print it instead.
+		printf '%s\n' "${result}"
+	fi
+	printf '%s\n' "${message}" >&2
+	exit 1
+}
+
 mcp_args_require() {
 	local pointer="$1"
 	local message="${2:-}"
@@ -357,7 +384,7 @@ mcp_args_require() {
 		if [ -z "${message}" ]; then
 			message="${pointer} is required"
 		fi
-		mcp_fail_invalid_args "${message}"
+		__mcp_sdk_fail_invalid_args "${message}"
 	fi
 	printf '%s' "${raw}"
 }
@@ -395,9 +422,9 @@ mcp_args_bool() {
 			esac
 		fi
 		if [ "${MCPBASH_MODE:-full}" = "minimal" ]; then
-			mcp_fail_invalid_args "${pointer} requires JSON tooling or a default"
+			__mcp_sdk_fail_invalid_args "${pointer} requires JSON tooling or a default"
 		else
-			mcp_fail_invalid_args "${pointer} is required"
+			__mcp_sdk_fail_invalid_args "${pointer} is required"
 		fi
 	fi
 
@@ -442,7 +469,7 @@ mcp_args_int() {
 
 	if [ "${min_set}" = "true" ] && [ "${max_set}" = "true" ]; then
 		if ! [ "${min_value}" -le "${max_value}" ] 2>/dev/null; then
-			mcp_fail_invalid_args "mcp_args_int: --min cannot exceed --max"
+			__mcp_sdk_fail_invalid_args "mcp_args_int: --min cannot exceed --max"
 		fi
 	fi
 
@@ -453,25 +480,25 @@ mcp_args_int() {
 			raw="${default_value}"
 		else
 			if [ "${MCPBASH_MODE:-full}" = "minimal" ]; then
-				mcp_fail_invalid_args "${pointer} requires JSON tooling or a default"
+				__mcp_sdk_fail_invalid_args "${pointer} requires JSON tooling or a default"
 			else
-				mcp_fail_invalid_args "${pointer} is required"
+				__mcp_sdk_fail_invalid_args "${pointer} is required"
 			fi
 		fi
 	fi
 
 	if ! printf '%s' "${raw}" | LC_ALL=C grep -Eq '^-?[0-9]+$'; then
-		mcp_fail_invalid_args "${pointer} must be an integer"
+		__mcp_sdk_fail_invalid_args "${pointer} must be an integer"
 	fi
 
 	if [ "${min_set}" = "true" ]; then
 		if ! [ "${raw}" -ge "${min_value}" ] 2>/dev/null; then
-			mcp_fail_invalid_args "${pointer} must be >= ${min_value}"
+			__mcp_sdk_fail_invalid_args "${pointer} must be >= ${min_value}"
 		fi
 	fi
 	if [ "${max_set}" = "true" ]; then
 		if ! [ "${raw}" -le "${max_value}" ] 2>/dev/null; then
-			mcp_fail_invalid_args "${pointer} must be <= ${max_value}"
+			__mcp_sdk_fail_invalid_args "${pointer} must be <= ${max_value}"
 		fi
 	fi
 
@@ -771,7 +798,7 @@ mcp_require_path() {
 	done
 
 	if [ -z "${pointer}" ]; then
-		mcp_fail_invalid_args "mcp_require_path: argument pointer is required"
+		__mcp_sdk_fail_invalid_args "mcp_require_path: argument pointer is required"
 	fi
 
 	local raw_value
@@ -786,7 +813,7 @@ mcp_require_path() {
 		if [ "${roots_count}" -eq 1 ]; then
 			raw_value="$(mcp_roots_list | head -n1)"
 		else
-			mcp_fail_invalid_args "${pointer} is required when zero or multiple roots are configured"
+			__mcp_sdk_fail_invalid_args "${pointer} is required when zero or multiple roots are configured"
 		fi
 	fi
 
@@ -795,7 +822,7 @@ mcp_require_path() {
 			printf ''
 			return 0
 		fi
-		mcp_fail_invalid_args "${pointer} is required"
+		__mcp_sdk_fail_invalid_args "${pointer} is required"
 	fi
 
 	local normalized
@@ -805,7 +832,7 @@ mcp_require_path() {
 	roots_count="$(mcp_roots_count 2>/dev/null || printf '0')"
 	if [ "${roots_count}" -gt 0 ]; then
 		if ! mcp_roots_contains "${normalized}"; then
-			mcp_fail_invalid_args "${pointer} is outside configured MCP roots"
+			__mcp_sdk_fail_invalid_args "${pointer} is outside configured MCP roots"
 		fi
 	fi
 
@@ -2476,7 +2503,7 @@ mcp_download_safe_or_fail() {
 			printf '%s' "${result}" | sed -n 's/.*"path":"\([^"]*\)".*/\1/p'
 			return 0
 		fi
-		mcp_fail_invalid_args "Download failed (minimal mode - cannot parse error details)"
+		__mcp_sdk_fail_invalid_args "Download failed (minimal mode - cannot parse error details)"
 	fi
 
 	# Full mode: parse with jq (single call for efficiency)
@@ -2493,7 +2520,7 @@ mcp_download_safe_or_fail() {
 	IFS=$'\t' read -r success err_type err_msg path <<<"$parsed"
 
 	if [[ "$success" != "true" ]]; then
-		mcp_fail_invalid_args "Download failed (${err_type}): ${err_msg}"
+		__mcp_sdk_fail_invalid_args "Download failed (${err_type}): ${err_msg}"
 	fi
 
 	# Return the path using printf (not echo) to handle paths with -n, -e, or backslashes

@@ -166,7 +166,7 @@ mcp_result_json "$(printf '%s' "$result" | jq -c '.')"
   - `mcp_config_get '.key' --default value` → extract value from loaded config by jq path.
 - Secure download helpers:
   - `mcp_download_safe --url URL --out PATH [--allow hosts] [--timeout N] [--max-bytes N] [--retries N]` → SSRF-safe HTTPS download with automatic retries, exponential backoff, and structured JSON output (`{success:true, bytes:N, path:...}` or `{success:false, error:{...}}`). Always returns 0 (safe with `set -e`).
-  - `mcp_download_safe_or_fail --url URL --out PATH [...]` → fail-fast wrapper that returns the output path on success or fails the tool with `-32602` on error.
+  - `mcp_download_safe_or_fail --url URL --out PATH [...]` → fail-fast wrapper that returns the output path on success, or ends the tool with an `invalid_args` error result (`isError: true`).
 - JSON tooling:
   - Framework detects `gojq` or `jq` and exports `MCPBASH_JSON_TOOL` and `MCPBASH_JSON_TOOL_BIN` for tools.
   - Tools can optionally call `${MCPBASH_JSON_TOOL_BIN}` directly; always prefer `-c` for compact JSON and `-r` for raw values.

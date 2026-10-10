@@ -186,7 +186,7 @@ source "${MCP_SDK:?MCP_SDK environment variable not set}/tool-sdk.sh"
 
 #### Argument parsing helpers
 
-**`mcp_args_require`** – Extract a required string value; fails with `-32602` if missing/null:
+**`mcp_args_require`** – Extract a required string value; if it is missing or null, ends the tool with an `invalid_args` error result the model can read:
 
 ```bash
 # Fails with "target is required" if .target is missing or null
@@ -635,7 +635,7 @@ result=$(mcp_download_safe --url "$url" --out "/tmp/data.json" --allow "example.
 For tools that should fail on download error (most cases):
 
 ```bash
-# Downloads or fails tool with -32602
+# Downloads, or ends the tool with an invalid_args error result
 path=$(mcp_download_safe_or_fail --url "https://api.example.com/data" \
   --out "/tmp/data.json" --allow "api.example.com")
 process_file "$path"
@@ -962,7 +962,7 @@ fi
 - Dependencies or upstream APIs that are down or rate limited (`unavailable`), slow operations (`timeout`)
 - Unexpected failures (`internal`)
 
-**Protocol Errors come from the server, not your tool:** unknown tool, malformed request, cancellation, output over the size limits. In 1.x the SDK argument helpers (`mcp_args_require`, `mcp_args_int`, `mcp_args_bool`, `mcp_require_path`) still report bad arguments as `-32602` protocol errors.
+**Protocol Errors come from the server, not your tool:** unknown tool, malformed request, cancellation, output over the size limits. Since 1.8 the SDK argument helpers (`mcp_args_require`, `mcp_args_int`, `mcp_args_bool`, `mcp_require_path`) and `mcp_download_safe_or_fail` report a bad or missing argument as a tool error result (`isError: true`, type `invalid_args`), and end the tool even when called inside `$(...)`.
 
 #### SDK helpers
 

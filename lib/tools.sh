@@ -2108,6 +2108,22 @@ mcp_tools_call() {
 		mcp_logging_debug "${MCP_TOOLS_LOGGER}" "Complete tool=${name} exit=${exit_code} stdout_bytes=${stdout_size}"
 	fi
 
+	# A tool error *result* in the side channel (an isError CallToolResult,
+	# written by the SDK when it ends a tool from inside $(...)) is the tool's
+	# result: hand it to the normal result path, as if the tool had printed it
+	# and exited 0. It replaces whatever the tool printed before failing.
+	if [ -n "${tool_error_file}" ] && [ -s "${tool_error_file}" ]; then
+		local side_result
+		side_result="$(cat "${tool_error_file}" 2>/dev/null || true)"
+		case "${side_result}" in
+		'{"content":['*'"isError":true'*)
+			printf '%s' "${side_result}" >"${stdout_file}"
+			: >"${tool_error_file}"
+			exit_code=0
+			;;
+		esac
+	fi
+
 	# Prefer explicit tool-authored errors as early as possible.
 	if [ -n "${tool_error_file}" ] && [ -s "${tool_error_file}" ]; then
 		local tool_error_raw parsed_tool_error

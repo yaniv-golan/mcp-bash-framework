@@ -59,7 +59,7 @@ The text block carries what the model reads (the message, plus the hint when the
 |----------|------------|-----|
 | Tool name missing | Protocol (`-32602`) | Request structure issue |
 | Tool not found | Protocol (`-32602`) | Invalid tool name (entity not found) |
-| Required argument missing | Tool Execution (`isError: true`) when you report it with `mcp_fail --type invalid_args`. In 1.x the argument helpers (`mcp_args_require`, `mcp_args_int`, `mcp_args_bool`, `mcp_require_path`) still send a JSON-RPC error; this changes in 2.0. | LLM can call again with the argument |
+| Required argument missing | Tool Execution (`isError: true`, type `invalid_args`): from `mcp_fail --type invalid_args` and, since 1.8, from the argument helpers (`mcp_args_require`, `mcp_args_int`, `mcp_args_bool`, `mcp_require_path`) and `mcp_download_safe_or_fail`, even inside `$(...)` | LLM can call again with the argument |
 | Date format invalid | Tool Execution (`isError: true`) | LLM can retry with correct format |
 | Value out of range | Tool Execution (`isError: true`) | LLM can adjust the value |
 | File path outside roots | Tool Execution (`isError: true`) | LLM can choose allowed path |
