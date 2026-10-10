@@ -69,7 +69,7 @@ The text block carries what the model reads (the message, plus the hint when the
 
 ### SDK Support
 
-Return tool execution errors with `mcp_fail --type`. It prints the error result and **ends the tool** (exit 0), so nothing after it runs:
+Return tool execution errors with `mcp_fail --type`. It returns the error result and **ends the tool**, so nothing after it runs. That holds inside `$(...)` too, for example in a helper function whose output you capture: the result travels to the framework through a side channel, and the non-zero exit ends the substitution (with `set -e`, the whole tool; without it, code after the substitution still runs, but the error result is what the client gets):
 
 ```bash
 # Tool Execution Error (LLM can self-correct); ends the tool

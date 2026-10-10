@@ -10,6 +10,8 @@ load '../../node_modules/bats-support/load'
 load '../../node_modules/bats-assert/load'
 load '../common/fixtures'
 
+bats_require_minimum_version 1.5.0
+
 setup() {
 	command -v jq >/dev/null 2>&1 || skip "jq required"
 	JQ="$(command -v jq)"
@@ -90,18 +92,23 @@ assert_golden() {
 	assert_golden result_json_object "${out}"
 }
 
-@test "contract: mcp_fail --type prints an isError result and exits 0" {
-	run sdk_run full mcp_fail --type not_found "No such ticket" --hint "list tickets first" --data '{"id":7}'
-	assert_success
+# mcp_fail --type exits NON-ZERO: it must end the tool even inside $(...),
+# where exit 0 would only end the subshell and the tool would carry on. The
+# result is identical either way: inside the framework it travels through the
+# tool-error side channel; here (no framework) it is printed to stdout. The
+# message also goes to stderr, so stdout is checked on its own.
+@test "contract: mcp_fail --type prints an isError result and exits non-zero" {
+	run --separate-stderr sdk_run full mcp_fail --type not_found "No such ticket" --hint "list tickets first" --data '{"id":7}'
+	assert_failure
 	assert_golden fail_type "${output}"
-	run sdk_run minimal mcp_fail --type not_found "No such ticket" --hint "list tickets first" --data '{"id":7}'
-	assert_success
+	run --separate-stderr sdk_run minimal mcp_fail --type not_found "No such ticket" --hint "list tickets first" --data '{"id":7}'
+	assert_failure
 	assert_golden fail_type "${output}"
 }
 
 @test "contract: mcp_fail --type stops the tool" {
 	run env MCPBASH_JSON_TOOL_BIN="${JQ}" "${BASH}" -c '. "$1/sdk/tool-sdk.sh" >/dev/null 2>&1; mcp_fail --type internal "stop"; echo AFTER' _ "${MCPBASH_HOME}"
-	assert_success
+	assert_failure
 	refute_output --partial AFTER
 }
 
@@ -122,8 +129,8 @@ assert_golden() {
 	assert_golden result_text "$(sdk_run full mcp_result_text $'two\nlines "quoted"')"
 	assert_golden result_json_object "$(sdk_run full mcp_result_json '{"items":[1,2],"name":"x"}')"
 	assert_golden result_json_summary "$(sdk_run full mcp_result_json '{"a":1,"b":"xxxxxxxxxxxxxxxxxxxxxxxx"}' --max-text-bytes 10)"
-	run sdk_run minimal mcp_fail --type not_found "No such ticket" --hint "list tickets first" --data '{"id":7}'
-	assert_success
+	run --separate-stderr sdk_run minimal mcp_fail --type not_found "No such ticket" --hint "list tickets first" --data '{"id":7}'
+	assert_failure
 	assert_golden fail_type "${output}"
 }
 

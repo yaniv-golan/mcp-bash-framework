@@ -994,7 +994,7 @@ The result has the message (and the hint) as its text, no `structuredContent` (a
 
 #### General guidelines
 
-- `mcp_fail --type` ends the tool (exit status 0); nothing after it runs. `mcp_result_json` and `mcp_result_text` don't end the tool, so an early-return branch needs `exit 0` after them.
+- `mcp_fail --type` ends the tool, also inside `$(...)` (e.g. a helper whose output you capture); nothing after it runs under `set -e`, and the error result is what the client gets either way. `mcp_result_json` and `mcp_result_text` don't end the tool, so an early-return branch needs `exit 0` after them.
 - Use `internal` only for unexpected failures; a specific type tells the model whether retrying or changing the arguments can help.
 - The 1.x error helpers still work but are removed in 2.0: numeric `mcp_fail CODE MESSAGE` and `mcp_fail_invalid_args` send a JSON-RPC error the model never sees, and `mcp_error` / `mcp_result_error` don't end the tool. `mcp-bash migrate` finds them (see [Migrating to the 2.0 helpers](#migrating-to-the-20-helpers)). <!-- lint-api-usage: allow -->
 - Capture stderr and propagate actionable diagnostics; see `examples/01-args-and-validation/tools/echo-arg/tool.sh:30-36` for human-readable error surfaces.
