@@ -81,6 +81,9 @@ mcp_result_success "$(mcp_json_obj query "${query}" name "${name}")"
   back (client without elicitation, timeout, cancelled call), so under `set -e` write
   `resp="$(mcp_elicit_confirm "Delete it?")" || true` and branch on `.action`; otherwise the
   tool dies at the prompt. See "Using the helpers under `set -e`" in `docs/ELICITATION.md`.
+  **Claude Desktop extensions (`.mcpb`) get no elicitation at all** (checked in 2.31226.1), so
+  the no-answer fallback (for example "call again with `confirm: true`") is the real safety
+  gate there; design it as the main path.
 - After changing `inputSchema`, update the sample arguments in `tools/<name>/smoke.sh` if the
   scaffold created one.
 
@@ -135,6 +138,8 @@ work".
   see it.
 - **MCPB `user_config` booleans arrive as strings** (`"true"`/`"false"`), so `[ "$X" = 1 ]`
   never fires. Accept `1`, `true` and `TRUE`.
+  (`MCPBASH_LOG_LEVEL` itself accepts `true`/`false`.) Claude Desktop 2.31226.1 has also been
+  seen saving a boolean toggle as `false` after the user switched it on, so check what arrived.
 - **Claude Desktop runs the server with macOS `/bin/bash` 3.2** and a minimal `PATH`. Code
   that works in your terminal's bash 5 can fail there:
   - `"${arr[@]}"` on an empty array under `set -u` is an error; write `${arr[@]+"${arr[@]}"}`.
@@ -153,9 +158,10 @@ work".
     `prompts/<name>/<name>.completion.sh`, or `resources/<template-name>.completion.sh` (or
     `resources/<name>/<name>.completion.sh`) for a resource template. The argument being
     completed is `.argument.name` in `MCP_COMPLETION_ARGS_JSON`. See `docs/COMPLETION.md`.
-  - **Claude Desktop only asks for resource-template completions** (`ref/resource`), not for
-    prompt arguments, so a prompt completion script never runs there. Other clients may
-    differ.
+  - **Claude Desktop sends no completion requests** to installed extensions (checked in
+    2.31226.1), and its menu has no picker for templated resources. Completions help other
+    clients (MCP Inspector, Cursor and others); for Desktop users, list valid values in the
+    argument's `description`.
   - A script is killed after 5 s (`MCPBASH_COMPLETION_TIMEOUT_SECS`), and a non-zero exit
     becomes a JSON-RPC error instead of an empty list. Fail soft: trap errors, print
     `{"suggestions":[],"hasMore":false}` and exit 0; give inner CLI calls a short timeout and

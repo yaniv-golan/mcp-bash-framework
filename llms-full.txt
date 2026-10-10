@@ -121,7 +121,7 @@ Note: `mcp_result_error` expects a JSON object with `type` and `message` fields.
   - Only `{{var}}` placeholders are substituted (values come from `prompts/get` `arguments`).
 - Completions:
   - Preferred: `server.d/register.json` → `{"version":1,"completions":[{"name":"ns.completion","path":"completions/name.sh","timeoutSecs":5}]}`.
-  - Or a script next to a prompt/resource: `prompts/<name>/<name>.completion.sh`; for a resource template, `resources/<template-name>.completion.sh` serves `ref/resource` requests for that template (what Claude Desktop sends). Lookup order and env in `docs/COMPLETION.md`; these time out after `MCPBASH_COMPLETION_TIMEOUT_SECS` (default 5).
+  - Or a script next to a prompt/resource: `prompts/<name>/<name>.completion.sh`; for a resource template, `resources/<template-name>.completion.sh` serves `ref/resource` requests for that template (MCP Inspector, Cursor and others; Claude Desktop 2.31226.1 sends no completion requests to extensions). Lookup order and env in `docs/COMPLETION.md`; these time out after `MCPBASH_COMPLETION_TIMEOUT_SECS` (default 5).
   - Registered completions without `timeoutSecs` time out after `MCPBASH_COMPLETION_REGISTERED_TIMEOUT_SECS` (default 30); `timeoutSecs: 0` disables the timeout.
   - Hook-based (`server.d/register.sh`, opt-in): `mcp_completion_manual_begin`, `mcp_completion_register_manual '{...}'`, `mcp_completion_manual_finalize`.
   - Completion script paths are resolved relative to `MCPBASH_PROJECT_ROOT`; scripts run under the provider env policy.

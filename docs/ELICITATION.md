@@ -2,6 +2,8 @@
 
 Elicitation lets a tool pause execution, ask the MCP client for user input, and continue once a response arrives. It is supported when the client advertises `capabilities.elicitation` during `initialize`.
 
+**Client support:** Claude Desktop does not advertise elicitation to installed extensions (`.mcpb`; checked in 2.31226.1); its remote connectors advertise URL mode only. In Desktop, the helpers' no-answer path is what runs, so design it as the main path (for example, require `confirm: true` in the arguments before a destructive action).
+
 ## Server Behavior
 - On initialize, the server records whether the client supports elicitation and which modes (`form`, `url`).
 - When the client supports elicitation, the server runs a lightweight poller to watch for tool-written request files (`elicit.<key>.request`) and forwards them to the client as `elicitation/create` requests with the appropriate `mode`.
