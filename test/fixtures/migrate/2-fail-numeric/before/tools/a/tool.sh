@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+source "${MCP_SDK:?}/tool-sdk.sh"
+mcp_fail -32602 "bad"
+mcp_fail -32603 "boom" '{"a":1}'
+mcp_fail -32001 "odd"
+mcp_fail "$code" "var"
+mcp_fail "one argument"
+mcp_fail --type internal "new form"

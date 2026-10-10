@@ -1,0 +1,1 @@
+export MCPBASH_COMPAT_BATCHES=true

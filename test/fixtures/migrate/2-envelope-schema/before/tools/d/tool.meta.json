@@ -1,0 +1,17 @@
+{
+  "name": "d",
+  "outputSchema": {
+    "type": "object",
+    "required": [
+      "success"
+    ],
+    "properties": {
+      "success": {
+        "type": "boolean"
+      },
+      "error": {
+        "type": "object"
+      }
+    }
+  }
+}
