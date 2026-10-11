@@ -14,6 +14,24 @@ mcp_lock_init() {
 	mkdir -p "${MCPBASH_LOCK_ROOT}"
 }
 
+# Set _MCP_LOCK_SELF_PID to the calling process's own pid. $$ is the server's
+# pid in every subshell, so with it all workers would own each lock and a
+# killed worker's lock would never look stale. bash 4+ has BASHPID; bash 3.2
+# asks a child for its parent: the command substitution's child is forked by
+# the calling shell and exec keeps its pid, so sh's PPID is that shell.
+# Call it directly, never inside $(...).
+mcp_lock_self_pid() {
+	if [ -n "${BASHPID:-}" ]; then
+		_MCP_LOCK_SELF_PID="${BASHPID}"
+		return 0
+	fi
+	_MCP_LOCK_SELF_PID="$(exec sh -c 'echo "$PPID"' 2>/dev/null)" || _MCP_LOCK_SELF_PID=""
+	# Never an empty owner: that is reaped as an acquire in progress.
+	case "${_MCP_LOCK_SELF_PID}" in
+	"" | *[!0-9]*) _MCP_LOCK_SELF_PID="$$" ;;
+	esac
+}
+
 mcp_lock_path() {
 	printf '%s/%s.lock' "${MCPBASH_LOCK_ROOT}" "$1"
 }
@@ -49,10 +67,12 @@ mcp_lock_root_gone() {
 # retries).
 mcp_lock_try_create() {
 	local path="$1"
-	local tmp
+	local tmp self
 	mkdir "${path}" 2>/dev/null || return 1
-	tmp="${MCPBASH_LOCK_ROOT}/.pid.${path##*/}.${BASHPID:-$$}.${RANDOM}"
-	if printf '%s' "${BASHPID:-$$}" >"${tmp}" 2>/dev/null && mv -f "${tmp}" "${path}/pid" 2>/dev/null; then
+	mcp_lock_self_pid
+	self="${_MCP_LOCK_SELF_PID}"
+	tmp="${MCPBASH_LOCK_ROOT}/.pid.${path##*/}.${self}.${RANDOM}"
+	if printf '%s' "${self}" >"${tmp}" 2>/dev/null && mv -f "${tmp}" "${path}/pid" 2>/dev/null; then
 		return 0
 	fi
 	rm -f "${tmp}" 2>/dev/null || true
@@ -118,9 +138,11 @@ mcp_lock_release() {
 	local name="$1"
 	local path
 	local owner=""
-	local current_pid="${BASHPID:-$$}"
+	local current_pid
 	path="$(mcp_lock_path "${name}")"
 	if [ -d "${path}" ]; then
+		mcp_lock_self_pid
+		current_pid="${_MCP_LOCK_SELF_PID}"
 		owner="$(cat "${path}/pid" 2>/dev/null || true)"
 		if [ "${owner}" = "${current_pid}" ]; then
 			rm -rf "${path}" 2>/dev/null || true

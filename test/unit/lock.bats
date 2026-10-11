@@ -207,3 +207,85 @@ wait_for_lock_child() {
 	run find "${MCPBASH_LOCK_ROOT}" -name '.pid.*'
 	assert_output ""
 }
+
+@test "lock: a subshell records its own pid, so its lock is reaped once it dies" {
+	mcp_lock_init
+	# $$ is the parent shell's pid in every subshell; on bash 3.2 (no BASHPID)
+	# the owner used to be recorded as $$, which stays alive, so a killed
+	# worker's lock was never reaped.
+	(
+		mcp_lock_acquire "owned"
+		sleep 30
+	) &
+	local holder=$!
+	local n=0
+	while [ ! -s "${MCPBASH_LOCK_ROOT}/owned.lock/pid" ]; do
+		n=$((n + 1))
+		[ "${n}" -lt 100 ] || fail "the subshell never took the lock"
+		sleep 0.05
+	done
+	run cat "${MCPBASH_LOCK_ROOT}/owned.lock/pid"
+	assert_output "${holder}"
+	kill -KILL "${holder}" 2>/dev/null || true
+	wait "${holder}" 2>/dev/null || true
+	run mcp_lock_acquire_timeout "owned" 3
+	assert_success
+}
+
+@test "lock: a subshell releases the lock it took" {
+	mcp_lock_init
+	(
+		mcp_lock_acquire "sub"
+		mcp_lock_release "sub"
+	)
+	[ ! -d "${MCPBASH_LOCK_ROOT}/sub.lock" ] || fail "subshell's lock still held: owner $(cat "${MCPBASH_LOCK_ROOT}/sub.lock/pid" 2>/dev/null)"
+}
+
+@test "lock: subshells of one shell contend correctly, and a killed holder is reaped" {
+	mcp_lock_init
+	local marks="${BATS_TEST_TMPDIR}/marks"
+	mkdir -p "${marks}"
+	# Workers are subshells of the server, as here; one is killed mid-hold.
+	(
+		mcp_lock_acquire "shared"
+		: >"${marks}/held"
+		sleep 30
+	) &
+	local victim=$!
+	local n=0
+	while [ ! -e "${marks}/held" ]; do
+		n=$((n + 1))
+		[ "${n}" -lt 100 ] || fail "the victim never took the lock"
+		sleep 0.05
+	done
+	local w
+	for w in 1 2 3 4; do
+		(
+			i=0
+			while [ "${i}" -lt 15 ]; do
+				mcp_lock_acquire "shared"
+				if ! mkdir "${marks}/inside" 2>/dev/null; then
+					printf 'x' >>"${marks}/overlaps"
+				fi
+				rmdir "${marks}/inside" 2>/dev/null || true
+				mcp_lock_release "shared"
+				i=$((i + 1))
+			done
+			: >"${marks}/done.${w}"
+		) 2>>"${marks}/stderr" &
+	done
+	kill -KILL "${victim}" 2>/dev/null || true
+	# Waiters must reap the dead holder's lock and finish.
+	n=0
+	while [ "$(ls "${marks}" | grep -c '^done\.')" -lt 4 ]; do
+		n=$((n + 1))
+		if [ "${n}" -ge 300 ]; then
+			fail "waiters still blocked 15s after the holder was killed (lock owner: $(cat "${MCPBASH_LOCK_ROOT}/shared.lock/pid" 2>/dev/null))"
+		fi
+		sleep 0.05
+	done
+	wait
+	[ ! -f "${marks}/overlaps" ] || fail "lock held twice at once $(wc -c <"${marks}/overlaps" | tr -d ' ') time(s)"
+	[ ! -s "${marks}/stderr" ] || fail "stderr: $(head -n 3 "${marks}/stderr")"
+	[ ! -d "${MCPBASH_LOCK_ROOT}/shared.lock" ]
+}
