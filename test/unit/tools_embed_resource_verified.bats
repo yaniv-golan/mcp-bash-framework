@@ -43,7 +43,7 @@ setup() {
 	printf 'a\000b' >"${ROOT_DIR}/bin.dat"
 	run mcp_tools_embed_resource_from_path "${ROOT_DIR}/bin.dat" "" ""
 	assert_success
-	assert_equal "$(printf '%s' "${output}" | jq -r '.blob' | base64 --decode 2>/dev/null | od -An -c | tr -d ' \n')" 'a\0b'
+	assert_equal "$(printf '%s' "${output}" | jq -r '.blob' | base64 -d 2>/dev/null | od -An -c | tr -d ' \n')" 'a\0b'
 }
 
 @test "embed: a symlink to a file outside the roots is skipped" {
