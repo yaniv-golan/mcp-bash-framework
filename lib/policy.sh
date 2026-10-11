@@ -394,7 +394,8 @@ mcp_policy_resolve_ips() {
 	if [ -z "${raw}" ] && command -v nslookup >/dev/null 2>&1; then
 		# Answers follow a "Name:" line; the resolver's own address comes
 		# before the first one (after a tab or spaces, depending on the build).
-		raw="$(nslookup "${host}" 2>/dev/null | awk '/^Name:/{answers = 1} answers && /^Address:/{print $2}')" || raw=""
+		# BusyBox before 1.28 numbers them ("Address 1: IP [hostname]").
+		raw="$(nslookup "${host}" 2>/dev/null | awk '/^Name:/{answers = 1} answers && /^Address( [0-9]+)?:/{sub(/^Address( [0-9]+)?:[ \t]*/, ""); print $1}')" || raw=""
 	fi
 
 	local out="" seen=" " ip

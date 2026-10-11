@@ -48,6 +48,15 @@ resolve() {
 2606:2800:220:1::1"
 }
 
+@test "resolver: nslookup (BusyBox before 1.28, numbered addresses) is read" {
+	stub nslookup
+	printf 'Server:    192.0.2.53\nAddress 1: 192.0.2.53 resolver.lan\n\nName:      example.com\nAddress 1: 93.184.216.34\nAddress 2: 2606:2800:220:1::1 example.com\n' >"${OUTPUT_FILE}"
+	run resolve example.com
+	assert_success
+	assert_output "93.184.216.34
+2606:2800:220:1::1"
+}
+
 @test "resolver: dig error lines are not taken for addresses" {
 	stub dig
 	printf ';; communications error to 192.0.2.53#53: timed out\n;; no servers could be reached\n' >"${OUTPUT_FILE}"
