@@ -109,3 +109,48 @@ EOF
 	jq -e '.findings | type == "array"' "${BATS_TEST_TMPDIR}/doctor.json" >/dev/null
 	jq -e '.framework.version' "${BATS_TEST_TMPDIR}/doctor.json" >/dev/null
 }
+
+@test "cli_flags: scaffold KIND --help prints scaffold help and creates nothing" {
+	local kind
+	for kind in tool prompt resource completion ui; do
+		run "${MCPBASH_HOME}/bin/mcp-bash" scaffold "${kind}" --help
+		assert_success
+		assert_output --partial "mcp-bash scaffold tool <name>"
+		refute_output --partial "mcp-bash bundle"
+	done
+	run find "${PROJECT_ROOT}" -name '*help*'
+	assert_output ""
+}
+
+@test "cli_flags: scaffold refuses a name that starts with a dash" {
+	run "${MCPBASH_HOME}/bin/mcp-bash" scaffold prompt -x
+	assert_failure
+	run find "${PROJECT_ROOT}" -name '-x*'
+	assert_output ""
+}
+
+@test "cli_flags: scaffold and registry --help print their own help" {
+	run "${MCPBASH_HOME}/bin/mcp-bash" scaffold --help
+	assert_success
+	assert_output --partial "mcp-bash scaffold test"
+	refute_output --partial "mcp-bash bundle"
+	run "${MCPBASH_HOME}/bin/mcp-bash" registry --help
+	assert_success
+	assert_output --partial "mcp-bash registry refresh"
+	assert_output --partial "mcp-bash registry status"
+	refute_output --partial "mcp-bash bundle"
+}
+
+@test "cli_flags: debug --help prints help instead of starting a server" {
+	run "${MCPBASH_HOME}/bin/mcp-bash" debug --help </dev/null
+	assert_success
+	assert_output --partial "mcp-bash debug"
+	refute_output --partial "logging to"
+}
+
+@test "cli_flags: top-level help lists validate --deprecations-as-errors and --health options" {
+	run "${MCPBASH_HOME}/bin/mcp-bash" --help
+	assert_success
+	assert_output --partial "--deprecations-as-errors"
+	assert_output --partial "--health [--project-root DIR] [--timeout SECS]"
+}

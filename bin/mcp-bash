@@ -43,7 +43,8 @@ Usage:
   mcp-bash init [--name NAME] [--no-hello]
                            # initialize project in current directory
   mcp-bash debug           # launch server with debug logging (see docs/DEBUGGING.md)
-  mcp-bash --health        # readiness probe (0=ready, 1=unhealthy, 2=misconfigured)
+  mcp-bash --health [--project-root DIR] [--timeout SECS]
+                           # readiness probe (0=ready, 1=unhealthy, 2=misconfigured)
   mcp-bash --ready         # alias for --health
   mcp-bash run-tool <name> [--args JSON] [--roots paths] [--dry-run]
                            [--timeout SECS] [--verbose] [--no-refresh]
@@ -59,6 +60,7 @@ Usage:
   mcp-bash scaffold test   # create test harness for project
   mcp-bash validate [--project-root DIR] [--fix] [--json]
                      [--explain-defaults] [--strict] [--inspector]
+                     [--deprecations-as-errors]
                            # validate project structure and metadata
   mcp-bash migrate [--project-root DIR] [--write [--force]] [--only ID,..]
                    [--skip ID,..] [--json] | --list | --explain ID
@@ -80,6 +82,39 @@ Usage:
 
 Note: running without MCPBASH_PROJECT_ROOT starts a temporary getting-started helper tool.
 Remote deployments: set MCPBASH_REMOTE_TOKEN to require per-request _meta token; see docs/REMOTE.md.
+EOF
+}
+
+scaffold_usage() {
+	cat <<'EOF'
+Usage:
+  mcp-bash scaffold tool <name> [--ui]
+  mcp-bash scaffold prompt <name>
+  mcp-bash scaffold resource <name>
+  mcp-bash scaffold completion <name>
+  mcp-bash scaffold ui <name>           # create standalone UI in ui/<name>/
+  mcp-bash scaffold ui [name] --tool T  # create UI for tool T (name defaults to T)
+  mcp-bash scaffold test                # create test harness for project
+
+Names: letters, digits, underscore and dash (1-64 characters), not starting with a dash.
+EOF
+}
+
+registry_usage() {
+	cat <<'EOF'
+Usage:
+  mcp-bash registry refresh [--project-root DIR] [--no-notify] [--quiet] [--filter PATH]
+  mcp-bash registry status [--project-root DIR]
+EOF
+}
+
+debug_usage() {
+	cat <<'EOF'
+Usage:
+  mcp-bash debug           # launch the server with every JSON-RPC message logged
+
+Payloads are logged to a new private directory, printed on stderr at startup.
+See docs/DEBUGGING.md.
 EOF
 }
 
@@ -318,6 +353,10 @@ if [ "${cli_cmd}" = "registry" ]; then
 	# shellcheck source=lib/cli/registry.sh disable=SC1091
 	. "${MCPBASH_HOME}/lib/cli/registry.sh"
 	case "${1-}" in
+	--help | -h | help)
+		registry_usage
+		exit 0
+		;;
 	refresh)
 		shift
 		mcp_registry_refresh_cli "$@"
@@ -329,7 +368,7 @@ if [ "${cli_cmd}" = "registry" ]; then
 		exit $?
 		;;
 	*)
-		usage
+		registry_usage >&2
 		exit 1
 		;;
 	esac
@@ -339,7 +378,18 @@ if [ "${cli_cmd}" = "scaffold" ]; then
 	shift
 	# shellcheck source=lib/cli/scaffold.sh disable=SC1091
 	. "${MCPBASH_HOME}/lib/cli/scaffold.sh"
+	# --help anywhere after the kind prints help instead of being taken as a name.
+	case " $* " in
+	*" --help "* | *" -h "*)
+		scaffold_usage
+		exit 0
+		;;
+	esac
 	case "${1-}" in
+	help)
+		scaffold_usage
+		exit 0
+		;;
 	tool)
 		shift
 		mcp_scaffold_tool "$@"
@@ -365,7 +415,7 @@ if [ "${cli_cmd}" = "scaffold" ]; then
 			mcp_scaffold_test
 			;;
 	*)
-		usage
+		scaffold_usage >&2
 		exit 1
 		;;
 	esac
@@ -397,6 +447,12 @@ fi
 
 if [ "${cli_cmd}" = "debug" ]; then
 	shift
+	case "${1-}" in
+	--help | -h)
+		debug_usage
+		exit 0
+		;;
+	esac
 	export MCPBASH_DEBUG_PAYLOADS=true
 	export MCPBASH_PRESERVE_STATE=true
 	# Create isolated debug directory with restrictive perms
