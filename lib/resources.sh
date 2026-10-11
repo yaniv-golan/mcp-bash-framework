@@ -488,6 +488,18 @@ mcp_resources_emit_error() {
 	rpc_send_line_direct "$("${MCPBASH_JSON_TOOL_BIN}" -n -c --arg uri "${uri}" '{"jsonrpc":"2.0","method":"notifications/resources/updated","params":{"uri":$uri}}')"
 }
 
+# One subscription poll for the background poller. Its reads refresh the
+# registries inside $(...) captures; a warning logged there must be queued
+# by this, the outermost frame, and flushed here, where stdout is the real
+# one. A queue started further in would flush into the capture.
+mcp_resources_poll_subscriptions_queued() {
+	if declare -F mcp_notification_queue_run >/dev/null 2>&1; then
+		mcp_notification_queue_run mcp_resources_poll_subscriptions
+	else
+		mcp_resources_poll_subscriptions
+	fi
+}
+
 mcp_resources_poll_subscriptions() {
 	if mcp_runtime_is_minimal_mode; then
 		return 0
@@ -652,7 +664,21 @@ mcp_resources_apply_manual_json() {
 	fi
 }
 
+# Rebuild the resources registry. Building it logs warnings from inside $(...)
+# captures; outside a handler they must be queued, or they become part of
+# the captured registry JSON.
+# This wrapper is a safety net for direct callers and is safe only when the
+# caller's stdout is not captured; outer loops own the queue (see
+# mcp_notification_queue_run).
 mcp_resources_refresh_registry() {
+	if declare -F mcp_notification_queue_run >/dev/null 2>&1; then
+		mcp_notification_queue_run mcp_resources_refresh_registry_now
+	else
+		mcp_resources_refresh_registry_now
+	fi
+}
+
+mcp_resources_refresh_registry_now() {
 	local scan_root
 	scan_root="$(mcp_resources_scan_root)"
 	mcp_resources_init
@@ -1653,7 +1679,21 @@ mcp_resources_templates_scan() {
 	printf '%s' "${items_json}"
 }
 
+# Rebuild the resource templates registry. Building it logs warnings from inside $(...)
+# captures; outside a handler they must be queued, or they become part of
+# the captured registry JSON.
+# This wrapper is a safety net for direct callers and is safe only when the
+# caller's stdout is not captured; outer loops own the queue (see
+# mcp_notification_queue_run).
 mcp_resources_templates_refresh_registry() {
+	if declare -F mcp_notification_queue_run >/dev/null 2>&1; then
+		mcp_notification_queue_run mcp_resources_templates_refresh_registry_now
+	else
+		mcp_resources_templates_refresh_registry_now
+	fi
+}
+
+mcp_resources_templates_refresh_registry_now() {
 	local scan_root
 	scan_root="$(mcp_resources_scan_root)"
 	mcp_resources_templates_init

@@ -185,3 +185,55 @@ load_dispatch_helpers() {
 	run ls "${MCPBASH_STATE_DIR}"
 	assert_output "resource_subscription.sub-a"
 }
+
+# A poll whose read logs from inside a $(...) capture, as the real read does
+# when it refreshes a registry. Logging follows mcp_logging_emit: queue when a
+# queue is active, otherwise write to the current stdout.
+setup_logging_read() {
+	# shellcheck source=lib/io.sh
+	# shellcheck disable=SC1091
+	. "${MCPBASH_HOME}/lib/io.sh"
+	MCP_NOTIFICATION_QUEUE_FILE=""
+	unset MCPBASH_DIRECT_FD
+	CAPTURED="${BATS_TEST_TMPDIR}/captured"
+	FLUSHED="${BATS_TEST_TMPDIR}/flushed"
+	: >"${CAPTURED}"
+	: >"${FLUSHED}"
+	mcp_logging_warning() {
+		local n='{"jsonrpc":"2.0","method":"notifications/message","params":{"level":"warning","data":"w"}}'
+		if mcp_notification_queue_active; then
+			mcp_notification_queue_append "${n}"
+		else
+			printf '%s\n' "${n}"
+		fi
+	}
+	mcp_io_send_line() { printf '%s\n' "$1" >>"${FLUSHED}"; }
+	mcp_resources_read() {
+		local metadata
+		metadata="$(
+			mcp_logging_warning "mcp.resources" "w"
+			printf 'meta'
+		)"
+		printf '%s\n' "${metadata}" >>"${CAPTURED}"
+		_MCP_RESOURCES_RESULT="{\"contents\":[{\"uri\":\"${2}\",\"text\":\"new\"}]}"
+		return 0
+	}
+}
+
+@test "subscriptions: the poller's poll queues warnings logged inside a read's capture" {
+	setup_logging_read
+	mcp_resources_subscription_store "sub-q" "live" "file:///live.txt" "fp-old"
+	mcp_resources_poll_subscriptions_queued
+	assert_equal "$(cat "${CAPTURED}")" "meta"
+	run grep -c '"notifications/message"' "${FLUSHED}"
+	assert_output "1"
+	[ -z "${MCP_NOTIFICATION_QUEUE_FILE}" ] || fail "queue left active"
+}
+
+@test "subscriptions: without the queue, a warning lands in the read's capture" {
+	setup_logging_read
+	mcp_resources_subscription_store "sub-raw" "live" "file:///live.txt" "fp-old"
+	mcp_resources_poll_subscriptions
+	run grep -c 'notifications/message' "${CAPTURED}"
+	assert_output "1"
+}

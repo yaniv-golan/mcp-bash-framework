@@ -1017,7 +1017,22 @@ mcp_registry_register_execute() {
 	MCP_REGISTRY_REGISTER_COMPLETE=true
 }
 
+# Apply manual registration (register.json / register.sh) for KIND. The first
+# call applies register.json for every kind, so it can run from any registry's
+# refresh, including ones outside a handler; its registry builds log warnings
+# from inside $(...) captures, which must be queued there.
+# This wrapper is a safety net for direct callers and is safe only when the
+# caller's stdout is not captured; outer loops own the queue (see
+# mcp_notification_queue_run).
 mcp_registry_register_apply() {
+	if declare -F mcp_notification_queue_run >/dev/null 2>&1; then
+		mcp_notification_queue_run mcp_registry_register_apply_now "$@"
+	else
+		mcp_registry_register_apply_now "$@"
+	fi
+}
+
+mcp_registry_register_apply_now() {
 	local kind="$1"
 	local json_path
 	json_path="$(mcp_registry_declarative_path)"

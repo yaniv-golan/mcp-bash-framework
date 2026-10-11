@@ -15,9 +15,15 @@ MCP_NOTIFICATION_QUEUE_FILE=""
 mcp_notification_queue_init() {
 	# Initialize the notification queue file for the current handler invocation.
 	# Called before handler execution to enable deferred notification emission.
+	# Each frame needs its own file: the main loop, the subscription poller and
+	# workers queue at the same time, and bash 3.2 has no BASHPID, so a name
+	# built from the pid is shared between them.
 	if [ -n "${MCPBASH_STATE_DIR:-}" ]; then
-		MCP_NOTIFICATION_QUEUE_FILE="${MCPBASH_STATE_DIR}/notifications.${BASHPID:-$$}.queue"
-		: >"${MCP_NOTIFICATION_QUEUE_FILE}"
+		MCP_NOTIFICATION_QUEUE_FILE="$(mktemp "${MCPBASH_STATE_DIR}/notifications.XXXXXX" 2>/dev/null)" || MCP_NOTIFICATION_QUEUE_FILE=""
+		if [ -z "${MCP_NOTIFICATION_QUEUE_FILE}" ]; then
+			MCP_NOTIFICATION_QUEUE_FILE="${MCPBASH_STATE_DIR}/notifications.${BASHPID:-$$}.${RANDOM}${RANDOM}.queue"
+			: >"${MCP_NOTIFICATION_QUEUE_FILE}"
+		fi
 	fi
 }
 
@@ -50,6 +56,25 @@ mcp_notification_queue_flush() {
 mcp_notification_queue_active() {
 	# Check if notification queueing is active (we're inside a handler context).
 	[ -n "${MCP_NOTIFICATION_QUEUE_FILE:-}" ]
+}
+
+# mcp_notification_queue_run COMMAND [ARGS...]
+# Run COMMAND with log notifications queued, then flush them. Code that logs
+# inside a $(...) (registry builds do) would otherwise write the notification
+# into the captured value outside a handler, where no queue is active. Inside
+# a handler the handler's queue is already active and is used as is. Call it
+# only where stdout is not captured: the flush writes to stdout. With
+# MCPBASH_DIRECT_FD set, logging already bypasses stdout, so no queue is needed.
+mcp_notification_queue_run() {
+	if mcp_notification_queue_active || [ -n "${MCPBASH_DIRECT_FD:-}" ]; then
+		"$@"
+		return
+	fi
+	mcp_notification_queue_init
+	local status=0
+	"$@" || status=$?
+	mcp_notification_queue_flush
+	return "${status}"
 }
 
 mcp_io_corruption_file() {

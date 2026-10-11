@@ -1652,7 +1652,9 @@ mcp_core_emit_registry_notifications() {
 		;;
 	esac
 
-	mcp_core_poll_registries_once
+	# Outermost frame for the registry rebuilds: warnings they log inside
+	# $(...) captures are queued and flushed here.
+	mcp_notification_queue_run mcp_core_poll_registries_once
 
 	if [ "${allow_list_changed}" = "true" ]; then
 		mcp_tools_consume_notification true
@@ -1800,10 +1802,14 @@ mcp_core_start_resource_poll() {
 		# Like the flusher: one failed iteration (for example a record removed
 		# by an unsubscribe mid-poll) must not end polling for the session.
 		set +e
+		# Defensive: never append to another frame's notification queue. Each
+		# iteration below owns its own.
+		# shellcheck disable=SC2034  # read by mcp_notification_queue_active (lib/io.sh)
+		MCP_NOTIFICATION_QUEUE_FILE=""
 		while :; do
 			# Exit with the server ($$ is its PID here too); see the flusher.
 			kill -0 "$$" 2>/dev/null || exit 0
-			mcp_resources_poll_subscriptions || true
+			mcp_resources_poll_subscriptions_queued || true
 			sleep "${interval}"
 		done
 	) &
