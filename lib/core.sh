@@ -40,6 +40,12 @@ _mcp_exit_handler() {
 		if declare -F mcp_io_report_stdout_gone >/dev/null 2>&1; then
 			mcp_io_report_stdout_gone
 		fi
+		# An abnormal exit (signal, failed stdout write, fatal error): nobody
+		# can receive the running workers' results, so stop them and their
+		# tools instead of leaving them running on their own.
+		if declare -F mcp_core_stop_all_workers >/dev/null 2>&1; then
+			mcp_core_stop_all_workers 2>/dev/null || true
+		fi
 		mcp_runtime_cleanup 2>/dev/null || true
 	fi
 	exit ${exit_code}
@@ -531,6 +537,11 @@ mcp_core_finish_after_read_loop() {
 		MCPBASH_SHUTDOWN_TIMER_STARTED=false
 	fi
 
+	# The parent is gone: nobody can receive the workers' results.
+	if [ "${orphan_detected}" = true ]; then
+		mcp_core_stop_all_workers
+	fi
+
 	# Clean exit on: explicit exit, shutdown, idle timeout, OR orphan detected
 	if [ "${exit_requested}" = true ] || [ "${shutdown_pending}" = true ] \
 		|| [ "${idle_timeout}" = true ] || [ "${orphan_detected}" = true ]; then
@@ -547,6 +558,47 @@ mcp_core_finish_after_read_loop() {
 	_MCPBASH_CLEANUP_DONE=true
 	_MCPBASH_EXIT_CLEAN=true
 	exit 0
+}
+
+# Stop every running worker and the tools it started: TERM now, KILL after up
+# to 1s. For exits where nobody can receive their results.
+mcp_core_stop_all_workers() {
+	[ -n "${MCPBASH_STATE_DIR:-}" ] || return 0
+	# Loops read line by line: the server's IFS may not split on newlines.
+	local keys key info pid pgid rest targets="" alive tries=0
+	keys="$(mcp_ids_list_active_workers 2>/dev/null || true)"
+	[ -n "${keys}" ] || return 0
+	while IFS= read -r key; do
+		[ -n "${key}" ] || continue
+		info="$(mcp_ids_worker_info "${key}" 2>/dev/null)" || continue
+		pid="" pgid=""
+		IFS=' ' read -r pid pgid rest <<<"${info}"
+		case "${pid}" in '' | *[!0-9]*) continue ;; esac
+		case "${pgid}" in *[!0-9]*) pgid="" ;; esac
+		if [ "${MCPBASH_SKIP_PROCESS_GROUP_LOOKUP:-0}" = "1" ]; then
+			pgid=""
+		fi
+		mcp_core_send_signal_chain "${pid}" "${pgid}" TERM
+		targets="${targets}${pid} ${pgid}"$'\n'
+	done <<<"${keys}"
+	[ -n "${targets}" ] || return 0
+	while [ "${tries}" -lt 10 ]; do
+		alive=false
+		while IFS=' ' read -r pid pgid; do
+			[ -n "${pid}" ] || continue
+			if mcp_core_process_alive "${pid}" || mcp_core_group_alive "${pgid}"; then
+				alive=true
+				break
+			fi
+		done <<<"${targets}"
+		[ "${alive}" = true ] || return 0
+		sleep 0.1
+		tries=$((tries + 1))
+	done
+	while IFS=' ' read -r pid pgid; do
+		[ -n "${pid}" ] || continue
+		mcp_core_send_signal_chain "${pid}" "${pgid}" KILL
+	done <<<"${targets}"
 }
 
 mcp_core_wait_for_workers() {

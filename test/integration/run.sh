@@ -67,6 +67,7 @@ TESTS=(
 	"test_background_loops_exit.sh"
 	"test_idle_timeout.sh"
 	"test_orphan_detection.sh"
+	"test_exit_stops_tools.sh"
 	"test_sigterm_prompt_exit.sh"
 	"test_normal_exit_status.sh"
 	"test_stdout_closed_exit.sh"
