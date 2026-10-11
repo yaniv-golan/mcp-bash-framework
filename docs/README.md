@@ -13,6 +13,9 @@ Quick entry points for common tasks and reference material.
 - **Roots**: [ROOTS.md](ROOTS.md) — discovery, fallbacks, client negotiation
 - **Performance & limits**: [PERFORMANCE.md](PERFORMANCE.md), [LIMITS.md](LIMITS.md)
 - **Security & remote**: [SECURITY.md](SECURITY.md), [REMOTE.md](REMOTE.md)
+- **Errors**: [ERRORS.md](ERRORS.md) — error model, `mcp_fail --type`, protocol error codes
+- **MCP Apps (UI)**: [concepts/mcp-apps.md](concepts/mcp-apps.md), [guides/ui-resources.md](guides/ui-resources.md), [reference/ui-sdk.md](reference/ui-sdk.md), [reference/ui-templates.md](reference/ui-templates.md)
+- **Vendoring & Windows**: [VENDORING.md](VENDORING.md), [WINDOWS.md](WINDOWS.md)
 - **Debugging/tests**: [DEBUGGING.md](DEBUGGING.md), [TESTING.md](../TESTING.md)
 - **Best practices**: [BEST-PRACTICES.md](BEST-PRACTICES.md), [LOGGING.md](LOGGING.md), [MINIMAL-MODE.md](MINIMAL-MODE.md)
 - **LLM context patterns**: [LLM-CONTEXT.md](LLM-CONTEXT.md) — writing descriptions, examples, domain resources for LLM tool use

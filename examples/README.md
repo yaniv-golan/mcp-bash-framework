@@ -26,4 +26,6 @@ Highlights:
 - `11-resource-templates` — auto/manual template discovery, overrides, and client-side expansion.
 - `advanced/register-sh-hooks` — advanced project hooks via `server.d/register.sh` (dynamic registration; opt-in).
 - [15-cli-wrapper](./15-cli-wrapper/) — Wrapping external CLI tools with PATH resolution (`mcp_detect_cli`), error handling (`set -uo pipefail`), and proper MCP result formatting. Start here if your MCP server calls an external CLI.
-- Full ladder lives in the main README table.
+- `12-config-and-downloads` — layered configuration (`mcp_config_load`) and SSRF-safe downloads.
+- `13-ui-basics`, `14-ui-templates` — MCP Apps: `ui://` resources and the built-in UI templates.
+- Every example directory has its own README.

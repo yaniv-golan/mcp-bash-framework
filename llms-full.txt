@@ -51,7 +51,7 @@ MCP hosts (Claude Desktop, Cursor) launch servers with a minimal PATH that exclu
 
 ```bash
 source "${MCP_SDK:?}/tool-sdk.sh"
-# Copy mcp_detect_cli from docs/BEST-PRACTICES.md §4.4 into your project's lib/
+# Copy mcp_detect_cli from docs/BEST-PRACTICES.md §4.3 into your project's lib/
 source "${MCPBASH_PROJECT_ROOT}/lib/cli-detect.sh"
 MYCLI=$(mcp_detect_cli mycli "pip install my-package") || mcp_fail --type unavailable "mycli not found" --hint "Install it: pip install my-package"
 "${MYCLI}" search "$query"
@@ -308,6 +308,11 @@ mcp_result_json "$(printf '%s' "$result" | jq -c '.')"
   - Prompts basics: `examples/07-prompts-basics`.
   - Elicitation: `examples/08-elicitation`.
   - Registry overrides + live progress: `examples/09-registry-overrides`.
+  - Completions: `examples/10-completions` (registered in `server.d/register.json`).
+  - Resource templates: `examples/11-resource-templates`.
+  - Config + downloads: `examples/12-config-and-downloads` (`mcp_config_load`, `mcp_download_safe`).
+  - MCP Apps: `examples/13-ui-basics` (a `ui://` resource), `examples/14-ui-templates` (built-in templates).
+  - Dynamic registration: `examples/advanced/register-sh-hooks` (`server.d/register.sh`, opt-in).
   - CLI wrapper: `examples/15-cli-wrapper/tools/system-info/tool.sh` — `mcp_detect_cli`, `set -uo pipefail`, `mcp_result_json` / `mcp_fail --type`.
   - Advanced ffmpeg studio: `examples/advanced/ffmpeg-studio`.
 

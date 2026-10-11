@@ -37,7 +37,7 @@ MCP hosts (Claude Desktop, Cursor) launch servers with a minimal PATH that exclu
 
 ```bash
 source "${MCP_SDK:?}/tool-sdk.sh"
-# Copy mcp_detect_cli from docs/BEST-PRACTICES.md §4.4 into your project's lib/
+# Copy mcp_detect_cli from docs/BEST-PRACTICES.md §4.3 into your project's lib/
 source "${MCPBASH_PROJECT_ROOT}/lib/cli-detect.sh"
 MYCLI=$(mcp_detect_cli mycli "pip install my-package") || mcp_fail --type unavailable "mycli not found" --hint "Install it: pip install my-package"
 "${MYCLI}" search "$query"
@@ -83,6 +83,12 @@ Migrating an existing project: `mcp_result_success`, `mcp_result_error`, `mcp_er
 - [07-prompts-basics](https://github.com/yaniv-golan/mcp-bash-framework/tree/main/examples/07-prompts-basics): Discovering and rendering prompt templates.
 - [08-elicitation](https://github.com/yaniv-golan/mcp-bash-framework/tree/main/examples/08-elicitation): Client-driven elicitation prompts that gate tool execution.
 - [09-registry-overrides](https://github.com/yaniv-golan/mcp-bash-framework/tree/main/examples/09-registry-overrides): Declarative registry overrides, live progress streaming, and custom resource providers.
+- [10-completions](https://github.com/yaniv-golan/mcp-bash-framework/tree/main/examples/10-completions): Argument completion registered in `server.d/register.json`, with filtering and pagination.
+- [11-resource-templates](https://github.com/yaniv-golan/mcp-bash-framework/tree/main/examples/11-resource-templates): Resource templates (`uriTemplate`), discovery and manual overrides.
+- [12-config-and-downloads](https://github.com/yaniv-golan/mcp-bash-framework/tree/main/examples/12-config-and-downloads): Layered configuration (`mcp_config_load`) and SSRF-safe HTTPS downloads.
+- [13-ui-basics](https://github.com/yaniv-golan/mcp-bash-framework/tree/main/examples/13-ui-basics): MCP Apps: a `ui://` resource linked to a tool.
+- [14-ui-templates](https://github.com/yaniv-golan/mcp-bash-framework/tree/main/examples/14-ui-templates): MCP Apps: built-in UI templates rendering tool results.
+- [advanced/register-sh-hooks](https://github.com/yaniv-golan/mcp-bash-framework/tree/main/examples/advanced/register-sh-hooks): Dynamic registration from `server.d/register.sh` (opt-in hooks).
 - [15-cli-wrapper](https://github.com/yaniv-golan/mcp-bash-framework/tree/main/examples/15-cli-wrapper): Wrapping external CLIs with PATH resolution, error handling, and MCP result formatting. The most common pattern for real-world MCP servers.
 
 ## SDK & Scaffolding
@@ -95,6 +101,12 @@ Migrating an existing project: `mcp_result_success`, `mcp_result_error`, `mcp_er
 - [Registry Contracts](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/docs/REGISTRY.md): Registry JSON schemas, TTL, regeneration, and manual overrides.
 - [Limits & Performance](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/docs/LIMITS.md): Tunable limits for concurrency, payloads, progress throttling.
 - [Logging](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/docs/LOGGING.md): Log levels, verbose mode, and structured logging.
+- [Environment Reference](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/docs/ENV_REFERENCE.md): Every environment variable with defaults and caps.
+- [Errors](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/docs/ERRORS.md): The error model: `mcp_fail --type`, tool errors vs protocol errors.
+- [Resource Templates](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/docs/RESOURCE-TEMPLATES.md): `uriTemplate` resources, matching on read, and which provider serves them.
+- [Elicitation](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/docs/ELICITATION.md): Asking the user for input (form and URL modes) and the SDK helpers.
+- [Completion](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/docs/COMPLETION.md): Argument completion providers and pagination.
+- [MCP Apps](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/docs/concepts/mcp-apps.md): `ui://` resources and interactive UIs; see also the [UI guide](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/docs/guides/ui-resources.md), [UI SDK](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/docs/reference/ui-sdk.md) and [UI templates](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/docs/reference/ui-templates.md).
 - [Roots](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/docs/ROOTS.md): MCP roots scoping for filesystem access control.
 - [Minimal Mode](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/docs/MINIMAL-MODE.md): Behavior when jq/gojq is missing or minimal mode is forced.
 - [Security](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/docs/SECURITY.md): Threat model, provider hardening, and guidance around local diagnostics (`mcp-bash doctor`, debug mode).
