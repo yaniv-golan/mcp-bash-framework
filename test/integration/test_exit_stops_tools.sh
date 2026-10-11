@@ -21,8 +21,6 @@ CYGWIN* | MINGW* | MSYS*)
 esac
 
 test_create_tmpdir
-# Orphan detection runs only in the timed read loop; CI mode turns it off.
-unset MCPBASH_CI_MODE
 WS="${TEST_TMPDIR}/ws"
 test_stage_workspace "${WS}"
 mkdir -p "${WS}/server.d"
@@ -125,10 +123,11 @@ in3="${TEST_TMPDIR}/orphan.in"
 mkfifo "${in3}"
 exec 7<>"${in3}"
 # A simple command started with & is this subshell's direct child, so the
-# subshell is the server's parent.
+# subshell is the server's parent. Orphan detection runs only in the timed
+# read loop, which CI mode turns off.
 (
 	cd "${WS}" || exit 1
-	MCPBASH_TOOL_ALLOWLIST="${ALLOW}" MCPBASH_ORPHAN_CHECK_INTERVAL=1 MCPBASH_IDLE_TIMEOUT=0 \
+	MCPBASH_CI_MODE=false MCPBASH_TOOL_ALLOWLIST="${ALLOW}" MCPBASH_ORPHAN_CHECK_INTERVAL=1 MCPBASH_IDLE_TIMEOUT=0 \
 		bash ./bin/mcp-bash <"${in3}" >/dev/null 2>"${TEST_TMPDIR}/orphan.err" &
 	printf '%s' "$!" >"${TEST_TMPDIR}/orphan.pid"
 	sleep 4
