@@ -65,7 +65,10 @@ mcp_cli_run_tool_mark_stale_cache() {
 	[ -f "${cache_path}" ] || return 0
 	[ -d "${tools_dir}" ] || return 0
 	local newer=""
-	newer="$(find "${tools_dir}" -newer "${cache_path}" -print 2>/dev/null | head -n 1)" || newer=""
+	# Each check stops reading at the first match, which can kill find with
+	# SIGPIPE; under pipefail that fails the pipeline, so keep whatever was
+	# printed instead of discarding it.
+	newer="$(find "${tools_dir}" -newer "${cache_path}" -print 2>/dev/null | head -n 1 || true)"
 	if [ -z "${newer}" ]; then
 		# BusyBox find compares whole seconds, so an entry changed in the same
 		# second the cache was written is not "newer". Where stat -c works (GNU,
@@ -76,7 +79,7 @@ mcp_cli_run_tool_mark_stale_cache() {
 			'' | *[!0-9]*) ;;
 			*)
 				newer="$(find "${tools_dir}" -exec stat -c %Y {} + 2>/dev/null \
-					| awk -v c="${cache_secs}" '$1 >= c { print; exit }')" || newer=""
+					| awk -v c="${cache_secs}" '$1 >= c { print; exit }' || true)"
 				;;
 			esac
 		fi
