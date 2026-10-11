@@ -30,7 +30,7 @@ Authoritative list of supported environment variables. Defaults shown are the sh
 | `MCPBASH_MAX_LOGS_PER_MIN` | `$MCPBASH_MAX_PROGRESS_PER_MIN` | Log events per request per minute. |
 | `MCPBASH_DEFAULT_TOOL_TIMEOUT` | `30` | Default tool timeout (seconds). |
 | `MCPBASH_DEFAULT_SUBSCRIBE_TIMEOUT` | `120` | Default `resources/subscribe` timeout (seconds). |
-| `MCPBASH_DEFAULT_RESOURCE_TIMEOUT` | `120` | Default `resources/read` timeout (seconds); `0` disables it. A read that runs longer is stopped and the client gets a `-32603` error. |
+| `MCPBASH_DEFAULT_RESOURCE_TIMEOUT` | `120` | Default `resources/read` timeout (seconds); `0` disables it. A read that runs longer is stopped and the client gets a `-32603` error. A request's `params.timeoutSecs` overrides it for that request. |
 | `MCPBASH_SHUTDOWN_TIMEOUT` | `5` | Graceful shutdown timeout (seconds). |
 | `MCPBASH_IDLE_TIMEOUT` | `3600` | Seconds to wait for client activity before exiting (0 = disabled). Prevents zombie processes when clients disconnect without shutdown. |
 | `MCPBASH_IDLE_TIMEOUT_ENABLED` | `true` | Set to `false` to disable idle timeout entirely. |

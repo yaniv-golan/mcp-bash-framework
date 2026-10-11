@@ -1205,6 +1205,11 @@ mcp_core_spawn_worker() {
 	rm -f "${cancel_file}"
 	local progress_token
 	progress_token="$(mcp_json_extract_progress_token "${json_line}")"
+	local handled_file=""
+	if [ -n "${key}" ]; then
+		handled_file="${MCPBASH_STATE_DIR}/handled.${key}"
+		rm -f "${handled_file}"
+	fi
 
 	(
 		exec 2>"${stderr_file}"
@@ -1218,10 +1223,16 @@ mcp_core_spawn_worker() {
 			local timeout_status=0
 			with_timeout "${timeout}" -- mcp_core_worker_entry "${handler}" "${method}" "${json_line}" "${id_json}" "${key}" "${stderr_file}" || timeout_status=$?
 			# The handler was killed before it could answer: answer for it, or
-			# the client waits forever. (Cancelled requests get no response;
-			# mcp_io_send_response drops them.)
-			if [ "${timeout_status}" -eq 124 ] && [ -n "${id_json}" ] && [ "${id_json}" != "null" ]; then
+			# the client waits forever. A worker that had already answered and
+			# was killed while delivering its streams leaves the handled marker.
+			# (Cancelled requests get no response; mcp_io_send_response drops
+			# them.)
+			if [ "${timeout_status}" -eq 124 ] && [ -n "${id_json}" ] && [ "${id_json}" != "null" ] \
+				&& { [ -z "${handled_file}" ] || [ ! -e "${handled_file}" ]; }; then
 				mcp_core_worker_emit "${key}" "$(mcp_core_build_error_response "${id_json}" -32603 "${method} timed out after ${timeout}s" "")"
+			fi
+			if [ -n "${handled_file}" ]; then
+				rm -f "${handled_file}"
 			fi
 		else
 			mcp_core_worker_entry "${handler}" "${method}" "${json_line}" "${id_json}" "${key}" "${stderr_file}"
@@ -1329,6 +1340,12 @@ mcp_core_worker_entry() {
 	if [ -n "${response}" ]; then
 		response="$(mcp_core_guard_response_size "${id_json}" "${response}" "${method}")"
 		mcp_core_worker_emit "${key}" "${response}"
+	fi
+	# The request is now answered (or deliberately left unanswered). A timeout
+	# during the stream delivery below must not answer it a second time; see
+	# mcp_core_spawn_worker.
+	if [ -n "${key}" ]; then
+		: >"${MCPBASH_STATE_DIR}/handled.${key}" 2>/dev/null || true
 	fi
 
 	# Progress/log delivery:
