@@ -24,8 +24,8 @@ Authoritative list of supported environment variables. Defaults shown are the sh
 | `MCPBASH_MAX_TEXT_BYTES` | `102400` | Max bytes for `content[].text` in `mcp_result_json` before the text is replaced by a short summary (the data stays in `structuredContent`; 100KB default ensures LLMs see full data). |
 | `MCPBASH_MAX_TOOL_OUTPUT_SIZE` | `10485760` | Tool stdout limit (bytes). |
 | `MCPBASH_MAX_TOOL_STDERR_SIZE` | `$MCPBASH_MAX_TOOL_OUTPUT_SIZE` | Tool stderr limit (bytes). |
-| `MCPBASH_MAX_RESOURCE_BYTES` | `$MCPBASH_MAX_TOOL_OUTPUT_SIZE` | Resource payload limit (bytes). |
-| `MCPBASH_MAX_UI_RESOURCE_BYTES` | `1048576` | Max size of a `ui://` resource (bytes). |
+| `MCPBASH_MAX_RESOURCE_BYTES` | `$MCPBASH_MAX_TOOL_OUTPUT_SIZE` | Resource payload limit (bytes). `file://` reads stop at this size. A value that is not a plain byte count (such as `1M` or `-1`) means 10 MiB. |
+| `MCPBASH_MAX_UI_RESOURCE_BYTES` | `1048576` | Max size of a `ui://` resource (bytes). A value that is not a plain byte count (such as `1M`) means the default. |
 | `MCPBASH_MAX_PROGRESS_PER_MIN` | `100` | Progress events per request per minute. |
 | `MCPBASH_MAX_LOGS_PER_MIN` | `$MCPBASH_MAX_PROGRESS_PER_MIN` | Log events per request per minute. |
 | `MCPBASH_DEFAULT_TOOL_TIMEOUT` | `30` | Default tool timeout (seconds). |

@@ -169,7 +169,7 @@ if ! canonical_path="$(mcp_file_read_canonical_path "${html_path}")"; then
 	exit 3
 fi
 
-max_size="${MCPBASH_MAX_UI_RESOURCE_BYTES:-1048576}" # Default 1MB
+max_size="$(mcp_file_read_limit "${MCPBASH_MAX_UI_RESOURCE_BYTES:-}" 1048576)" # Default 1MB
 status=0
 mcp_file_read_verified "${canonical_path}" "${max_size}" || status=$?
 case "${status}" in
@@ -185,6 +185,10 @@ case "${status}" in
 5)
 	printf '%s\n' "UI provider: cannot verify the opened file on this platform (needs stat and /dev/fd); refusing" >&2
 	exit 2
+	;;
+6)
+	printf '%s\n' "UI provider: reading ${resource_name} failed" >&2
+	exit 5
 	;;
 *)
 	printf '%s\n' "Symlinks not allowed for UI resources" >&2

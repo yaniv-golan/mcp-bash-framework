@@ -2067,6 +2067,7 @@ mcp_resources_read_file() {
 			local env_pairs=(
 				"MCPBASH_HOME=${MCPBASH_HOME}"
 				"MCP_RESOURCES_ROOTS=${MCP_RESOURCES_ROOTS:-${MCPBASH_RESOURCES_DIR}}"
+				"MCPBASH_MAX_RESOURCE_BYTES=$(mcp_resources_max_bytes)"
 			)
 			if [ -n "${template_name}" ]; then
 				env_pairs+=("MCP_RESOURCE_TEMPLATE_NAME=${template_name}" "MCP_RESOURCE_TEMPLATE_VARS=${template_vars}")
@@ -2100,6 +2101,16 @@ mcp_resources_read_file() {
 # With a template name, the provider gets MCP_RESOURCE_TEMPLATE_NAME and
 # MCP_RESOURCE_TEMPLATE_VARS; otherwise neither is set (both are unset at
 # startup, so a host value cannot leak in).
+# The resource size limit in bytes: MCPBASH_MAX_RESOURCE_BYTES, else
+# MCPBASH_MAX_TOOL_OUTPUT_SIZE, else 10 MiB; a malformed value means 10 MiB.
+mcp_resources_max_bytes() {
+	local limit="${MCPBASH_MAX_RESOURCE_BYTES:-${MCPBASH_MAX_TOOL_OUTPUT_SIZE:-10485760}}"
+	case "${limit}" in
+	'' | *[!0-9]*) limit=10485760 ;;
+	esac
+	printf '%s' "${limit}"
+}
+
 mcp_resources_read_via_provider() {
 	local provider="$1"
 	local uri="$2"
@@ -2177,6 +2188,10 @@ mcp_resources_read_via_provider() {
 			if [ -n "${MCPBASH_JSON_TOOL_BIN-}" ]; then env_pairs+=("MCPBASH_JSON_TOOL_BIN=${MCPBASH_JSON_TOOL_BIN-}"); fi
 			if [ -n "${MCPBASH_JSON_TOOL-}" ]; then env_pairs+=("MCPBASH_JSON_TOOL=${MCPBASH_JSON_TOOL-}"); fi
 			case "${provider}" in
+			file)
+				# The provider caps its read at the limit checked below.
+				env_pairs+=("MCPBASH_MAX_RESOURCE_BYTES=$(mcp_resources_max_bytes)")
+				;;
 			git)
 				if [ -n "${SSH_AUTH_SOCK-}" ]; then env_pairs+=("SSH_AUTH_SOCK=${SSH_AUTH_SOCK-}"); fi
 				if [ -n "${GIT_SSH_COMMAND-}" ]; then env_pairs+=("GIT_SSH_COMMAND=${GIT_SSH_COMMAND-}"); fi
@@ -2192,6 +2207,7 @@ mcp_resources_read_via_provider() {
 				if [ -n "${MCPBASH_REGISTRY_DIR-}" ]; then env_pairs+=("MCPBASH_REGISTRY_DIR=${MCPBASH_REGISTRY_DIR-}"); fi
 				if [ -n "${MCPBASH_TOOLS_DIR-}" ]; then env_pairs+=("MCPBASH_TOOLS_DIR=${MCPBASH_TOOLS_DIR-}"); fi
 				if [ -n "${MCPBASH_UI_DIR-}" ]; then env_pairs+=("MCPBASH_UI_DIR=${MCPBASH_UI_DIR-}"); fi
+				if [ -n "${MCPBASH_MAX_UI_RESOURCE_BYTES-}" ]; then env_pairs+=("MCPBASH_MAX_UI_RESOURCE_BYTES=${MCPBASH_MAX_UI_RESOURCE_BYTES-}"); fi
 				;;
 			esac
 			if [ -n "${http_proxy-}" ]; then env_pairs+=("http_proxy=${http_proxy-}"); fi
@@ -2373,10 +2389,8 @@ mcp_resources_read() {
 	local content_size
 	content_size="$(wc -c <"${content_file}" | tr -d ' ')"
 	mcp_logging_debug "${MCP_RESOURCES_LOGGER}" "Provider returned ${content_size} bytes"
-	local limit="${MCPBASH_MAX_RESOURCE_BYTES:-${MCPBASH_MAX_TOOL_OUTPUT_SIZE:-10485760}}"
-	case "${limit}" in
-	'' | *[!0-9]*) limit=10485760 ;;
-	esac
+	local limit
+	limit="$(mcp_resources_max_bytes)"
 	if [ "${content_size}" -gt "${limit}" ]; then
 		mcp_logging_error "${MCP_RESOURCES_LOGGER}" "Resource ${name:-<direct>} content ${content_size} bytes exceeds limit ${limit}" || true
 		mcp_resources_error -32603 "Resource content exceeds ${limit} bytes"

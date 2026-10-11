@@ -48,6 +48,21 @@
 #   4 larger than MAX_BYTES (nothing written)
 #   5 the opened descriptor, or a directory on the way up to ROOT, could not be
 #     identified (refused)
+#   6 reading the opened file failed (partial content may have been written)
+#
+# MAX_BYTES must be digits only; anything else is refused (2) rather than read
+# without a limit. Callers turn a user setting into one with
+# mcp_file_read_limit.
+
+# mcp_file_read_limit VALUE DEFAULT
+# Prints VALUE if it is a byte count (digits only), else DEFAULT, so a setting
+# such as "1M" or "-1" means the default rather than no limit.
+mcp_file_read_limit() {
+	case "$1" in
+	"" | *[!0-9]*) printf '%s' "$2" ;;
+	*) printf '%s' "$1" ;;
+	esac
+}
 
 # mcp_file_read_identity MODE PATH
 # MODE is "lstat" (do not follow a final symlink) or "fd" (PATH is an open
@@ -140,7 +155,8 @@ mcp_file_read_verified() {
 	"" | . | ..) return 3 ;;
 	esac
 	case "${max_bytes}" in
-	"" | *[!0-9]*) max_bytes="" ;;
+	"") ;;
+	*[!0-9]*) return 2 ;;
 	esac
 
 	# Relative path from the parent directory up to ROOT ("." when they are
@@ -236,10 +252,11 @@ mcp_file_read_verified() {
 				exit 4
 			fi
 			# Bound the output too, in case the file grows after the check.
-			head -c "${max_bytes}" <&9
+			head -c "${max_bytes}" <&9 || read_status=$?
 		else
-			cat <&9
+			cat <&9 || read_status=$?
 		fi
 		exec 9<&-
+		[ "${read_status:-0}" -eq 0 ] || exit 6
 	)
 }

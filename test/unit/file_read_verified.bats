@@ -153,6 +153,53 @@ file_provider() {
 	assert_output ""
 }
 
+@test "file_read: a malformed size limit is refused, not ignored" {
+	printf '0123456789' >"${ROOT}/ten"
+	local limit
+	for limit in 1M -1 " 5" 5x; do
+		run mcp_file_read_verified "${ROOT}/ten" "${limit}"
+		assert_failure 2
+		assert_output ""
+	done
+}
+
+@test "file_read: a read that fails after the open is reported" {
+	printf '0123456789' >"${ROOT}/ten"
+	head() { printf 'part'; return 1; }
+	run mcp_file_read_verified "${ROOT}/ten" 10
+	assert_failure 6
+	unset -f head
+	cat() { printf 'part'; return 1; }
+	run mcp_file_read_verified "${ROOT}/ten"
+	assert_failure 6
+	unset -f cat
+}
+
+@test "file_read: mcp_file_read_limit uses the default for malformed values" {
+	run mcp_file_read_limit 5 100
+	assert_output "5"
+	run mcp_file_read_limit 0 100
+	assert_output "0"
+	local bad
+	for bad in "" 1M -1 " 5" 5x; do
+		run mcp_file_read_limit "${bad}" 100
+		assert_output "100"
+	done
+}
+
+@test "file provider: MCPBASH_MAX_RESOURCE_BYTES caps the read" {
+	printf '0123456789' >"${ROOT}/ten"
+	MCPBASH_MAX_RESOURCE_BYTES=9 run file_provider "${ROOT}/ten"
+	assert_failure 6
+	assert_output --partial "exceeds 9 bytes"
+	MCPBASH_MAX_RESOURCE_BYTES=10 run file_provider "${ROOT}/ten"
+	assert_success
+	assert_output "0123456789"
+	MCPBASH_MAX_RESOURCE_BYTES=1M run file_provider "${ROOT}/ten"
+	assert_success
+	assert_output "0123456789"
+}
+
 @test "file_read: directory that is not really under ROOT is refused" {
 	# root/sub is a symlink to an outside directory: the path string looks
 	# inside, but the directory actually entered is not a descendant of ROOT.
@@ -241,6 +288,15 @@ ui_provider() {
 	run ui_provider env -u MCPBASH_HOME MCPBASH_MAX_UI_RESOURCE_BYTES=10
 	assert_success
 	assert_output "0123456789"
+}
+
+@test "ui provider: a malformed size limit means the default, not no limit" {
+	mkdir -p "${BASE}/ui/app"
+	# One byte over the 1 MiB default.
+	head -c 1048577 /dev/zero | tr '\0' 'a' >"${BASE}/ui/app/index.html"
+	run ui_provider env -u MCPBASH_HOME MCPBASH_MAX_UI_RESOURCE_BYTES=1M
+	assert_failure 3
+	assert_output --partial "too large (max: 1048576 bytes)"
 }
 
 @test "file_read: an ancestor that cannot be stat'd is unverifiable (5), not refused (2)" {
