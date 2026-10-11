@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **No more spurious "Cannot check for name collisions: resource registry unavailable" warning**: templates registered by `register.sh` or `register.json` were checked against the resources before the resources had been built, which logged this warning (twice with `register.json`). The check already runs again once the resources are known, and that check still drops a template whose name matches a resource.
 
 ### Documentation
+- **README uninstall step no longer deletes your scripts**: step 3 said `rm -f /path/to/your/project/*.sh`, which removes every shell script in the project folder. It now removes only `<server-name>.sh`, the one file `mcp-bash config --wrapper` creates.
 - Fixed broken links and section numbers; completed the docs index and `llms.txt` (environment reference, errors, resource templates, elicitation, completion, MCP Apps, examples 10–14); documented `MCPBASH_TMP_ROOT`, `MCPBASH_STATE_DIR` and `MCPBASH_LOCK_ROOT` as operator settings; clarified that `MCPBASH_PROGRESS_EXTENDS_TIMEOUT` affects the per-tool timeout, not `MCPBASH_IDLE_TIMEOUT`; MCP Apps template status is now consistent (data-table ready, the rest experimental and host-dependent).
 
 ## [1.8.0] - 2026-10-11
