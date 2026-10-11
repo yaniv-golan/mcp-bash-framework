@@ -1133,7 +1133,7 @@ mcp_runtime_set_process_group() {
 
 	# Check if the process is already its own group leader (job control worked)
 	local pgid
-	pgid="$(ps -o pgid= -p "${pid}" 2>/dev/null | tr -d ' ' || true)"
+	pgid="$(mcp_runtime_query_pgid "${pid}")" || pgid=""
 	if [ -n "${pgid}" ] && [ "${pgid}" = "${pid}" ]; then
 		return 0
 	fi
@@ -1152,6 +1152,8 @@ mcp_runtime_descendants() {
 	[ -n "${root}" ] || return 0
 	local table
 	table="$(ps -axo pid=,ppid= 2>/dev/null || true)"
+	# BusyBox ps has no -a/-x; it lists every process anyway.
+	[ -n "${table}" ] || table="$(ps -o pid=,ppid= 2>/dev/null || true)"
 	[ -n "${table}" ] || return 0
 	printf '%s\n' "${table}" | awk -v root="${root}" '
 		{ kids[$2] = kids[$2] " " $1 }
@@ -1168,13 +1170,41 @@ mcp_runtime_descendants() {
 		}'
 }
 
+# Print PID's process group from /proc (Linux, including BusyBox systems whose
+# ps has no -p). Returns 1 where /proc has no entry for it.
+mcp_runtime_proc_pgid() {
+	local pid="$1" line state ppid pgrp
+	[ -r "/proc/${pid}/stat" ] || return 1
+	line="$(cat "/proc/${pid}/stat" 2>/dev/null)" || return 1
+	# "pid (comm) state ppid pgrp ...": comm may contain spaces and ")", so
+	# split after the last ") ".
+	IFS=' ' read -r state ppid pgrp _ <<<"${line##*) }"
+	case "${pgrp:-}" in
+	'' | *[!0-9]*) return 1 ;;
+	esac
+	printf '%s' "${pgrp}"
+}
+
+# Print PID's process group: /proc where available, else ps.
+mcp_runtime_query_pgid() {
+	local pid="$1" pgid=""
+	pgid="$(mcp_runtime_proc_pgid "${pid}")" || pgid=""
+	if [ -z "${pgid}" ]; then
+		pgid="$(ps -o pgid= -p "${pid}" 2>/dev/null | tr -d ' ' || true)"
+		case "${pgid}" in
+		*[!0-9]*) pgid="" ;;
+		esac
+	fi
+	[ -n "${pgid}" ] || return 1
+	printf '%s' "${pgid}"
+}
+
 mcp_runtime_lookup_pgid() {
 	local pid="$1"
 	local pgid=""
 	[ -n "${pid}" ] || return 1
 
-	# Use ps to look up the process group ID (POSIX-compliant)
-	pgid="$(ps -o pgid= -p "${pid}" 2>/dev/null | tr -d ' ' || true)"
+	pgid="$(mcp_runtime_query_pgid "${pid}")" || pgid=""
 
 	# Fallback to assuming pid == pgid if ps fails
 	if [ -z "${pgid}" ]; then
