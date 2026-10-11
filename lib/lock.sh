@@ -67,10 +67,16 @@ mcp_lock_root_gone() {
 # retries).
 mcp_lock_try_create() {
 	local path="$1"
-	local tmp self
+	local self="${2:-}"
+	local tmp
+	# The caller passes its pid, worked out before the mkdir: on bash 3.2 that
+	# takes a fork, which would otherwise widen the window in which the lock
+	# exists without a pid.
+	if [ -z "${self}" ]; then
+		mcp_lock_self_pid
+		self="${_MCP_LOCK_SELF_PID}"
+	fi
 	mkdir "${path}" 2>/dev/null || return 1
-	mcp_lock_self_pid
-	self="${_MCP_LOCK_SELF_PID}"
 	tmp="${MCPBASH_LOCK_ROOT}/.pid.${path##*/}.${self}.${RANDOM}"
 	if printf '%s' "${self}" >"${tmp}" 2>/dev/null && mv -f "${tmp}" "${path}/pid" 2>/dev/null; then
 		return 0
@@ -85,9 +91,11 @@ mcp_lock_acquire() {
 	local name="$1"
 	local path
 	path="$(mcp_lock_path "${name}")"
+	mcp_lock_self_pid
+	local self="${_MCP_LOCK_SELF_PID}"
 
 	while :; do
-		if mcp_lock_try_create "${path}"; then
+		if mcp_lock_try_create "${path}" "${self}"; then
 			break
 		fi
 		if mcp_lock_root_gone; then
@@ -105,9 +113,11 @@ mcp_lock_acquire_timeout() {
 	path="$(mcp_lock_path "${name}")"
 	local start
 	start="$(date +%s)"
+	mcp_lock_self_pid
+	local self="${_MCP_LOCK_SELF_PID}"
 
 	while :; do
-		if mcp_lock_try_create "${path}"; then
+		if mcp_lock_try_create "${path}" "${self}"; then
 			break
 		fi
 		if mcp_lock_root_gone; then
