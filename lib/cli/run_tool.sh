@@ -66,6 +66,21 @@ mcp_cli_run_tool_mark_stale_cache() {
 	[ -d "${tools_dir}" ] || return 0
 	local newer=""
 	newer="$(find "${tools_dir}" -newer "${cache_path}" -print 2>/dev/null | head -n 1)" || newer=""
+	if [ -z "${newer}" ]; then
+		# BusyBox find compares whole seconds, so an entry changed in the same
+		# second the cache was written is not "newer". Where stat -c works (GNU,
+		# BusyBox), count such entries too; at worst that costs a rescan.
+		local cache_secs=""
+		if cache_secs="$(stat -c %Y "${cache_path}" 2>/dev/null)"; then
+			case "${cache_secs}" in
+			'' | *[!0-9]*) ;;
+			*)
+				newer="$(find "${tools_dir}" -exec stat -c %Y {} + 2>/dev/null \
+					| awk -v c="${cache_secs}" '$1 >= c { print; exit }')" || newer=""
+				;;
+			esac
+		fi
+	fi
 	if [ -n "${newer}" ]; then
 		# shellcheck disable=SC2034  # Consumed by mcp_tools_refresh_registry
 		MCP_TOOLS_LAST_SCAN=0
