@@ -68,6 +68,7 @@ TESTS=(
 	"test_idle_timeout.sh"
 	"test_orphan_detection.sh"
 	"test_exit_stops_tools.sh"
+	"test_zombie_server_helpers.sh"
 	"test_sigterm_prompt_exit.sh"
 	"test_normal_exit_status.sh"
 	"test_stdout_closed_exit.sh"

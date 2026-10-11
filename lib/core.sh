@@ -188,7 +188,7 @@ mcp_core_start_deprecation_notice() {
 		# outlive a server that was killed.
 		count=0
 		while IFS= read -r rule; do
-			kill -0 "$$" 2>/dev/null || exit 0
+			mcp_core_server_alive || exit 0
 			id="${rule##*/}"
 			id="${id%.sh}"
 			n="$(mcp_migrate_detect "${project_root}" --validate --only "${id}" 2>/dev/null | grep -c . 2>/dev/null)"
@@ -197,7 +197,7 @@ mcp_core_start_deprecation_notice() {
 		done <<EOF_RULES
 $(mcp_migrate_rule_files 2>/dev/null)
 EOF_RULES
-		kill -0 "$$" 2>/dev/null || exit 0
+		mcp_core_server_alive || exit 0
 		[ "${count}" -gt 0 ] || exit 0
 		noun="uses"
 		[ "${count}" -eq 1 ] && noun="use"
@@ -206,6 +206,31 @@ EOF_RULES
 	) </dev/null >/dev/null &
 	# Not a worker: keep it out of `jobs -p`, so shutdown doesn't wait for it.
 	disown "$!" 2>/dev/null || true
+}
+
+# Whether the server is still running, for background helpers ($$ is the
+# server's PID in their subshells too). kill -0 alone also succeeds while a
+# killed server is a zombie its parent has not reaped yet, so the state is
+# checked too: /proc on Linux, else ps. When neither gives a clear answer
+# (no ps, or a ps without -p that lists everything), kill -0 decides.
+mcp_core_server_alive() {
+	kill -0 "$$" 2>/dev/null || return 1
+	local state=""
+	if [ -r "/proc/$$/stat" ]; then
+		state="$(cat "/proc/$$/stat" 2>/dev/null || true)"
+		state="${state##*) }"
+		state="${state%% *}"
+	else
+		state="$(ps -o stat= -p "$$" 2>/dev/null || true)"
+		case "${state}" in
+		*$'\n'*) state="" ;;
+		esac
+		state="${state//[[:space:]]/}"
+	fi
+	case "${state}" in
+	Z*) return 1 ;;
+	esac
+	return 0
 }
 
 mcp_core_has_resource_subscriptions() {
@@ -1835,7 +1860,7 @@ mcp_core_start_progress_flusher() {
 		while :; do
 			# $$ is the server's PID even in this subshell. Exit with it: a server
 			# killed without cleanup (SIGKILL, crash) cannot stop this loop.
-			kill -0 "$$" 2>/dev/null || exit 0
+			mcp_core_server_alive || exit 0
 			if [ "${MCPBASH_ENABLE_LIVE_PROGRESS:-false}" = "true" ]; then
 				mcp_core_flush_worker_streams_once || true
 			fi
@@ -1898,7 +1923,7 @@ mcp_core_start_resource_poll() {
 		MCP_NOTIFICATION_QUEUE_FILE=""
 		while :; do
 			# Exit with the server ($$ is its PID here too); see the flusher.
-			kill -0 "$$" 2>/dev/null || exit 0
+			mcp_core_server_alive || exit 0
 			mcp_resources_poll_subscriptions_queued || true
 			sleep "${interval}"
 		done
