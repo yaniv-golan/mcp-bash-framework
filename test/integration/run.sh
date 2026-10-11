@@ -102,6 +102,7 @@ TESTS=(
 	"test_resource_mime_declared.sh"
 	"test_resource_templates.sh"
 	"test_resource_template_read.sh"
+	"test_resource_read_timeout.sh"
 	"test_registration_warnings.sh"
 	"test_template_collision_warnings.sh"
 	"test_ui_capability.sh"

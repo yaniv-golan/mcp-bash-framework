@@ -58,6 +58,7 @@ MCPBASH_DEFAULT_MAX_OUTPUT_BYTES="${MCPBASH_DEFAULT_MAX_OUTPUT_BYTES:-10485760}"
 MCPBASH_DEFAULT_PROGRESS_PER_MIN="${MCPBASH_DEFAULT_PROGRESS_PER_MIN:-100}"
 MCPBASH_DEFAULT_TOOL_TIMEOUT="${MCPBASH_DEFAULT_TOOL_TIMEOUT:-30}"
 MCPBASH_DEFAULT_SUBSCRIBE_TIMEOUT="${MCPBASH_DEFAULT_SUBSCRIBE_TIMEOUT:-120}"
+MCPBASH_DEFAULT_RESOURCE_TIMEOUT="${MCPBASH_DEFAULT_RESOURCE_TIMEOUT:-120}"
 MCPBASH_SHUTDOWN_TIMEOUT="${MCPBASH_SHUTDOWN_TIMEOUT:-5}"
 
 mcp_register_tool() {
@@ -128,6 +129,7 @@ mcp_core_bootstrap_state() {
 	MCPBASH_MAX_LOGS_PER_MIN="${MCPBASH_MAX_LOGS_PER_MIN:-${MCPBASH_MAX_PROGRESS_PER_MIN}}"
 	MCPBASH_DEFAULT_TOOL_TIMEOUT="${MCPBASH_DEFAULT_TOOL_TIMEOUT:-30}"
 	MCPBASH_DEFAULT_SUBSCRIBE_TIMEOUT="${MCPBASH_DEFAULT_SUBSCRIBE_TIMEOUT:-120}"
+	MCPBASH_DEFAULT_RESOURCE_TIMEOUT="${MCPBASH_DEFAULT_RESOURCE_TIMEOUT:-120}"
 	MCPBASH_SHUTDOWN_TIMEOUT="${MCPBASH_SHUTDOWN_TIMEOUT:-5}"
 	MCPBASH_SHUTDOWN_TIMER_STARTED=false
 	MCPBASH_RESOURCE_POLL_PID=""
@@ -1213,7 +1215,14 @@ mcp_core_spawn_worker() {
 		export MCP_PROGRESS_TOKEN="${progress_token}"
 		export MCP_CANCEL_FILE="${cancel_file}"
 		if [ -n "${timeout}" ]; then
-			with_timeout "${timeout}" -- mcp_core_worker_entry "${handler}" "${method}" "${json_line}" "${id_json}" "${key}" "${stderr_file}"
+			local timeout_status=0
+			with_timeout "${timeout}" -- mcp_core_worker_entry "${handler}" "${method}" "${json_line}" "${id_json}" "${key}" "${stderr_file}" || timeout_status=$?
+			# The handler was killed before it could answer: answer for it, or
+			# the client waits forever. (Cancelled requests get no response;
+			# mcp_io_send_response drops them.)
+			if [ "${timeout_status}" -eq 124 ] && [ -n "${id_json}" ] && [ "${id_json}" != "null" ]; then
+				mcp_core_worker_emit "${key}" "$(mcp_core_build_error_response "${id_json}" -32603 "${method} timed out after ${timeout}s" "")"
+			fi
 		else
 			mcp_core_worker_entry "${handler}" "${method}" "${json_line}" "${id_json}" "${key}" "${stderr_file}"
 		fi
@@ -1273,6 +1282,11 @@ mcp_core_timeout_for_method() {
 			;;
 		resources/subscribe)
 			timeout_value="${MCPBASH_DEFAULT_SUBSCRIBE_TIMEOUT:-120}"
+			;;
+		resources/read)
+			# A provider that never finishes (a slow backend, a FIFO) would
+			# otherwise hold a worker slot forever.
+			timeout_value="${MCPBASH_DEFAULT_RESOURCE_TIMEOUT:-120}"
 			;;
 		esac
 	fi
