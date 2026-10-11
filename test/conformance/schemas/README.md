@@ -8,6 +8,9 @@ copied unchanged from
 
 `test/integration/test_conformance_schema.sh` validates real server output
 against them. Add a revision here when the server starts negotiating it.
+2026-07-28 is published upstream but not vendored: 1.x doesn't negotiate it
+(clients that probe `server/discover` fall back to `initialize` and
+2025-11-25). It arrives with the stateless path in 2.0.
 
 Upstream licence: specification contributions are Apache-2.0; older
 contributions not yet relicensed remain MIT. See the upstream `LICENSE`.
