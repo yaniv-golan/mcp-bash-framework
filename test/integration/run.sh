@@ -73,6 +73,7 @@ TESTS=(
 	"test_trace_bash32.sh"
 	"test_completion_registered_timeout.sh"
 	"test_conformance_strict_shapes.sh"
+	"test_conformance_schema.sh"
 	"test_installer.sh"
 	"test_tools.sh"
 	"test_tools_meta.sh"

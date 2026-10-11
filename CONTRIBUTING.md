@@ -7,6 +7,7 @@ Local linting and CI expect a few command-line tools to be present:
 - `shellcheck` – static analysis for all shell scripts.
 - `shfmt` – enforces consistent formatting (used by `test/lint.sh`). Install via `go install mvdan.cc/sh/v3/cmd/shfmt@latest` (official upstream method) or your OS package manager.
 - `jq` or `gojq` – deterministic JSON tooling. mcp-bash auto-detects both; for Windows Git Bash/MSYS, `jq` is often more reliable due to observed exec/argument-size limits with `gojq` on some CI runners. CI installs `gojq` for reproducibility, but you can override detection with `MCPBASH_JSON_TOOL` / `MCPBASH_JSON_TOOL_BIN` if needed.
+- `jv` (optional) – JSON Schema validator for `test/integration/test_conformance_schema.sh`, which checks server output against the official MCP schemas in `test/conformance/schemas/`. Install with `go install github.com/santhosh-tekuri/jsonschema/cmd/jv@v0.7.0`. Without it the test is skipped locally; CI installs it and requires it.
 - `bats` – unit tests use [bats-core](https://bats-core.readthedocs.io/) (v1.5.0+). Run `npm install` to install bats and helper libraries (bats-support, bats-assert, bats-file). Alternatively, install bats-core via `brew install bats-core` (macOS) or `apt install bats` (Debian/Ubuntu).
 
 Without `shfmt`, the lint step fails immediately with "Required command \"shfmt\" not found in PATH".

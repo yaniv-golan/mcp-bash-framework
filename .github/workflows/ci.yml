@@ -151,16 +151,19 @@ jobs:
         with:
           path: ${{ env.GOCACHE }}
           key: ${{ runner.os }}-gocache-${{ hashFiles('tools/go.sum') }}-${{ steps.go.outputs.go-version }}
-      - name: Install gojq
+      - name: Install gojq and jv
         run: |
           set -euo pipefail
           pushd tools >/dev/null
           go install github.com/itchyny/gojq/cmd/gojq@v0.12.16
+          # JSON Schema validator for test_conformance_schema.sh
+          go install github.com/santhosh-tekuri/jsonschema/cmd/jv@v0.7.0
           popd >/dev/null
       - name: Integration suite
         id: integration
         env:
           MCPBASH_CI_MODE: "true"
+          MCPBASH_CONFORMANCE_REQUIRE_SCHEMA: "1"
           MCPBASH_LOG_DIR: ${{ runner.temp }}/mcpbash-logs
           MCPBASH_LOG_TIMESTAMP: "true"
           MCPBASH_KEEP_LOGS: "true"
