@@ -205,8 +205,9 @@ rm -rf ~/.local/share/mcp-bash
 # 2. Remove the symlink
 rm -f ~/.local/bin/mcp-bash
 
-# 3. Remove any generated wrapper scripts (in each project)
-rm -f /path/to/your/project/*.sh  # e.g., my-server.sh, my-server-env.sh
+# 3. Remove the wrapper script, if you created one with `mcp-bash config --wrapper`
+#    (one file per project, named after the server; your other scripts stay)
+rm -f /path/to/your/project/<server-name>.sh  # e.g., my-server.sh
 
 # 4. (Optional) Remove PATH addition from your shell config
 #    Edit ~/.bashrc or ~/.zshrc and remove the line:
