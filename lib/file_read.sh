@@ -16,12 +16,15 @@
 #   3. lstats the final component (no symlink following) and requires a
 #      regular file;
 #   4. opens it on fd 9;
-#   5. stats the open descriptor through /dev/fd/9 and requires a regular file
-#      with the same device and inode as step 3. macOS reports the devfs device
-#      for anything stat'd through /dev/fd/N, so there the file's birth time
-#      (nanoseconds) stands in for the device. Writes and links do not change
-#      it, but the owner can set it with utimes (an mtime earlier than the
-#      birth time moves it back); see docs/SECURITY.md;
+#   5. stats the open descriptor and requires a regular file with the same
+#      device and inode as step 3. GNU stat reads it through /dev/fd/9; BSD
+#      stat (macOS) is given it as stdin and fstats it, because a stat of
+#      /dev/fd/N there reports the devfs device and, under load, sometimes
+#      fails with EBADF. Where the devfs device is still reported (GNU stat on
+#      macOS), the file's birth time (nanoseconds) stands in for the device.
+#      Writes and links do not change it, but the owner can set it with utimes
+#      (an mtime earlier than the birth time moves it back); see
+#      docs/SECURITY.md;
 #   6. streams the content from fd 9, so the bytes returned are the bytes of
 #      the file that was checked.
 # A symlink swapped in at any point before the open is refused; a swap after
@@ -45,7 +48,8 @@
 #     identified (refused)
 
 # mcp_file_read_identity MODE PATH
-# MODE is "lstat" (do not follow a final symlink) or "fd" (follow, for /dev/fd/N).
+# MODE is "lstat" (do not follow a final symlink) or "fd" (PATH is an open
+# descriptor number).
 # Prints "dev|ino|birth|size|type" with type normalized to "regular", "dir" or
 # "other". birth is the birth time with nanoseconds where stat reports it (BSD
 # %B, GNU %w), otherwise "-" (GNU) or a placeholder (BusyBox); it is only used
@@ -57,8 +61,9 @@ mcp_file_read_identity() {
 	# GNU coreutils and BusyBox use -c; BSD/macOS uses -f. Try GNU first: on
 	# GNU, -f means --file-system and the BSD format would fail as a filename.
 	if [ "${mode}" = "fd" ]; then
-		out="$(stat -L -c '%d|%i|%w|%s|%F' "${target}" 2>/dev/null)" \
-			|| out="$(stat -L -f '%d|%i|%.9FB|%z|%HT' "${target}" 2>/dev/null)" \
+		# BSD stat with no operand fstats stdin.
+		out="$(stat -L -c '%d|%i|%w|%s|%F' "/dev/fd/${target}" 2>/dev/null)" \
+			|| out="$(stat -f '%d|%i|%.9FB|%z|%HT' <&"${target}" 2>/dev/null)" \
 			|| out=""
 	else
 		out="$(stat -c '%d|%i|%w|%s|%F' "${target}" 2>/dev/null)" \
@@ -174,7 +179,7 @@ mcp_file_read_verified() {
 
 		exec 9<"./${base}" || exit 3
 
-		opened="$(mcp_file_read_identity fd /dev/fd/9)" || {
+		opened="$(mcp_file_read_identity fd 9)" || {
 			exec 9<&-
 			exit 5
 		}
@@ -194,8 +199,8 @@ mcp_file_read_verified() {
 			exit 2
 		fi
 		if [ "${checked_dev}" != "${opened_dev}" ]; then
-			# Only acceptable where /dev/fd/N reports the devfs device (macOS).
-			# There the birth time stands in for the device.
+			# Only acceptable where /dev/fd/N reports the devfs device (GNU stat
+			# on macOS). There the birth time stands in for the device.
 			devfs_dev="$(stat -c '%d' /dev/null 2>/dev/null || stat -f '%d' /dev/null 2>/dev/null || true)"
 			if [ -z "${devfs_dev}" ] || [ "${opened_dev}" != "${devfs_dev}" ] \
 				|| [ "${checked_birth}" = "${checked_birth#*[0-9]}" ] \

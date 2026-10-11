@@ -257,3 +257,44 @@ STUB
 	assert_failure 5
 	assert_output ""
 }
+
+bsd_stat_or_skip() {
+	if "${REAL_STAT}" -c '%d' / >/dev/null 2>&1 || ! "${REAL_STAT}" -f '%d' / >/dev/null 2>&1; then
+		skip "needs BSD stat"
+	fi
+}
+
+@test "file_read: BSD stat identifies the open descriptor without /dev/fd" {
+	bsd_stat_or_skip
+	# Under load, macOS sometimes fails a stat of /dev/fd/N with EBADF even
+	# though the descriptor is open. The read must not depend on that lookup.
+	cat >"${STUBS}/stat" <<STUB
+#!/usr/bin/env bash
+for a in "\$@"; do
+	case "\${a}" in
+	/dev/fd/*)
+		printf 'stat: %s: stat: Bad file descriptor\n' "\${a}" >&2
+		exit 1
+		;;
+	esac
+done
+exec "${REAL_STAT}" "\$@"
+STUB
+	chmod +x "${STUBS}/stat"
+	PATH="${STUBS}:${PATH}" run mcp_file_read_verified "${ROOT}/sub/x" "" "${ROOT}"
+	assert_success
+	assert_output "inside-sub"
+}
+
+@test "file_read: BSD stat reports the open file's real device, not devfs" {
+	bsd_stat_or_skip
+	local identity
+	exec 9<"${ROOT}/x"
+	identity="$(mcp_file_read_identity fd 9)"
+	exec 9<&-
+	assert_equal "${identity%%|*}" "$("${REAL_STAT}" -f '%d' "${ROOT}/x")"
+	case "${identity}" in
+	*"|regular") ;;
+	*) fail "identity '${identity}' is not a regular file" ;;
+	esac
+}
