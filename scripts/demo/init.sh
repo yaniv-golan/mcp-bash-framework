@@ -2,5 +2,5 @@
 # shellcheck shell=sh
 apk add -q bash jq >/dev/null
 ln -s /opt/mcp-bash/bin/mcp-bash /usr/local/bin/mcp-bash
-cd /home
+cd /home || exit 1
 PS1='$ ' exec bash --norc
