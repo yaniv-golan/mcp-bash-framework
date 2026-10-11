@@ -41,7 +41,8 @@
 #     changed between the check and the open
 #   3 not found or could not be opened
 #   4 larger than MAX_BYTES (nothing written)
-#   5 the opened descriptor could not be identified on this platform (refused)
+#   5 the opened descriptor, or a directory on the way up to ROOT, could not be
+#     identified (refused)
 
 # mcp_file_read_identity MODE PATH
 # MODE is "lstat" (do not follow a final symlink) or "fd" (follow, for /dev/fd/N).
@@ -153,7 +154,7 @@ mcp_file_read_verified() {
 
 		if [ -n "${up}" ]; then
 			root_id="$(mcp_file_read_identity lstat "${root}")" || exit 5
-			anc_id="$(mcp_file_read_identity lstat "${up}")" || exit 2
+			anc_id="$(mcp_file_read_identity lstat "${up}")" || exit 5
 			IFS='|' read -r root_dev root_ino _ _ root_type <<<"${root_id}"
 			IFS='|' read -r anc_dev anc_ino _ _ anc_type <<<"${anc_id}"
 			if [ "${root_type}" != "dir" ] || [ "${anc_type}" != "dir" ] \

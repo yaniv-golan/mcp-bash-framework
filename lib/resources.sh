@@ -1881,7 +1881,7 @@ mcp_resources_read_file() {
 	rm -f "${tmp_err}"
 	case "${status}" in
 	2)
-		mcp_resources_error -32603 "Resource outside allowed roots"
+		mcp_resources_error -32603 "${message:-Resource outside allowed roots}"
 		;;
 	3)
 		mcp_resources_error -32002 "Resource not found"
@@ -2019,7 +2019,7 @@ mcp_resources_read_via_provider() {
 		rm -f "${tmp_err}" "${tmp_out}"
 		case "${status}" in
 		2)
-			mcp_resources_error -32603 "Resource outside allowed roots"
+			mcp_resources_error -32603 "${message:-Resource outside allowed roots}"
 			;;
 		3)
 			mcp_resources_error -32002 "Resource not found"

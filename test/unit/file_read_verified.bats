@@ -242,3 +242,18 @@ ui_provider() {
 	assert_success
 	assert_output "0123456789"
 }
+
+@test "file_read: an ancestor that cannot be stat'd is unverifiable (5), not refused (2)" {
+	# Real stat everywhere except on the ".." walk up to ROOT.
+	cat >"${STUBS}/stat" <<STUB
+#!/usr/bin/env bash
+case "\${!#}" in
+*..) exit 1 ;;
+esac
+exec "${REAL_STAT}" "\$@"
+STUB
+	chmod +x "${STUBS}/stat"
+	PATH="${STUBS}:${PATH}" run mcp_file_read_verified "${ROOT}/sub/x" "" "${ROOT}"
+	assert_failure 5
+	assert_output ""
+}

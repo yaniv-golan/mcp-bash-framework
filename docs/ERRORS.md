@@ -164,7 +164,8 @@ Example `resources/read` error payload:
 Size guardrails: `mcp_core_guard_response_size` rejects oversized responses with `-32603` (tool/resource reads use `MCPBASH_MAX_TOOL_OUTPUT_SIZE`, default 10MB; registry/list payloads use `MCPBASH_REGISTRY_MAX_BYTES`, default 100MB) and does not return partial content.
 
 ## Resource provider exit codes
-- `file.sh`: `2` outside allowed roots → `-32603`; `3` missing file → `-32002`.
+- `file.sh`: `2` outside allowed roots, or the read could not be verified → `-32603`; `3` missing file → `-32002`.
+- For exit `2`, the provider's stderr text is the error message when it wrote one; otherwise the message is "Resource outside allowed roots".
 - `git.sh`: `4` invalid URI, blocked host (policy, or resolves to a blocked address), missing git, or git older than 2.37 → `-32602`; `5` host does not resolve, or clone/fetch failure → `-32603`.
 - `https.sh`: `4` invalid URI, blocked host (policy, or resolves to a blocked address) or missing curl → `-32602`; `5` host does not resolve, network/timeout → `-32603`; `6` payload exceeds `MCPBASH_HTTPS_MAX_BYTES` → `-32603`.
 - Any other provider exit code maps to `-32603` with stderr text when available.

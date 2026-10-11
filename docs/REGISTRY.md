@@ -173,7 +173,7 @@ Project providers follow the same contract as framework providers:
 
 **Exit codes**:
 - `0`: Success (content on stdout)
-- `2`: Resource outside allowed roots
+- `2`: Resource outside allowed roots, or access refused (the provider's stderr text, if any, becomes the error message)
 - `3`: Resource not found
 - `4`: Invalid resource specification
 - `5`: Fetch failed

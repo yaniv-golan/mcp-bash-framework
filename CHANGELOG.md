@@ -5,6 +5,11 @@ All notable changes to mcp-bash-framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **Resource read refusals say why**: when a resource provider refused a read (exit `2`), the error was always "Resource outside allowed roots", and the provider's own explanation was dropped. The provider's stderr text is now the error message when it wrote one, for example "cannot verify the opened file on this platform" from the file provider or "HTTPS provider blocked host …". A file read that fails because a directory on the way up to the root can't be checked is now reported as unverifiable, not as outside the roots.
+
 ## [1.8.0] - 2026-10-11
 
 ### Behaviour changes to check before upgrading
