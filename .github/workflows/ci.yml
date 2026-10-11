@@ -330,6 +330,8 @@ jobs:
             test_preinit_discover_probe.sh
             test_stdin_eof_shutdown.sh
             test_background_loops_exit.sh
+            test_idle_timeout.sh
+            test_orphan_detection.sh
             test_sigterm_prompt_exit.sh
             test_stdout_closed_exit.sh
             test_short_read_timeout_stays_up.sh

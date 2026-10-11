@@ -15,20 +15,18 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 test_require_command jq
 
-# Source the project's timeout helper for portability
-# shellcheck disable=SC1091
-. "${MCPBASH_HOME}/lib/timeout.sh"
-
-# Portable timeout wrapper
+# Portable timeout wrapper. It must keep stdin: the tests pipe requests into
+# the server. (lib/timeout.sh's with_timeout starts the command in the
+# background, where a non-interactive shell reads /dev/null instead.)
 _test_timeout() {
 	local secs="$1"
 	shift
-	if command -v with_timeout >/dev/null 2>&1; then
-		with_timeout "${secs}" -- "$@"
+	if command -v timeout >/dev/null 2>&1; then
+		timeout "${secs}" "$@"
 	elif command -v gtimeout >/dev/null 2>&1; then
 		gtimeout "${secs}" "$@"
-	elif command -v timeout >/dev/null 2>&1; then
-		timeout "${secs}" "$@"
+	elif command -v perl >/dev/null 2>&1; then
+		perl -e 'alarm shift; exec @ARGV or die "exec: $!\n"' "${secs}" "$@"
 	else
 		"$@"
 	fi
@@ -40,6 +38,12 @@ test_stage_workspace "${WORKSPACE}"
 
 # Test 1: Idle timeout triggers correctly
 test_idle_timeout_triggers() {
+	case "$(uname -s 2>/dev/null)" in
+	CYGWIN* | MINGW* | MSYS*)
+		printf 'SKIP: idle exit check needs a FIFO\n'
+		return 0
+		;;
+	esac
 	local timeout=2
 	local test_dir pid_file fifo_path server_pid
 	local start_time end_time elapsed
@@ -49,8 +53,6 @@ test_idle_timeout_triggers() {
 	pid_file="${test_dir}/pid"
 	fifo_path="${test_dir}/fifo"
 	mkfifo "${fifo_path}"
-	# shellcheck disable=SC2064
-	trap "rm -rf '${test_dir}'; kill '${writer_pid}' 2>/dev/null || true" RETURN
 
 	start_time=$(date +%s)
 
@@ -58,9 +60,14 @@ test_idle_timeout_triggers() {
 	(
 		printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}\n'
 		printf '{"jsonrpc":"2.0","method":"notifications/initialized"}\n'
-		sleep 86400
+		# exec: killing writer_pid must stop the sleep too, or it outlives the
+		# test holding the test's stderr open.
+		exec sleep 86400
 	) >"${fifo_path}" &
 	writer_pid=$!
+	# Set after writer_pid: the trap text is expanded now, not when it runs.
+	# shellcheck disable=SC2064
+	trap "rm -rf '${test_dir}'; kill '${writer_pid}' 2>/dev/null || true" RETURN
 
 	# Start server reading from FIFO
 	MCPBASH_IDLE_TIMEOUT="${timeout}" \

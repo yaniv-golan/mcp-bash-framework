@@ -36,12 +36,13 @@ test_orphan_detection() {
 	pid_file="${test_dir}/pid"
 	fifo_path="${test_dir}/fifo"
 	mkfifo "${fifo_path}"
-	# shellcheck disable=SC2064
-	trap "rm -rf '${test_dir}'; kill '${writer_pid}' 2>/dev/null || true" RETURN
 
 	# Open a writer to the FIFO first
 	sleep 86400 >"${fifo_path}" &
 	writer_pid=$!
+	# Set after writer_pid: the trap text is expanded now, not when it runs.
+	# shellcheck disable=SC2064
+	trap "rm -rf '${test_dir}'; kill '${writer_pid}' 2>/dev/null || true" RETURN
 
 	# Start server as child of a short-lived parent subshell
 	(
@@ -86,11 +87,12 @@ test_orphan_detection_disabled() {
 	pid_file="${test_dir}/pid"
 	fifo_path="${test_dir}/fifo"
 	mkfifo "${fifo_path}"
-	# shellcheck disable=SC2064
-	trap "rm -rf '${test_dir}'; kill '${writer_pid}' 2>/dev/null || true" RETURN
 
 	sleep 86400 >"${fifo_path}" &
 	writer_pid=$!
+	# Set after writer_pid: the trap text is expanded now, not when it runs.
+	# shellcheck disable=SC2064
+	trap "rm -rf '${test_dir}'; kill '${writer_pid}' 2>/dev/null || true" RETURN
 
 	# Start server with orphan detection disabled
 	(

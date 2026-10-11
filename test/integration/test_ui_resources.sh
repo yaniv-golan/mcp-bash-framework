@@ -122,7 +122,8 @@ jq -s '
 	else null end,
 
 	# Check prefersBorder
-	if ($content._meta.ui.prefersBorder // true) != false then
+	# Compare directly: `false // true` is true, so a // default hides false.
+	if $content._meta.ui.prefersBorder != false then
 		err("prefersBorder should be false")
 	else null end
 ' <"${META_ROOT}/responses.ndjson" >/dev/null
