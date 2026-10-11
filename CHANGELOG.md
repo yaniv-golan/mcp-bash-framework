@@ -7,10 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Behaviour changes to check before upgrading
+- **Static resources without `provider` get one by the same rule everywhere**: auto-discovery, `register.sh` (`mcp_register_resource` or printed JSON) and `register.json` now agree. `file://`, `git+https://`, `https://` and `ui://` use the built-in provider; any other scheme uses `providers/<scheme>.sh` when it exists; otherwise `file`, with a warning at registration. Before, `register.sh` sent `ui://` and custom schemes to `file`, and printed JSON had no provider at all. `register.json` named a provider after any scheme even if no script existed; such resources now use `file` and log the warning (their reads failed before and still fail). Resources that set `provider` are unchanged.
+
 ### Added
 - **Conformance test against the official MCP schemas**: an integration test validates server output against the official MCP JSON schemas for 2024-11-05, 2025-03-26, 2025-06-18 and 2025-11-25 (vendored in `test/conformance/schemas`).
 
 ### Fixed
+- **`register.sh` resources with `ui://` or a custom scheme are read by the right provider**: without a `provider`, they went to the `file` provider instead of `ui` or the project's `providers/<scheme>.sh`.
 - **Locks stay exclusive when several processes contend for them**: a waiter could remove a lock whose owner hadn't finished writing its pid file, so two processes could write to stdout together and interleave JSON-RPC lines, and a failed cleanup could stop a request with "Directory not empty". Lock helpers no longer print ownership warnings to stderr unless `MCPBASH_LOG_LEVEL=debug`.
 - **Progress notifications leave out an unknown total**: they no longer send `"total": null` when the tool gives no total; the field is left out, as the MCP schema requires (`total` is a number).
 - **URL-mode elicitation requests include `elicitationId`**: the MCP spec requires it; the server generates a unique one per request.
