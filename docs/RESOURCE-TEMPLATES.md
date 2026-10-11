@@ -135,7 +135,7 @@ A template may set `"provider": "<name>"`. A URI whose best match (above) is tha
 {"name": "orders", "uriTemplate": "shop://orders/{id}", "provider": "orders"}
 ```
 
-`provider` must name a project provider (`providers/<name>.sh`, any scheme) or a built-in on its own scheme (`file` on `file://`, `https` on `https://`, `git` on `git+https://`, `ui` on `ui://`). Anything else (an unknown name, a built-in on another scheme, or a template the matcher can't use) is dropped with a warning at registration, and `mcp-bash validate` reports it. `resources/templates/list` never shows `provider`.
+`provider` must name a project provider (`providers/<name>.sh`, any scheme) or a built-in on its own scheme (`file` on `file://`, `https` on `https://`, `git` on `git+https://`, `ui` on `ui://`, and the bundled demo `echo` on `echo://`). Anything else (an unknown name, a built-in on another scheme, or a template the matcher can't use) is dropped with a warning at registration, and `mcp-bash validate` reports it. `resources/templates/list` never shows `provider`.
 
 Otherwise the provider is inferred from the URI scheme:
 

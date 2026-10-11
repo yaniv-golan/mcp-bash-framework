@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 # Unit layer: every way of registering a static resource infers a missing
 # "provider" with the same rule: built-in schemes (file://, git+https://,
-# https://, ui://) use the built-in provider; another scheme uses the project
+# https://, ui://, and echo:// for the bundled demo) use the built-in provider; another scheme uses the project
 # provider of that name when providers/<scheme>.sh exists; otherwise file, with
 # a warning. An explicit provider is never changed.
 
@@ -59,10 +59,13 @@ assert_inferred() {
 	assert_equal "$(provider_of r-file)" "file"
 	assert_equal "$(provider_of r-https)" "https"
 	assert_equal "$(provider_of r-git)" "git"
+	assert_equal "$(provider_of r-echo)" "echo"
 	assert_equal "$(provider_of r-custom)" "myapi"
 	assert_equal "$(provider_of r-missing)" "file"
 	assert_equal "$(provider_of r-explicit)" "myapi"
 	run grep -c 'no providers/nosuch.sh' "${WARNINGS_FILE}"
+	assert_output "1"
+	run grep -c 'no providers/' "${WARNINGS_FILE}"
 	assert_output "1"
 	# Markers used for the warning never reach the registry.
 	run bash -c 'printf "%s" "$1" | jq -e "[.items[] | has(\"_mcpbashNoProviderFor\")] | any | not"' _ "${MCP_RESOURCES_REGISTRY_JSON}"
@@ -74,6 +77,7 @@ RESOURCES_JSON='[
 	{"name":"r-file","uri":"file:///tmp/x.txt"},
 	{"name":"r-https","uri":"https://example.com/a"},
 	{"name":"r-git","uri":"git+https://example.com/repo/main/README.md"},
+	{"name":"r-echo","uri":"echo://hello"},
 	{"name":"r-custom","uri":"myapi://items/1"},
 	{"name":"r-missing","uri":"nosuch://thing"},
 	{"name":"r-explicit","uri":"other://x","provider":"myapi"}
@@ -123,6 +127,8 @@ RESOURCES_JSON='[
 	assert_equal "$(provider_of r-missing)" "file"
 	assert_equal "$(provider_of r-custom)" "myapi"
 	run grep -c 'no providers/nosuch.sh' "${WARNINGS_FILE}"
+	assert_output "1"
+	run grep -c 'no providers/' "${WARNINGS_FILE}"
 	assert_output "1"
 }
 

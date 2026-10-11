@@ -78,6 +78,7 @@ def mcpbash_infer_provider($custom):
 	  elif ($u | startswith("git+https://")) then "git"
 	  elif ($u | startswith("https://")) then "https"
 	  elif ($u | startswith("ui://")) then "ui"
+	  elif ($u | startswith("echo://")) then "echo"
 	  else ($u | mcpbash_uri_scheme) as $s
 		| if $s != "" and any($custom[]; . == $s) then $s else "file" end
 	  end;
