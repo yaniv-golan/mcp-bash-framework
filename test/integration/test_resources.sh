@@ -145,6 +145,37 @@ jq -s '
 	if $read.contents[0].text != "right" then err("manual resource content mismatch: " + ($read.contents[0].text|tostring)) else null end
 ' <"${MANUAL_ROOT}/responses.ndjson" >/dev/null
 
+# --- register.sh resource with a custom scheme and no "provider" ---
+# Inferred like auto-discovery: kv:// goes to providers/kv.sh (was: file).
+CUSTOM_ROOT="${TEST_TMPDIR}/manual-custom"
+test_stage_workspace "${CUSTOM_ROOT}"
+mkdir -p "${CUSTOM_ROOT}/providers"
+cat <<'EOF_PROVIDER' >"${CUSTOM_ROOT}/providers/kv.sh"
+#!/usr/bin/env bash
+printf 'kv:%s' "$1"
+EOF_PROVIDER
+chmod +x "${CUSTOM_ROOT}/providers/kv.sh"
+cat <<'EOF_SCRIPT' >"${CUSTOM_ROOT}/server.d/register.sh"
+#!/usr/bin/env bash
+set -euo pipefail
+mcp_register_resource '{"name": "manual.kv", "uri": "kv://hello", "mimeType": "text/plain"}'
+return 0
+EOF_SCRIPT
+chmod +x "${CUSTOM_ROOT}/server.d/register.sh"
+cat <<'JSON' >"${CUSTOM_ROOT}/requests.ndjson"
+{"jsonrpc":"2.0","id":"kv-init","method":"initialize","params":{}}
+{"jsonrpc":"2.0","method":"notifications/initialized"}
+{"jsonrpc":"2.0","id":"kv-read","method":"resources/read","params":{"name":"manual.kv"}}
+JSON
+(
+	cd "${CUSTOM_ROOT}" || exit 1
+	MCPBASH_PROJECT_ROOT="${CUSTOM_ROOT}" ./bin/mcp-bash <"requests.ndjson" >"responses.ndjson"
+)
+kv_text="$(jq -r 'select(.id == "kv-read") | .result.contents[0].text // ("error: " + (.error.message // "none"))' <"${CUSTOM_ROOT}/responses.ndjson")"
+if [ "${kv_text}" != "kv:kv://hello" ]; then
+	test_fail "register.sh kv:// resource should be read by providers/kv.sh, got: ${kv_text}"
+fi
+
 # --- Resource templates contract ---
 TEMPLATE_ROOT="${TEST_TMPDIR}/templates"
 test_stage_workspace "${TEMPLATE_ROOT}"

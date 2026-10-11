@@ -57,6 +57,77 @@ mcp_resources_scan_root() {
 	mcp_registry_resolve_scan_root "${MCPBASH_RESOURCES_DIR}"
 }
 
+# Provider inference for static resources registered without a "provider".
+# Every registration path (auto-discovery, register.sh, register.sh JSON output,
+# register.json) applies the same rule:
+#   file://, git+https://, https://, ui:// -> the built-in provider;
+#   any other scheme -> the project provider of that name, when
+#     ${MCPBASH_PROVIDERS_DIR}/<scheme>.sh exists (exact case);
+#   otherwise -> file.
+# $custom is the JSON array from mcp_resources_project_provider_names_json.
+# Entries that fall back to file despite a non-file scheme get
+# _mcpbashNoProviderFor (the scheme), which mcp_resources_report_missing_providers
+# logs and removes.
+# shellcheck disable=SC2016  # jq program, not shell expansions.
+MCP_RESOURCES_INFER_PROVIDER_JQ='
+def mcpbash_uri_scheme: ([capture("^(?<s>[A-Za-z][A-Za-z0-9+.-]*):") | .s] | first) // "";
+def mcpbash_infer_provider($custom):
+	(.uri // "") as $u
+	| if ($u | startswith("file://")) then "file"
+	  elif ($u | startswith("git+https://")) then "git"
+	  elif ($u | startswith("https://")) then "https"
+	  elif ($u | startswith("ui://")) then "ui"
+	  else ($u | mcpbash_uri_scheme) as $s
+		| if $s != "" and any($custom[]; . == $s) then $s else "file" end
+	  end;
+def mcpbash_with_provider($custom):
+	if type != "object" or ((.provider // "") | type) != "string" or (.provider // "") != "" then .
+	else
+		mcpbash_infer_provider($custom) as $p
+		| ((.uri // "") | if type == "string" then mcpbash_uri_scheme else "" end) as $s
+		| . + {provider: $p}
+		+ (if $p == "file" and $s != "" and $s != "file" then {_mcpbashNoProviderFor: $s} else {} end)
+	end;
+'
+
+# Names of project providers usable for custom-scheme inference: files
+# ${MCPBASH_PROVIDERS_DIR}/<name>.sh whose <name> is a valid URI scheme.
+# Prints a JSON array.
+mcp_resources_project_provider_names_json() {
+	local dir="${MCPBASH_PROVIDERS_DIR:-}"
+	local names=""
+	local f base
+	if [ -n "${dir}" ] && [ -d "${dir}" ]; then
+		for f in "${dir}"/*.sh; do
+			[ -f "${f}" ] || continue
+			base="${f##*/}"
+			base="${base%.sh}"
+			[[ "${base}" =~ ^[A-Za-z][A-Za-z0-9+.-]*$ ]] || continue
+			names="${names}${base}"$'\n'
+		done
+	fi
+	printf '%s' "${names}" | "${MCPBASH_JSON_TOOL_BIN}" -R -s -c 'split("\n") | map(select(length > 0))'
+}
+
+mcp_resources_warn_missing_provider() {
+	local name="$1"
+	local scheme="$2"
+	mcp_logging_warning "${MCP_RESOURCES_LOGGER}" "Resource ${name}: no providers/${scheme}.sh for ${scheme}: URIs, so it uses the file provider; set \"provider\" or add the script"
+}
+
+# Log each registry item marked by mcpbash_with_provider, then print the
+# registry JSON (stdin) without the markers.
+mcp_resources_report_missing_providers() {
+	local registry_json
+	registry_json="$(cat)"
+	local name scheme
+	while IFS=$'\t' read -r name scheme; do
+		[ -n "${scheme}" ] || continue
+		mcp_resources_warn_missing_provider "${name}" "${scheme}"
+	done < <(printf '%s' "${registry_json}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.items[]? | select(type == "object" and has("_mcpbashNoProviderFor")) | [(.name // "?" | tostring), ._mcpbashNoProviderFor] | @tsv' 2>/dev/null || true)
+	printf '%s' "${registry_json}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.items |= map(if type == "object" then del(._mcpbashNoProviderFor) else . end)'
+}
+
 mcp_resources_manual_begin() {
 	MCP_RESOURCES_MANUAL_ACTIVE=true
 	MCP_RESOURCES_MANUAL_BUFFER=""
@@ -72,26 +143,26 @@ mcp_resources_manual_finalize() {
 		return 0
 	fi
 
-	local registry_json
-	if ! registry_json="$(printf '%s' "${MCP_RESOURCES_MANUAL_BUFFER}" | awk -v RS='\036' '{if ($0 != "") print $0}' | "${MCPBASH_JSON_TOOL_BIN}" -s '
+	local registry_json custom_providers
+	custom_providers="$(mcp_resources_project_provider_names_json)"
+	if ! registry_json="$(printf '%s' "${MCP_RESOURCES_MANUAL_BUFFER}" | awk -v RS='\036' '{if ($0 != "") print $0}' | "${MCPBASH_JSON_TOOL_BIN}" -s --argjson custom "${custom_providers}" "${MCP_RESOURCES_INFER_PROVIDER_JQ}"'
 		map(select(.name and .uri)) |
 		unique_by(.name) |
+		map(mcpbash_with_provider($custom)) |
 		map({
 			name: .name,
 			description: (.description // ""),
 			arguments: (.arguments // {type: "object", properties: {}}),
 			uri: .uri,
-			provider: (.provider // (
-				if .uri | startswith("git+https://") then "git"
-				elif .uri | startswith("https://") then "https"
-				else "file" end
-			)),
+			provider: .provider,
 			mimeType: (.mimeType // "text/plain"),
 			mimeTypeDeclared: ((.mimeType | type) == "string" and (.mimeType | length) > 0),
 			path: (.path // ""),
 			icons: (.icons // null),
-			annotations: (.annotations // null)
+			annotations: (.annotations // null),
+			_mcpbashNoProviderFor: (._mcpbashNoProviderFor // null)
 		}) |
+		map(if ._mcpbashNoProviderFor == null then del(._mcpbashNoProviderFor) else . end) |
 		map(if .mimeTypeDeclared then . else del(.mimeTypeDeclared) end) |
 		map(if .icons == null then del(.icons) else . end) |
 		map(if .annotations == null then del(.annotations) else . end) |
@@ -107,6 +178,7 @@ mcp_resources_manual_finalize() {
 		mcp_resources_error -32603 "Manual registration parsing failed"
 		return 1
 	fi
+	registry_json="$(printf '%s' "${registry_json}" | mcp_resources_report_missing_providers)"
 
 	local items_json
 	items_json="$(printf '%s' "${registry_json}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.items')"
@@ -536,10 +608,13 @@ mcp_resources_apply_manual_json() {
 
 	# Construct registry structure. mimeTypeDeclared is framework-owned: it is
 	# recomputed from mimeType, overwriting any value the file supplies.
-	registry_json="$(printf '%s' "${manual_json}" | "${MCPBASH_JSON_TOOL_BIN}" --arg ts "${timestamp}" '
+	local custom_providers
+	custom_providers="$(mcp_resources_project_provider_names_json)"
+	registry_json="$(printf '%s' "${manual_json}" | "${MCPBASH_JSON_TOOL_BIN}" --arg ts "${timestamp}" --argjson custom "${custom_providers}" "${MCP_RESOURCES_INFER_PROVIDER_JQ}"'
 		(.resources | map(
 			if type == "object" then
-				del(.mimeTypeDeclared)
+				mcpbash_with_provider($custom)
+				| del(.mimeTypeDeclared)
 				+ (if (.mimeType | type) == "string" and (.mimeType | length) > 0
 					then {mimeTypeDeclared: true} else {} end)
 			else . end
@@ -549,7 +624,7 @@ mcp_resources_apply_manual_json() {
 			generatedAt: $ts,
 			items: $items,
 			total: ($items | length)
-		}')"
+		}' | mcp_resources_report_missing_providers)"
 
 	# Calculate hash of items
 	local items_json
@@ -845,7 +920,13 @@ mcp_resources_scan() {
 
 			if [ -z "${provider}" ]; then
 				provider="$(mcp_resources_provider_from_uri "${uri}")"
-				provider="${provider:-file}"
+				if [ -z "${provider}" ]; then
+					provider="file"
+					local uri_scheme="${uri%%:*}"
+					if [ "${uri_scheme}" != "${uri}" ] && [ "${uri_scheme}" != "file" ] && [[ "${uri_scheme}" =~ ^[A-Za-z][A-Za-z0-9+.-]*$ ]]; then
+						mcp_resources_warn_missing_provider "${name}" "${uri_scheme}"
+					fi
+				fi
 			fi
 
 			if grep -Fxq "${name}" "${names_seen_file}"; then
