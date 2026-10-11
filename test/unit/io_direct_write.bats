@@ -86,3 +86,43 @@ setup() {
 	assert_equal "$(cat "${FLUSHED_DIR}/a")" $'{"from":"a","n":1}\n{"from":"a","n":2}'
 	assert_equal "$(cat "${FLUSHED_DIR}/b")" $'{"from":"b","n":1}\n{"from":"b","n":2}'
 }
+
+@test "io: corruption events are counted one per line" {
+	MCPBASH_ALLOW_CORRUPT_STDOUT=true
+	mcp_io_handle_corruption "multi-line payload" k c 'x' 2>/dev/null
+	mcp_io_handle_corruption "multi-line payload" k c 'x' 2>/dev/null
+	run mcp_io_handle_corruption "multi-line payload" k c 'x'
+	assert_success
+	assert_output --partial "2 prior event(s)"
+	assert_equal "$(mcp_io_corruption_count)" "3"
+}
+
+@test "io: reaching the corruption threshold stops the server" {
+	mcp_io_terminate_server() {
+		printf 'TERMINATED\n'
+		exit 143
+	}
+	MCPBASH_CORRUPTION_THRESHOLD=3
+	mcp_io_handle_corruption "invalid UTF-8" k c 'x' 2>/dev/null
+	mcp_io_handle_corruption "invalid UTF-8" k c 'x' 2>/dev/null
+	run mcp_io_handle_corruption "invalid UTF-8" k c 'x'
+	assert_failure 143
+	assert_output --partial "TERMINATED"
+}
+
+@test "io: a failed stdout write stops the server and leaves the reason" {
+	run bash -c '
+		. "${MCPBASH_HOME}/lib/runtime.sh"; . "${MCPBASH_HOME}/lib/lock.sh"; . "${MCPBASH_HOME}/lib/io.sh"
+		MCPBASH_STATE_DIR="$1"; MCPBASH_LOCK_ROOT="$1/locks"; mcp_lock_init
+		mcp_io_terminate_server() { printf "TERMINATED\n" >&2; exit 143; }
+		exec 1>&-
+		mcp_io_write_payload "{\"jsonrpc\":\"2.0\",\"method\":\"x\"}"
+		echo "not reached" >&2
+	' _ "${MCPBASH_STATE_DIR}"
+	assert_failure 143
+	assert_output --partial "TERMINATED"
+	refute_output --partial "not reached"
+	assert_equal "$(cat "${MCPBASH_STATE_DIR}/stdout.gone")" "stdout write failed"
+	run mcp_io_report_stdout_gone
+	assert_output "mcp-bash: stdout write failed; the client stopped reading, shutting down."
+}

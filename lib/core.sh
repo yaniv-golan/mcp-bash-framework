@@ -37,6 +37,9 @@ _mcp_exit_handler() {
 	fi
 	if [ "${_MCPBASH_CLEANUP_DONE}" != "true" ]; then
 		_MCPBASH_CLEANUP_DONE=true
+		if declare -F mcp_io_report_stdout_gone >/dev/null 2>&1; then
+			mcp_io_report_stdout_gone
+		fi
 		mcp_runtime_cleanup 2>/dev/null || true
 	fi
 	exit ${exit_code}

@@ -241,7 +241,8 @@ mcp_result_json "$(printf '%s' "$result" | jq -c '.')"
   - `MCP_TOOLS_TTL`, `MCP_RESOURCES_TTL`, `MCP_PROMPTS_TTL` → registry cache TTLs (`docs/REGISTRY.md`).
 - Stdout corruption safeguards:
   - `MCPBASH_CORRUPTION_WINDOW` (default 60s).
-  - `MCPBASH_CORRUPTION_THRESHOLD` (default 3 events); exceeding threshold triggers forced exit.
+  - `MCPBASH_CORRUPTION_THRESHOLD` (default 3 events); reaching it within the window stops the server.
+  - A failed write to stdout (the client stopped reading) stops the server at once.
 - HTTPS provider:
   - `MCPBASH_HTTPS_ALLOW_HOSTS` / `MCPBASH_HTTPS_DENY_HOSTS` → host allow/deny lists (private/loopback always blocked).
   - `MCPBASH_HTTPS_TIMEOUT` (≤60s) and `MCPBASH_HTTPS_MAX_BYTES` (≤20MB).

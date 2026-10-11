@@ -190,7 +190,8 @@ Size guardrails: `mcp_core_guard_response_size` rejects oversized responses with
 
 ## Operational Safeguards
 
-- Stdout corruption (multi-line payloads, non-UTF-8, write failures) is counted; exceeding `MCPBASH_CORRUPTION_THRESHOLD` within `MCPBASH_CORRUPTION_WINDOW` triggers a forced exit.
+- A failed write to stdout means the client stopped reading: the server stops at once (from the main loop or from a tool worker) and logs "the client stopped reading, shutting down" to stderr. Tools still running at that moment are not stopped (as on any SIGTERM).
+- Stdout corruption (multi-line payloads, non-UTF-8 payloads) is counted; when the count within `MCPBASH_CORRUPTION_WINDOW` reaches `MCPBASH_CORRUPTION_THRESHOLD`, the server stops.
 - Registry refresh enforces `MCPBASH_REGISTRY_MAX_BYTES`; exceeding the limit or encountering parse failures returns `-32603` and preserves the previous registry snapshot.
 - Resource and tool payloads are capped by `MCPBASH_MAX_RESOURCE_BYTES` and `MCPBASH_MAX_TOOL_OUTPUT_SIZE`/`MCPBASH_MAX_TOOL_STDERR_SIZE`; breaches return `-32603` with a logged diagnostic.
 - Minimal mode (missing JSON tooling or `MCPBASH_FORCE_MINIMAL=true`) accepts lifecycle, ping, and logging; other methods return `-32601` to avoid partial/ambiguous behavior.

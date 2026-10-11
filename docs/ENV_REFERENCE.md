@@ -87,7 +87,7 @@ Authoritative list of supported environment variables. Defaults shown are the sh
 | `MCPBASH_GIT_TIMEOUT` | `30` (cap ≤60s) | Git provider timeout (seconds). |
 | `MCPBASH_GIT_MAX_KB` | `51200` (cap ≤1048576) | Git repository size guard (KB). |
 | `MCPBASH_CORRUPTION_WINDOW` | `60` | Stdout corruption tracking window (seconds). |
-| `MCPBASH_CORRUPTION_THRESHOLD` | `3` | Corruption events allowed within the window before exit. |
+| `MCPBASH_CORRUPTION_THRESHOLD` | `3` | The server stops when this many corruption events (multi-line or non-UTF-8 payloads) occur within the window. A failed write to stdout stops it at once. |
 | `MCPBASH_MAX_MANUAL_REGISTRY_BYTES` | `1048576` | Max bytes accepted from manual registration inputs: `server.d/register.json` file size and `server.d/register.sh` captured stdout/stderr output. |
 | `MCPBASH_ALLOW_PROJECT_HOOKS` | `false` | Must be `true` to execute project `server.d/register.sh` hooks. Refused if file is group/world-writable or ownership mismatches. |
 | `MCPBASH_FRAMEWORK_VERSION` | (auto) | Framework version from `${MCPBASH_HOME}/VERSION`. Read-only, set automatically at startup. |
