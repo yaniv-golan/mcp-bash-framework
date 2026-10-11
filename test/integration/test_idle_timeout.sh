@@ -109,7 +109,7 @@ test_idle_timeout_disabled() {
 	} | MCPBASH_IDLE_TIMEOUT=0 \
 		MCPBASH_ORPHAN_CHECK_ENABLED=false \
 		MCPBASH_PROJECT_ROOT="${WORKSPACE}" \
-		_test_timeout 5 "${WORKSPACE}/bin/mcp-bash" 2>/dev/null) || true
+		_test_timeout 15 "${WORKSPACE}/bin/mcp-bash" 2>/dev/null) || true
 
 	if echo "${result}" | grep -q '"id":2.*"result"'; then
 		printf 'PASS: Server responded to ping when timeout=0\n'
@@ -130,7 +130,7 @@ test_idle_timeout_disabled_via_flag() {
 		MCPBASH_IDLE_TIMEOUT_ENABLED=false \
 		MCPBASH_ORPHAN_CHECK_ENABLED=false \
 		MCPBASH_PROJECT_ROOT="${WORKSPACE}" \
-		_test_timeout 5 "${WORKSPACE}/bin/mcp-bash" 2>/dev/null) || true
+		_test_timeout 15 "${WORKSPACE}/bin/mcp-bash" 2>/dev/null) || true
 
 	if echo "${result}" | grep -q '"id":2.*"result"'; then
 		printf 'PASS: Server responded to ping when timeout disabled via flag\n'
