@@ -58,6 +58,15 @@ Unit tests use [bats-core](https://bats-core.readthedocs.io/); they live in `tes
 - `UNICODE=1 ./test/integration/run.sh` restores the ✅/❌ glyphs.
 - JSON tooling discovery logs are suppressed during the suite by default; set `MCPBASH_LOG_JSON_TOOL=log` to re-enable them.
 
+### Alpine (BusyBox) run
+
+CI's `alpine` job runs the unit and integration suites in `alpine:3.20`, where `ps`, `stat`, `find`, `tar` and `date` are BusyBox. To reproduce it locally with Docker:
+
+```
+npm ci
+docker run --rm -v "$PWD:/src:ro" alpine:3.20 sh /src/test/ci-alpine.sh
+```
+
 ### Session Helper (Interactive Test Calls)
 
 - For batch requests, prefer `test_run_mcp()` from `test/common/env.sh` (single process, NDJSON in/out).

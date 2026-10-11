@@ -368,6 +368,18 @@ jobs:
             ${{ runner.temp }}/integration-bash32.log
           retention-days: 7
 
+  # Alpine: ps, stat, find, tar and date are BusyBox. JavaScript actions
+  # cannot run inside an Alpine job container, so start it with docker.
+  alpine:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install bats helpers
+        run: npm ci
+      - name: Unit and integration tests (alpine:3.20)
+        run: docker run --rm -v "${PWD}:/src:ro" alpine:3.20 sh /src/test/ci-alpine.sh
+
   # Windows integration tests - runs in parallel but does not block release
   integration-windows:
     runs-on: windows-latest
