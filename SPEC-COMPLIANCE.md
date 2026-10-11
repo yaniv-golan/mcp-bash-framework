@@ -79,13 +79,14 @@ This table shows when features were introduced in the MCP specification and when
 | **MCP Apps Extension (SEP-1865)** | | | | |
 | MCP Apps UI Extension | 2026-01-26 | 0.8.0 | ✅ Full | `io.modelcontextprotocol/ui` extension support |
 | UI Resource Discovery | 2026-01-26 | 0.8.0 | ✅ Full | Auto-discovery from tools/*/ui/ and ui/*/ |
-| UI Templates | 2026-01-26 | 0.8.0 | ✅ Full | Form, data-table, progress, diff-viewer, tree-view, kanban |
+| UI Templates | 2026-01-26 | 0.8.0 | ⚠️ Partial | `data-table` ready; `form`, `progress`, `diff-viewer`, `tree-view`, `kanban` experimental. Interactive ones call tools with `callServerTool`, which depends on host support ([status](docs/reference/ui-templates.md)) |
 | UI CSP Generation | 2026-01-26 | 0.8.0 | ✅ Full | Content Security Policy from metadata |
 | MCP Apps Theming | 2026-01-26 | 0.8.0 | ✅ Full | CSS variables for light/dark mode |
 
 ### Legend
 - ✅ Full: Complete implementation
-- ⚠️ Stub: Partial/stub implementation
+- ⚠️ Partial: implemented, but parts are experimental or depend on host support
+- ⚠️ Stub: stub implementation
 - ❌ Not yet: Planned but not yet implemented
 - ❌ Not supported: Intentionally out of scope
 

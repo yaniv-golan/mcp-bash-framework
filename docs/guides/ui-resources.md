@@ -280,7 +280,7 @@ box-shadow: var(--shadow-sm, 0 1px 2px rgba(0,0,0,0.05));
 
 For common patterns, use templates instead of writing HTML.
 
-> ⚠️ **Note**: Most templates are experimental due to Claude Desktop limitations. Only `data-table` is fully functional. See [UI Templates Reference](../reference/ui-templates.md) for status details.
+> ⚠️ **Note**: Only `data-table` is ready; the other templates are experimental. Interactive ones need host support for UI-initiated tool calls, and progress notifications are not forwarded to UIs. See [UI Templates Reference](../reference/ui-templates.md) for status details.
 
 ### Form Template
 
@@ -536,7 +536,7 @@ See `test/unit/ui_*.bats` for examples.
 
 ## Known Limitations
 
-Due to current Claude Desktop implementation limitations:
+These depend on the host (they vary by host and version):
 
 - **Real-time progress updates**: UIs cannot receive `notifications/progress` during tool execution. The UI only receives `ontoolinput` when the tool starts and `ontoolresult` when it completes.
 
