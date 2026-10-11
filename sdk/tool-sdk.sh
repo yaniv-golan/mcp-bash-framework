@@ -558,13 +558,12 @@ mcp_progress() {
 		token_json="$(__mcp_sdk_json_escape "${MCP_PROGRESS_TOKEN}")"
 	fi
 	message_json="$(__mcp_sdk_json_escape "${message}")"
-	local total_json="null"
-	if [ -n "${total}" ]; then
-		if printf '%s' "${total}" | LC_ALL=C grep -Eq '^[0-9]+$'; then
-			total_json="${total}"
-		fi
+	# total is a number when known and absent otherwise (the schema has no null).
+	local total_kv=""
+	if [ -n "${total}" ] && printf '%s' "${total}" | LC_ALL=C grep -Eq '^[0-9]+$'; then
+		total_kv=',"total":'"${total}"
 	fi
-	printf '{"jsonrpc":"2.0","method":"notifications/progress","params":{"progressToken":%s,"progress":%s,"total":%s,"message":%s}}\n' "${token_json}" "${percent}" "${total_json}" "${message_json}" >>"${MCP_PROGRESS_STREAM}" 2>/dev/null || true
+	printf '{"jsonrpc":"2.0","method":"notifications/progress","params":{"progressToken":%s,"progress":%s%s,"message":%s}}\n' "${token_json}" "${percent}" "${total_kv}" "${message_json}" >>"${MCP_PROGRESS_STREAM}" 2>/dev/null || true
 }
 
 mcp_log() {
