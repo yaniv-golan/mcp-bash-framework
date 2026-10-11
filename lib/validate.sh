@@ -539,6 +539,16 @@ mcp_validate_resources() {
 								errors=$((errors + 1))
 								;;
 							esac
+							# Same check as registration: an unusable provider is dropped there.
+							local t_provider t_problem=""
+							t_provider="$("${MCPBASH_JSON_TOOL_BIN}" -r 'if (.provider | type) == "string" then .provider else "" end' "${meta_path}" 2>/dev/null || printf '')"
+							if [ -n "${t_provider}" ] && declare -F mcp_resources_template_provider_problem >/dev/null 2>&1; then
+								t_problem="$(MCPBASH_PROVIDERS_DIR="${MCPBASH_PROVIDERS_DIR:-${MCPBASH_PROJECT_ROOT:-.}/providers}" mcp_resources_template_provider_problem "${r_uri_template}" "${t_provider}")"
+							fi
+							if [ -n "${t_problem}" ]; then
+								printf '⚠ %s - provider %s %s; the URI scheme picks the provider instead\n' "${rel_meta}" "'${t_provider}'" "${t_problem}"
+								warnings=$((warnings + 1))
+							fi
 						fi
 
 						# Validate icons format

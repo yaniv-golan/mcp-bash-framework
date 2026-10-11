@@ -47,6 +47,7 @@ mcp_require registry mcp_registry_resolve_scan_root
 mcp_require paginate mcp_paginate_decode
 mcp_require resource_content mcp_resource_content_object_from_file
 mcp_require resource_match mcp_resource_template_match
+mcp_require resource_match mcp_resource_template_supported
 mcp_require runtime mcp_env_run_curated
 
 mcp_resources_file_uri_from_path() {
@@ -1368,6 +1369,48 @@ mcp_resources_templates_register_manual() {
 	return 0
 }
 
+# Why a resource template's "provider" cannot be used, or nothing when it can:
+# - a project provider (${MCPBASH_PROVIDERS_DIR}/<name>.sh) serves any template;
+# - a framework built-in serves only its own scheme (file://, https://,
+#   git+https://, ui://, echo://), so no template feeds it URIs it was not
+#   written for;
+# - the name follows the URI scheme grammar, so the lookup stays in the dir;
+# - the template must be one the matcher supports, or the provider never runs.
+mcp_resources_template_provider_problem() {
+	local uri_template="$1"
+	local provider="$2"
+	if ! [[ "${provider}" =~ ^[A-Za-z][A-Za-z0-9+.-]*$ ]]; then
+		printf 'is not a valid provider name'
+		return 0
+	fi
+	local project_script="${MCPBASH_PROVIDERS_DIR:-}/${provider}.sh"
+	local builtin_script="${MCPBASH_HOME:-}/providers/${provider}.sh"
+	# A project dir that is the framework's own providers dir holds built-ins.
+	if [ -n "${MCPBASH_PROVIDERS_DIR:-}" ] && [ -f "${project_script}" ] && ! [ "${project_script}" -ef "${builtin_script}" ]; then
+		:
+	elif [ -n "${MCPBASH_HOME:-}" ] && [ -f "${builtin_script}" ]; then
+		local native
+		case "${provider}" in
+		git) native="git+https://" ;;
+		*) native="${provider}://" ;;
+		esac
+		case "${uri_template}" in
+		"${native}"*) ;;
+		*)
+			printf 'is a built-in provider for %s URIs only' "${native}"
+			return 0
+			;;
+		esac
+	else
+		printf 'has no providers/%s.sh' "${provider}"
+		return 0
+	fi
+	if declare -F mcp_resource_template_supported >/dev/null 2>&1 && ! mcp_resource_template_supported "${uri_template}"; then
+		printf 'cannot run: the uriTemplate uses syntax the matcher does not support, so no URI matches it'
+	fi
+	return 0
+}
+
 mcp_resources_templates_normalize() {
 	local payload="$1"
 	local context="$2"
@@ -1421,9 +1464,22 @@ mcp_resources_templates_normalize() {
 	[ -z "${annotations}" ] && annotations="null"
 	[ -z "${meta}" ] && meta="null"
 
+	# A usable provider routes URIs matching this template; anything else is
+	# dropped with a warning and the URI scheme picks the provider.
+	local provider problem
+	provider="$(printf '%s' "${payload}" | "${MCPBASH_JSON_TOOL_BIN}" -r 'if (.provider | type == "string") then .provider else empty end' 2>/dev/null)"
+	if [ -n "${provider}" ]; then
+		problem="$(mcp_resources_template_provider_problem "${uri_template}" "${provider}")"
+		if [ -n "${problem}" ]; then
+			mcp_logging_warning "${MCP_RESOURCES_LOGGER}" "Resource template ${name}: provider '${provider}' ${problem}; the URI scheme picks the provider instead"
+			provider=""
+		fi
+	fi
+
 	"${MCPBASH_JSON_TOOL_BIN}" -n \
 		--arg name "${name}" \
 		--arg uriTemplate "${uri_template}" \
+		--arg provider "${provider}" \
 		--arg title "${title}" \
 		--arg description "${description}" \
 		--arg mime "${mime}" \
@@ -1438,6 +1494,7 @@ mcp_resources_templates_normalize() {
 			| (if $mime != "" then . + {mimeType: $mime} else . end)
 			| (if $annotations != null then . + {annotations: $annotations} else . end)
 			| (if $meta != null then . + {_meta: $meta} else . end)
+			| (if $provider != "" then . + {provider: $provider} else . end)
 		' 2>/dev/null
 }
 
@@ -1853,7 +1910,7 @@ mcp_resources_templates_list() {
 	local result_json
 	result_json="$(printf '%s' "${MCP_RESOURCES_TEMPLATES_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -c --argjson offset "$offset" --argjson limit "$numeric_limit" --argjson total "${total}" '
 		{
-			resourceTemplates: .items[$offset:$offset+$limit],
+			resourceTemplates: (.items[$offset:$offset+$limit] | map(del(.provider))),
 			_meta: {"mcpbash/total": $total}
 		}
 	')"
@@ -2166,11 +2223,12 @@ mcp_resources_read() {
 		metadata="$(mcp_resources_metadata_for_uri "${explicit_uri}" 2>/dev/null || echo "{}")"
 	fi
 
-	# No resource by name or exact URI: try the resource templates. A match
-	# supplies the template name and raw variables (provider env) and its
-	# declared mimeType; it never changes which provider runs. The refresh
-	# done here is shared with the scheme gate below.
-	local template_name="" template_vars="" template_mime="" templates_state=""
+	# No resource by name or exact URI: try the resource templates. The best
+	# match supplies the template name and raw variables (provider env), its
+	# declared mimeType and, when it has one, the provider that serves it.
+	# Without a template provider, the scheme picks the provider as before.
+	# The refresh done here is shared with the scheme gate below.
+	local template_name="" template_vars="" template_mime="" template_provider="" templates_state=""
 	if [ -n "${explicit_uri}" ] && { [ -z "${metadata}" ] || [ "${metadata}" = "{}" ]; }; then
 		if mcp_resources_templates_refresh_registry; then
 			templates_state="ready"
@@ -2182,6 +2240,7 @@ mcp_resources_read() {
 				template_name="$(printf '%s' "${template_match}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.name // ""')"
 				template_vars="$(printf '%s' "${template_match}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.vars // {}')"
 				template_mime="$(printf '%s' "${template_match}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.mimeType // ""')"
+				template_provider="$(printf '%s' "${template_match}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.provider // ""')"
 				mcp_logging_debug "${MCP_RESOURCES_LOGGER}" "Resource template matched: ${template_name}"
 			fi
 		else
@@ -2215,6 +2274,9 @@ mcp_resources_read() {
 	if [ -z "${uri}" ]; then
 		mcp_resources_error -32602 "Resource URI missing"
 		return 1
+	fi
+	if [ -z "${provider}" ] && [ -n "${template_provider}" ]; then
+		provider="${template_provider}"
 	fi
 	if [ -z "${provider}" ]; then
 		local inferred

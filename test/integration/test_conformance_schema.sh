@@ -119,7 +119,7 @@ cat <<'JSON' >"${WORKSPACE}/server.d/register.json"
   "version": 1,
   "completions": [{"name": "conf.greeting", "path": "completions/suggest.sh", "timeoutSecs": 5}],
   "resourceTemplates": [
-    {"name": "conf-files", "title": "Files", "uriTemplate": "file:///{+path}", "description": "Files under the roots"}
+    {"name": "conf-files", "title": "Files", "uriTemplate": "file:///{+path}", "description": "Files under the roots", "provider": "file"}
   ]
 }
 JSON

@@ -85,7 +85,7 @@ Alternatively, emit a bulk JSON payload with `resourceTemplates` to stdout; the 
 1. By `name`, when the request has one.
 2. By exact URI among the static resources.
 3. Against the resource templates (below).
-4. By scheme, to pick the provider. Step 3 does not change this.
+4. By scheme, to pick the provider, unless step 3 matched a template that sets `provider`.
 
 ### Matching a URI to a template
 
@@ -129,7 +129,15 @@ When several templates match, the winner is the one with:
 
 ### Which provider runs
 
-A match never changes which provider runs. The provider is inferred from the URI scheme:
+A template may set `"provider": "<name>"`. A URI whose best match (above) is that template is read by that provider. Only the best match counts: if it has no `provider`, the scheme decides, even when a lower-ranked template that also matches has one.
+
+```json
+{"name": "orders", "uriTemplate": "shop://orders/{id}", "provider": "orders"}
+```
+
+`provider` must name a project provider (`providers/<name>.sh`, any scheme) or a built-in on its own scheme (`file` on `file://`, `https` on `https://`, `git` on `git+https://`, `ui` on `ui://`). Anything else (an unknown name, a built-in on another scheme, or a template the matcher can't use) is dropped with a warning at registration, and `mcp-bash validate` reports it. `resources/templates/list` never shows `provider`.
+
+Otherwise the provider is inferred from the URI scheme:
 
 - `file://`, `git+https://`, `https://` and `ui://` use the built-in providers.
 - Any other scheme uses the project provider of the same name: `myapi://items/{id}` uses `providers/myapi.sh`.
