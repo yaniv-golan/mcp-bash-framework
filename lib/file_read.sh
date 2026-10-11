@@ -18,10 +18,12 @@
 #   4. opens it on fd 9;
 #   5. stats the open descriptor and requires a regular file with the same
 #      device and inode as step 3. GNU stat reads it through /dev/fd/9; BSD
-#      stat (macOS) is given it as stdin and fstats it, because a stat of
+#      stat (macOS, where /usr/bin/stat is used even if GNU stat comes first
+#      on PATH) is given it as stdin and fstats it, because a stat of
 #      /dev/fd/N there reports the devfs device and, under load, sometimes
-#      fails with EBADF. Where the devfs device is still reported (GNU stat on
-#      macOS), the file's birth time (nanoseconds) stands in for the device.
+#      fails with EBADF. Where the devfs device is still reported (macOS
+#      without /usr/bin/stat), the file's birth time (nanoseconds) stands in
+#      for the device.
 #      Writes and links do not change it, but the owner can set it with utimes
 #      (an mtime earlier than the birth time moves it back); see
 #      docs/SECURITY.md;
@@ -61,8 +63,19 @@ mcp_file_read_identity() {
 	# GNU coreutils and BusyBox use -c; BSD/macOS uses -f. Try GNU first: on
 	# GNU, -f means --file-system and the BSD format would fail as a filename.
 	if [ "${mode}" = "fd" ]; then
-		# BSD stat with no operand fstats stdin.
-		out="$(stat -L -c '%d|%i|%w|%s|%F' "/dev/fd/${target}" 2>/dev/null)" \
+		# BSD stat with no operand fstats stdin. On macOS use the system
+		# stat even when GNU stat comes first on PATH: GNU stat can only
+		# reach the descriptor through /dev/fd/N, which reports the devfs
+		# device there and sometimes fails with EBADF.
+		case "${OSTYPE:-}" in
+		darwin*)
+			if [ -x /usr/bin/stat ]; then
+				out="$(/usr/bin/stat -f '%d|%i|%.9FB|%z|%HT' <&"${target}" 2>/dev/null)" || out=""
+			fi
+			;;
+		esac
+		[ -n "${out}" ] \
+			|| out="$(stat -L -c '%d|%i|%w|%s|%F' "/dev/fd/${target}" 2>/dev/null)" \
 			|| out="$(stat -f '%d|%i|%.9FB|%z|%HT' <&"${target}" 2>/dev/null)" \
 			|| out=""
 	else
@@ -199,8 +212,9 @@ mcp_file_read_verified() {
 			exit 2
 		fi
 		if [ "${checked_dev}" != "${opened_dev}" ]; then
-			# Only acceptable where /dev/fd/N reports the devfs device (GNU stat
-			# on macOS). There the birth time stands in for the device.
+			# Only acceptable where /dev/fd/N reports the devfs device (macOS
+			# without /usr/bin/stat). There the birth time stands in for the
+			# device.
 			devfs_dev="$(stat -c '%d' /dev/null 2>/dev/null || stat -f '%d' /dev/null 2>/dev/null || true)"
 			if [ -z "${devfs_dev}" ] || [ "${opened_dev}" != "${devfs_dev}" ] \
 				|| [ "${checked_birth}" = "${checked_birth#*[0-9]}" ] \

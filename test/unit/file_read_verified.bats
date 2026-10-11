@@ -298,3 +298,31 @@ STUB
 	*) fail "identity '${identity}' is not a regular file" ;;
 	esac
 }
+
+@test "file_read: macOS uses the system stat for the descriptor when GNU stat comes first on PATH" {
+	case "${OSTYPE:-}" in
+	darwin*) [ -x /usr/bin/stat ] || skip "no /usr/bin/stat" ;;
+	*) skip "macOS only" ;;
+	esac
+	# A GNU-like stat: -c works (emulated with the system stat), -f is
+	# --file-system and fails without an operand, and /dev/fd/N fails as it
+	# sometimes does on macOS under load.
+	cat >"${STUBS}/stat" <<'STUB'
+#!/usr/bin/env bash
+args=()
+while [ "$#" -gt 0 ]; do
+	case "$1" in
+	-f) printf 'stat: missing operand\n' >&2; exit 1 ;;
+	-c) args+=(-f '%d|%i|%.9FB|%z|%HT'); shift ;;
+	/dev/fd/*) printf 'stat: cannot stat %s: Bad file descriptor\n' "$1" >&2; exit 1 ;;
+	*) args+=("$1") ;;
+	esac
+	shift
+done
+exec /usr/bin/stat "${args[@]}"
+STUB
+	chmod +x "${STUBS}/stat"
+	PATH="${STUBS}:${PATH}" run mcp_file_read_verified "${ROOT}/sub/x" "" "${ROOT}"
+	assert_success
+	assert_output "inside-sub"
+}
