@@ -182,10 +182,18 @@ expect_eq "provider: the best match decides, no fallthrough" 'svc name=[svc-alph
 expect_eq "provider: exact static URI wins" 'svc name=[<unset>]' "$(route_text static)"
 expect_eq "provider: templates/list never shows provider" '[["name","uriTemplate"]]' \
 	"$(jq -c 'select(.id=="list") | [.result.resourceTemplates[] | keys] | unique' "${ROUTE_RESP}")"
-# Registration warnings reach the client as notifications/message (level warning).
-if ! jq -e 'select(.method=="notifications/message" and .params.level=="warning") | .params.data | test("svc-bad: provider .ui. is a built-in provider for ui:// URIs only")' "${ROUTE_RESP}" >/dev/null; then
-	printf 'MISSING warning for svc-bad in %s\n' "${ROUTE_RESP}" >&2
+# The refused provider is not stored; a valid one is. (The registration
+# warning is logged too, but whether it reaches the client as a notification
+# depends on when the scan runs; unit tests check its text.)
+ROUTE_TEMPLATES="${ROUTE}/.registry/resource-templates.json"
+if [ ! -f "${ROUTE_TEMPLATES}" ]; then
+	printf 'MISSING templates registry %s\n' "${ROUTE_TEMPLATES}" >&2
 	FAILURES=$((FAILURES + 1))
+else
+	expect_eq "provider: refused provider is not stored" '<none>' \
+		"$(jq -r '[.items[] | select(.name=="svc-bad") | .provider // "<none>"] | first // "<missing>"' "${ROUTE_TEMPLATES}")"
+	expect_eq "provider: valid provider is stored" 'alpha' \
+		"$(jq -r '[.items[] | select(.name=="svc-alpha") | .provider // "<none>"] | first // "<missing>"' "${ROUTE_TEMPLATES}")"
 fi
 
 if [ "${FAILURES}" -gt 0 ]; then
