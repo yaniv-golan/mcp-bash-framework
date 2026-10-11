@@ -61,7 +61,8 @@ mcp_resources_scan_root() {
 # Provider inference for static resources registered without a "provider".
 # Every registration path (auto-discovery, register.sh, register.sh JSON output,
 # register.json) applies the same rule:
-#   file://, git+https://, https://, ui:// -> the built-in provider;
+#   file://, git+https://, https://, ui://, echo:// -> the built-in provider
+#     (echo is the bundled demo provider);
 #   any other scheme -> the project provider of that name, when
 #     ${MCPBASH_PROVIDERS_DIR}/<scheme>.sh exists (exact case);
 #   otherwise -> file.
