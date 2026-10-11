@@ -190,7 +190,7 @@ Size guardrails: `mcp_core_guard_response_size` rejects oversized responses with
 
 ## Operational Safeguards
 
-- A failed write to stdout means the client stopped reading: the server stops at once (from the main loop or from a tool worker) and logs "the client stopped reading, shutting down" to stderr. Tools still running at that moment are not stopped (as on any SIGTERM).
+- A failed write to stdout means the client stopped reading: the server stops at once (from the main loop or from a tool worker) and logs "the client stopped reading, shutting down" to stderr. Tools still running at that moment are not stopped (as on any SIGTERM). `MCPBASH_ALLOW_CORRUPT_STDOUT` does not change this.
 - Stdout corruption (multi-line payloads, non-UTF-8 payloads) is counted; when the count within `MCPBASH_CORRUPTION_WINDOW` reaches `MCPBASH_CORRUPTION_THRESHOLD`, the server stops.
 - Registry refresh enforces `MCPBASH_REGISTRY_MAX_BYTES`; exceeding the limit or encountering parse failures returns `-32603` and preserves the previous registry snapshot.
 - Resource and tool payloads are capped by `MCPBASH_MAX_RESOURCE_BYTES` and `MCPBASH_MAX_TOOL_OUTPUT_SIZE`/`MCPBASH_MAX_TOOL_STDERR_SIZE`; breaches return `-32603` with a logged diagnostic.
