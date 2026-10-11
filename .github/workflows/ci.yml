@@ -370,6 +370,9 @@ jobs:
 
   # Alpine: ps, stat, find, tar and date are BusyBox. JavaScript actions
   # cannot run inside an Alpine job container, so start it with docker.
+  # The container gets none of this workflow's env: CI-only settings such as
+  # MCPBASH_CONFORMANCE_REQUIRE_SCHEMA do not apply here, and the schema
+  # conformance test skips (no jv); the integration job enforces it.
   alpine:
     runs-on: ubuntu-latest
     timeout-minutes: 45
