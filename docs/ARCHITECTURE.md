@@ -56,8 +56,8 @@ my-server/
 
 ## Timeouts and cleanup
 - `with_timeout <seconds> -- <command…>` (from `lib/timeout.sh`) runs a watchdog that sends TERM then KILL if a worker outlives the timeout.
-- Async paths honor `params.timeoutSecs` when jq/gojq is present and wrap tool/resource/prompt/completion handlers with `with_timeout`; minimal mode skips per-request overrides.
-- `bin/mcp-bash` traps `EXIT INT TERM` to run `mcp_runtime_cleanup`, removing its own state dir and lock root (never through a symlink). CLI commands remove their private state dir on exit.
+- Async paths honor `params.timeoutSecs` when jq/gojq is present and wrap tool/resource/prompt/completion handlers with `with_timeout`; minimal mode skips per-request overrides. Defaults apply without it: `tools/*` 30s, `resources/read` and `resources/subscribe` 120s. A handler killed by its timeout is answered with `-32603` (`<method> timed out after Ns`), unless it had already responded.
+- `bin/mcp-bash` traps `EXIT INT TERM` to run `mcp_runtime_cleanup`. On an abnormal exit the handler first stops running workers (TERM, then KILL after 1s). Cleanup removes only the state dir and lock root the server created (never through a symlink); directories the operator set are left alone. CLI commands remove their private state dir on exit.
 
 ## Handler notes
 

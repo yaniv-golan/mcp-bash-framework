@@ -28,8 +28,8 @@ Authoritative list of supported environment variables. Defaults shown are the sh
 | `MCPBASH_MAX_UI_RESOURCE_BYTES` | `1048576` | Max size of a `ui://` resource (bytes). A value that is not a plain byte count (such as `1M`) means the default. |
 | `MCPBASH_MAX_PROGRESS_PER_MIN` | `100` | Progress events per request per minute. |
 | `MCPBASH_MAX_LOGS_PER_MIN` | `$MCPBASH_MAX_PROGRESS_PER_MIN` | Log events per request per minute. |
-| `MCPBASH_DEFAULT_TOOL_TIMEOUT` | `30` | Default tool timeout (seconds). |
-| `MCPBASH_DEFAULT_SUBSCRIBE_TIMEOUT` | `120` | Default `resources/subscribe` timeout (seconds). |
+| `MCPBASH_DEFAULT_TOOL_TIMEOUT` | `30` | Default tool timeout (seconds); also applies to `tools/list`. |
+| `MCPBASH_DEFAULT_SUBSCRIBE_TIMEOUT` | `120` | Default `resources/subscribe` timeout (seconds); `0` disables it. A subscribe that times out gets a `-32603` error. |
 | `MCPBASH_DEFAULT_RESOURCE_TIMEOUT` | `120` | Default `resources/read` timeout (seconds); `0` disables it. A read that runs longer is stopped and the client gets a `-32603` error. A request's `params.timeoutSecs` overrides it for that request. |
 | `MCPBASH_SHUTDOWN_TIMEOUT` | `5` | Graceful shutdown timeout (seconds). |
 | `MCPBASH_IDLE_TIMEOUT` | `3600` | Seconds to wait for client activity before exiting (0 = disabled). Prevents zombie processes when clients disconnect without shutdown. |

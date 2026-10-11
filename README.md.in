@@ -860,7 +860,7 @@ The [**documentation index**](docs/README.md) lists every guide.
 - [**Remote Connectivity**](docs/REMOTE.md) - Exposing mcp-bash over HTTP/SSE via external gateways.
 
 ### Scope and Goals
-- Bash-only Model Context Protocol server verified on macOS Bash 3.2, Linux Bash ≥3.2, and Windows (Git Bash is CI-tested; WSL behaves like Linux).
+- Bash-only Model Context Protocol server verified on macOS Bash 3.2, Linux Bash ≥3.2 (including Alpine/BusyBox, CI-tested), and Windows (Git Bash is CI-tested; WSL behaves like Linux).
 - Targets MCP protocol version `2025-11-25` while supporting negotiated downgrades.
 - Transport support is limited to stdio; HTTP/SSE/OAuth transports remain out of scope (see [Remote Connectivity](docs/REMOTE.md) for gateway options).
 

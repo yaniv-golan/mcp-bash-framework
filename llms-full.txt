@@ -213,7 +213,8 @@ mcp_result_json "$(printf '%s' "$result" | jq -c '.')"
   - Per-tool timeout via `timeoutSecs` in metadata; global default from `MCPBASH_DEFAULT_TOOL_TIMEOUT` (30s if unset).
   - `MCPBASH_MAX_TOOL_OUTPUT_SIZE` (default 10MB logical limit).
   - `MCPBASH_MAX_TOOL_STDERR_SIZE` (default same as output limit).
-  - `MCPBASH_MAX_RESOURCE_BYTES` (default same as output limit).
+  - `MCPBASH_MAX_RESOURCE_BYTES` (default same as output limit; `file://` reads stop at it). `ui://` resources: `MCPBASH_MAX_UI_RESOURCE_BYTES` (default 1 MiB). A value that is not a plain byte count means the default.
+  - `resources/read` timeout: `MCPBASH_DEFAULT_RESOURCE_TIMEOUT` (default 120s; `0` disables); a request's `params.timeoutSecs` overrides it. A timed-out `resources/*`, `prompts/get`, `completion/complete` or `tools/list` request gets `-32603` "<method> timed out after Ns".
   - `MCPBASH_REGISTRY_MAX_BYTES` (default `104857600`).
   - `MCPBASH_ENV_PAYLOAD_THRESHOLD` (default `65536` bytes) → spill large args/metadata to temp files.
 - Server lifecycle (zombie process mitigation):
@@ -221,6 +222,7 @@ mcp_result_json "$(printf '%s' "$result" | jq -c '.')"
   - `MCPBASH_IDLE_TIMEOUT_ENABLED` (default `true`) → master switch for idle timeout.
   - `MCPBASH_ORPHAN_CHECK_ENABLED` (default `true` on Unix, `false` on Windows) → exit if parent process dies.
   - `MCPBASH_ORPHAN_CHECK_INTERVAL` (default 30s) → orphan check frequency.
+  - On SIGTERM/SIGINT, a closed stdout (the client stopped reading) or a dead parent, running tools get TERM, then KILL after 1s. On stdin EOF or `shutdown` the server still waits for them.
 - Progress & logging throttles:
   - `MCPBASH_MAX_PROGRESS_PER_MIN` (default 100 per request).
   - `MCPBASH_MAX_LOGS_PER_MIN` (default 100 per request).
@@ -292,7 +294,7 @@ mcp_result_json "$(printf '%s' "$result" | jq -c '.')"
   - Resource failures: use JSON-RPC error objects; no `isError` flag.
   - Oversized tool/resource outputs: response is replaced with `-32603` error; partial payloads are never returned.
 - Provider exit code mapping (from `docs/ERRORS.md`):
-  - `file.sh`: exit `2` (outside allowed roots) → `-32603`; exit `3` (missing file) → `-32002`.
+  - `file.sh`: exit `2` (outside allowed roots, or the read could not be verified; the provider's stderr is the message) → `-32603`; exit `3` (missing file) → `-32002`; exit `5` (reading failed) or `6` (file exceeds `MCPBASH_MAX_RESOURCE_BYTES`) → `-32603`.
   - `git.sh`: exit `4` (invalid URI or missing git) → `-32602`; exit `5` (clone/fetch failure) → `-32603`.
   - `https.sh`: exit `4` (invalid URI or missing curl/wget) → `-32602`; exit `5` (network/timeout) → `-32603`; exit `6` (payload exceeds `MCPBASH_HTTPS_MAX_BYTES`) → `-32603`.
   - Any other provider exit → `-32603` with stderr text when available.

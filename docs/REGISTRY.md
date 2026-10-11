@@ -141,7 +141,7 @@ Entries describe resources and providers. Paths are relative to `MCPBASH_RESOURC
 - Subscription notifications (`notifications/resources/updated`) are spec-shaped and only include `params.uri`; clients should call `resources/read` to fetch the updated content.
 - **Subscriptions:**
   - `resources/subscribe` takes `{uri}` (or a registered `name`). Its result carries an extra `subscriptionId`; the spec result is empty, and extra fields are allowed.
-  - `resources/unsubscribe` takes `{uri}`, as in the spec, and removes every subscription to that uri on the connection. It also accepts `{subscriptionId}` to remove one subscription.
+  - `resources/unsubscribe` takes `{uri}`, as in the spec, and removes every subscription to that uri on the connection that was requested before the unsubscribe (a subscribe sent right after it is kept). It also accepts `{subscriptionId}` to remove one subscription.
   - Unsubscribing a uri or id that is not subscribed succeeds with no effect. A request with neither field returns `-32602`.
   - Polling starts as soon as the first `resources/subscribe` arrives, so a client that subscribes and then waits still receives updates. The interval is `MCPBASH_RESOURCES_POLL_INTERVAL_SECS` (default `2`).
 
@@ -169,7 +169,9 @@ my-project/
 
 Project providers follow the same contract as framework providers:
 
-**Arguments**: Provider receives the full URI as `$1`. This can be any URI in the provider's scheme, not only the URIs the project registers, so validate it and exit `3` or `4` for URIs the provider does not serve.
+**Arguments**: Provider receives the full URI as `$1`. This can be any URI in the provider's scheme, not only the URIs the project registers, and, for a resource template that names the provider, any URI the template matches, in any scheme. Validate it and exit `3` or `4` for URIs the provider does not serve.
+
+**Timeout**: a `resources/read` is stopped (TERM, then KILL, to the provider's process group) after `MCPBASH_DEFAULT_RESOURCE_TIMEOUT` (120 seconds by default; `0` disables it), and the client gets `-32603`. A request's `params.timeoutSecs` overrides it.
 
 **Exit codes**:
 - `0`: Success (content on stdout)
