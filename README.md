@@ -386,21 +386,25 @@ Picking a wrapper:
   ) as server:
       ...
   ```
-- **OpenClaw** (formerly Clawdbot): [OpenClaw](https://github.com/openclaw/openclaw) uses [mcporter](https://github.com/openclaw/mcporter) for MCP. Add to `~/.mcporter/mcporter.json`:
-  ```json
-  {
-    "mcpServers": {
-      "mcp-bash": {
-        "command": "/Users/you/.local/bin/mcp-bash",
-        "env": {
-          "MCPBASH_PROJECT_ROOT": "/Users/you/my-mcp-server",
-          "MCPBASH_TOOL_ALLOWLIST": "*"
-        }
-      }
-    }
-  }
+- **OpenClaw** (formerly Clawdbot): register the server with [OpenClaw](https://github.com/openclaw/openclaw)'s MCP registry, which saves it under `mcp.servers` in OpenClaw's config:
+  ```bash
+  openclaw mcp add mcp-bash \
+    --command /Users/you/.local/bin/mcp-bash \
+    --env MCPBASH_PROJECT_ROOT=/Users/you/my-mcp-server \
+    --env 'MCPBASH_TOOL_ALLOWLIST=*'
   ```
-  Verify with `npx mcporter list mcp-bash`. OpenClaw agents call tools via its bundled `mcporter` skill.
+  Check it with `openclaw mcp show mcp-bash`. Servers in mcporter's own config are a separate registry that `openclaw mcp` does not read.
+- **NanoClaw** ([nanoclaw.dev](https://nanoclaw.dev); checked against v2026.10.0): MCP servers run inside each agent group's container, so mount the framework and your project into it, add `jq` (not in the default image), and register the server. Point the registry cache at a writable path, because the mounts are read-only:
+  ```bash
+  ncl groups config add-mount --id <group-id> --host ~/.local/share/mcp-bash --container /opt/mcp-bash --ro
+  ncl groups config add-mount --id <group-id> --host /Users/you/my-mcp-server --container /opt/my-mcp-server --ro
+  ncl groups config add-package --id <group-id> --apt jq
+  ncl groups config add-mcp-server --id <group-id> --name mcp-bash \
+    --command /opt/mcp-bash/bin/mcp-bash \
+    --env '{"MCPBASH_PROJECT_ROOT":"/opt/my-mcp-server","MCPBASH_TOOL_ALLOWLIST":"*","MCPBASH_REGISTRY_DIR":"/tmp/mcp-bash-registry"}'
+  ncl groups restart --id <group-id> --rebuild
+  ```
+  `--host` is the framework install directory (`~/.local/share/mcp-bash` for the curl installer). Mounting host paths needs operator approval.
 - **Highlight AI**: Go to Highlight → Settings → Connections → Add → Custom command:
   - **Connection name**: `mcp-bash`
   - **Command**: `/Users/you/.local/bin/mcp-bash`
@@ -415,7 +419,8 @@ Picking a wrapper:
 |--------|--------|----------------------|
 | Claude Desktop | Tested (macOS, Windows) | macOS: non-login shell PATH/env (use `config --wrapper-env`); macOS quarantine/TCC can block execution; restart required after config changes |
 | Claude CLI / Claude Code | Tested | Generally straightforward; ensure `MCPBASH_PROJECT_ROOT` points at your project |
-| OpenClaw (formerly Clawdbot) | Config documented | Uses mcporter for MCP; config in `~/.mcporter/mcporter.json` |
+| OpenClaw (formerly Clawdbot) | Config documented | `openclaw mcp add`; saved under `mcp.servers` in OpenClaw's config |
+| NanoClaw | Config documented | Runs in the agent's container: mount the framework and project, add `jq`, set `MCPBASH_REGISTRY_DIR` to a writable path |
 | Highlight AI | Tested | UI-based config: Settings → Connections → Add → Custom command |
 | Cursor | Config documented | Config file location differs by install; use `mcp-bash config --client cursor` |
 | Windsurf (Cascade) | Config documented | Use the app's MCP config UI/file; see snippet in README |
