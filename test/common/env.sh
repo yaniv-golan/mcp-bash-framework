@@ -66,9 +66,18 @@ if [ -z "${TMPDIR:-}" ] || [ ! -d "${TMPDIR}" ]; then
 	export TMPDIR
 fi
 
-# Tar staging: on in CI (MCPBASH_CI_MODE=1), off by default locally. Override with MCPBASH_STAGING_TAR=1/0.
+# The server enables CI mode only for "true"; accept 1/yes here too, and pass
+# the server the value it understands.
+case "${MCPBASH_CI_MODE:-}" in
+1 | yes)
+	MCPBASH_CI_MODE=true
+	export MCPBASH_CI_MODE
+	;;
+esac
+
+# Tar staging: on in CI (MCPBASH_CI_MODE=true), off by default locally. Override with MCPBASH_STAGING_TAR=1/0.
 if [ -z "${MCPBASH_STAGING_TAR:-}" ]; then
-	if [[ "${MCPBASH_CI_MODE:-0}" =~ ^(1|true|yes)$ ]]; then
+	if [ "${MCPBASH_CI_MODE:-}" = "true" ]; then
 		MCPBASH_STAGING_TAR=1
 	else
 		MCPBASH_STAGING_TAR=0

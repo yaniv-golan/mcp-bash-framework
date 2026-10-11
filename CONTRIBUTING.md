@@ -19,7 +19,7 @@ Install [`pre-commit`](https://pre-commit.com/) and run `pre-commit install` to 
 
 See [TESTING.md](TESTING.md) for detailed instructions on running the test suite.
 
-For CI parity (GitHub Actions uses these defaults), set `MCPBASH_CI_MODE=1` when reproducing failures locally so log paths, staging tar, and failure summaries match what the runners see.
+For CI parity (GitHub Actions uses these defaults), set `MCPBASH_CI_MODE=true` when reproducing failures locally so log paths, staging tar, and failure summaries match what the runners see.
 
 ## Code style & workflow
 - Shell scripts must pass `./test/lint.sh` (shellcheck + shfmt). Keep functions small and prefer `set -euo pipefail`.

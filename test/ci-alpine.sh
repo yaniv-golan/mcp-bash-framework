@@ -21,5 +21,6 @@ su tester -c 'git config --global --add safe.directory /work'
 
 status=0
 su tester -c 'cd /work && CI=1 bash test/unit/run.sh' || status=1
-su tester -c 'cd /work && MCPBASH_CI_MODE=1 bash test/integration/run.sh' || status=1
+# Real mode (CI mode off): the timed read loop that users on Alpine get.
+su tester -c 'cd /work && bash test/integration/run.sh' || status=1
 exit "${status}"
