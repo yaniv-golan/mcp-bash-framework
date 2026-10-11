@@ -228,6 +228,11 @@ test_pick_tar_bin() {
 	if command -v bsdtar >/dev/null 2>&1; then
 		TEST_TAR_BIN="bsdtar"
 	elif command -v tar >/dev/null 2>&1; then
+		# BusyBox tar honours only one -C, which the base archive needs twice;
+		# stage by copying instead.
+		if tar --help 2>&1 | grep -q BusyBox; then
+			return 1
+		fi
 		TEST_TAR_BIN="tar"
 	else
 		printf 'Required command "tar" (or bsdtar) not found in PATH\n' >&2

@@ -78,7 +78,18 @@ done
 
 : >"${go}"
 n=0
-until ps -o stat= -p "${server}" 2>/dev/null | grep -q '^Z'; do
+# Process state: /proc where it exists (BusyBox ps has no -p), else ps.
+proc_state() {
+	if [ -r "/proc/$1/stat" ]; then
+		local line
+		line="$(cat "/proc/$1/stat" 2>/dev/null)" || return 1
+		line="${line##*) }"
+		printf '%s\n' "${line%% *}"
+	else
+		ps -o stat= -p "$1" 2>/dev/null
+	fi
+}
+until proc_state "${server}" | grep -q '^ *Z'; do
 	n=$((n + 1))
 	[ "${n}" -lt 50 ] || test_fail "server did not become a zombie"
 	sleep 0.1
