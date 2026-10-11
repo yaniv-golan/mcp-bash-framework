@@ -9,7 +9,6 @@ mcp_tools_extract_call_fields() {
 	# Extract name, arguments (compact JSON), timeoutSecs, and _meta.
 	# Uses separate jq calls to avoid @tsv double-escaping backslashes which
 	# corrupts JSON containing escaped quotes (e.g., Status in ["New", "Intro"]).
-	# See: docs/internal/PLAN-silent-args-parsing-failures.md
 	local json_payload="$1"
 	local name args_json timeout_override meta_json
 	local _extract_failed=false
