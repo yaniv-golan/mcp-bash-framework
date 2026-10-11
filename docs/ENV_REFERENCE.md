@@ -35,7 +35,7 @@ Authoritative list of supported environment variables. Defaults shown are the sh
 | `MCPBASH_IDLE_TIMEOUT_ENABLED` | `true` | Set to `false` to disable idle timeout entirely. |
 | `MCPBASH_ORPHAN_CHECK_ENABLED` | `true` (Unix), `false` (Windows/CI) | Enable parent-death detection. Server exits if original parent process dies. Disabled by default when `MCPBASH_CI_MODE=true`. |
 | `MCPBASH_ORPHAN_CHECK_INTERVAL` | `30` | Seconds between orphan detection checks. |
-| `MCPBASH_PROGRESS_EXTENDS_TIMEOUT` | `false` | When `true`, activity detection (pattern matches or progress emissions) resets the idle timeout, allowing long-running tools to continue as long as they show activity. |
+| `MCPBASH_PROGRESS_EXTENDS_TIMEOUT` | `false` | When `true`, each progress emission or pattern match restarts the tool's `timeoutSecs` watchdog, so a long-running tool continues as long as it shows activity, up to `MCPBASH_MAX_TIMEOUT_SECS`. Unrelated to `MCPBASH_IDLE_TIMEOUT` (client silence). |
 | `MCPBASH_MAX_TIMEOUT_SECS` | `600` | Hard cap on tool runtime (seconds) when progress-aware timeout is enabled. |
 | `MCPBASH_LOG_LEVEL` | `info` | RFC-5424 level; `debug` shows discovery traces. Boolean values `true`/`1` are normalized to `debug`, `false`/`0` to `info`. Can also be enabled via `server.d/.debug` file (only when env var is unset; see [DEBUGGING.md](DEBUGGING.md#debug-file-persistent-debug-mode)). |
 | `MCPBASH_LOG_VERBOSE` | (unset) | `true` logs full paths/manual registration output (security risk). |
@@ -103,9 +103,19 @@ Example allowlist usage to keep tool env minimal while letting HOME/PATH through
 MCPBASH_TOOL_ENV_MODE=allowlist MCPBASH_TOOL_ENV_ALLOWLIST=HOME,PATH mcp-bash ...
 ```
 
+## Runtime directories
+
+Operators may set these; the defaults suit most setups. The server refuses to start if `MCPBASH_STATE_DIR` or `MCPBASH_LOCK_ROOT` is a symlink (see [SECURITY.md](SECURITY.md)). What the server writes inside them is internal.
+
+| Variable | Default | Notes |
+|---|---|---|
+| `MCPBASH_TMP_ROOT` | `TMPDIR`, else `/tmp` (CI mode: the runner's temp dir) | Parent of the per-process state directory. Set it to a short, writable path when the default is too long (Windows) or not writable. |
+| `MCPBASH_STATE_DIR` | a new `mktemp -d` directory (mode 0700) under `MCPBASH_TMP_ROOT` | Per-process runtime state (worker files, logs, traces). A directory the server created is removed on exit unless `MCPBASH_PRESERVE_STATE=true` or `MCPBASH_KEEP_LOGS=true`; one you set is never removed. |
+| `MCPBASH_LOCK_ROOT` | `<state dir>/locks` | Lock directories (stdout and others). |
+
 ## Internal Runtime State (do not override)
 
-Examples: `MCPBASH_STATE_DIR`, `MCPBASH_LOCK_ROOT`, `MCPBASH_TMP_ROOT`, `MCPBASH_STDOUT_LOCK_NAME`, `MCPBASH_INITIALIZED`, `MCPBASH_ROOTS_*` (not to be confused with the user-facing `MCPBASH_ROOTS`), `MCPBASH_CLIENT_SUPPORTS_*`, `MCPBASH_PROGRESS_FLUSHER_PID`, `MCPBASH_RESOURCE_POLL_PID`, `MCPBASH_NEXT_OUTGOING_ID`, `MCPBASH_HANDLER_OUTPUT`. These are set by the runtime to coordinate sourced scripts and are not user-facing.
+Examples: `MCPBASH_STDOUT_LOCK_NAME`, `MCPBASH_INITIALIZED`, `MCPBASH_ROOTS_*` (not to be confused with the user-facing `MCPBASH_ROOTS`), `MCPBASH_CLIENT_SUPPORTS_*`, `MCPBASH_PROGRESS_FLUSHER_PID`, `MCPBASH_RESOURCE_POLL_PID`, `MCPBASH_NEXT_OUTGOING_ID`, `MCPBASH_HANDLER_OUTPUT`. These are set by the runtime to coordinate sourced scripts and are not user-facing.
 
 ## Test/Scaffold/Installer Helpers
 

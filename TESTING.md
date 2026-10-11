@@ -41,7 +41,7 @@ npm install
 ./test/unit/run.sh sdk_result
 ```
 
-Unit tests use [bats-core](https://bats-core.readthedocs.io/) with 219 tests across 40 files. Includes coverage for the CLI `run-tool` entrypoint, SDK helpers, path normalization, locking, pagination, and JSON utilities.
+Unit tests use [bats-core](https://bats-core.readthedocs.io/); they live in `test/unit/*.bats`. They include coverage for the CLI `run-tool` entrypoint, SDK helpers, path normalization, locking, pagination, and JSON utilities.
 
 - Parallel execution enabled when GNU parallel is installed (`brew install parallel`)
 - CI outputs JUnit XML to `test-results/` for test result visualization
