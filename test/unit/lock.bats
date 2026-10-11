@@ -54,6 +54,8 @@ setup() {
 	[ -d "${MCPBASH_LOCK_ROOT}/grace.lock" ]
 
 	MCPBASH_LOCK_REAP_GRACE_SECS=0
+	# Older than any grace window (mtimes are whole seconds).
+	touch -t 202001010000 "${MCPBASH_LOCK_ROOT}/grace.lock"
 	mcp_lock_try_reap "${MCPBASH_LOCK_ROOT}/grace.lock"
 	[ ! -d "${MCPBASH_LOCK_ROOT}/grace.lock" ]
 }
@@ -109,4 +111,78 @@ wait_for_lock_child() {
 	kill -0 "${LOCK_CHILD_PID}"
 	rm -rf "${MCPBASH_LOCK_ROOT}"
 	wait_for_lock_child
+}
+
+# Several processes contend for one lock; at most one may hold it at a time.
+# The critical section marks itself with mkdir, which fails if another holder
+# is inside. Before the fix, a waiter that read an empty pid file reaped the
+# live lock, and two holders overlapped.
+@test "lock: contending processes never hold the lock together" {
+	mcp_lock_init
+	local marks="${BATS_TEST_TMPDIR}/marks"
+	mkdir -p "${marks}"
+	local w
+	for w in 1 2 3 4 5 6; do
+		bash -c '
+			set -euo pipefail
+			. "$1/lib/lock.sh"
+			MCPBASH_LOCK_ROOT="$2"
+			marks="$3"
+			i=0
+			while [ "${i}" -lt 40 ]; do
+				mcp_lock_acquire "contended"
+				if ! mkdir "${marks}/inside" 2>/dev/null; then
+					printf "x" >>"${marks}/overlaps"
+				fi
+				rmdir "${marks}/inside" 2>/dev/null || true
+				mcp_lock_release "contended"
+				i=$((i + 1))
+			done
+		' _ "${MCPBASH_HOME}" "${MCPBASH_LOCK_ROOT}" "${marks}" 2>>"${marks}/stderr" &
+	done
+	wait
+	local overlaps=0
+	if [ -f "${marks}/overlaps" ]; then
+		overlaps="$(wc -c <"${marks}/overlaps" | tr -d ' ')"
+	fi
+	if [ "${overlaps}" -ne 0 ]; then
+		fail "lock held by two processes at once ${overlaps} time(s) in 240 acquisitions"
+	fi
+	if [ -s "${marks}/stderr" ]; then
+		fail "lock helpers wrote to stderr: $(head -n 3 "${marks}/stderr")"
+	fi
+	[ ! -d "${MCPBASH_LOCK_ROOT}/contended.lock" ]
+}
+
+@test "lock: release leaves a lock with no pid yet (acquire in progress)" {
+	mcp_lock_init
+	mkdir -p "${MCPBASH_LOCK_ROOT}/pending.lock"
+	mcp_lock_release "pending"
+	[ -d "${MCPBASH_LOCK_ROOT}/pending.lock" ]
+}
+
+@test "lock: reap leaves an empty pid file within the grace period" {
+	mcp_lock_init
+	MCPBASH_LOCK_REAP_GRACE_SECS=5
+	mkdir -p "${MCPBASH_LOCK_ROOT}/empty.lock"
+	: >"${MCPBASH_LOCK_ROOT}/empty.lock/pid"
+	mcp_lock_try_reap "${MCPBASH_LOCK_ROOT}/empty.lock"
+	[ -d "${MCPBASH_LOCK_ROOT}/empty.lock" ]
+}
+
+@test "lock: release_owned clears a lock held by the given pid" {
+	mcp_lock_init
+	mkdir -p "${MCPBASH_LOCK_ROOT}/worker.lock"
+	printf '%s' "$$" >"${MCPBASH_LOCK_ROOT}/worker.lock/pid"
+	mcp_lock_release_owned "worker" "$$"
+	[ ! -d "${MCPBASH_LOCK_ROOT}/worker.lock" ]
+	[ ! -d "${MCPBASH_LOCK_ROOT}/.reap.worker.lock" ]
+}
+
+@test "lock: acquire leaves no temp pid files behind" {
+	mcp_lock_init
+	mcp_lock_acquire "tidy"
+	mcp_lock_release "tidy"
+	run find "${MCPBASH_LOCK_ROOT}" -name '.pid.*'
+	assert_output ""
 }
