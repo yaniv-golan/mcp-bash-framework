@@ -72,5 +72,11 @@ if [[ "${OSTYPE:-}" != msys* && "${OSTYPE:-}" != cygwin* ]] && command -v parall
 	BATS_OPTS+=(--jobs "${jobs}")
 fi
 
+# Say which bash runs the tests: plain `bash` and `env bash` shebangs resolve
+# through PATH, which can silently pick /bin/bash 3.2 on macOS.
+printf 'Runner bash: %s; bash on PATH: %s (%s)\n' "${BASH_VERSION}" \
+	"$(command -v bash 2>/dev/null || printf 'none')" \
+	"$(bash -c 'printf %s "${BASH_VERSION}"' 2>/dev/null || printf 'unknown')"
+
 # Run bats
 exec bats "${BATS_OPTS[@]}" "${BATS_FILES[@]}"

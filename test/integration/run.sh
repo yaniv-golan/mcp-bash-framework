@@ -364,10 +364,15 @@ run_test() {
 index=1
 suite_start="$(date +%s)"
 
+# Say which bash runs the tests: plain `bash` and `env bash` shebangs resolve
+# through PATH, which can silently pick /bin/bash 3.2 on macOS.
+printf 'Runner bash: %s; bash on PATH: %s (%s)\n' "${BASH_VERSION}" \
+	"$(command -v bash 2>/dev/null || printf 'none')" \
+	"$(bash -c 'printf %s "${BASH_VERSION}"' 2>/dev/null || printf 'unknown')"
+
 # Log platform info for debugging
 if [ "${VERBOSE}" = "1" ]; then
 	printf 'Platform: %s\n' "$(uname -a)"
-	printf 'Bash: %s\n' "${BASH_VERSION}"
 	printf 'Log dir: %s\n\n' "${LOG_DIR}"
 fi
 
