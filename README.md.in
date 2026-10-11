@@ -66,6 +66,8 @@ mcp-bash config --client cursor  # paste into your MCP client
 mcp-bash bundle                  # create distributable package
 ```
 
+![mcp-bash demo: create a project, scaffold a tool, run it, and print a Claude Desktop config](assets/mcp-bash-demo.gif)
+
 ## What you’ll build
 
 ```mermaid
