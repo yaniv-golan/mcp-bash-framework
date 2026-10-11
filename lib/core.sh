@@ -32,6 +32,9 @@ _MCPBASH_EXIT_CLEAN=false
 # Ensures cleanup runs exactly once, whether from normal exit or signal.
 _mcp_exit_handler() {
 	local exit_code=$?
+	# The trap runs with the IFS of whatever it interrupted (several functions
+	# set a local IFS without a newline): restore the default for cleanup.
+	local IFS=$' \t\n'
 	if [ "${exit_code}" -eq 0 ] && [ "${_MCPBASH_EXIT_CLEAN}" != "true" ]; then
 		exit_code=1
 	fi
@@ -564,7 +567,8 @@ mcp_core_finish_after_read_loop() {
 # to 1s. For exits where nobody can receive their results.
 mcp_core_stop_all_workers() {
 	[ -n "${MCPBASH_STATE_DIR:-}" ] || return 0
-	# Loops read line by line: the server's IFS may not split on newlines.
+	# Loops read line by line, so they do not depend on IFS (called from the
+	# exit trap, which runs with the IFS of whatever it interrupted).
 	local keys key info pid pgid rest targets="" alive tries=0
 	keys="$(mcp_ids_list_active_workers 2>/dev/null || true)"
 	[ -n "${keys}" ] || return 0
