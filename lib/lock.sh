@@ -165,6 +165,12 @@ mcp_lock_reap_now() {
 	if [ -z "${owner}" ]; then
 		now="$(date +%s)"
 		mtime="$(mcp_lock_stat_mtime "${path}")"
+		# 0 means the lock vanished (its holder released it) or could not be
+		# stat'd. Removing the path now could delete a lock another process
+		# has just created there, so leave it for a later poll.
+		if [ "${mtime}" = "0" ]; then
+			return 0
+		fi
 		age=$((now - mtime))
 		# Grace window: allow the creator to finish writing the pid file.
 		# Times are whole seconds, so age 1 can mean 10ms; -le makes the

@@ -154,6 +154,27 @@ wait_for_lock_child() {
 	[ ! -d "${MCPBASH_LOCK_ROOT}/contended.lock" ]
 }
 
+@test "lock: reap leaves a lock created after the one it saw was released" {
+	mcp_lock_init
+	local path="${MCPBASH_LOCK_ROOT}/handoff.lock"
+	mkdir -p "${path}"
+	# Replay the interleaving: the reaper reads no pid (the holder is
+	# mid-release), the holder's release finishes before the reaper stats the
+	# path, and a new holder takes the lock before the reaper acts.
+	eval "mcp_lock_test_orig_$(declare -f mcp_lock_stat_mtime)"
+	mcp_lock_stat_mtime() {
+		local m
+		rm -rf "$1"
+		m="$(mcp_lock_test_orig_mcp_lock_stat_mtime "$1")"
+		mkdir "$1"
+		printf '%s' "$$" >"$1/pid"
+		printf '%s' "${m}"
+	}
+	mcp_lock_reap_now "${path}"
+	[ -d "${path}" ]
+	assert_equal "$(cat "${path}/pid")" "$$"
+}
+
 @test "lock: release leaves a lock with no pid yet (acquire in progress)" {
 	mcp_lock_init
 	mkdir -p "${MCPBASH_LOCK_ROOT}/pending.lock"
