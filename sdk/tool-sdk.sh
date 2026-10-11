@@ -398,8 +398,9 @@ mcp_args_require() {
 	local pointer="$1"
 	local message="${2:-}"
 	local raw
-	raw="$(mcp_args_get "${pointer}" 2>/dev/null || true)"
-	if [ -z "${raw}" ] || [ "${raw}" = "null" ]; then
+	# --default '' drops a real JSON null, so the string "null" is a value.
+	raw="$(mcp_args_get "${pointer}" --default '' 2>/dev/null || true)"
+	if [ -z "${raw}" ]; then
 		if [ -z "${message}" ]; then
 			message="${pointer} is required"
 		fi
