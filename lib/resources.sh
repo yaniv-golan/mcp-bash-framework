@@ -1567,7 +1567,10 @@ mcp_resources_templates_manual_finalize() {
 		fi
 	fi
 	if [ "${resources_available}" = false ]; then
-		mcp_logging_warning "${MCP_RESOURCES_TEMPLATES_LOGGER}" "Cannot check for name collisions: resource registry unavailable"
+		# Expected while registration is still running (resources are built
+		# after it). Not a problem: building the template registry checks the
+		# names again against all resources, and warns there if it cannot.
+		mcp_logging_debug "${MCP_RESOURCES_TEMPLATES_LOGGER}" "Name collision check deferred: resource registry not built yet"
 	fi
 
 	local resource_names_file=""

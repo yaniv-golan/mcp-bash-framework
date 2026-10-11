@@ -102,6 +102,7 @@ TESTS=(
 	"test_resource_templates.sh"
 	"test_resource_template_read.sh"
 	"test_registration_warnings.sh"
+	"test_template_collision_warnings.sh"
 	"test_ui_capability.sh"
 	"test_ui_resources.sh"
 	"test_ui_e2e.sh"
