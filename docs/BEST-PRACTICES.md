@@ -36,7 +36,7 @@ This guide distils hands-on recommendations for designing, building, and operati
 | `./test/unit/run.sh` | Run unit tests (pass one or more `*.bats` to filter) | [§5.1](#51-test-pyramid) |
 | `./test/integration/test_capabilities.sh` | End-to-end lifecycle/capability checks | [§5.3](#53-ci-triage-matrix) |
 | `./test/examples/test_examples.sh` | Smoke runner ensuring scaffolds/examples stay healthy | [§5.1](#51-test-pyramid) |
-| `MCPBASH_LOG_LEVEL=debug bin/mcp-bash` | Start server with verbose diagnostics ([README.md](../README.md#diagnostics--logging)) | [§6.3](#63-monitoring-and-health) |
+| `MCPBASH_LOG_LEVEL=debug bin/mcp-bash` | Start server with verbose diagnostics ([README.md](../README.md#diagnostics--validation)) | [§6.3](#63-monitoring-and-health) |
 
 ### SDK helpers (quick reference)
 | Helper | Purpose | Example |
@@ -78,7 +78,7 @@ This guide distils hands-on recommendations for designing, building, and operati
 ### Environment variables
 | Variable | Description | Notes |
 | --- | --- | --- |
-| `MCPBASH_FORCE_MINIMAL` | Forces the minimal capability tier even when JSON tooling is available | Useful for testing degraded mode per [README.md](../README.md#runtime-detection) |
+| `MCPBASH_FORCE_MINIMAL` | Forces the minimal capability tier even when JSON tooling is available | Useful for testing degraded mode per [README.md](../README.md#capability-modes) |
 | `MCPBASH_LOG_LEVEL` / `MCPBASH_LOG_LEVEL_DEFAULT` | Sets startup log verbosity (`info` default) | Harmonises with `logging/setLevel` requests; see [§6.2](#62-logging-tracing-and-metrics) |
 | `MCPBASH_LOG_VERBOSE` | Exposes full paths and manual-registration script output in logs | **Security risk**: reveals file paths, usernames, cache locations. Use only in trusted environments; see [docs/LOGGING.md](LOGGING.md) |
 | `MCPBASH_DEBUG_PAYLOADS` | Persists per-message payload logs under `${TMPDIR}/mcpbash.state.*` | Enable only during targeted debugging (storage heavy) |
@@ -106,12 +106,12 @@ This guide distils hands-on recommendations for designing, building, and operati
 - **Document scope** – Focuses on day-2 operations, maintainability, and collaboration across tool/prompt authors, operators, and contributors. Feature requests, product positioning, and localization are intentionally out of scope (§Out-of-Scope in the original plan).
 
 ## 2. Environment & tooling
-- **Runtime prerequisites** – Bash ≥3.2, POSIX coreutils, and one JSON parser (`gojq` or `jq`) per [README.md](../README.md#runtime-detection). Confirm capability mode by piping a ping request through the server:
+- **Runtime prerequisites** – Bash ≥3.2, POSIX coreutils, and one JSON parser (`jq` or `gojq`; jq is preferred and probed first) per [README.md](../README.md#capability-modes). Confirm capability mode by piping a ping request through the server:
   ```
   printf '{"jsonrpc":"2.0","id":1,"method":"ping"}\n' | bin/mcp-bash
   ```
   A healthy install responds with `{"jsonrpc":"2.0","id":1,"result":{}}`.
-- **Lint/format requirements** – Install `shellcheck` and `shfmt` before running `./test/lint.sh`. Without `shfmt`, lint fails with `Required command "shfmt" not found in PATH` (see [README.md](../README.md#developer-prerequisites)).
+- **Lint/format requirements** – Install `shellcheck` and `shfmt` before running `./test/lint.sh`. Without `shfmt`, lint fails with `Required command "shfmt" not found in PATH` (see [README.md](../README.md#development-requirements)).
 - **Recommended tooling bundle**:
 
 | Tool | Check command | Notes |
@@ -124,7 +124,7 @@ This guide distils hands-on recommendations for designing, building, and operati
 - **Debugging helpers** – Keep `asciinema` or screen-recording ready when capturing scaffold workflows for documentation. Add captions/alt-text for accessibility per §Supporting Assets.
 
 ## 3. Project layout primer
-- **Stable vs extension directories** – Core runtime sits under `bin/`, `lib/`, `handlers/`, `providers/`, and `sdk/`. Extension-friendly directories include `tools/`, `resources/`, `prompts/`, `server.d/`, and `.registry/` as illustrated in [README.md](../README.md#repository-layout).
+- **Stable vs extension directories** – Core runtime sits under `bin/`, `lib/`, `handlers/`, `providers/`, and `sdk/`. Extension-friendly directories include `tools/`, `resources/`, `prompts/`, `server.d/`, and `.registry/` as illustrated in [README.md](../README.md#project-structure).
 - **Registration flows**:
   - *Auto-discovery* – Default path scanning populates `.registry/*.json` (see [docs/REGISTRY.md](REGISTRY.md)). Metadata is sourced from `.meta.json` then inline `# mcp:` annotations, falling back to defaults.
   - *Declarative registration* – Prefer `server.d/register.json` for deterministic overrides/disablement without executing shell code (see [docs/REGISTRY.md](REGISTRY.md)). Use `[]` to explicitly disable a kind, or omit/null a key to fall through to auto-discovery.
@@ -1712,7 +1712,7 @@ Cache results by exporting `MCP_TESTS_SKIP_REMOTE=1` when remote fixtures are un
 | --- | --- | --- |
 | `Required command "shfmt" not found` | Lint stage exits 1 immediately | Install `shfmt` or pin `GO111MODULE=on go install mvdan.cc/sh/v3/cmd/shfmt@latest`. |
 | `JSON parse failure` in integration logs | CI uses minimal mode due to missing `jq/gojq` | Ensure runners have `jq` or `gojq` installed. |
-| `timeoutSecs exceeded` | Tool exits via watchdog | Adjust `<tool>.meta.json` timeout, optimise logic, or move to async worker. |
+| `timeoutSecs exceeded` | Tool exits via watchdog | Adjust `<tool>.meta.json` timeout, optimise logic, or for legitimately long work emit progress with `progressExtendsTimeout` (capped by `MCPBASH_MAX_TIMEOUT_SECS`). |
 | `registry cache exceeded MCPBASH_REGISTRY_MAX_BYTES` | Discovery fails after adding many assets | Increase env var for CI only or introduce manual registration. |
 | Windows-specific path issues | Tests referencing `/tmp` fail | Mirror mitigations from [docs/WINDOWS.md](WINDOWS.md) (use `cygpath`, avoid `/proc`). |
 
@@ -1720,10 +1720,11 @@ Cache results by exporting `MCP_TESTS_SKIP_REMOTE=1` when remote fixtures are un
 
 ### 6.1 Configuration hierarchy
 1. Launch-time environment variables (`MCPBASH_*`, `MCP_*`)
-1. `server.d/server.meta.json` `"env"` (tool/provider env-policy keys only; ignored for a scope when the launch env sets that scope's mode or allowlist)
-2. `server.d/env.sh` exports (`mcp-bash run-tool --with-server-env` only; not applied to a running server)
+2. `server.d/server.meta.json` `"env"` (tool/provider env-policy keys only; ignored for a scope when the launch env sets that scope's mode or allowlist)
 3. Manual registration inputs (`server.d/register.json` / `server.d/register.sh`) overriding discovery output
 4. Client-initiated negotiation (capabilities, logging)
+
+`server.d/env.sh` is not part of this: only `mcp-bash run-tool --with-server-env` sources it, for local development. A running server never reads it.
 
 Document configuration in `server.d/README.md` (if present) so on-call operators know which knobs are safe to adjust.
 
@@ -1743,7 +1744,7 @@ Document configuration in `server.d/README.md` (if present) so on-call operators
 - [ ] Ping smoke test (`printf '{"jsonrpc":"2.0","id":1,"method":"ping"}\n' | bin/mcp-bash`) returns `{"jsonrpc":"2.0","id":1,"result":{}}` in full capability mode.
 - [ ] `MCPBASH_MAX_CONCURRENT_REQUESTS` tuned for host CPU/memory (default 16).
 - [ ] Registry TTLs set to balance discovery churn vs freshness.
-- [ ] `server.d/env.sh` committed or documented for reproducibility.
+- [ ] Launch environment (client config, `server.meta.json` `"env"`, bundle `user_config` mappings) documented for reproducibility. (`server.d/env.sh` affects only `run-tool --with-server-env`, not the server.)
 - [ ] Monitoring hooks emit at least heartbeat metrics (request count, failures).
 - [ ] Backups created for `.registry/*.json` if manual overrides exist.
 - [ ] Rollback plan (git tag, release archive, or container image) reviewed.
@@ -1897,7 +1898,7 @@ flowchart TD
 | Date | Version | Notes |
 | --- | --- | --- |
 | 2026-10-10 | v1.8 | Taught the result and error helpers that 2.0 keeps (`mcp_result_json`, `mcp_result_text`, `mcp_fail --type`) throughout. Added "Migrating to the 2.0 helpers" to §4.8 and `mcp-bash migrate` to the command reference. |
-| 2026-01-16 | v1.7 | Added `mcp_error` convenience helper for tool execution errors with consistent schema, optional hints, and structured data. Updated SDK quick reference table. Added "Convenience error helper" section to §4.7. Updated ERRORS.md with recommended error types. <!-- lint-api-usage: allow --> |
+| 2026-01-16 | v1.7 | Added `mcp_error` convenience helper for tool execution errors with consistent schema, optional hints, and structured data. Updated SDK quick reference table. Added "Convenience error helper" section to §4.8. Updated ERRORS.md with recommended error types. <!-- lint-api-usage: allow --> |
 | 2026-01-07 | v1.6 | Added §4.2 "LLM-friendly tool metadata" covering rich descriptions, parameter documentation, and domain model resources. Created companion doc [LLM-CONTEXT.md](LLM-CONTEXT.md) with comprehensive patterns. Renumbered subsequent sections (§4.3-§4.9). Updated scaffold template with description guidance. |
 | 2026-01-06 | v1.5 | Added §4.9 "Progress passthrough from subprocesses" covering `mcp_run_with_progress` helper for forwarding CLI progress to MCP. Includes common patterns for NDJSON, percentage, counter, and ffmpeg-style CLIs. Updated SDK quick reference table. |
 | 2026-01-04 | v1.4 | Added §4.7 "Building CallToolResult responses" covering `mcp_result_success`, `mcp_result_error`, `mcp_json_truncate`, `mcp_is_valid_json`, and `mcp_byte_length` helpers. Updated SDK quick reference table. Added "Capturing stdout and stderr separately" pattern to §4.3. <!-- lint-api-usage: allow --> |
