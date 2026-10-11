@@ -9,8 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour changes to check before upgrading
 - **Static resources without `provider` get one by the same rule everywhere**: auto-discovery, `register.sh` (`mcp_register_resource` or printed JSON) and `register.json` now agree. `file://`, `git+https://`, `https://` and `ui://` use the built-in provider; any other scheme uses `providers/<scheme>.sh` when it exists; otherwise `file`, with a warning at registration. Before, `register.sh` sent `ui://` and custom schemes to `file`, and printed JSON had no provider at all. `register.json` named a provider after any scheme even if no script existed; such resources now use `file` and log the warning (their reads failed before and still fail). Resources that set `provider` are unchanged.
+- **Resource templates that already set `provider` start using it**: a template with a `provider` key (ignored until now) that names an existing `providers/<name>.sh` now routes the URIs it matches to that provider. Other existing `provider` values keep today's routing and now log a warning.
 
 ### Added
+- **Resource templates can name their provider**: a URI whose best-matching template sets `provider` is read by that provider; otherwise the URI scheme decides, as before. The provider must be a project provider (`providers/<name>.sh`) or a built-in on its own scheme (`file` on `file://`, `ui` on `ui://`, ...), on a template the matcher supports. Anything else is dropped with a warning at registration, and `mcp-bash validate` reports it. `resources/templates/list` never shows `provider`.
 - **Conformance test against the official MCP schemas**: an integration test validates server output against the official MCP JSON schemas for 2024-11-05, 2025-03-26, 2025-06-18 and 2025-11-25 (vendored in `test/conformance/schemas`).
 
 ### Fixed
