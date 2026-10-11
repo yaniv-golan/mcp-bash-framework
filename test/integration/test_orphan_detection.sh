@@ -24,6 +24,8 @@ CYGWIN* | MINGW* | MSYS*)
 esac
 
 test_create_tmpdir
+# Orphan detection runs only in the timed read loop; CI mode turns it off.
+unset MCPBASH_CI_MODE
 WORKSPACE="${TEST_TMPDIR}/orphan"
 test_stage_workspace "${WORKSPACE}"
 
