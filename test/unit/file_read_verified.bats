@@ -175,6 +175,22 @@ file_provider() {
 	unset -f cat
 }
 
+@test "file_read: a caller's own read_status does not leak into the read" {
+	printf '0123456789' >"${ROOT}/ten"
+	# The server's read loop keeps a local read_status (1 after a final line
+	# without a newline); bash's dynamic scope makes it visible here.
+	caller() {
+		local read_status=1
+		mcp_file_read_verified "${ROOT}/ten" "$@"
+	}
+	run caller
+	assert_success
+	assert_output "0123456789"
+	run caller 10
+	assert_success
+	assert_output "0123456789"
+}
+
 @test "file_read: mcp_file_read_limit uses the default for malformed values" {
 	run mcp_file_read_limit 5 100
 	assert_output "5"

@@ -240,6 +240,9 @@ mcp_file_read_verified() {
 			fi
 		fi
 
+		# Set here: bash's dynamic scope would otherwise show a caller's
+		# variable of the same name (the read loop has one).
+		_mcp_fr_read_status=0
 		if [ -n "${max_bytes}" ]; then
 			case "${size}" in
 			"" | *[!0-9]*)
@@ -252,11 +255,11 @@ mcp_file_read_verified() {
 				exit 4
 			fi
 			# Bound the output too, in case the file grows after the check.
-			head -c "${max_bytes}" <&9 || read_status=$?
+			head -c "${max_bytes}" <&9 || _mcp_fr_read_status=$?
 		else
-			cat <&9 || read_status=$?
+			cat <&9 || _mcp_fr_read_status=$?
 		fi
 		exec 9<&-
-		[ "${read_status:-0}" -eq 0 ] || exit 6
+		[ "${_mcp_fr_read_status}" -eq 0 ] || exit 6
 	)
 }
