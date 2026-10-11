@@ -186,6 +186,46 @@ load_dispatch_helpers() {
 	assert_output "resource_subscription.sub-a"
 }
 
+@test "subscriptions: an unsubscribe leaves alone a subscribe dispatched after it" {
+	load_dispatch_helpers
+	# subscribe, unsubscribe, subscribe again, all for one uri. Each worker
+	# runs with the dispatch sequence number the main shell had when it forked.
+	mcp_resources_subscription_note_dispatch resources/subscribe \
+		'{"jsonrpc":"2.0","id":"s1","method":"resources/subscribe","params":{"uri":"file:///a.txt"}}' '"s1"'
+	local s1_seq="${MCPBASH_SUBSCRIPTION_DISPATCH_SEQ:-}"
+	mcp_resources_subscription_store "sub-a" "" "file:///a.txt" "fp" "file:///a.txt" create "${s1_seq}"
+	mcp_resources_subscription_settle_pending "$(mcp_ids_key_from_json '"s1"')" "sub-a" || true
+	mcp_resources_subscription_note_dispatch resources/unsubscribe \
+		'{"jsonrpc":"2.0","id":"u1","method":"resources/unsubscribe","params":{"uri":"file:///a.txt"}}' '"u1"'
+	local u1_seq="${MCPBASH_SUBSCRIPTION_DISPATCH_SEQ:-}"
+	mcp_resources_subscription_note_dispatch resources/subscribe \
+		'{"jsonrpc":"2.0","id":"s2","method":"resources/subscribe","params":{"uri":"file:///a.txt"}}' '"s2"'
+	local s2_seq="${MCPBASH_SUBSCRIPTION_DISPATCH_SEQ:-}"
+	# The second subscribe's worker stores its record before the unsubscribe
+	# worker gets to run.
+	mcp_resources_subscription_store "sub-b" "" "file:///a.txt" "fp" "file:///a.txt" create "${s2_seq}"
+	run mcp_resources_subscription_settle_pending "$(mcp_ids_key_from_json '"s2"')" "sub-b"
+	assert_failure
+
+	run mcp_resources_subscription_remove_by_uri "file:///a.txt" "${u1_seq}"
+	assert_output "1"
+	assert [ ! -e "$(record_path sub-a)" ]
+	assert [ -f "$(record_path sub-b)" ]
+}
+
+@test "subscriptions: the poller keeps a record's dispatch sequence number" {
+	stub_read_ok
+	mcp_resources_subscription_store "sub-a" "" "file:///a.txt" "old" "file:///a.txt" create 7
+	mcp_resources_poll_subscriptions
+	run "${MCPBASH_JSON_TOOL_BIN}" -r '.seq' "$(record_path sub-a)"
+	assert_output "7"
+	# An unsubscribe dispatched before it leaves it; one dispatched after removes it.
+	run mcp_resources_subscription_remove_by_uri "file:///a.txt" 6
+	assert_output "0"
+	run mcp_resources_subscription_remove_by_uri "file:///a.txt" 8
+	assert_output "1"
+}
+
 # A poll whose read logs from inside a $(...) capture, as the real read does
 # when it refreshes a registry. Logging follows mcp_logging_emit: queue when a
 # queue is active, otherwise write to the current stdout.

@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Conformance test against the official MCP schemas**: an integration test validates server output against the official MCP JSON schemas for 2024-11-05, 2025-03-26, 2025-06-18 and 2025-11-25 (vendored in `test/conformance/schemas`).
 
 ### Fixed
+- **Subscribing again right after unsubscribing keeps the new subscription**: for subscribe, unsubscribe, subscribe on one resource sent back to back, the unsubscribe could run last and remove the second subscription too, so its updates never arrived. An unsubscribe now removes only subscriptions requested before it.
 - **Background helpers exit when the server is killed, even before the host reaps it**: the progress flusher and subscription poller checked only that the server's process existed, which is still true while a killed server waits to be reaped. They kept running and held the server's stdout open, so a host that reads to end of file before reaping could wait forever.
 - **`mcp_args_require` accepts the string `"null"`**: an argument whose value was the text `null` was rejected as missing; only a missing argument, an empty string or a JSON `null` is rejected now.
 - **`register.sh` resources with `ui://` or a custom scheme are read by the right provider**: without a `provider`, they went to the `file` provider instead of `ui` or the project's `providers/<scheme>.sh`.

@@ -266,8 +266,8 @@ mcp_resources_subscription_unlock() {
 	mcp_lock_release "${MCP_RESOURCES_SUBSCRIPTION_LOCK}" 2>/dev/null || true
 }
 
-# Load a record into _MCP_SUB_NAME, _MCP_SUB_URI, _MCP_SUB_REQUESTED_URI and
-# _MCP_SUB_FINGERPRINT. Returns 1 when the record is missing (for example,
+# Load a record into _MCP_SUB_NAME, _MCP_SUB_URI, _MCP_SUB_REQUESTED_URI,
+# _MCP_SUB_FINGERPRINT and _MCP_SUB_SEQ. Returns 1 when the record is missing (for example,
 # removed by an unsubscribe after it was listed) or does not parse.
 mcp_resources_subscription_load() {
 	local path="$1"
@@ -275,22 +275,26 @@ mcp_resources_subscription_load() {
 	_MCP_SUB_URI=""
 	_MCP_SUB_REQUESTED_URI=""
 	_MCP_SUB_FINGERPRINT=""
+	_MCP_SUB_SEQ=""
 	[ -f "${path}" ] || return 1
 	# Fields are NUL-separated: bash strings cannot hold NUL, so no stored value does.
 	{
 		IFS= read -r -d '' _MCP_SUB_NAME \
 			&& IFS= read -r -d '' _MCP_SUB_URI \
 			&& IFS= read -r -d '' _MCP_SUB_REQUESTED_URI \
-			&& IFS= read -r -d '' _MCP_SUB_FINGERPRINT
-	} < <("${MCPBASH_JSON_TOOL_BIN}" -j 'select(type == "object") | (.name // "" | tostring), "\u0000", (.uri // "" | tostring), "\u0000", (.requested_uri // "" | tostring), "\u0000", (.fingerprint // "" | tostring), "\u0000"' "${path}" 2>/dev/null) || return 1
+			&& IFS= read -r -d '' _MCP_SUB_FINGERPRINT \
+			&& IFS= read -r -d '' _MCP_SUB_SEQ
+	} < <("${MCPBASH_JSON_TOOL_BIN}" -j 'select(type == "object") | (.name // "" | tostring), "\u0000", (.uri // "" | tostring), "\u0000", (.requested_uri // "" | tostring), "\u0000", (.fingerprint // "" | tostring), "\u0000", (.seq // "" | tostring), "\u0000"' "${path}" 2>/dev/null) || return 1
 	return 0
 }
 
 # Write a record atomically (temp file, then mv). The temp name does not match
 # the resource_subscription.* glob, so the poller never reads a partial record.
-# Args: id name uri fingerprint [requested_uri] [mode]
+# Args: id name uri fingerprint [requested_uri] [mode] [seq]
 # mode "create" (default) writes unconditionally; "update" rewrites only a
 # record that still exists, so a poll never resurrects an unsubscribed record.
+# seq is the subscribe's dispatch sequence number (see
+# mcp_resources_subscription_note_dispatch); an update must pass it back.
 mcp_resources_subscription_store() {
 	local subscription_id="$1"
 	local name="$2"
@@ -298,6 +302,7 @@ mcp_resources_subscription_store() {
 	local fingerprint="$4"
 	local requested_uri="${5:-}"
 	local mode="${6:-create}"
+	local seq="${7:-}"
 	mcp_resources_subscription_id_valid "${subscription_id}" || return 1
 	local path tmp
 	path="$(mcp_resources_subscription_path "${subscription_id}")"
@@ -308,7 +313,8 @@ mcp_resources_subscription_store() {
 	if ! "${MCPBASH_JSON_TOOL_BIN}" -n -c \
 		--arg name "${name}" --arg uri "${uri}" \
 		--arg requested_uri "${requested_uri}" --arg fingerprint "${fingerprint}" \
-		'{name: $name, uri: $uri, requested_uri: $requested_uri, fingerprint: $fingerprint}' >"${tmp}" 2>/dev/null; then
+		--arg seq "${seq}" \
+		'{name: $name, uri: $uri, requested_uri: $requested_uri, fingerprint: $fingerprint, seq: $seq}' >"${tmp}" 2>/dev/null; then
 		rm -f "${tmp}" 2>/dev/null || true
 		return 1
 	fi
@@ -352,9 +358,11 @@ mcp_resources_subscription_remove() {
 }
 
 # Remove every subscription whose effective or requested uri equals $1.
-# Prints the number removed.
+# With $2, the unsubscribe's dispatch sequence number, a subscription
+# dispatched after the unsubscribe is kept. Prints the number removed.
 mcp_resources_subscription_remove_by_uri() {
 	local target="$1"
+	local before="${2:-}"
 	local removed=0 path subscription_id
 	if [ -n "${target}" ] && [ -n "${MCPBASH_STATE_DIR:-}" ]; then
 		for path in "${MCPBASH_STATE_DIR}"/resource_subscription.*; do
@@ -362,6 +370,10 @@ mcp_resources_subscription_remove_by_uri() {
 			mcp_resources_subscription_id_valid "${subscription_id}" || continue
 			mcp_resources_subscription_load "${path}" || continue
 			if [ "${_MCP_SUB_URI}" = "${target}" ] || [ "${_MCP_SUB_REQUESTED_URI}" = "${target}" ]; then
+				case "${before}:${_MCP_SUB_SEQ}" in
+				*[!0-9:]* | :* | *:) ;;
+				*) [ "${_MCP_SUB_SEQ}" -lt "${before}" ] || continue ;;
+				esac
 				if mcp_resources_subscription_remove "${subscription_id}"; then
 					removed=$((removed + 1))
 				fi
@@ -385,6 +397,13 @@ mcp_resources_subscription_remove_by_uri() {
 # leaves no gap: a record stored before the unsubscribe was dispatched is found
 # by the unsubscribe worker's removal by uri; one stored after it sees the mark.
 # A subscribe by name only has no requested uri to match and is not noted.
+#
+# That covers a subscribe the unsubscribe overtook. The reverse also happens:
+# for subscribe, unsubscribe, subscribe on one uri, the second subscribe's
+# worker can store its record before the unsubscribe's worker removes by uri.
+# So both are numbered here (MCPBASH_SUBSCRIPTION_DISPATCH_SEQ, which each
+# worker inherits when it forks), a subscribe stores its number in its record,
+# and an unsubscribe removes only records with a lower number.
 mcp_resources_subscription_pending_path() {
 	printf '%s/resource_subscription_pending.%s' "${MCPBASH_STATE_DIR}" "$1"
 }
@@ -404,6 +423,7 @@ mcp_resources_subscription_note_dispatch() {
 	if mcp_runtime_is_minimal_mode; then
 		return 0
 	fi
+	MCPBASH_SUBSCRIPTION_DISPATCH_SEQ=$((${MCPBASH_SUBSCRIPTION_DISPATCH_SEQ:-0} + 1))
 	uri="$(mcp_json_extract_resource_uri "${json_line}" 2>/dev/null)" || uri=""
 	[ -n "${uri}" ] || return 0
 
@@ -453,9 +473,10 @@ mcp_resources_subscription_store_payload() {
 	local uri="$3"
 	local payload="$4"
 	local requested_uri="${5:-}"
+	local seq="${6:-}"
 	local fingerprint
 	fingerprint="$(mcp_resources_hash_payload "${payload}")"
-	mcp_resources_subscription_store "${subscription_id}" "${name}" "${uri}" "${fingerprint}" "${requested_uri}"
+	mcp_resources_subscription_store "${subscription_id}" "${name}" "${uri}" "${fingerprint}" "${requested_uri}" create "${seq}"
 }
 
 mcp_resources_emit_update() {
@@ -505,7 +526,7 @@ mcp_resources_poll_subscriptions() {
 		return 0
 	fi
 	[ -n "${MCPBASH_STATE_DIR:-}" ] || return 0
-	local path subscription_id name uri requested_uri fingerprint result
+	local path subscription_id name uri requested_uri fingerprint seq result
 	local new_fingerprint code message error_fingerprint
 	for path in "${MCPBASH_STATE_DIR}"/resource_subscription.*; do
 		subscription_id="${path#"${MCPBASH_STATE_DIR}/resource_subscription."}"
@@ -516,6 +537,7 @@ mcp_resources_poll_subscriptions() {
 		uri="${_MCP_SUB_URI}"
 		requested_uri="${_MCP_SUB_REQUESTED_URI}"
 		fingerprint="${_MCP_SUB_FINGERPRINT}"
+		seq="${_MCP_SUB_SEQ}"
 		if [ -z "${name}" ] && [ -z "${uri}" ]; then
 			continue
 		fi
@@ -524,7 +546,7 @@ mcp_resources_poll_subscriptions() {
 			new_fingerprint="$(mcp_resources_hash_payload "${result}")"
 			if [ "${new_fingerprint}" != "${fingerprint}" ]; then
 				# Notify only if the record survived the read (no unsubscribe meanwhile).
-				if mcp_resources_subscription_store "${subscription_id}" "${name}" "${uri}" "${new_fingerprint}" "${requested_uri}" update; then
+				if mcp_resources_subscription_store "${subscription_id}" "${name}" "${uri}" "${new_fingerprint}" "${requested_uri}" update "${seq}"; then
 					mcp_resources_emit_update "${subscription_id}" "${result}" "${uri}"
 				fi
 			fi
@@ -533,7 +555,7 @@ mcp_resources_poll_subscriptions() {
 			message="${_MCP_RESOURCES_ERROR_MESSAGE:-Unable to read resource}"
 			error_fingerprint="ERROR:${code}:$(mcp_resources_hash_payload "${message}")"
 			if [ "${error_fingerprint}" != "${fingerprint}" ]; then
-				if mcp_resources_subscription_store "${subscription_id}" "${name}" "${uri}" "${error_fingerprint}" "${requested_uri}" update; then
+				if mcp_resources_subscription_store "${subscription_id}" "${name}" "${uri}" "${error_fingerprint}" "${requested_uri}" update "${seq}"; then
 					mcp_resources_emit_error "${subscription_id}" "${code}" "${message}" "${uri}"
 				fi
 			fi
