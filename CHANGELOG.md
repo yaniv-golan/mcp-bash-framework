@@ -7,7 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Conformance test against the official MCP schemas**: an integration test validates server output against the official MCP JSON schemas for 2024-11-05, 2025-03-26, 2025-06-18 and 2025-11-25 (vendored in `test/conformance/schemas`).
+
 ### Fixed
+- **Locks stay exclusive when several processes contend for them**: a waiter could remove a lock whose owner hadn't finished writing its pid file, so two processes could write to stdout together and interleave JSON-RPC lines, and a failed cleanup could stop a request with "Directory not empty". Lock helpers no longer print ownership warnings to stderr unless `MCPBASH_LOG_LEVEL=debug`.
+- **Progress notifications leave out an unknown total**: they no longer send `"total": null` when the tool gives no total; the field is left out, as the MCP schema requires (`total` is a number).
+- **URL-mode elicitation requests include `elicitationId`**: the MCP spec requires it; the server generates a unique one per request.
 - **Resource read refusals say why**: when a resource provider refused a read (exit `2`), the error was always "Resource outside allowed roots", and the provider's own explanation was dropped. The provider's stderr text is now the error message when it wrote one, for example "cannot verify the opened file on this platform" from the file provider or "HTTPS provider blocked host …". A file read that fails because a directory on the way up to the root can't be checked is now reported as unverifiable, not as outside the roots.
 
 ## [1.8.0] - 2026-10-11
