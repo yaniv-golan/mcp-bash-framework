@@ -346,6 +346,9 @@ jobs:
             test_completion_registered_timeout.sh
             test_deprecation_notice.sh
             test_tool_termination.sh
+            test_exit_stops_tools.sh
+            test_zombie_server_helpers.sh
+            test_resource_read_timeout.sh
         run: |
           set -euo pipefail
           unset MCPBASH_CI_MODE
