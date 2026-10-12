@@ -148,6 +148,25 @@ EOF
 	refute_output --partial 'tool not found'
 }
 
+@test "run_tool_cli: reuses an old cache when nothing under tools/ is newer" {
+	run "${MCPBASH_HOME}/bin/mcp-bash" run-tool test.echo --args '{"value":"ok"}'
+	assert_success
+	local cache="${PROJECT_ROOT}/.registry/tools.json"
+	[ -f "${cache}" ]
+
+	# An old cache over an older, unchanged tools/ tree: run-tool's own
+	# newer-file check says it is current, so it must not rescan (and rewrite)
+	# it just because it is older than the TTL.
+	find "${PROJECT_ROOT}/tools" -exec touch -t 202501010000 {} +
+	touch -t 202601010000 "${cache}"
+	touch -t 202601010001 "${BATS_TEST_TMPDIR}/after-cache"
+
+	run "${MCPBASH_HOME}/bin/mcp-bash" run-tool test.echo --args '{"value":"ok"}'
+	assert_success
+	run find "${cache}" -newer "${BATS_TEST_TMPDIR}/after-cache"
+	assert_output ""
+}
+
 @test "run_tool_cli: keeps a newer-file match when find is cut off by SIGPIPE" {
 	run "${MCPBASH_HOME}/bin/mcp-bash" run-tool test.echo --args '{"value":"ok"}'
 	assert_success

@@ -5,6 +5,11 @@ All notable changes to mcp-bash-framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **A new server served the registry cache an earlier run left behind**: a server that loaded `.registry/tools.json` (or the prompts, resources or templates cache) at startup treated it as scanned at that moment, so for the first TTL seconds (5 by default) it served the cached definitions, however old. That is when a client lists and makes its first call: after a tool's `outputSchema` changed, its first call failed with "Tool output does not satisfy outputSchema", and the change only showed up after a later rescan sent `list_changed`. A loaded cache is now dated by its file's modification time, so one older than the TTL, or dated in the future (a copied or extracted project, clock skew), is rescanned first.
+
 ## [1.9.1] - 2026-10-12
 
 ### Behaviour changes to check before upgrading

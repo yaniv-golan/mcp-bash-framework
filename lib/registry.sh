@@ -111,6 +111,24 @@ mcp_registry_stat_mtime() {
 	printf '0'
 }
 
+# When a registry cache loaded from disk counts as scanned: its file's mtime,
+# so a cache an earlier run left behind is rescanned on first use once it is
+# older than the TTL. Never 0, which callers read as "force a scan". An
+# unreadable mtime, or one in the future (a copied or extracted project, clock
+# skew), counts as long ago.
+mcp_registry_cache_scan_time() {
+	local mtime now
+	mtime="$(mcp_registry_stat_mtime "$1")"
+	now="$(date +%s)"
+	case "${mtime}" in
+	'' | *[!0-9]* | 0) mtime=1 ;;
+	esac
+	if [ "${mtime}" -gt "${now}" ]; then
+		mtime=1
+	fi
+	printf '%s' "${mtime}"
+}
+
 mcp_registry_fastpath_snapshot() {
 	local root="$1"
 	local scan_root="${root}"

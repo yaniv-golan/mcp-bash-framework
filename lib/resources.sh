@@ -598,7 +598,6 @@ mcp_resources_init() {
 }
 
 mcp_resources_load_cache_if_empty() {
-	local caller_now="${1:-}"
 	if [ -n "${MCP_RESOURCES_REGISTRY_JSON}" ] || [ ! -f "${MCP_RESOURCES_REGISTRY_PATH}" ]; then
 		return 0
 	fi
@@ -613,7 +612,7 @@ mcp_resources_load_cache_if_empty() {
 				return 1
 			fi
 			if [ -z "${MCP_RESOURCES_LAST_SCAN}" ]; then
-				MCP_RESOURCES_LAST_SCAN="${caller_now:-$(date +%s)}"
+				MCP_RESOURCES_LAST_SCAN="$(mcp_registry_cache_scan_time "${MCP_RESOURCES_REGISTRY_PATH}")"
 			fi
 		else
 			mcp_logging_warning "${MCP_RESOURCES_LOGGER}" "Discarding invalid resource registry cache"
@@ -776,7 +775,7 @@ mcp_resources_refresh_registry_now() {
 	local now
 	now="$(date +%s)"
 
-	if ! mcp_resources_load_cache_if_empty "${now}"; then
+	if ! mcp_resources_load_cache_if_empty; then
 		return 1
 	fi
 
@@ -1318,7 +1317,6 @@ mcp_resources_templates_init() {
 }
 
 mcp_resources_templates_load_cache_if_empty() {
-	local caller_now="${1:-}"
 	if [ -n "${MCP_RESOURCES_TEMPLATES_REGISTRY_JSON}" ] || [ ! -f "${MCP_RESOURCES_TEMPLATES_REGISTRY_PATH}" ]; then
 		return 0
 	fi
@@ -1333,7 +1331,7 @@ mcp_resources_templates_load_cache_if_empty() {
 				return 1
 			fi
 			if [ -z "${MCP_RESOURCES_TEMPLATES_LAST_SCAN}" ]; then
-				MCP_RESOURCES_TEMPLATES_LAST_SCAN="${caller_now:-$(date +%s)}"
+				MCP_RESOURCES_TEMPLATES_LAST_SCAN="$(mcp_registry_cache_scan_time "${MCP_RESOURCES_TEMPLATES_REGISTRY_PATH}")"
 			fi
 		else
 			mcp_logging_warning "${MCP_RESOURCES_TEMPLATES_LOGGER}" "Discarding invalid resource templates registry cache"
@@ -1800,7 +1798,7 @@ mcp_resources_templates_refresh_registry_now() {
 	0) ttl=5 ;;
 	esac
 
-	if ! mcp_resources_templates_load_cache_if_empty "${now}"; then
+	if ! mcp_resources_templates_load_cache_if_empty; then
 		return 1
 	fi
 

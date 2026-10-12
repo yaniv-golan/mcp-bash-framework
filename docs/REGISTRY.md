@@ -352,7 +352,7 @@ Entries reference prompt templates and metadata. Paths are relative to `MCPBASH_
 ## TTL and Regeneration
 
 - TTL defaults to five seconds (`MCP_TOOLS_TTL`, etc.).
-- Registry files refresh when TTL expires. Fast-path detection (directory mtime, file count, and file-path hash) skips expensive rebuilds when nothing changed; a detected change triggers a rebuild and list_changed notifications (for clients that negotiated support).
+- Registry files refresh when TTL expires. A server starting up ages a `.registry/*.json` left by an earlier run from the file's modification time, so a cache older than the TTL (or dated in the future) is rescanned on first use rather than served. A cache written less than the TTL ago is used as is, so an edit made within those seconds shows up at the next refresh. Fast-path detection (directory mtime, file count, and file-path hash) skips expensive rebuilds when nothing changed; a detected change triggers a rebuild and list_changed notifications (for clients that negotiated support).
 - Manual refresh: `bin/mcp-bash registry refresh [--project-root DIR] [--no-notify] [--filter PATH]` rebuilds `.registry/*.json` and emits a status JSON. `--project-root` runs offline without notifications; `--filter` narrows scanning to a subpath when trees are very large.
 - Manual overrides (`server.d/register.sh`) can replace the auto-discovery results entirely.
 - Cached files are ignored if their size exceeds the configured limit or if JSON parsing fails, forcing a rescan on next access.

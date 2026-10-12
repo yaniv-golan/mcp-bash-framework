@@ -565,7 +565,6 @@ mcp_tools_apply_manual_registration() {
 }
 
 mcp_tools_load_cache_if_empty() {
-	local caller_now="${1:-}"
 	if [ -n "${MCP_TOOLS_REGISTRY_JSON}" ] || [ ! -f "${MCP_TOOLS_REGISTRY_PATH}" ]; then
 		return 0
 	fi
@@ -580,7 +579,7 @@ mcp_tools_load_cache_if_empty() {
 				return 1
 			fi
 			if [ -z "${MCP_TOOLS_LAST_SCAN}" ]; then
-				MCP_TOOLS_LAST_SCAN="${caller_now:-$(date +%s)}"
+				MCP_TOOLS_LAST_SCAN="$(mcp_registry_cache_scan_time "${MCP_TOOLS_REGISTRY_PATH}")"
 			fi
 		else
 			MCP_TOOLS_REGISTRY_JSON=""
@@ -1025,7 +1024,7 @@ mcp_tools_refresh_registry() {
 	local now
 	now="$(date +%s)"
 
-	if ! mcp_tools_load_cache_if_empty "${now}"; then
+	if ! mcp_tools_load_cache_if_empty; then
 		return 1
 	fi
 
