@@ -597,7 +597,7 @@ jobs:
   release:
     # Only run on version tags, after all tests pass
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [lint, unit, integration, integration-real-mode, bash32-macos, bundle-sanity, compatibility]
+    needs: [lint, unit, integration, integration-real-mode, bash32-macos, alpine, bundle-sanity, compatibility]
     runs-on: ubuntu-latest
     permissions:
       contents: write
