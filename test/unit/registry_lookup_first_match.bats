@@ -79,11 +79,10 @@ assert_first_entry() {
 @test "resource read by URI finds a duplicated URI with large entries" {
 	# Two entries share a URI, each larger than a pipe buffer, so jq is still
 	# writing the second when head has read the first.
-	local big
-	big="$(printf '%*s' 200000 '' | tr ' ' x)"
+	# The padding goes in on stdin: Linux caps one argument at 128 KiB.
 	MCP_RESOURCES_REGISTRY_JSON="$(
-		"${MCPBASH_JSON_TOOL_BIN}" -cn --arg big "${big}" \
-			'{items: [{name: "one", uri: "file:///dup", pad: $big}, {name: "two", uri: "file:///dup", pad: $big}]}'
+		printf '%*s' 200000 '' | tr ' ' x | "${MCPBASH_JSON_TOOL_BIN}" -cRs \
+			'{items: [{name: "one", uri: "file:///dup", pad: .}, {name: "two", uri: "file:///dup", pad: .}]}'
 	)"
 
 	run mcp_resources_metadata_for_uri file:///dup
