@@ -157,14 +157,13 @@ session_send() {
 	printf '%s\n' "$1" >&3
 }
 
+# Sets SESSION_LINE. Uses test_read_line, which keeps a line that arrives
+# across the timeout (a plain `read -t` drops its start); call it directly,
+# not in $(...).
 session_read_line() {
-	local timeout="${1:-5}"
-	local line=""
-	if read -r -t "${timeout}" -u 4 line; then
-		printf '%s' "${line}"
-		return 0
-	fi
-	return 1
+	SESSION_LINE=""
+	test_read_line 4 "${1:-5}" || return 1
+	SESSION_LINE="${TEST_LINE}"
 }
 
 session_wait_for_id() {
@@ -176,7 +175,9 @@ session_wait_for_id() {
 
 	while [ "$(date +%s)" -lt "${end_time}" ]; do
 		local line=""
-		line="$(session_read_line 2 2>/dev/null || true)"
+		if session_read_line 2; then
+			line="${SESSION_LINE}"
+		fi
 		if [ -z "${line}" ]; then
 			continue
 		fi
