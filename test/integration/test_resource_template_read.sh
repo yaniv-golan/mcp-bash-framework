@@ -126,6 +126,76 @@ MCP_RESOURCE_TEMPLATE_NAME="host-name" MCP_RESOURCE_TEMPLATE_VARS='{"host":"1"}'
 	MCPBASH_TOOL_ENV_MODE=inherit MCPBASH_TOOL_ENV_INHERIT_ALLOW=true \
 	check_case inherit
 
+# --- Template "provider": the best-matching template picks the provider ---
+ROUTE="${TEST_TMPDIR}/template-provider"
+test_stage_workspace "${ROUTE}"
+mkdir -p "${ROUTE}/providers" "${ROUTE}/resources" "${ROUTE}/server.d"
+# The staged workspace carries copies of the built-in providers, and a project
+# copy counts as a project provider. Remove them: built-ins come from MCPBASH_HOME.
+rm -f "${ROUTE}/providers/"*.sh
+printf '%s\n' '{"name": "template-provider"}' >"${ROUTE}/server.d/server.meta.json"
+for p in alpha beta svc; do
+	cat <<SH >"${ROUTE}/providers/${p}.sh"
+#!/usr/bin/env bash
+printf '${p} name=[%s]' "\${MCP_RESOURCE_TEMPLATE_NAME-<unset>}"
+SH
+	chmod +x "${ROUTE}/providers/${p}.sh"
+done
+# Two templates in one scheme, each with its own provider.
+printf '%s\n' '{"name": "svc-alpha", "uriTemplate": "svc://alpha/{id}", "provider": "alpha"}' >"${ROUTE}/resources/svc-alpha.meta.json"
+printf '%s\n' '{"name": "svc-beta", "uriTemplate": "svc://beta/{id}", "provider": "beta"}' >"${ROUTE}/resources/svc-beta.meta.json"
+# No provider: scheme routing (providers/svc.sh).
+printf '%s\n' '{"name": "svc-other", "uriTemplate": "svc://other/{id}"}' >"${ROUTE}/resources/svc-other.meta.json"
+# A built-in on a foreign scheme is refused: scheme routing instead.
+printf '%s\n' '{"name": "svc-bad", "uriTemplate": "svc://bad/{id}", "provider": "ui"}' >"${ROUTE}/resources/svc-bad.meta.json"
+# A more specific template without provider beats the alpha template.
+printf '%s\n' '{"name": "svc-alpha-special", "uriTemplate": "svc://alpha/special-{id}"}' >"${ROUTE}/resources/svc-alpha-special.meta.json"
+# An exact static URI still wins over a matching template.
+echo placeholder >"${ROUTE}/resources/svc-static.txt"
+printf '%s\n' '{"name": "svc-static", "uri": "svc://alpha/static", "provider": "svc"}' >"${ROUTE}/resources/svc-static.meta.json"
+chmod -R go-w "${ROUTE}"
+
+cat <<'JSON' >"${ROUTE}/requests.ndjson"
+{"jsonrpc":"2.0","id":"init","method":"initialize","params":{}}
+{"jsonrpc":"2.0","method":"notifications/initialized"}
+{"jsonrpc":"2.0","id":"alpha","method":"resources/read","params":{"uri":"svc://alpha/1"}}
+{"jsonrpc":"2.0","id":"beta","method":"resources/read","params":{"uri":"svc://beta/2"}}
+{"jsonrpc":"2.0","id":"other","method":"resources/read","params":{"uri":"svc://other/3"}}
+{"jsonrpc":"2.0","id":"unmatched","method":"resources/read","params":{"uri":"svc://nowhere"}}
+{"jsonrpc":"2.0","id":"bad","method":"resources/read","params":{"uri":"svc://bad/4"}}
+{"jsonrpc":"2.0","id":"special","method":"resources/read","params":{"uri":"svc://alpha/special-5"}}
+{"jsonrpc":"2.0","id":"static","method":"resources/read","params":{"uri":"svc://alpha/static"}}
+{"jsonrpc":"2.0","id":"list","method":"resources/templates/list","params":{}}
+JSON
+ROUTE_RESP="${ROUTE}/responses.ndjson"
+test_run_mcp "${ROUTE}" "${ROUTE}/requests.ndjson" "${ROUTE_RESP}"
+assert_json_lines "${ROUTE_RESP}"
+route_text() {
+	jq -r --arg id "$1" 'select(.id==$id) | .result.contents[0].text // .error.message' "${ROUTE_RESP}"
+}
+expect_eq "provider: alpha template" 'alpha name=[svc-alpha]' "$(route_text alpha)"
+expect_eq "provider: beta template, same scheme" 'beta name=[svc-beta]' "$(route_text beta)"
+expect_eq "provider: template without provider uses the scheme" 'svc name=[svc-other]' "$(route_text other)"
+expect_eq "provider: unmatched URI uses the scheme" 'svc name=[<unset>]' "$(route_text unmatched)"
+expect_eq "provider: built-in on a foreign scheme is refused" 'svc name=[svc-bad]' "$(route_text bad)"
+expect_eq "provider: the best match decides, no fallthrough" 'svc name=[svc-alpha-special]' "$(route_text special)"
+expect_eq "provider: exact static URI wins" 'svc name=[<unset>]' "$(route_text static)"
+expect_eq "provider: templates/list never shows provider" '[["name","uriTemplate"]]' \
+	"$(jq -c 'select(.id=="list") | [.result.resourceTemplates[] | keys] | unique' "${ROUTE_RESP}")"
+# The refused provider is not stored; a valid one is. (The registration
+# warning is logged too, but whether it reaches the client as a notification
+# depends on when the scan runs; unit tests check its text.)
+ROUTE_TEMPLATES="${ROUTE}/.registry/resource-templates.json"
+if [ ! -f "${ROUTE_TEMPLATES}" ]; then
+	printf 'MISSING templates registry %s\n' "${ROUTE_TEMPLATES}" >&2
+	FAILURES=$((FAILURES + 1))
+else
+	expect_eq "provider: refused provider is not stored" '<none>' \
+		"$(jq -r '[.items[] | select(.name=="svc-bad") | .provider // "<none>"] | first // "<missing>"' "${ROUTE_TEMPLATES}")"
+	expect_eq "provider: valid provider is stored" 'alpha' \
+		"$(jq -r '[.items[] | select(.name=="svc-alpha") | .provider // "<none>"] | first // "<missing>"' "${ROUTE_TEMPLATES}")"
+fi
+
 if [ "${FAILURES}" -gt 0 ]; then
 	test_fail "${FAILURES} template-read expectation(s) failed"
 fi

@@ -3,7 +3,6 @@
 # sourced by bin/mcp-bash, and that all referenced files exist.
 #
 # This test prevents releases with missing embedded libraries (e.g., 0.9.9, 0.9.10).
-# See docs/internal/plan-bundle-libs-sync-2026-01-08.md for background.
 #
 # EMBED_REQUIRED_LIBS is the canonical list consumed by both 'bundle' and 'vendor'.
 # bundle.sh aliases it as BUNDLE_REQUIRED_LIBS for backward compat.

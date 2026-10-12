@@ -51,7 +51,7 @@ MCP hosts (Claude Desktop, Cursor) launch servers with a minimal PATH that exclu
 
 ```bash
 source "${MCP_SDK:?}/tool-sdk.sh"
-# Copy mcp_detect_cli from docs/BEST-PRACTICES.md §4.4 into your project's lib/
+# Copy mcp_detect_cli from docs/BEST-PRACTICES.md §4.3 into your project's lib/
 source "${MCPBASH_PROJECT_ROOT}/lib/cli-detect.sh"
 MYCLI=$(mcp_detect_cli mycli "pip install my-package") || mcp_fail --type unavailable "mycli not found" --hint "Install it: pip install my-package"
 "${MYCLI}" search "$query"
@@ -109,10 +109,10 @@ mcp_result_json "$(printf '%s' "$result" | jq -c '.')"
   - Fields: `name`, `description`, `uri`, `mimeType`, `provider`.
   - Minimal example (one line):
     - `{"name":"res.name","description":"desc","uri":"file://./path/to/file.txt","mimeType":"text/plain","provider":"file"}`
-  - Providers: `file`, `https`, `git`; git provider is disabled by default (enable with `MCPBASH_ENABLE_GIT_PROVIDER=true`). Project providers in `providers/<name>.sh` override or extend these.
+  - Providers: `file`, `https`, `git`; git provider is disabled by default (enable with `MCPBASH_ENABLE_GIT_PROVIDER=true`). Project providers in `providers/<name>.sh` override or extend these. A static resource without `provider` gets one from its URI scheme in every registration path (auto-discovery, `register.sh`, `register.json`): built-in for `file://`, `git+https://`, `https://`, `ui://` (and the demo `echo` for `echo://`); `providers/<scheme>.sh` if it exists; else `file` with a warning.
   - Templates: use `uriTemplate` (e.g. `"myapi://items/{id}"`) instead of `uri`. A client-supplied URI with a custom scheme reaches `providers/<scheme>.sh` only if the project declares that scheme (a template with that literal scheme, or a static resource with `"provider": "<scheme>"`); matching is case-sensitive. Providers get the URI as `$1` and must validate it (exit 3 not found, 4 invalid).
   - `resources/read` with both `name` and `uri` requires them to refer to the same resource (`-32602` otherwise).
-  - Template-aware reads: when no resource has the requested name or exact URI, the URI is matched against the templates (RFC 6570 subset: `{v}` stops at `/`, `?`, `#`; `{+v}` spans `/`; `{#v}`). A match applies the template's `mimeType` as the reported label and gives the provider `MCP_RESOURCE_TEMPLATE_NAME` and `MCP_RESOURCE_TEMPLATE_VARS` (compact JSON of raw values). Use `file:///{+path}` for a path template. Matching never changes which provider runs.
+  - Template-aware reads: when no resource has the requested name or exact URI, the URI is matched against the templates (RFC 6570 subset: `{v}` stops at `/`, `?`, `#`; `{+v}` spans `/`; `{#v}`). A match applies the template's `mimeType` as the reported label and gives the provider `MCP_RESOURCE_TEMPLATE_NAME` and `MCP_RESOURCE_TEMPLATE_VARS` (compact JSON of raw values). Use `file:///{+path}` for a path template. A template may set `"provider"` (a project provider, or a built-in on its own scheme); the best-matching template's provider then serves the read, else the scheme decides. Unusable values are dropped with a warning; `resources/templates/list` never shows `provider`.
   - `mimeType`: a declared value is the reported label; content detection still decides `text` vs base64 `blob`. Omit `mimeType` to let detection label it.
 - Prompt metadata (`prompts/<name>.meta.json`):
   - Fields: `name`, `description`, `path` (template file), `arguments` schema.
@@ -213,7 +213,8 @@ mcp_result_json "$(printf '%s' "$result" | jq -c '.')"
   - Per-tool timeout via `timeoutSecs` in metadata; global default from `MCPBASH_DEFAULT_TOOL_TIMEOUT` (30s if unset).
   - `MCPBASH_MAX_TOOL_OUTPUT_SIZE` (default 10MB logical limit).
   - `MCPBASH_MAX_TOOL_STDERR_SIZE` (default same as output limit).
-  - `MCPBASH_MAX_RESOURCE_BYTES` (default same as output limit).
+  - `MCPBASH_MAX_RESOURCE_BYTES` (default same as output limit; `file://` reads stop at it). `ui://` resources: `MCPBASH_MAX_UI_RESOURCE_BYTES` (default 1 MiB). A value that is not a plain byte count means the default.
+  - `resources/read` timeout: `MCPBASH_DEFAULT_RESOURCE_TIMEOUT` (default 120s; `0` disables); a request's `params.timeoutSecs` overrides it. A timed-out `resources/*`, `prompts/get`, `completion/complete` or `tools/list` request gets `-32603` "<method> timed out after Ns".
   - `MCPBASH_REGISTRY_MAX_BYTES` (default `104857600`).
   - `MCPBASH_ENV_PAYLOAD_THRESHOLD` (default `65536` bytes) → spill large args/metadata to temp files.
 - Server lifecycle (zombie process mitigation):
@@ -221,6 +222,7 @@ mcp_result_json "$(printf '%s' "$result" | jq -c '.')"
   - `MCPBASH_IDLE_TIMEOUT_ENABLED` (default `true`) → master switch for idle timeout.
   - `MCPBASH_ORPHAN_CHECK_ENABLED` (default `true` on Unix, `false` on Windows) → exit if parent process dies.
   - `MCPBASH_ORPHAN_CHECK_INTERVAL` (default 30s) → orphan check frequency.
+  - On SIGTERM/SIGINT, a closed stdout (the client stopped reading) or a dead parent, running tools get TERM, then KILL after 1s. On stdin EOF or `shutdown` the server still waits for them.
 - Progress & logging throttles:
   - `MCPBASH_MAX_PROGRESS_PER_MIN` (default 100 per request).
   - `MCPBASH_MAX_LOGS_PER_MIN` (default 100 per request).
@@ -241,7 +243,8 @@ mcp_result_json "$(printf '%s' "$result" | jq -c '.')"
   - `MCP_TOOLS_TTL`, `MCP_RESOURCES_TTL`, `MCP_PROMPTS_TTL` → registry cache TTLs (`docs/REGISTRY.md`).
 - Stdout corruption safeguards:
   - `MCPBASH_CORRUPTION_WINDOW` (default 60s).
-  - `MCPBASH_CORRUPTION_THRESHOLD` (default 3 events); exceeding threshold triggers forced exit.
+  - `MCPBASH_CORRUPTION_THRESHOLD` (default 3 events); reaching it within the window stops the server.
+  - A failed write to stdout (the client stopped reading) stops the server at once.
 - HTTPS provider:
   - `MCPBASH_HTTPS_ALLOW_HOSTS` / `MCPBASH_HTTPS_DENY_HOSTS` → host allow/deny lists (private/loopback always blocked).
   - `MCPBASH_HTTPS_TIMEOUT` (≤60s) and `MCPBASH_HTTPS_MAX_BYTES` (≤20MB).
@@ -291,7 +294,7 @@ mcp_result_json "$(printf '%s' "$result" | jq -c '.')"
   - Resource failures: use JSON-RPC error objects; no `isError` flag.
   - Oversized tool/resource outputs: response is replaced with `-32603` error; partial payloads are never returned.
 - Provider exit code mapping (from `docs/ERRORS.md`):
-  - `file.sh`: exit `2` (outside allowed roots) → `-32603`; exit `3` (missing file) → `-32002`.
+  - `file.sh`: exit `2` (outside allowed roots, or the read could not be verified; the provider's stderr is the message) → `-32603`; exit `3` (missing file) → `-32002`; exit `5` (reading failed) or `6` (file exceeds `MCPBASH_MAX_RESOURCE_BYTES`) → `-32603`.
   - `git.sh`: exit `4` (invalid URI or missing git) → `-32602`; exit `5` (clone/fetch failure) → `-32603`.
   - `https.sh`: exit `4` (invalid URI or missing curl/wget) → `-32602`; exit `5` (network/timeout) → `-32603`; exit `6` (payload exceeds `MCPBASH_HTTPS_MAX_BYTES`) → `-32603`.
   - Any other provider exit → `-32603` with stderr text when available.
@@ -308,6 +311,11 @@ mcp_result_json "$(printf '%s' "$result" | jq -c '.')"
   - Prompts basics: `examples/07-prompts-basics`.
   - Elicitation: `examples/08-elicitation`.
   - Registry overrides + live progress: `examples/09-registry-overrides`.
+  - Completions: `examples/10-completions` (registered in `server.d/register.json`).
+  - Resource templates: `examples/11-resource-templates`.
+  - Config + downloads: `examples/12-config-and-downloads` (`mcp_config_load`, `mcp_download_safe`).
+  - MCP Apps: `examples/13-ui-basics` (a `ui://` resource), `examples/14-ui-templates` (built-in templates).
+  - Dynamic registration: `examples/advanced/register-sh-hooks` (`server.d/register.sh`, opt-in).
   - CLI wrapper: `examples/15-cli-wrapper/tools/system-info/tool.sh` — `mcp_detect_cli`, `set -uo pipefail`, `mcp_result_json` / `mcp_fail --type`.
   - Advanced ffmpeg studio: `examples/advanced/ffmpeg-studio`.
 

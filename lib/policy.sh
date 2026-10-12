@@ -384,13 +384,18 @@ mcp_policy_resolve_ips() {
 		raw="$(dscacheutil -q host -a name "${host}" 2>/dev/null | awk '$1 == "ip_address:" || $1 == "ipv6_address:" {print $2}')" || raw=""
 	fi
 	if [ -z "${raw}" ] && command -v dig >/dev/null 2>&1; then
-		raw="$(dig +short "${host}" A "${host}" AAAA 2>/dev/null)" || raw=""
+		# Error lines start with ";;" and may contain ":" (they would pass
+		# for IPv6 below).
+		raw="$(dig +short "${host}" A "${host}" AAAA 2>/dev/null | awk '!/^;/')" || raw=""
 	fi
 	if [ -z "${raw}" ] && command -v host >/dev/null 2>&1; then
 		raw="$(host "${host}" 2>/dev/null | awk '/has address/{print $4}/IPv6 address/{print $5}')" || raw=""
 	fi
 	if [ -z "${raw}" ] && command -v nslookup >/dev/null 2>&1; then
-		raw="$(nslookup "${host}" 2>/dev/null | awk '/^Address: /{print $2}' | tail -n +2)" || raw=""
+		# Answers follow a "Name:" line; the resolver's own address comes
+		# before the first one (after a tab or spaces, depending on the build).
+		# BusyBox before 1.28 numbers them ("Address 1: IP [hostname]").
+		raw="$(nslookup "${host}" 2>/dev/null | awk '/^Name:/{answers = 1} answers && /^Address( [0-9]+)?:/{sub(/^Address( [0-9]+)?:[ \t]*/, ""); print $1}')" || raw=""
 	fi
 
 	local out="" seen=" " ip

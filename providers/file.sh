@@ -129,11 +129,22 @@ fi
 # shellcheck disable=SC1091
 . "${file_read_lib}"
 
+# Cap the read itself, so a huge file is not copied whole before the server's
+# own size check rejects it.
+max_bytes="$(mcp_file_read_limit "${MCPBASH_MAX_RESOURCE_BYTES:-}" 10485760)"
 status=0
-mcp_file_read_verified "${path}" "" "${matched_root}" || status=$?
+mcp_file_read_verified "${path}" "${max_bytes}" "${matched_root}" || status=$?
 case "${status}" in
 0) exit 0 ;;
 3) exit 3 ;;
+4)
+	printf '%s\n' "file provider: file exceeds ${max_bytes} bytes" >&2
+	exit 6
+	;;
+6)
+	printf '%s\n' "file provider: reading the file failed" >&2
+	exit 5
+	;;
 5)
 	printf '%s\n' "file provider: cannot verify the opened file on this platform (needs stat and /dev/fd); refusing" >&2
 	exit 2

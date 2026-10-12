@@ -2,7 +2,7 @@
 name: mcp-bash
 description: Build, debug and package MCP servers written in Bash with the mcp-bash framework (mcp-bash-framework). Use whenever the user wants to create an MCP server from shell scripts or CLIs, add or fix tools, resources, prompts or completions in an mcp-bash project, wire one into Claude Desktop, Cursor or another client, figure out why a tool is "blocked by policy", can't see an environment variable or API key, or works in a terminal but not in Claude Desktop, when tool errors show only an exit code, when completions or suggestions don't appear in Claude Desktop, when wrapping an existing CLI (Python, Node, Go) as MCP tools, or to build an .mcpb bundle. Also use when a repo has server.d/server.meta.json, tools/*/tool.meta.json, mcp-bash.lock, a vendored .mcp-bash/ directory or mcpb.conf.
 metadata:
-  version: 0.3.0
+  version: 0.4.0
 ---
 
 # Building MCP servers with mcp-bash
@@ -197,6 +197,17 @@ work".
     such as `^[A-Za-z0-9_-]+(/[A-Za-z0-9_-]+)*$` is safest for paths.
   - A declared `mimeType` is reported as written, so drop a wrong `"mimeType": "text/plain"`
     rather than leaving it.
+  - From 1.9.0 a template's `"provider"` sends its URIs to `providers/<name>.sh`; before, the
+    key was ignored and the URI's scheme decided. For a static resource with a custom scheme,
+    set `"provider"` explicitly so it works on every version.
+- **Slow resource providers time out (1.9.0+).** `resources/read` is stopped after 120 s
+  (`MCPBASH_DEFAULT_RESOURCE_TIMEOUT`; `0` disables) and the client gets `-32603 resources/read
+  timed out after 120s`. Raise it for providers that call slow APIs.
+- **Running tools are stopped when the host quits (1.9.0+).** On SIGTERM/SIGINT, a closed
+  stdout or a dead parent, tools get TERM, then KILL after 1 s. Make side effects safe to
+  repeat, or `trap` TERM and finish quickly.
+- **Read-only project directory** (container mounts): tools work, but every registry refresh
+  logs cache-write errors. Set `MCPBASH_REGISTRY_DIR` to a writable path.
 - **"tool not found" right after adding a tool:** before mcp-bash 1.7.0, `run-tool` reused a
   cached registry; run `mcp-bash registry refresh`. A running client sees new tools after it
   reconnects or gets `list_changed`.

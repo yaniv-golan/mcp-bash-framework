@@ -24,7 +24,7 @@ set -euo pipefail
 MCP_RESOURCE_MATCH_MAX_URI=2048
 
 # shellcheck disable=SC2016  # jq program, not shell expansions.
-MCP_RESOURCE_MATCH_JQ='
+MCP_RESOURCE_MATCH_DEFS='
 def _is_name_cp: (. >= 48 and . <= 57) or (. >= 65 and . <= 90) or (. >= 97 and . <= 122) or . == 95;
 
 # C0/C1 controls, DEL and Unicode whitespace.
@@ -105,6 +105,10 @@ def _tmatch($u; $parts):
       | .vars
     end;
 
+'
+
+# shellcheck disable=SC2016  # jq program, not shell expansions.
+MCP_RESOURCE_MATCH_JQ="${MCP_RESOURCE_MATCH_DEFS}"'
 ($uri | explode) as $u
 | if ($u | length) > ($max | tonumber) or any($u[]; _is_space_or_control) then empty else
     [ (.items // [])[]?
@@ -118,7 +122,8 @@ def _tmatch($u; $parts):
       | {name: $t.name, vars: ($vars | to_entries | sort_by(.key) | from_entries),
          literalCount: ([$parts[] | select(has("lit")) | .lit | length] | add // 0),
          exprCount: ([$parts[] | select(has("op"))] | length)}
-      + (if ($t.mimeType | type) == "string" and $t.mimeType != "" then {mimeType: $t.mimeType} else {} end) ]
+      + (if ($t.mimeType | type) == "string" and $t.mimeType != "" then {mimeType: $t.mimeType} else {} end)
+      + (if ($t.provider | type) == "string" and $t.provider != "" then {provider: $t.provider} else {} end) ]
     | sort_by(-.literalCount, .exprCount, .name)
     | if length > 0 then .[0] else empty end
   end
@@ -126,7 +131,7 @@ def _tmatch($u; $parts):
 
 # mcp_resource_template_match URI
 # Reads a templates registry ({items: [...]}) on stdin. Prints the best match
-# as compact JSON {name, vars, literalCount, exprCount[, mimeType]}, or nothing
+# as compact JSON {name, vars, literalCount, exprCount[, mimeType][, provider]}, or nothing
 # when no supported template matches. Never fails the caller: a matcher error
 # counts as no match.
 mcp_resource_template_match() {
@@ -134,4 +139,14 @@ mcp_resource_template_match() {
 	local tool="${MCPBASH_JSON_TOOL_BIN:-jq}"
 	"${tool}" -c --arg uri "${uri}" --arg max "${MCP_RESOURCE_MATCH_MAX_URI}" \
 		"${MCP_RESOURCE_MATCH_JQ}" 2>/dev/null || true
+}
+
+# mcp_resource_template_supported TEMPLATE
+# Succeeds when the matcher can parse TEMPLATE (the subset above), i.e. a URI
+# can ever match it.
+mcp_resource_template_supported() {
+	local template="$1"
+	local tool="${MCPBASH_JSON_TOOL_BIN:-jq}"
+	"${tool}" -n -e --arg t "${template}" "${MCP_RESOURCE_MATCH_DEFS}"'
+		(try ($t | _tparse) catch null) != null' >/dev/null 2>&1
 }

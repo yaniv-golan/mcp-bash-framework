@@ -44,6 +44,13 @@ launch) and on bash 4+/5, with jq, gojq or jq 1.6, on macOS, Linux and Git Bash.
   to a set value. Use `local d='{}'; x="${x:-$d}"`. `test/lint.sh` rejects the pattern.
 - Single-quoted escapes are literal: `'\n'` is two characters. Use `$'\n'`.
 
+**BusyBox (Alpine; CI's `alpine` job, `test/ci-alpine.sh`):**
+- `ps` has no `-p`, `-a` or `-x`: read `/proc/<pid>/stat` on Linux (the state and process
+  group follow the last `) `), and keep `ps` as the fallback for macOS.
+- `find -newer` compares whole seconds; `stat -f` means "file system" (use `stat -c`
+  first); `date` doesn't parse phrases like `'1 minute ago'`; `base64` has `-d`, not
+  `--decode`; `tar` honours a single `-C`.
+
 **jq:**
 - Code must work with jq, gojq and jq 1.6. jq 1.6's `index` uses byte offsets.
 - Pass large data on stdin, never as an argument: Linux caps one argument at 128 KiB and

@@ -16,12 +16,17 @@
 #   3. lstats the final component (no symlink following) and requires a
 #      regular file;
 #   4. opens it on fd 9;
-#   5. stats the open descriptor through /dev/fd/9 and requires a regular file
-#      with the same device and inode as step 3. macOS reports the devfs device
-#      for anything stat'd through /dev/fd/N, so there the file's birth time
-#      (nanoseconds) stands in for the device. Writes and links do not change
-#      it, but the owner can set it with utimes (an mtime earlier than the
-#      birth time moves it back); see docs/SECURITY.md;
+#   5. stats the open descriptor and requires a regular file with the same
+#      device and inode as step 3. GNU stat reads it through /dev/fd/9; BSD
+#      stat (macOS, where /usr/bin/stat is used even if GNU stat comes first
+#      on PATH) is given it as stdin and fstats it, because a stat of
+#      /dev/fd/N there reports the devfs device and, under load, sometimes
+#      fails with EBADF. Where the devfs device is still reported (macOS
+#      without /usr/bin/stat), the file's birth time (nanoseconds) stands in
+#      for the device.
+#      Writes and links do not change it, but the owner can set it with utimes
+#      (an mtime earlier than the birth time moves it back); see
+#      docs/SECURITY.md;
 #   6. streams the content from fd 9, so the bytes returned are the bytes of
 #      the file that was checked.
 # A symlink swapped in at any point before the open is refused; a swap after
@@ -41,10 +46,27 @@
 #     changed between the check and the open
 #   3 not found or could not be opened
 #   4 larger than MAX_BYTES (nothing written)
-#   5 the opened descriptor could not be identified on this platform (refused)
+#   5 the opened descriptor, or a directory on the way up to ROOT, could not be
+#     identified (refused)
+#   6 reading the opened file failed (partial content may have been written)
+#
+# MAX_BYTES must be digits only; anything else is refused (2) rather than read
+# without a limit. Callers turn a user setting into one with
+# mcp_file_read_limit.
+
+# mcp_file_read_limit VALUE DEFAULT
+# Prints VALUE if it is a byte count (digits only), else DEFAULT, so a setting
+# such as "1M" or "-1" means the default rather than no limit.
+mcp_file_read_limit() {
+	case "$1" in
+	"" | *[!0-9]*) printf '%s' "$2" ;;
+	*) printf '%s' "$1" ;;
+	esac
+}
 
 # mcp_file_read_identity MODE PATH
-# MODE is "lstat" (do not follow a final symlink) or "fd" (follow, for /dev/fd/N).
+# MODE is "lstat" (do not follow a final symlink) or "fd" (PATH is an open
+# descriptor number).
 # Prints "dev|ino|birth|size|type" with type normalized to "regular", "dir" or
 # "other". birth is the birth time with nanoseconds where stat reports it (BSD
 # %B, GNU %w), otherwise "-" (GNU) or a placeholder (BusyBox); it is only used
@@ -56,8 +78,20 @@ mcp_file_read_identity() {
 	# GNU coreutils and BusyBox use -c; BSD/macOS uses -f. Try GNU first: on
 	# GNU, -f means --file-system and the BSD format would fail as a filename.
 	if [ "${mode}" = "fd" ]; then
-		out="$(stat -L -c '%d|%i|%w|%s|%F' "${target}" 2>/dev/null)" \
-			|| out="$(stat -L -f '%d|%i|%.9FB|%z|%HT' "${target}" 2>/dev/null)" \
+		# BSD stat with no operand fstats stdin. On macOS use the system
+		# stat even when GNU stat comes first on PATH: GNU stat can only
+		# reach the descriptor through /dev/fd/N, which reports the devfs
+		# device there and sometimes fails with EBADF.
+		case "${OSTYPE:-}" in
+		darwin*)
+			if [ -x /usr/bin/stat ]; then
+				out="$(/usr/bin/stat -f '%d|%i|%.9FB|%z|%HT' <&"${target}" 2>/dev/null)" || out=""
+			fi
+			;;
+		esac
+		[ -n "${out}" ] \
+			|| out="$(stat -L -c '%d|%i|%w|%s|%F' "/dev/fd/${target}" 2>/dev/null)" \
+			|| out="$(stat -f '%d|%i|%.9FB|%z|%HT' <&"${target}" 2>/dev/null)" \
 			|| out=""
 	else
 		out="$(stat -c '%d|%i|%w|%s|%F' "${target}" 2>/dev/null)" \
@@ -121,7 +155,8 @@ mcp_file_read_verified() {
 	"" | . | ..) return 3 ;;
 	esac
 	case "${max_bytes}" in
-	"" | *[!0-9]*) max_bytes="" ;;
+	"") ;;
+	*[!0-9]*) return 2 ;;
 	esac
 
 	# Relative path from the parent directory up to ROOT ("." when they are
@@ -153,7 +188,7 @@ mcp_file_read_verified() {
 
 		if [ -n "${up}" ]; then
 			root_id="$(mcp_file_read_identity lstat "${root}")" || exit 5
-			anc_id="$(mcp_file_read_identity lstat "${up}")" || exit 2
+			anc_id="$(mcp_file_read_identity lstat "${up}")" || exit 5
 			IFS='|' read -r root_dev root_ino _ _ root_type <<<"${root_id}"
 			IFS='|' read -r anc_dev anc_ino _ _ anc_type <<<"${anc_id}"
 			if [ "${root_type}" != "dir" ] || [ "${anc_type}" != "dir" ] \
@@ -173,7 +208,7 @@ mcp_file_read_verified() {
 
 		exec 9<"./${base}" || exit 3
 
-		opened="$(mcp_file_read_identity fd /dev/fd/9)" || {
+		opened="$(mcp_file_read_identity fd 9)" || {
 			exec 9<&-
 			exit 5
 		}
@@ -193,8 +228,9 @@ mcp_file_read_verified() {
 			exit 2
 		fi
 		if [ "${checked_dev}" != "${opened_dev}" ]; then
-			# Only acceptable where /dev/fd/N reports the devfs device (macOS).
-			# There the birth time stands in for the device.
+			# Only acceptable where /dev/fd/N reports the devfs device (macOS
+			# without /usr/bin/stat). There the birth time stands in for the
+			# device.
 			devfs_dev="$(stat -c '%d' /dev/null 2>/dev/null || stat -f '%d' /dev/null 2>/dev/null || true)"
 			if [ -z "${devfs_dev}" ] || [ "${opened_dev}" != "${devfs_dev}" ] \
 				|| [ "${checked_birth}" = "${checked_birth#*[0-9]}" ] \
@@ -204,6 +240,9 @@ mcp_file_read_verified() {
 			fi
 		fi
 
+		# Set here: bash's dynamic scope would otherwise show a caller's
+		# variable of the same name (the read loop has one).
+		_mcp_fr_read_status=0
 		if [ -n "${max_bytes}" ]; then
 			case "${size}" in
 			"" | *[!0-9]*)
@@ -216,10 +255,11 @@ mcp_file_read_verified() {
 				exit 4
 			fi
 			# Bound the output too, in case the file grows after the check.
-			head -c "${max_bytes}" <&9
+			head -c "${max_bytes}" <&9 || _mcp_fr_read_status=$?
 		else
-			cat <&9
+			cat <&9 || _mcp_fr_read_status=$?
 		fi
 		exec 9<&-
+		[ "${_mcp_fr_read_status}" -eq 0 ] || exit 6
 	)
 }

@@ -65,6 +65,10 @@ TESTS=(
 	"test_discovery_skips_completion_scripts.sh"
 	"test_stdin_eof_shutdown.sh"
 	"test_background_loops_exit.sh"
+	"test_idle_timeout.sh"
+	"test_orphan_detection.sh"
+	"test_exit_stops_tools.sh"
+	"test_zombie_server_helpers.sh"
 	"test_sigterm_prompt_exit.sh"
 	"test_normal_exit_status.sh"
 	"test_stdout_closed_exit.sh"
@@ -73,6 +77,7 @@ TESTS=(
 	"test_trace_bash32.sh"
 	"test_completion_registered_timeout.sh"
 	"test_conformance_strict_shapes.sh"
+	"test_conformance_schema.sh"
 	"test_installer.sh"
 	"test_tools.sh"
 	"test_tools_meta.sh"
@@ -93,10 +98,18 @@ TESTS=(
 	"test_register_json.sh"
 	"test_resources.sh"
 	"test_resource_subscriptions.sh"
+	"test_poller_warnings.sh"
 	"test_resource_annotations.sh"
 	"test_resource_mime_declared.sh"
 	"test_resource_templates.sh"
 	"test_resource_template_read.sh"
+	"test_resource_read_timeout.sh"
+	"test_resource_file_size_limit.sh"
+	"test_registration_warnings.sh"
+	"test_template_collision_warnings.sh"
+	"test_ui_capability.sh"
+	"test_ui_resources.sh"
+	"test_ui_e2e.sh"
 	"test_large_payloads.sh"
 	"test_lifecycle_gating.sh"
 	"test_preinit_discover_probe.sh"
@@ -106,7 +119,11 @@ TESTS=(
 	"test_runtime_dirs.sh"
 	"test_registry_refresh.sh"
 	"test_registry_limits.sh"
+	"test_static_registry.sh"
+	"test_config_load.sh"
 	"test_progress_logs.sh"
+	"test_progress_timeout.sh"
+	"test_result_helpers.sh"
 	"test_notification_dedup.sh"
 	"test_cancellation.sh"
 	"test_cancel_malformed.sh"
@@ -117,6 +134,8 @@ TESTS=(
 	"test_cli_init_config_doctor.sh"
 	"test_cli_config_variants.sh"
 	"test_cli_run_tool_allow_self.sh"
+	"test_cli_run_tool_source.sh"
+	"test_bundle_static.sh"
 	"test_cli_validate.sh"
 	"test_deprecation_notice.sh"
 	"test_staging_cache_key.sh"
@@ -350,10 +369,15 @@ run_test() {
 index=1
 suite_start="$(date +%s)"
 
+# Say which bash runs the tests: plain `bash` and `env bash` shebangs resolve
+# through PATH, which can silently pick /bin/bash 3.2 on macOS.
+printf 'Runner bash: %s; bash on PATH: %s (%s)\n' "${BASH_VERSION}" \
+	"$(command -v bash 2>/dev/null || printf 'none')" \
+	"$(bash -c 'printf %s "${BASH_VERSION}"' 2>/dev/null || printf 'unknown')"
+
 # Log platform info for debugging
 if [ "${VERBOSE}" = "1" ]; then
 	printf 'Platform: %s\n' "$(uname -a)"
-	printf 'Bash: %s\n' "${BASH_VERSION}"
 	printf 'Log dir: %s\n\n' "${LOG_DIR}"
 fi
 

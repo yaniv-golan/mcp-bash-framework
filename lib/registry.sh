@@ -521,12 +521,6 @@ mcp_registry_declarative_validate_and_normalize() {
 	local bin="${MCPBASH_JSON_TOOL_BIN}"
 	local normalized
 	if ! normalized="$(printf '%s' "${raw_json}" | "${bin}" -c '
-		def infer_provider:
-			(.uri // "") as $u
-			| if ($u|contains("://")) then ($u|split("://")[0]) else "" end
-			| if . == "" then "file"
-			  elif . == "git+https" then "git"
-			  else . end;
 		. as $root
 		| if type != "object" then error("register.json must be a JSON object") else . end
 		| if (.version | type) != "number" then error("register.json version must be a number") else . end
@@ -542,7 +536,7 @@ mcp_registry_declarative_validate_and_normalize() {
 		| {version: 1}
 		  + (if has("_meta") and ._meta != null then {_meta: ._meta} else {} end)
 		  + (if has("tools") and .tools != null then {tools: .tools} else {} end)
-		  + (if has("resources") and .resources != null then {resources: (.resources | map(if (.provider // "") == "" then . + {provider: infer_provider} else . end))} else {} end)
+		  + (if has("resources") and .resources != null then {resources: .resources} else {} end)
 		  + (if has("resourceTemplates") and .resourceTemplates != null then {resourceTemplates: .resourceTemplates} else {} end)
 		  + (if has("prompts") and .prompts != null then {prompts: .prompts} else {} end)
 		  + (if has("completions") and .completions != null then {completions: .completions} else {} end)
@@ -1023,7 +1017,22 @@ mcp_registry_register_execute() {
 	MCP_REGISTRY_REGISTER_COMPLETE=true
 }
 
+# Apply manual registration (register.json / register.sh) for KIND. The first
+# call applies register.json for every kind, so it can run from any registry's
+# refresh, including ones outside a handler; its registry builds log warnings
+# from inside $(...) captures, which must be queued there.
+# This wrapper is a safety net for direct callers and is safe only when the
+# caller's stdout is not captured; outer loops own the queue (see
+# mcp_notification_queue_run).
 mcp_registry_register_apply() {
+	if declare -F mcp_notification_queue_run >/dev/null 2>&1; then
+		mcp_notification_queue_run mcp_registry_register_apply_now "$@"
+	else
+		mcp_registry_register_apply_now "$@"
+	fi
+}
+
+mcp_registry_register_apply_now() {
 	local kind="$1"
 	local json_path
 	json_path="$(mcp_registry_declarative_path)"

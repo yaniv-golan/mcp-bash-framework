@@ -221,8 +221,93 @@ SH
 	printf 'New form format test passed\n'
 }
 
+# --- Test 3: URL mode carries a non-empty elicitationId (required by the spec) ---
+test_url_mode_elicitation_id() {
+	local workroot="${TEST_TMPDIR}/urlmode"
+	test_stage_workspace "${workroot}"
+
+	mkdir -p "${workroot}/tools/test"
+	cat <<'META' >"${workroot}/tools/test/tool.meta.json"
+{"name": "test.elicit", "description": "Test", "arguments": {"type": "object", "properties": {}}}
+META
+	cat <<'SH' >"${workroot}/tools/test/tool.sh"
+#!/usr/bin/env bash
+source "${MCP_SDK}/tool-sdk.sh"
+mcp_elicit_url "Sign in" "https://example.com/auth"
+SH
+	chmod +x "${workroot}/tools/test/tool.sh"
+
+	local in_fifo="${TEST_TMPDIR}/urlmode.in"
+	local out_fifo="${TEST_TMPDIR}/urlmode.out"
+	mkfifo "${in_fifo}" "${out_fifo}"
+
+	(
+		cd "${workroot}" || exit 1
+		MCPBASH_PROJECT_ROOT="${workroot}" exec ./bin/mcp-bash <"${in_fifo}" >"${out_fifo}"
+	) &
+	local pid=$!
+
+	exec 7>"${in_fifo}"
+	exec 8<"${out_fifo}"
+
+	printf '%s\n' '{"jsonrpc":"2.0","id":"init","method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{"elicitation":{"url":{}}}}}' >&7
+	printf '%s\n' '{"jsonrpc":"2.0","method":"notifications/initialized"}' >&7
+	printf '%s\n' '{"jsonrpc":"2.0","id":"call","method":"tools/call","params":{"name":"test.elicit","arguments":{}}}' >&7
+
+	local elicit_seen=0 mode_found="" eid="" url_found=""
+	local start_ts
+	start_ts=$(date +%s)
+
+	while :; do
+		local now
+		now=$(date +%s)
+		if [ $((now - start_ts)) -gt 45 ]; then
+			break
+		fi
+
+		if ! test_read_line 8 1; then
+			continue
+		fi
+		line="${TEST_LINE}"
+
+		if printf '%s' "${line}" | jq -e '.method == "elicitation/create"' >/dev/null 2>&1; then
+			elicit_seen=1
+			mode_found="$(printf '%s' "${line}" | jq -r '.params.mode // "missing"')"
+			url_found="$(printf '%s' "${line}" | jq -r '.params.url // "missing"')"
+			eid="$(printf '%s' "${line}" | jq -r 'if (.params.elicitationId | type) == "string" then .params.elicitationId else "" end')"
+			local elicit_id
+			elicit_id="$(printf '%s' "${line}" | jq -r '.id')"
+			printf '{"jsonrpc":"2.0","id":%s,"result":{"action":"accept"}}\n' "${elicit_id}" >&7
+			break
+		fi
+	done
+
+	if [ "${elicit_seen}" -ne 1 ]; then
+		dump_server_state "${pid}" "url mode"
+	fi
+	printf '%s\n' '{"jsonrpc":"2.0","id":"exit","method":"exit"}' >&7
+	exec 7>&-
+	wait_bounded "${pid}"
+
+	if [ "${elicit_seen}" -ne 1 ]; then
+		test_fail "url mode: elicitation/create not seen"
+	fi
+	if [ "${mode_found}" != "url" ]; then
+		test_fail "url mode: expected mode=url, got ${mode_found}"
+	fi
+	if [ "${url_found}" != "https://example.com/auth" ]; then
+		test_fail "url mode: expected url, got ${url_found}"
+	fi
+	if [ -z "${eid}" ]; then
+		test_fail "url mode: params.elicitationId missing or empty"
+	fi
+
+	printf 'URL mode test passed\n'
+}
+
 # Run tests
 test_legacy_format
 test_new_form_format
+test_url_mode_elicitation_id
 
 printf 'Elicitation modes (SEP-1036) test passed\n'

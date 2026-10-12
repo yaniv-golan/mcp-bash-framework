@@ -8,70 +8,42 @@ mcp-bash follows one rule: do the minimum necessary to translate MCP messages in
 _Figure: High-level dataflow—MCP client sends JSON-RPC over stdio to mcp-bash core, which queries jq/gojq, dispatches into project tools/resources/prompts, and executes system commands._
 
 ## Repository layout
+
+The framework (an install such as `~/.local/share/mcp-bash`, a clone, or a vendored `.mcp-bash/`):
 ```
-~/.local/share/mcp-bash/   # or any directory if cloned manually
-├─ bin/mcp-bash
-├─ lib/
-│  ├─ auth.sh
-│  ├─ core.sh
-│  ├─ completion.sh
-│  ├─ elicitation.sh
-│  ├─ handler_helpers.sh
-│  ├─ hash.sh
-│  ├─ json.sh
-│  ├─ lock.sh
-│  ├─ ids.sh
-│  ├─ io.sh
-│  ├─ paginate.sh
-│  ├─ path.sh
-│  ├─ policy.sh
-│  ├─ progress.sh
-│  ├─ progress-passthrough.sh
-│  ├─ logging.sh
-│  ├─ runtime.sh
-│  ├─ registry.sh
-│  ├─ require.sh
-│  ├─ resource_content.sh
-│  ├─ resource_providers.sh
-│  ├─ resources.sh
-│  ├─ roots.sh
-│  ├─ rpc.sh
-│  ├─ prompts.sh
-│  ├─ tools.sh
-│  ├─ tools_policy.sh
-│  ├─ timeout.sh
-│  ├─ uri.sh
-│  ├─ validate.sh
-│  ├─ spec.sh
-│  └─ cli/
-├─ handlers/
-│  ├─ completion.sh
-│  ├─ lifecycle.sh
-│  ├─ ping.sh
-│  ├─ logging.sh
-│  ├─ roots.sh
-│  ├─ tools.sh
-│  ├─ resources.sh
-│  └─ prompts.sh
-├─ providers/
-├─ sdk/
-├─ server.d/                # optional project hooks/config
-│  ├─ env.sh                 # env for run-tool --with-server-env (not sourced by the server)
-│  ├─ register.json          # preferred: data-only registration (no shell execution)
-│  ├─ register.sh            # hook registration (opt-in; executes shell code)
-│  └─ policy.sh              # optional: tool allow/deny hook
-├─ scaffold/
-├─ examples/
-├─ docs/
-├─ test/
-└─ .registry/ (generated caches, typically gitignored in projects)
+mcp-bash/
+├─ bin/mcp-bash      # CLI entry point and server launcher
+├─ lib/              # runtime: read loop and workers (core.sh), JSON, registries,
+│                    # resources/templates, policy, locking, logging, MCP Apps (ui*.sh)
+│  └─ cli/           # CLI subcommands (validate, migrate, bundle, ...)
+├─ handlers/         # one file per MCP method family (lifecycle, tools, resources, ...)
+├─ providers/        # built-in resource providers: file, https, git, ui, echo
+├─ sdk/              # helpers sourced by tool scripts (tool-sdk.sh, ui-sdk.sh)
+└─ scaffold/         # templates for `mcp-bash new` / `scaffold`
 ```
-Stable modules live under `bin/` and `lib/`, protocol handlers under `handlers/`, and dev assets under `scaffold/` and `examples/`. Project extensions (tools/resources/prompts) live in your project tree; registries are written to `.registry/`.
+A clone also has `examples/`, `docs/` and `test/`; installs don't need them. The files in `lib/` and `handlers/` are the reference; this page describes their roles rather than listing each one.
+
+Your project (`MCPBASH_PROJECT_ROOT`):
+```
+my-server/
+├─ tools/            # one directory per tool: tool.sh + tool.meta.json
+├─ resources/        # static resources (*.meta.json + content) and templates
+├─ prompts/
+├─ completions/      # optional completion scripts
+├─ providers/        # optional project resource providers (<scheme>.sh)
+├─ server.d/         # optional project config and hooks
+│  ├─ server.meta.json   # identity, optional "env" policy
+│  ├─ register.json      # preferred: data-only registration (no shell execution)
+│  ├─ register.sh        # hook registration (opt-in; executes shell code)
+│  ├─ policy.sh          # optional: tool allow/deny hook
+│  └─ env.sh             # env for run-tool --with-server-env (not sourced by the server)
+└─ .registry/        # generated caches (typically gitignored)
+```
 
 ## Lifecycle loop
 - `bin/mcp-bash` sources runtime, JSON, RPC, and core libraries, confirms stdout is a pipe or terminal, and enters `mcp_core_run`.
 - Each line from stdio is BOM-stripped, trimmed, and compacted with jq/gojq or validated through the minimal tokenizer before dispatch.
-- Arrays are accepted when the negotiated protocol is `2025-03-26`; newer protocols reject batch arrays unless `MCPBASH_COMPAT_BATCHES=true`, in which case batches are decomposed into individual requests (`MCPBASH_COMPAT_BATCHES` is removed in 2.0; batches stay automatic for `2025-03-26`). <!-- lint-api-usage: allow -->
+- Arrays are accepted when the negotiated protocol is `2025-03-26`; newer protocols reject batch arrays unless `MCPBASH_COMPAT_BATCHES=true`, in which case batches are decomposed into individual requests (`MCPBASH_COMPAT_BATCHES` is removed in 2.0; batches stay automatic for `2025-03-26`). Batches under `2025-03-26` are answered one response per item: each response is its own line, not one JSON array, and responses from long-running requests may arrive after later items. <!-- lint-api-usage: allow -->
 - Dispatch routes lifecycle, ping, logging, tools, resources, prompts, and completion methods; unknown methods return `-32601` and notifications remain server-owned.
 - Responses flow through `rpc_send_line` to guarantee single-line JSON with newline termination and carriage-return scrubbing.
 
@@ -84,8 +56,8 @@ Stable modules live under `bin/` and `lib/`, protocol handlers under `handlers/`
 
 ## Timeouts and cleanup
 - `with_timeout <seconds> -- <command…>` (from `lib/timeout.sh`) runs a watchdog that sends TERM then KILL if a worker outlives the timeout.
-- Async paths honor `params.timeoutSecs` when jq/gojq is present and wrap tool/resource/prompt/completion handlers with `with_timeout`; minimal mode skips per-request overrides.
-- `bin/mcp-bash` traps `EXIT INT TERM` to run `mcp_runtime_cleanup`, removing its own state dir and lock root (never through a symlink). CLI commands remove their private state dir on exit.
+- Async paths honor `params.timeoutSecs` when jq/gojq is present and wrap tool/resource/prompt/completion handlers with `with_timeout`; minimal mode skips per-request overrides. Defaults apply without it: `tools/*` 30s, `resources/read` and `resources/subscribe` 120s. A handler killed by its timeout is answered with `-32603` (`<method> timed out after Ns`), unless it had already responded.
+- `bin/mcp-bash` traps `EXIT INT TERM` to run `mcp_runtime_cleanup`. On an abnormal exit the handler first stops running workers (TERM, then KILL after 1s). Cleanup removes only the state dir and lock root the server created (never through a symlink); directories the operator set are left alone. CLI commands remove their private state dir on exit.
 
 ## Handler notes
 

@@ -153,6 +153,69 @@ file_provider() {
 	assert_output ""
 }
 
+@test "file_read: a malformed size limit is refused, not ignored" {
+	printf '0123456789' >"${ROOT}/ten"
+	local limit
+	for limit in 1M -1 " 5" 5x; do
+		run mcp_file_read_verified "${ROOT}/ten" "${limit}"
+		assert_failure 2
+		assert_output ""
+	done
+}
+
+@test "file_read: a read that fails after the open is reported" {
+	printf '0123456789' >"${ROOT}/ten"
+	head() { printf 'part'; return 1; }
+	run mcp_file_read_verified "${ROOT}/ten" 10
+	assert_failure 6
+	unset -f head
+	cat() { printf 'part'; return 1; }
+	run mcp_file_read_verified "${ROOT}/ten"
+	assert_failure 6
+	unset -f cat
+}
+
+@test "file_read: a caller's own read_status does not leak into the read" {
+	printf '0123456789' >"${ROOT}/ten"
+	# The server's read loop keeps a local read_status (1 after a final line
+	# without a newline); bash's dynamic scope makes it visible here.
+	caller() {
+		local read_status=1
+		mcp_file_read_verified "${ROOT}/ten" "$@"
+	}
+	run caller
+	assert_success
+	assert_output "0123456789"
+	run caller 10
+	assert_success
+	assert_output "0123456789"
+}
+
+@test "file_read: mcp_file_read_limit uses the default for malformed values" {
+	run mcp_file_read_limit 5 100
+	assert_output "5"
+	run mcp_file_read_limit 0 100
+	assert_output "0"
+	local bad
+	for bad in "" 1M -1 " 5" 5x; do
+		run mcp_file_read_limit "${bad}" 100
+		assert_output "100"
+	done
+}
+
+@test "file provider: MCPBASH_MAX_RESOURCE_BYTES caps the read" {
+	printf '0123456789' >"${ROOT}/ten"
+	MCPBASH_MAX_RESOURCE_BYTES=9 run file_provider "${ROOT}/ten"
+	assert_failure 6
+	assert_output --partial "exceeds 9 bytes"
+	MCPBASH_MAX_RESOURCE_BYTES=10 run file_provider "${ROOT}/ten"
+	assert_success
+	assert_output "0123456789"
+	MCPBASH_MAX_RESOURCE_BYTES=1M run file_provider "${ROOT}/ten"
+	assert_success
+	assert_output "0123456789"
+}
+
 @test "file_read: directory that is not really under ROOT is refused" {
 	# root/sub is a symlink to an outside directory: the path string looks
 	# inside, but the directory actually entered is not a descendant of ROOT.
@@ -241,4 +304,97 @@ ui_provider() {
 	run ui_provider env -u MCPBASH_HOME MCPBASH_MAX_UI_RESOURCE_BYTES=10
 	assert_success
 	assert_output "0123456789"
+}
+
+@test "ui provider: a malformed size limit means the default, not no limit" {
+	mkdir -p "${BASE}/ui/app"
+	# One byte over the 1 MiB default.
+	head -c 1048577 /dev/zero | tr '\0' 'a' >"${BASE}/ui/app/index.html"
+	run ui_provider env -u MCPBASH_HOME MCPBASH_MAX_UI_RESOURCE_BYTES=1M
+	assert_failure 3
+	assert_output --partial "too large (max: 1048576 bytes)"
+}
+
+@test "file_read: an ancestor that cannot be stat'd is unverifiable (5), not refused (2)" {
+	# Real stat everywhere except on the ".." walk up to ROOT.
+	cat >"${STUBS}/stat" <<STUB
+#!/usr/bin/env bash
+case "\${!#}" in
+*..) exit 1 ;;
+esac
+exec "${REAL_STAT}" "\$@"
+STUB
+	chmod +x "${STUBS}/stat"
+	PATH="${STUBS}:${PATH}" run mcp_file_read_verified "${ROOT}/sub/x" "" "${ROOT}"
+	assert_failure 5
+	assert_output ""
+}
+
+bsd_stat_or_skip() {
+	if "${REAL_STAT}" -c '%d' / >/dev/null 2>&1 || ! "${REAL_STAT}" -f '%d' / >/dev/null 2>&1; then
+		skip "needs BSD stat"
+	fi
+}
+
+@test "file_read: BSD stat identifies the open descriptor without /dev/fd" {
+	bsd_stat_or_skip
+	# Under load, macOS sometimes fails a stat of /dev/fd/N with EBADF even
+	# though the descriptor is open. The read must not depend on that lookup.
+	cat >"${STUBS}/stat" <<STUB
+#!/usr/bin/env bash
+for a in "\$@"; do
+	case "\${a}" in
+	/dev/fd/*)
+		printf 'stat: %s: stat: Bad file descriptor\n' "\${a}" >&2
+		exit 1
+		;;
+	esac
+done
+exec "${REAL_STAT}" "\$@"
+STUB
+	chmod +x "${STUBS}/stat"
+	PATH="${STUBS}:${PATH}" run mcp_file_read_verified "${ROOT}/sub/x" "" "${ROOT}"
+	assert_success
+	assert_output "inside-sub"
+}
+
+@test "file_read: BSD stat reports the open file's real device, not devfs" {
+	bsd_stat_or_skip
+	local identity
+	exec 9<"${ROOT}/x"
+	identity="$(mcp_file_read_identity fd 9)"
+	exec 9<&-
+	assert_equal "${identity%%|*}" "$("${REAL_STAT}" -f '%d' "${ROOT}/x")"
+	case "${identity}" in
+	*"|regular") ;;
+	*) fail "identity '${identity}' is not a regular file" ;;
+	esac
+}
+
+@test "file_read: macOS uses the system stat for the descriptor when GNU stat comes first on PATH" {
+	case "${OSTYPE:-}" in
+	darwin*) [ -x /usr/bin/stat ] || skip "no /usr/bin/stat" ;;
+	*) skip "macOS only" ;;
+	esac
+	# A GNU-like stat: -c works (emulated with the system stat), -f is
+	# --file-system and fails without an operand, and /dev/fd/N fails as it
+	# sometimes does on macOS under load.
+	cat >"${STUBS}/stat" <<'STUB'
+#!/usr/bin/env bash
+args=()
+while [ "$#" -gt 0 ]; do
+	case "$1" in
+	-f) printf 'stat: missing operand\n' >&2; exit 1 ;;
+	-c) args+=(-f '%d|%i|%.9FB|%z|%HT'); shift ;;
+	/dev/fd/*) printf 'stat: cannot stat %s: Bad file descriptor\n' "$1" >&2; exit 1 ;;
+	*) args+=("$1") ;;
+	esac
+	shift
+done
+exec /usr/bin/stat "${args[@]}"
+STUB
+	chmod +x "${STUBS}/stat"
+	PATH="${STUBS}:${PATH}" run mcp_file_read_verified "${ROOT}/sub/x" "" "${ROOT}"
+	assert_success
+	assert_output "inside-sub"
 }

@@ -47,6 +47,7 @@ mcp_require registry mcp_registry_resolve_scan_root
 mcp_require paginate mcp_paginate_decode
 mcp_require resource_content mcp_resource_content_object_from_file
 mcp_require resource_match mcp_resource_template_match
+mcp_require resource_match mcp_resource_template_supported
 mcp_require runtime mcp_env_run_curated
 
 mcp_resources_file_uri_from_path() {
@@ -55,6 +56,79 @@ mcp_resources_file_uri_from_path() {
 
 mcp_resources_scan_root() {
 	mcp_registry_resolve_scan_root "${MCPBASH_RESOURCES_DIR}"
+}
+
+# Provider inference for static resources registered without a "provider".
+# Every registration path (auto-discovery, register.sh, register.sh JSON output,
+# register.json) applies the same rule:
+#   file://, git+https://, https://, ui://, echo:// -> the built-in provider
+#     (echo is the bundled demo provider);
+#   any other scheme -> the project provider of that name, when
+#     ${MCPBASH_PROVIDERS_DIR}/<scheme>.sh exists (exact case);
+#   otherwise -> file.
+# $custom is the JSON array from mcp_resources_project_provider_names_json.
+# Entries that fall back to file despite a non-file scheme get
+# _mcpbashNoProviderFor (the scheme), which mcp_resources_report_missing_providers
+# logs and removes.
+# shellcheck disable=SC2016  # jq program, not shell expansions.
+MCP_RESOURCES_INFER_PROVIDER_JQ='
+def mcpbash_uri_scheme: ([capture("^(?<s>[A-Za-z][A-Za-z0-9+.-]*):") | .s] | first) // "";
+def mcpbash_infer_provider($custom):
+	(.uri // "") as $u
+	| if ($u | startswith("file://")) then "file"
+	  elif ($u | startswith("git+https://")) then "git"
+	  elif ($u | startswith("https://")) then "https"
+	  elif ($u | startswith("ui://")) then "ui"
+	  elif ($u | startswith("echo://")) then "echo"
+	  else ($u | mcpbash_uri_scheme) as $s
+		| if $s != "" and any($custom[]; . == $s) then $s else "file" end
+	  end;
+def mcpbash_with_provider($custom):
+	if type != "object" or ((.provider // "") | type) != "string" or (.provider // "") != "" then .
+	else
+		mcpbash_infer_provider($custom) as $p
+		| ((.uri // "") | if type == "string" then mcpbash_uri_scheme else "" end) as $s
+		| . + {provider: $p}
+		+ (if $p == "file" and $s != "" and $s != "file" then {_mcpbashNoProviderFor: $s} else {} end)
+	end;
+'
+
+# Names of project providers usable for custom-scheme inference: files
+# ${MCPBASH_PROVIDERS_DIR}/<name>.sh whose <name> is a valid URI scheme.
+# Prints a JSON array.
+mcp_resources_project_provider_names_json() {
+	local dir="${MCPBASH_PROVIDERS_DIR:-}"
+	local names=""
+	local f base
+	if [ -n "${dir}" ] && [ -d "${dir}" ]; then
+		for f in "${dir}"/*.sh; do
+			[ -f "${f}" ] || continue
+			base="${f##*/}"
+			base="${base%.sh}"
+			[[ "${base}" =~ ^[A-Za-z][A-Za-z0-9+.-]*$ ]] || continue
+			names="${names}${base}"$'\n'
+		done
+	fi
+	printf '%s' "${names}" | "${MCPBASH_JSON_TOOL_BIN}" -R -s -c 'split("\n") | map(select(length > 0))'
+}
+
+mcp_resources_warn_missing_provider() {
+	local name="$1"
+	local scheme="$2"
+	mcp_logging_warning "${MCP_RESOURCES_LOGGER}" "Resource ${name}: no providers/${scheme}.sh for ${scheme}: URIs, so it uses the file provider; set \"provider\" or add the script"
+}
+
+# Log each registry item marked by mcpbash_with_provider, then print the
+# registry JSON (stdin) without the markers.
+mcp_resources_report_missing_providers() {
+	local registry_json
+	registry_json="$(cat)"
+	local name scheme
+	while IFS=$'\t' read -r name scheme; do
+		[ -n "${scheme}" ] || continue
+		mcp_resources_warn_missing_provider "${name}" "${scheme}"
+	done < <(printf '%s' "${registry_json}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.items[]? | select(type == "object" and has("_mcpbashNoProviderFor")) | [(.name // "?" | tostring), ._mcpbashNoProviderFor] | @tsv' 2>/dev/null || true)
+	printf '%s' "${registry_json}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.items |= map(if type == "object" then del(._mcpbashNoProviderFor) else . end)'
 }
 
 mcp_resources_manual_begin() {
@@ -72,26 +146,26 @@ mcp_resources_manual_finalize() {
 		return 0
 	fi
 
-	local registry_json
-	if ! registry_json="$(printf '%s' "${MCP_RESOURCES_MANUAL_BUFFER}" | awk -v RS='\036' '{if ($0 != "") print $0}' | "${MCPBASH_JSON_TOOL_BIN}" -s '
+	local registry_json custom_providers
+	custom_providers="$(mcp_resources_project_provider_names_json)"
+	if ! registry_json="$(printf '%s' "${MCP_RESOURCES_MANUAL_BUFFER}" | awk -v RS='\036' '{if ($0 != "") print $0}' | "${MCPBASH_JSON_TOOL_BIN}" -s --argjson custom "${custom_providers}" "${MCP_RESOURCES_INFER_PROVIDER_JQ}"'
 		map(select(.name and .uri)) |
 		unique_by(.name) |
+		map(mcpbash_with_provider($custom)) |
 		map({
 			name: .name,
 			description: (.description // ""),
 			arguments: (.arguments // {type: "object", properties: {}}),
 			uri: .uri,
-			provider: (.provider // (
-				if .uri | startswith("git+https://") then "git"
-				elif .uri | startswith("https://") then "https"
-				else "file" end
-			)),
+			provider: .provider,
 			mimeType: (.mimeType // "text/plain"),
 			mimeTypeDeclared: ((.mimeType | type) == "string" and (.mimeType | length) > 0),
 			path: (.path // ""),
 			icons: (.icons // null),
-			annotations: (.annotations // null)
+			annotations: (.annotations // null),
+			_mcpbashNoProviderFor: (._mcpbashNoProviderFor // null)
 		}) |
+		map(if ._mcpbashNoProviderFor == null then del(._mcpbashNoProviderFor) else . end) |
 		map(if .mimeTypeDeclared then . else del(.mimeTypeDeclared) end) |
 		map(if .icons == null then del(.icons) else . end) |
 		map(if .annotations == null then del(.annotations) else . end) |
@@ -107,6 +181,7 @@ mcp_resources_manual_finalize() {
 		mcp_resources_error -32603 "Manual registration parsing failed"
 		return 1
 	fi
+	registry_json="$(printf '%s' "${registry_json}" | mcp_resources_report_missing_providers)"
 
 	local items_json
 	items_json="$(printf '%s' "${registry_json}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.items')"
@@ -193,8 +268,8 @@ mcp_resources_subscription_unlock() {
 	mcp_lock_release "${MCP_RESOURCES_SUBSCRIPTION_LOCK}" 2>/dev/null || true
 }
 
-# Load a record into _MCP_SUB_NAME, _MCP_SUB_URI, _MCP_SUB_REQUESTED_URI and
-# _MCP_SUB_FINGERPRINT. Returns 1 when the record is missing (for example,
+# Load a record into _MCP_SUB_NAME, _MCP_SUB_URI, _MCP_SUB_REQUESTED_URI,
+# _MCP_SUB_FINGERPRINT and _MCP_SUB_SEQ. Returns 1 when the record is missing (for example,
 # removed by an unsubscribe after it was listed) or does not parse.
 mcp_resources_subscription_load() {
 	local path="$1"
@@ -202,22 +277,26 @@ mcp_resources_subscription_load() {
 	_MCP_SUB_URI=""
 	_MCP_SUB_REQUESTED_URI=""
 	_MCP_SUB_FINGERPRINT=""
+	_MCP_SUB_SEQ=""
 	[ -f "${path}" ] || return 1
 	# Fields are NUL-separated: bash strings cannot hold NUL, so no stored value does.
 	{
 		IFS= read -r -d '' _MCP_SUB_NAME \
 			&& IFS= read -r -d '' _MCP_SUB_URI \
 			&& IFS= read -r -d '' _MCP_SUB_REQUESTED_URI \
-			&& IFS= read -r -d '' _MCP_SUB_FINGERPRINT
-	} < <("${MCPBASH_JSON_TOOL_BIN}" -j 'select(type == "object") | (.name // "" | tostring), "\u0000", (.uri // "" | tostring), "\u0000", (.requested_uri // "" | tostring), "\u0000", (.fingerprint // "" | tostring), "\u0000"' "${path}" 2>/dev/null) || return 1
+			&& IFS= read -r -d '' _MCP_SUB_FINGERPRINT \
+			&& IFS= read -r -d '' _MCP_SUB_SEQ
+	} < <("${MCPBASH_JSON_TOOL_BIN}" -j 'select(type == "object") | (.name // "" | tostring), "\u0000", (.uri // "" | tostring), "\u0000", (.requested_uri // "" | tostring), "\u0000", (.fingerprint // "" | tostring), "\u0000", (.seq // "" | tostring), "\u0000"' "${path}" 2>/dev/null) || return 1
 	return 0
 }
 
 # Write a record atomically (temp file, then mv). The temp name does not match
 # the resource_subscription.* glob, so the poller never reads a partial record.
-# Args: id name uri fingerprint [requested_uri] [mode]
+# Args: id name uri fingerprint [requested_uri] [mode] [seq]
 # mode "create" (default) writes unconditionally; "update" rewrites only a
 # record that still exists, so a poll never resurrects an unsubscribed record.
+# seq is the subscribe's dispatch sequence number (see
+# mcp_resources_subscription_note_dispatch); an update must pass it back.
 mcp_resources_subscription_store() {
 	local subscription_id="$1"
 	local name="$2"
@@ -225,6 +304,7 @@ mcp_resources_subscription_store() {
 	local fingerprint="$4"
 	local requested_uri="${5:-}"
 	local mode="${6:-create}"
+	local seq="${7:-}"
 	mcp_resources_subscription_id_valid "${subscription_id}" || return 1
 	local path tmp
 	path="$(mcp_resources_subscription_path "${subscription_id}")"
@@ -235,7 +315,8 @@ mcp_resources_subscription_store() {
 	if ! "${MCPBASH_JSON_TOOL_BIN}" -n -c \
 		--arg name "${name}" --arg uri "${uri}" \
 		--arg requested_uri "${requested_uri}" --arg fingerprint "${fingerprint}" \
-		'{name: $name, uri: $uri, requested_uri: $requested_uri, fingerprint: $fingerprint}' >"${tmp}" 2>/dev/null; then
+		--arg seq "${seq}" \
+		'{name: $name, uri: $uri, requested_uri: $requested_uri, fingerprint: $fingerprint, seq: $seq}' >"${tmp}" 2>/dev/null; then
 		rm -f "${tmp}" 2>/dev/null || true
 		return 1
 	fi
@@ -279,9 +360,11 @@ mcp_resources_subscription_remove() {
 }
 
 # Remove every subscription whose effective or requested uri equals $1.
-# Prints the number removed.
+# With $2, the unsubscribe's dispatch sequence number, a subscription
+# dispatched after the unsubscribe is kept. Prints the number removed.
 mcp_resources_subscription_remove_by_uri() {
 	local target="$1"
+	local before="${2:-}"
 	local removed=0 path subscription_id
 	if [ -n "${target}" ] && [ -n "${MCPBASH_STATE_DIR:-}" ]; then
 		for path in "${MCPBASH_STATE_DIR}"/resource_subscription.*; do
@@ -289,6 +372,10 @@ mcp_resources_subscription_remove_by_uri() {
 			mcp_resources_subscription_id_valid "${subscription_id}" || continue
 			mcp_resources_subscription_load "${path}" || continue
 			if [ "${_MCP_SUB_URI}" = "${target}" ] || [ "${_MCP_SUB_REQUESTED_URI}" = "${target}" ]; then
+				case "${before}:${_MCP_SUB_SEQ}" in
+				*[!0-9:]* | :* | *:) ;;
+				*) [ "${_MCP_SUB_SEQ}" -lt "${before}" ] || continue ;;
+				esac
 				if mcp_resources_subscription_remove "${subscription_id}"; then
 					removed=$((removed + 1))
 				fi
@@ -312,6 +399,13 @@ mcp_resources_subscription_remove_by_uri() {
 # leaves no gap: a record stored before the unsubscribe was dispatched is found
 # by the unsubscribe worker's removal by uri; one stored after it sees the mark.
 # A subscribe by name only has no requested uri to match and is not noted.
+#
+# That covers a subscribe the unsubscribe overtook. The reverse also happens:
+# for subscribe, unsubscribe, subscribe on one uri, the second subscribe's
+# worker can store its record before the unsubscribe's worker removes by uri.
+# So both are numbered here (MCPBASH_SUBSCRIPTION_DISPATCH_SEQ, which each
+# worker inherits when it forks), a subscribe stores its number in its record,
+# and an unsubscribe removes only records with a lower number.
 mcp_resources_subscription_pending_path() {
 	printf '%s/resource_subscription_pending.%s' "${MCPBASH_STATE_DIR}" "$1"
 }
@@ -331,6 +425,7 @@ mcp_resources_subscription_note_dispatch() {
 	if mcp_runtime_is_minimal_mode; then
 		return 0
 	fi
+	MCPBASH_SUBSCRIPTION_DISPATCH_SEQ=$((${MCPBASH_SUBSCRIPTION_DISPATCH_SEQ:-0} + 1))
 	uri="$(mcp_json_extract_resource_uri "${json_line}" 2>/dev/null)" || uri=""
 	[ -n "${uri}" ] || return 0
 
@@ -380,9 +475,10 @@ mcp_resources_subscription_store_payload() {
 	local uri="$3"
 	local payload="$4"
 	local requested_uri="${5:-}"
+	local seq="${6:-}"
 	local fingerprint
 	fingerprint="$(mcp_resources_hash_payload "${payload}")"
-	mcp_resources_subscription_store "${subscription_id}" "${name}" "${uri}" "${fingerprint}" "${requested_uri}"
+	mcp_resources_subscription_store "${subscription_id}" "${name}" "${uri}" "${fingerprint}" "${requested_uri}" create "${seq}"
 }
 
 mcp_resources_emit_update() {
@@ -415,12 +511,24 @@ mcp_resources_emit_error() {
 	rpc_send_line_direct "$("${MCPBASH_JSON_TOOL_BIN}" -n -c --arg uri "${uri}" '{"jsonrpc":"2.0","method":"notifications/resources/updated","params":{"uri":$uri}}')"
 }
 
+# One subscription poll for the background poller. Its reads refresh the
+# registries inside $(...) captures; a warning logged there must be queued
+# by this, the outermost frame, and flushed here, where stdout is the real
+# one. A queue started further in would flush into the capture.
+mcp_resources_poll_subscriptions_queued() {
+	if declare -F mcp_notification_queue_run >/dev/null 2>&1; then
+		mcp_notification_queue_run mcp_resources_poll_subscriptions
+	else
+		mcp_resources_poll_subscriptions
+	fi
+}
+
 mcp_resources_poll_subscriptions() {
 	if mcp_runtime_is_minimal_mode; then
 		return 0
 	fi
 	[ -n "${MCPBASH_STATE_DIR:-}" ] || return 0
-	local path subscription_id name uri requested_uri fingerprint result
+	local path subscription_id name uri requested_uri fingerprint seq result
 	local new_fingerprint code message error_fingerprint
 	for path in "${MCPBASH_STATE_DIR}"/resource_subscription.*; do
 		subscription_id="${path#"${MCPBASH_STATE_DIR}/resource_subscription."}"
@@ -431,6 +539,7 @@ mcp_resources_poll_subscriptions() {
 		uri="${_MCP_SUB_URI}"
 		requested_uri="${_MCP_SUB_REQUESTED_URI}"
 		fingerprint="${_MCP_SUB_FINGERPRINT}"
+		seq="${_MCP_SUB_SEQ}"
 		if [ -z "${name}" ] && [ -z "${uri}" ]; then
 			continue
 		fi
@@ -439,7 +548,7 @@ mcp_resources_poll_subscriptions() {
 			new_fingerprint="$(mcp_resources_hash_payload "${result}")"
 			if [ "${new_fingerprint}" != "${fingerprint}" ]; then
 				# Notify only if the record survived the read (no unsubscribe meanwhile).
-				if mcp_resources_subscription_store "${subscription_id}" "${name}" "${uri}" "${new_fingerprint}" "${requested_uri}" update; then
+				if mcp_resources_subscription_store "${subscription_id}" "${name}" "${uri}" "${new_fingerprint}" "${requested_uri}" update "${seq}"; then
 					mcp_resources_emit_update "${subscription_id}" "${result}" "${uri}"
 				fi
 			fi
@@ -448,7 +557,7 @@ mcp_resources_poll_subscriptions() {
 			message="${_MCP_RESOURCES_ERROR_MESSAGE:-Unable to read resource}"
 			error_fingerprint="ERROR:${code}:$(mcp_resources_hash_payload "${message}")"
 			if [ "${error_fingerprint}" != "${fingerprint}" ]; then
-				if mcp_resources_subscription_store "${subscription_id}" "${name}" "${uri}" "${error_fingerprint}" "${requested_uri}" update; then
+				if mcp_resources_subscription_store "${subscription_id}" "${name}" "${uri}" "${error_fingerprint}" "${requested_uri}" update "${seq}"; then
 					mcp_resources_emit_error "${subscription_id}" "${code}" "${message}" "${uri}"
 				fi
 			fi
@@ -536,10 +645,13 @@ mcp_resources_apply_manual_json() {
 
 	# Construct registry structure. mimeTypeDeclared is framework-owned: it is
 	# recomputed from mimeType, overwriting any value the file supplies.
-	registry_json="$(printf '%s' "${manual_json}" | "${MCPBASH_JSON_TOOL_BIN}" --arg ts "${timestamp}" '
+	local custom_providers
+	custom_providers="$(mcp_resources_project_provider_names_json)"
+	registry_json="$(printf '%s' "${manual_json}" | "${MCPBASH_JSON_TOOL_BIN}" --arg ts "${timestamp}" --argjson custom "${custom_providers}" "${MCP_RESOURCES_INFER_PROVIDER_JQ}"'
 		(.resources | map(
 			if type == "object" then
-				del(.mimeTypeDeclared)
+				mcpbash_with_provider($custom)
+				| del(.mimeTypeDeclared)
 				+ (if (.mimeType | type) == "string" and (.mimeType | length) > 0
 					then {mimeTypeDeclared: true} else {} end)
 			else . end
@@ -549,7 +661,7 @@ mcp_resources_apply_manual_json() {
 			generatedAt: $ts,
 			items: $items,
 			total: ($items | length)
-		}')"
+		}' | mcp_resources_report_missing_providers)"
 
 	# Calculate hash of items
 	local items_json
@@ -576,7 +688,21 @@ mcp_resources_apply_manual_json() {
 	fi
 }
 
+# Rebuild the resources registry. Building it logs warnings from inside $(...)
+# captures; outside a handler they must be queued, or they become part of
+# the captured registry JSON.
+# This wrapper is a safety net for direct callers and is safe only when the
+# caller's stdout is not captured; outer loops own the queue (see
+# mcp_notification_queue_run).
 mcp_resources_refresh_registry() {
+	if declare -F mcp_notification_queue_run >/dev/null 2>&1; then
+		mcp_notification_queue_run mcp_resources_refresh_registry_now
+	else
+		mcp_resources_refresh_registry_now
+	fi
+}
+
+mcp_resources_refresh_registry_now() {
 	local scan_root
 	scan_root="$(mcp_resources_scan_root)"
 	mcp_resources_init
@@ -845,7 +971,13 @@ mcp_resources_scan() {
 
 			if [ -z "${provider}" ]; then
 				provider="$(mcp_resources_provider_from_uri "${uri}")"
-				provider="${provider:-file}"
+				if [ -z "${provider}" ]; then
+					provider="file"
+					local uri_scheme="${uri%%:*}"
+					if [ "${uri_scheme}" != "${uri}" ] && [ "${uri_scheme}" != "file" ] && [[ "${uri_scheme}" =~ ^[A-Za-z][A-Za-z0-9+.-]*$ ]]; then
+						mcp_resources_warn_missing_provider "${name}" "${uri_scheme}"
+					fi
+				fi
 			fi
 
 			if grep -Fxq "${name}" "${names_seen_file}"; then
@@ -1287,6 +1419,48 @@ mcp_resources_templates_register_manual() {
 	return 0
 }
 
+# Why a resource template's "provider" cannot be used, or nothing when it can:
+# - a project provider (${MCPBASH_PROVIDERS_DIR}/<name>.sh) serves any template;
+# - a framework built-in serves only its own scheme (file://, https://,
+#   git+https://, ui://, echo://), so no template feeds it URIs it was not
+#   written for;
+# - the name follows the URI scheme grammar, so the lookup stays in the dir;
+# - the template must be one the matcher supports, or the provider never runs.
+mcp_resources_template_provider_problem() {
+	local uri_template="$1"
+	local provider="$2"
+	if ! [[ "${provider}" =~ ^[A-Za-z][A-Za-z0-9+.-]*$ ]]; then
+		printf 'is not a valid provider name'
+		return 0
+	fi
+	local project_script="${MCPBASH_PROVIDERS_DIR:-}/${provider}.sh"
+	local builtin_script="${MCPBASH_HOME:-}/providers/${provider}.sh"
+	# A project dir that is the framework's own providers dir holds built-ins.
+	if [ -n "${MCPBASH_PROVIDERS_DIR:-}" ] && [ -f "${project_script}" ] && ! [ "${project_script}" -ef "${builtin_script}" ]; then
+		:
+	elif [ -n "${MCPBASH_HOME:-}" ] && [ -f "${builtin_script}" ]; then
+		local native
+		case "${provider}" in
+		git) native="git+https://" ;;
+		*) native="${provider}://" ;;
+		esac
+		case "${uri_template}" in
+		"${native}"*) ;;
+		*)
+			printf 'is a built-in provider for %s URIs only' "${native}"
+			return 0
+			;;
+		esac
+	else
+		printf 'has no providers/%s.sh' "${provider}"
+		return 0
+	fi
+	if declare -F mcp_resource_template_supported >/dev/null 2>&1 && ! mcp_resource_template_supported "${uri_template}"; then
+		printf 'cannot run: the uriTemplate uses syntax the matcher does not support, so no URI matches it'
+	fi
+	return 0
+}
+
 mcp_resources_templates_normalize() {
 	local payload="$1"
 	local context="$2"
@@ -1340,9 +1514,22 @@ mcp_resources_templates_normalize() {
 	[ -z "${annotations}" ] && annotations="null"
 	[ -z "${meta}" ] && meta="null"
 
+	# A usable provider routes URIs matching this template; anything else is
+	# dropped with a warning and the URI scheme picks the provider.
+	local provider problem
+	provider="$(printf '%s' "${payload}" | "${MCPBASH_JSON_TOOL_BIN}" -r 'if (.provider | type == "string") then .provider else empty end' 2>/dev/null)"
+	if [ -n "${provider}" ]; then
+		problem="$(mcp_resources_template_provider_problem "${uri_template}" "${provider}")"
+		if [ -n "${problem}" ]; then
+			mcp_logging_warning "${MCP_RESOURCES_LOGGER}" "Resource template ${name}: provider '${provider}' ${problem}; the URI scheme picks the provider instead"
+			provider=""
+		fi
+	fi
+
 	"${MCPBASH_JSON_TOOL_BIN}" -n \
 		--arg name "${name}" \
 		--arg uriTemplate "${uri_template}" \
+		--arg provider "${provider}" \
 		--arg title "${title}" \
 		--arg description "${description}" \
 		--arg mime "${mime}" \
@@ -1357,6 +1544,7 @@ mcp_resources_templates_normalize() {
 			| (if $mime != "" then . + {mimeType: $mime} else . end)
 			| (if $annotations != null then . + {annotations: $annotations} else . end)
 			| (if $meta != null then . + {_meta: $meta} else . end)
+			| (if $provider != "" then . + {provider: $provider} else . end)
 		' 2>/dev/null
 }
 
@@ -1403,7 +1591,10 @@ mcp_resources_templates_manual_finalize() {
 		fi
 	fi
 	if [ "${resources_available}" = false ]; then
-		mcp_logging_warning "${MCP_RESOURCES_TEMPLATES_LOGGER}" "Cannot check for name collisions: resource registry unavailable"
+		# Expected while registration is still running (resources are built
+		# after it). Not a problem: building the template registry checks the
+		# names again against all resources, and warns there if it cannot.
+		mcp_logging_debug "${MCP_RESOURCES_TEMPLATES_LOGGER}" "Name collision check deferred: resource registry not built yet"
 	fi
 
 	local resource_names_file=""
@@ -1515,7 +1706,21 @@ mcp_resources_templates_scan() {
 	printf '%s' "${items_json}"
 }
 
+# Rebuild the resource templates registry. Building it logs warnings from inside $(...)
+# captures; outside a handler they must be queued, or they become part of
+# the captured registry JSON.
+# This wrapper is a safety net for direct callers and is safe only when the
+# caller's stdout is not captured; outer loops own the queue (see
+# mcp_notification_queue_run).
 mcp_resources_templates_refresh_registry() {
+	if declare -F mcp_notification_queue_run >/dev/null 2>&1; then
+		mcp_notification_queue_run mcp_resources_templates_refresh_registry_now
+	else
+		mcp_resources_templates_refresh_registry_now
+	fi
+}
+
+mcp_resources_templates_refresh_registry_now() {
 	local scan_root
 	scan_root="$(mcp_resources_scan_root)"
 	mcp_resources_templates_init
@@ -1772,7 +1977,7 @@ mcp_resources_templates_list() {
 	local result_json
 	result_json="$(printf '%s' "${MCP_RESOURCES_TEMPLATES_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -c --argjson offset "$offset" --argjson limit "$numeric_limit" --argjson total "${total}" '
 		{
-			resourceTemplates: .items[$offset:$offset+$limit],
+			resourceTemplates: (.items[$offset:$offset+$limit] | map(del(.provider))),
 			_meta: {"mcpbash/total": $total}
 		}
 	')"
@@ -1864,6 +2069,7 @@ mcp_resources_read_file() {
 			local env_pairs=(
 				"MCPBASH_HOME=${MCPBASH_HOME}"
 				"MCP_RESOURCES_ROOTS=${MCP_RESOURCES_ROOTS:-${MCPBASH_RESOURCES_DIR}}"
+				"MCPBASH_MAX_RESOURCE_BYTES=$(mcp_resources_max_bytes)"
 			)
 			if [ -n "${template_name}" ]; then
 				env_pairs+=("MCP_RESOURCE_TEMPLATE_NAME=${template_name}" "MCP_RESOURCE_TEMPLATE_VARS=${template_vars}")
@@ -1881,7 +2087,7 @@ mcp_resources_read_file() {
 	rm -f "${tmp_err}"
 	case "${status}" in
 	2)
-		mcp_resources_error -32603 "Resource outside allowed roots"
+		mcp_resources_error -32603 "${message:-Resource outside allowed roots}"
 		;;
 	3)
 		mcp_resources_error -32002 "Resource not found"
@@ -1897,6 +2103,16 @@ mcp_resources_read_file() {
 # With a template name, the provider gets MCP_RESOURCE_TEMPLATE_NAME and
 # MCP_RESOURCE_TEMPLATE_VARS; otherwise neither is set (both are unset at
 # startup, so a host value cannot leak in).
+# The resource size limit in bytes: MCPBASH_MAX_RESOURCE_BYTES, else
+# MCPBASH_MAX_TOOL_OUTPUT_SIZE, else 10 MiB; a malformed value means 10 MiB.
+mcp_resources_max_bytes() {
+	local limit="${MCPBASH_MAX_RESOURCE_BYTES:-${MCPBASH_MAX_TOOL_OUTPUT_SIZE:-10485760}}"
+	case "${limit}" in
+	'' | *[!0-9]*) limit=10485760 ;;
+	esac
+	printf '%s' "${limit}"
+}
+
 mcp_resources_read_via_provider() {
 	local provider="$1"
 	local uri="$2"
@@ -1974,6 +2190,10 @@ mcp_resources_read_via_provider() {
 			if [ -n "${MCPBASH_JSON_TOOL_BIN-}" ]; then env_pairs+=("MCPBASH_JSON_TOOL_BIN=${MCPBASH_JSON_TOOL_BIN-}"); fi
 			if [ -n "${MCPBASH_JSON_TOOL-}" ]; then env_pairs+=("MCPBASH_JSON_TOOL=${MCPBASH_JSON_TOOL-}"); fi
 			case "${provider}" in
+			file)
+				# The provider caps its read at the limit checked below.
+				env_pairs+=("MCPBASH_MAX_RESOURCE_BYTES=$(mcp_resources_max_bytes)")
+				;;
 			git)
 				if [ -n "${SSH_AUTH_SOCK-}" ]; then env_pairs+=("SSH_AUTH_SOCK=${SSH_AUTH_SOCK-}"); fi
 				if [ -n "${GIT_SSH_COMMAND-}" ]; then env_pairs+=("GIT_SSH_COMMAND=${GIT_SSH_COMMAND-}"); fi
@@ -1989,6 +2209,7 @@ mcp_resources_read_via_provider() {
 				if [ -n "${MCPBASH_REGISTRY_DIR-}" ]; then env_pairs+=("MCPBASH_REGISTRY_DIR=${MCPBASH_REGISTRY_DIR-}"); fi
 				if [ -n "${MCPBASH_TOOLS_DIR-}" ]; then env_pairs+=("MCPBASH_TOOLS_DIR=${MCPBASH_TOOLS_DIR-}"); fi
 				if [ -n "${MCPBASH_UI_DIR-}" ]; then env_pairs+=("MCPBASH_UI_DIR=${MCPBASH_UI_DIR-}"); fi
+				if [ -n "${MCPBASH_MAX_UI_RESOURCE_BYTES-}" ]; then env_pairs+=("MCPBASH_MAX_UI_RESOURCE_BYTES=${MCPBASH_MAX_UI_RESOURCE_BYTES-}"); fi
 				;;
 			esac
 			if [ -n "${http_proxy-}" ]; then env_pairs+=("http_proxy=${http_proxy-}"); fi
@@ -2019,7 +2240,7 @@ mcp_resources_read_via_provider() {
 		rm -f "${tmp_err}" "${tmp_out}"
 		case "${status}" in
 		2)
-			mcp_resources_error -32603 "Resource outside allowed roots"
+			mcp_resources_error -32603 "${message:-Resource outside allowed roots}"
 			;;
 		3)
 			mcp_resources_error -32002 "Resource not found"
@@ -2085,11 +2306,12 @@ mcp_resources_read() {
 		metadata="$(mcp_resources_metadata_for_uri "${explicit_uri}" 2>/dev/null || echo "{}")"
 	fi
 
-	# No resource by name or exact URI: try the resource templates. A match
-	# supplies the template name and raw variables (provider env) and its
-	# declared mimeType; it never changes which provider runs. The refresh
-	# done here is shared with the scheme gate below.
-	local template_name="" template_vars="" template_mime="" templates_state=""
+	# No resource by name or exact URI: try the resource templates. The best
+	# match supplies the template name and raw variables (provider env), its
+	# declared mimeType and, when it has one, the provider that serves it.
+	# Without a template provider, the scheme picks the provider as before.
+	# The refresh done here is shared with the scheme gate below.
+	local template_name="" template_vars="" template_mime="" template_provider="" templates_state=""
 	if [ -n "${explicit_uri}" ] && { [ -z "${metadata}" ] || [ "${metadata}" = "{}" ]; }; then
 		if mcp_resources_templates_refresh_registry; then
 			templates_state="ready"
@@ -2101,6 +2323,7 @@ mcp_resources_read() {
 				template_name="$(printf '%s' "${template_match}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.name // ""')"
 				template_vars="$(printf '%s' "${template_match}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.vars // {}')"
 				template_mime="$(printf '%s' "${template_match}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.mimeType // ""')"
+				template_provider="$(printf '%s' "${template_match}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.provider // ""')"
 				mcp_logging_debug "${MCP_RESOURCES_LOGGER}" "Resource template matched: ${template_name}"
 			fi
 		else
@@ -2135,6 +2358,9 @@ mcp_resources_read() {
 		mcp_resources_error -32602 "Resource URI missing"
 		return 1
 	fi
+	if [ -z "${provider}" ] && [ -n "${template_provider}" ]; then
+		provider="${template_provider}"
+	fi
 	if [ -z "${provider}" ]; then
 		local inferred
 		inferred="$(mcp_resources_builtin_provider_for_uri "${uri}")"
@@ -2165,10 +2391,8 @@ mcp_resources_read() {
 	local content_size
 	content_size="$(wc -c <"${content_file}" | tr -d ' ')"
 	mcp_logging_debug "${MCP_RESOURCES_LOGGER}" "Provider returned ${content_size} bytes"
-	local limit="${MCPBASH_MAX_RESOURCE_BYTES:-${MCPBASH_MAX_TOOL_OUTPUT_SIZE:-10485760}}"
-	case "${limit}" in
-	'' | *[!0-9]*) limit=10485760 ;;
-	esac
+	local limit
+	limit="$(mcp_resources_max_bytes)"
 	if [ "${content_size}" -gt "${limit}" ]; then
 		mcp_logging_error "${MCP_RESOURCES_LOGGER}" "Resource ${name:-<direct>} content ${content_size} bytes exceeds limit ${limit}" || true
 		mcp_resources_error -32603 "Resource content exceeds ${limit} bytes"

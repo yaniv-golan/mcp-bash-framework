@@ -66,9 +66,18 @@ if [ -z "${TMPDIR:-}" ] || [ ! -d "${TMPDIR}" ]; then
 	export TMPDIR
 fi
 
-# Tar staging: on in CI (MCPBASH_CI_MODE=1), off by default locally. Override with MCPBASH_STAGING_TAR=1/0.
+# The server enables CI mode only for "true"; accept 1/yes here too, and pass
+# the server the value it understands.
+case "${MCPBASH_CI_MODE:-}" in
+1 | yes)
+	MCPBASH_CI_MODE=true
+	export MCPBASH_CI_MODE
+	;;
+esac
+
+# Tar staging: on in CI (MCPBASH_CI_MODE=true), off by default locally. Override with MCPBASH_STAGING_TAR=1/0.
 if [ -z "${MCPBASH_STAGING_TAR:-}" ]; then
-	if [[ "${MCPBASH_CI_MODE:-0}" =~ ^(1|true|yes)$ ]]; then
+	if [ "${MCPBASH_CI_MODE:-}" = "true" ]; then
 		MCPBASH_STAGING_TAR=1
 	else
 		MCPBASH_STAGING_TAR=0
@@ -228,6 +237,11 @@ test_pick_tar_bin() {
 	if command -v bsdtar >/dev/null 2>&1; then
 		TEST_TAR_BIN="bsdtar"
 	elif command -v tar >/dev/null 2>&1; then
+		# BusyBox tar honours only one -C, which the base archive needs twice;
+		# stage by copying instead.
+		if tar --help 2>&1 | grep -q BusyBox; then
+			return 1
+		fi
 		TEST_TAR_BIN="tar"
 	else
 		printf 'Required command "tar" (or bsdtar) not found in PATH\n' >&2

@@ -7,9 +7,9 @@ Key points:
 - **Framework/project separation**: Install the framework once (e.g., via `install.sh`), create unlimited MCP server projects. Your tools stay yours; upgrades are clean.
 - **Stdio transport only**: Standard input/output communication. No daemons, no HTTP servers, no hidden state.
 - **Auto-discovery & auto-detection**: Tools/resources/prompts are discovered from project directories; project root is auto-detected when you run `mcp-bash` inside a project (for MCP clients, set `MCPBASH_PROJECT_ROOT` explicitly). Manual registry hooks run only when `MCPBASH_ALLOW_PROJECT_HOOKS=true` and have safe ownership/permissions.
-- **Built-in DX commands**: `mcp-bash new`, `mcp-bash init`, `mcp-bash scaffold tool|prompt|resource`, `mcp-bash validate [--json|--strict|--explain-defaults|--deprecations-as-errors]` (also lists deprecations: uses of APIs that change in 2.0), `mcp-bash config [--json|--client|--wrapper]` (`--show` prints labeled snippets per client; use `--client` to filter), `mcp-bash doctor [--json]`, `mcp-bash registry status`, `mcp-bash run-tool [--print-env]`, `mcp-bash migrate [--write|--list|--explain ID|--json]` (finds uses of APIs removed in 2.0; check only by default, `--write` applies the safe rewrites).
+- **Built-in DX commands**: `mcp-bash new`, `mcp-bash init`, `mcp-bash scaffold tool|prompt|resource|completion`, `mcp-bash validate [--json|--strict|--explain-defaults|--deprecations-as-errors]` (also lists deprecations: uses of APIs that change in 2.0), `mcp-bash config [--json|--client|--wrapper]` (`--show` prints labeled snippets per client; use `--client` to filter), `mcp-bash doctor [--json]`, `mcp-bash registry status`, `mcp-bash run-tool [--print-env]`, `mcp-bash migrate [--write|--list|--explain ID|--json]` (finds uses of APIs removed in 2.0; check only by default, `--write` applies the safe rewrites).
 - **Env isolation**: Tools and providers get a minimal environment (only framework-owned `MCP_*` names; never the remote token). To pass a host-injected secret (e.g. an MCPB `user_config` API key), declare the policy in `server.d/server.meta.json` `"env"` (`MCPBASH_TOOL_ENV_MODE`/`_ALLOWLIST`, `MCPBASH_PROVIDER_ENV_MODE`/`_ALLOWLIST` only). `server.d/env.sh` is used only by `run-tool --with-server-env`.
-- **Tool policy**: Default deny unless `MCPBASH_TOOL_ALLOWLIST` is set (use `*` only in trusted projects). Optional `server.d/policy.sh` defines `mcp_tools_policy_check()` for centralized allow/deny.
+- **Tool policy**: Default deny unless `MCPBASH_TOOL_ALLOWLIST` is set (use `*` only in trusted projects). Optional `server.d/policy.sh` defines `mcp_tools_policy_project TOOL ARGS_JSON`, which runs after the allowlist and can only deny (non-zero status).
 - **Tool annotations**: Declare behavior hints (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) in `.meta.json` to help clients present appropriate UI cues.
 - **Protocol version**: Targets MCP `2025-11-25` with negotiated downgrades to `2025-06-18`, `2025-03-26`, and `2024-11-05`.
 - **Cross-platform**: macOS, Linux, and Windows (Git Bash CI-tested; WSL works like Linux).
@@ -37,7 +37,7 @@ MCP hosts (Claude Desktop, Cursor) launch servers with a minimal PATH that exclu
 
 ```bash
 source "${MCP_SDK:?}/tool-sdk.sh"
-# Copy mcp_detect_cli from docs/BEST-PRACTICES.md §4.4 into your project's lib/
+# Copy mcp_detect_cli from docs/BEST-PRACTICES.md §4.3 into your project's lib/
 source "${MCPBASH_PROJECT_ROOT}/lib/cli-detect.sh"
 MYCLI=$(mcp_detect_cli mycli "pip install my-package") || mcp_fail --type unavailable "mycli not found" --hint "Install it: pip install my-package"
 "${MYCLI}" search "$query"
@@ -83,6 +83,12 @@ Migrating an existing project: `mcp_result_success`, `mcp_result_error`, `mcp_er
 - [07-prompts-basics](https://github.com/yaniv-golan/mcp-bash-framework/tree/main/examples/07-prompts-basics): Discovering and rendering prompt templates.
 - [08-elicitation](https://github.com/yaniv-golan/mcp-bash-framework/tree/main/examples/08-elicitation): Client-driven elicitation prompts that gate tool execution.
 - [09-registry-overrides](https://github.com/yaniv-golan/mcp-bash-framework/tree/main/examples/09-registry-overrides): Declarative registry overrides, live progress streaming, and custom resource providers.
+- [10-completions](https://github.com/yaniv-golan/mcp-bash-framework/tree/main/examples/10-completions): Argument completion registered in `server.d/register.json`, with filtering and pagination.
+- [11-resource-templates](https://github.com/yaniv-golan/mcp-bash-framework/tree/main/examples/11-resource-templates): Resource templates (`uriTemplate`), discovery and manual overrides.
+- [12-config-and-downloads](https://github.com/yaniv-golan/mcp-bash-framework/tree/main/examples/12-config-and-downloads): Layered configuration (`mcp_config_load`) and SSRF-safe HTTPS downloads.
+- [13-ui-basics](https://github.com/yaniv-golan/mcp-bash-framework/tree/main/examples/13-ui-basics): MCP Apps: a `ui://` resource linked to a tool.
+- [14-ui-templates](https://github.com/yaniv-golan/mcp-bash-framework/tree/main/examples/14-ui-templates): MCP Apps: built-in UI templates rendering tool results.
+- [advanced/register-sh-hooks](https://github.com/yaniv-golan/mcp-bash-framework/tree/main/examples/advanced/register-sh-hooks): Dynamic registration from `server.d/register.sh` (opt-in hooks).
 - [15-cli-wrapper](https://github.com/yaniv-golan/mcp-bash-framework/tree/main/examples/15-cli-wrapper): Wrapping external CLIs with PATH resolution, error handling, and MCP result formatting. The most common pattern for real-world MCP servers.
 
 ## SDK & Scaffolding
@@ -95,6 +101,12 @@ Migrating an existing project: `mcp_result_success`, `mcp_result_error`, `mcp_er
 - [Registry Contracts](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/docs/REGISTRY.md): Registry JSON schemas, TTL, regeneration, and manual overrides.
 - [Limits & Performance](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/docs/LIMITS.md): Tunable limits for concurrency, payloads, progress throttling.
 - [Logging](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/docs/LOGGING.md): Log levels, verbose mode, and structured logging.
+- [Environment Reference](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/docs/ENV_REFERENCE.md): Every environment variable with defaults and caps.
+- [Errors](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/docs/ERRORS.md): The error model: `mcp_fail --type`, tool errors vs protocol errors.
+- [Resource Templates](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/docs/RESOURCE-TEMPLATES.md): `uriTemplate` resources, matching on read, and which provider serves them.
+- [Elicitation](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/docs/ELICITATION.md): Asking the user for input (form and URL modes) and the SDK helpers.
+- [Completion](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/docs/COMPLETION.md): Argument completion providers and pagination.
+- [MCP Apps](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/docs/concepts/mcp-apps.md): `ui://` resources and interactive UIs; see also the [UI guide](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/docs/guides/ui-resources.md), [UI SDK](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/docs/reference/ui-sdk.md) and [UI templates](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/docs/reference/ui-templates.md).
 - [Roots](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/docs/ROOTS.md): MCP roots scoping for filesystem access control.
 - [Minimal Mode](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/docs/MINIMAL-MODE.md): Behavior when jq/gojq is missing or minimal mode is forced.
 - [Security](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/docs/SECURITY.md): Threat model, provider hardening, and guidance around local diagnostics (`mcp-bash doctor`, debug mode).

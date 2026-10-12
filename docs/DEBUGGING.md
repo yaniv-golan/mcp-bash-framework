@@ -341,6 +341,9 @@ mcp-bash includes automatic defenses against zombie processes:
 
 1. **Idle Timeout** (enabled by default): Servers exit after 1 hour of no client activity
 2. **Orphan Detection** (enabled on Unix): Servers exit if their parent process dies
+3. **Closed stdout** (1.9.0+): Servers exit as soon as a write to the client fails
+
+From 1.9.0, when the server exits abnormally (a signal such as SIGTERM, SIGINT or SIGHUP, a closed stdout, a dead parent, or a fatal error), it stops the tools still running (TERM, then KILL after 1 second; this grace is fixed), since nobody can receive their results. On a normal end of input the server still waits for running tools, up to their timeouts. After `shutdown`, it waits only until end of input or `MCPBASH_SHUTDOWN_TIMEOUT` (5 seconds by default); when that elapses, the server is terminated and running tools are stopped.
 
 ### Manual Cleanup
 

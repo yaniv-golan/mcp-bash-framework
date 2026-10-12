@@ -5,8 +5,6 @@
 # Usage:
 #   mcp_run_with_progress --pattern 'REGEX' [OPTIONS] -- command args...
 #   Options: --stderr-file FILE (capture non-progress stderr to file)
-#
-# See docs/internal/plan-progress-passthrough-2026-01-06.md for design rationale.
 
 set -euo pipefail
 

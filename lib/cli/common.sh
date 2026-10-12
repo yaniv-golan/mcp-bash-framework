@@ -49,7 +49,7 @@ mcp_scaffold_validate_name() {
 		return 1
 	fi
 	case "${name}" in
-	*/* | *..*) return 1 ;;
+	*/* | *..* | -*) return 1 ;;
 	esac
 	if ! [[ "${name}" =~ ^[A-Za-z0-9_-]{1,64}$ ]]; then
 		return 1
@@ -69,7 +69,7 @@ mcp_scaffold_prepare() {
 		exit 1
 	fi
 	if ! mcp_scaffold_validate_name "${name}"; then
-		printf 'Invalid %s name: use alphanumerics, underscore, dash only (1-64 chars); no dots, paths, or traversal (Some clients including Claude Desktop rejects dots).\n' "${kind}" >&2
+		printf 'Invalid %s name: use alphanumerics, underscore, dash only (1-64 chars, not starting with a dash); no dots, paths, or traversal (Some clients including Claude Desktop rejects dots).\n' "${kind}" >&2
 		exit 1
 	fi
 	if [ ! -d "${scaffold_dir}" ]; then

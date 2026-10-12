@@ -53,3 +53,37 @@ EOF
 	out="$(mcp_resources_read_via_provider "project" "project://test")"
 	assert_equal "ok:project-provider-ran:project://test" "${out}"
 }
+
+# A provider that refuses with exit 2 and explains why on stderr: the
+# explanation is the error message; without one, the generic roots message.
+write_refusing_provider() {
+	local path="$1" message="$2"
+	{
+		printf '#!/usr/bin/env bash\n'
+		[ -n "${message}" ] && printf 'printf "%%s\\n" "%s" >&2\n' "${message}"
+		printf 'exit 2\n'
+	} >"${path}"
+	chmod +x "${path}"
+}
+
+@test "resources_provider_exec_fallback: exit 2 reports the provider's own message" {
+	write_refusing_provider "${MCPBASH_HOME}/providers/file.sh" "file provider: cannot verify the opened file"
+	write_refusing_provider "${MCPBASH_HOME}/providers/git.sh" "git provider: refused"
+	_MCP_RESOURCES_ERROR_MESSAGE=""
+	mcp_resources_read_via_provider "file" "file:///x" >/dev/null || true
+	assert_equal "${_MCP_RESOURCES_ERROR_MESSAGE}" "file provider: cannot verify the opened file"
+	_MCP_RESOURCES_ERROR_MESSAGE=""
+	mcp_resources_read_via_provider "git" "git+https://example/repo#main:x" >/dev/null || true
+	assert_equal "${_MCP_RESOURCES_ERROR_MESSAGE}" "git provider: refused"
+}
+
+@test "resources_provider_exec_fallback: silent exit 2 keeps the roots message" {
+	write_refusing_provider "${MCPBASH_HOME}/providers/file.sh" ""
+	write_refusing_provider "${MCPBASH_HOME}/providers/git.sh" ""
+	_MCP_RESOURCES_ERROR_MESSAGE=""
+	mcp_resources_read_via_provider "file" "file:///x" >/dev/null || true
+	assert_equal "${_MCP_RESOURCES_ERROR_MESSAGE}" "Resource outside allowed roots"
+	_MCP_RESOURCES_ERROR_MESSAGE=""
+	mcp_resources_read_via_provider "git" "git+https://example/repo#main:x" >/dev/null || true
+	assert_equal "${_MCP_RESOURCES_ERROR_MESSAGE}" "Resource outside allowed roots"
+}

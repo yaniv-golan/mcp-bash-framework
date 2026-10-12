@@ -72,6 +72,14 @@ setup() {
 	assert_equal "abc" "$(mcp_args_require '.value')"
 }
 
+@test "sdk_args: require helper keeps the string \"null\" but rejects a JSON null" {
+	MCP_TOOL_ARGS_JSON='{"value":"null"}'
+	assert_equal "null" "$(mcp_args_require '.value')"
+	MCP_TOOL_ARGS_JSON='{"value":null}'
+	run mcp_args_require '.value'
+	assert_failure
+}
+
 @test "sdk_args: minimal mode uses defaults" {
 	MCPBASH_MODE="minimal"
 	MCP_TOOL_ARGS_JSON='{}'

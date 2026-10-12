@@ -6,8 +6,6 @@
 # after @tsv because \" becomes \\" which is not valid JSON syntax.
 #
 # DISPROVEN: Embedded newlines/tabs do NOT cause truncation - @tsv escapes them.
-#
-# Related: docs/internal/PLAN-silent-args-parsing-failures.md
 
 load '../../node_modules/bats-support/load'
 load '../../node_modules/bats-assert/load'

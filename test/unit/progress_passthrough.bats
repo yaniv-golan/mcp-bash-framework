@@ -10,13 +10,17 @@ load '../common/fixtures'
 # so we must check for GNU stat first via --version.
 get_mtime() {
 	local file="$1"
-	if stat --version &>/dev/null; then
-		# GNU stat (Linux)
-		stat -c %Y "$file"
-	else
-		# BSD stat (macOS)
-		stat -f %m "$file"
-	fi
+	# GNU and BusyBox stat take -c; BSD (macOS) stat takes -f. BusyBox has no
+	# --version, and its -f means "file system", so try -c first.
+	stat -c %Y "$file" 2>/dev/null || stat -f %m "$file"
+}
+
+# Set a file's mtime to one minute ago. GNU and BusyBox date take "-d @EPOCH",
+# BSD/macOS date takes "-r EPOCH"; BusyBox does not parse "1 minute ago".
+touch_minute_ago() {
+	local then=$(($(date +%s) - 60)) stamp
+	stamp="$(date -d "@${then}" +%Y%m%d%H%M.%S 2>/dev/null || date -r "${then}" +%Y%m%d%H%M.%S)"
+	touch -t "${stamp}" "$1"
 }
 
 setup() {
@@ -393,7 +397,7 @@ EOF
 	export MCP_PROGRESS_STREAM="${progress_file}"
 
 	# Set mtime to 1 minute ago to avoid 1-second granularity issues
-	touch -t "$(date -v-1M +%Y%m%d%H%M.%S 2>/dev/null || date -d '1 minute ago' +%Y%m%d%H%M.%S)" "${progress_file}"
+	touch_minute_ago "${progress_file}"
 	local old_mtime
 	old_mtime=$(get_mtime "$progress_file")
 
@@ -432,7 +436,7 @@ EOF
 	export MCP_PROGRESS_STREAM="${progress_file}"
 
 	# Set mtime to 1 minute ago
-	touch -t "$(date -v-1M +%Y%m%d%H%M.%S 2>/dev/null || date -d '1 minute ago' +%Y%m%d%H%M.%S)" "${progress_file}"
+	touch_minute_ago "${progress_file}"
 	local old_mtime
 	old_mtime=$(get_mtime "$progress_file")
 
@@ -492,7 +496,7 @@ EOF
 	export MCP_PROGRESS_STREAM="${progress_file}"
 
 	# Set mtime to 1 minute ago
-	touch -t "$(date -v-1M +%Y%m%d%H%M.%S 2>/dev/null || date -d '1 minute ago' +%Y%m%d%H%M.%S)" "${progress_file}"
+	touch_minute_ago "${progress_file}"
 	local old_mtime
 	old_mtime=$(get_mtime "$progress_file")
 

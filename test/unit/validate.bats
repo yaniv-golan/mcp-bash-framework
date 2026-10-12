@@ -132,6 +132,23 @@ EOF
 	assert_output --partial 'uriTemplate must contain {variable} placeholder'
 }
 
+@test "validate: an unusable resource template provider warns" {
+	# shellcheck source=lib/resources.sh
+	# shellcheck disable=SC1091
+	. "${MCPBASH_HOME}/lib/resources.sh"
+	local resources_dir="${BATS_TEST_TMPDIR}/resources"
+	MCPBASH_PROVIDERS_DIR="${BATS_TEST_TMPDIR}/providers"
+	mkdir -p "${resources_dir}/bad" "${resources_dir}/good" "${MCPBASH_PROVIDERS_DIR}"
+	printf '#!/usr/bin/env bash\n' >"${MCPBASH_PROVIDERS_DIR}/alpha.sh"
+	printf '%s\n' '{"name":"bad","uriTemplate":"svc://items/{id}","provider":"ui"}' >"${resources_dir}/bad/bad.meta.json"
+	printf '%s\n' '{"name":"good","uriTemplate":"svc://things/{id}","provider":"alpha"}' >"${resources_dir}/good/good.meta.json"
+
+	run mcp_validate_resources "${resources_dir}" "true" "false"
+	assert_success
+	assert_output --partial "resources/bad/bad.meta.json - provider 'ui' is a built-in provider for ui:// URIs only"
+	refute_output --partial "resources/good/good.meta.json - provider"
+}
+
 @test "validate: a refused env key is named with a warning and its value is never printed" {
 	MCPBASH_SERVER_DIR="${BATS_TEST_TMPDIR}/server.d"
 	mkdir -p "${MCPBASH_SERVER_DIR}"

@@ -18,21 +18,25 @@ Authoritative list of supported environment variables. Defaults shown are the sh
 | `MCPBASH_STATIC_REGISTRY` | (unset) | When `1`, skip runtime discovery and use pre-generated `.registry/*.json` cache directly. Designed for bundle deployments. Skips `register.sh` (shell code) but honors `register.json` (data-only). Falls back to normal discovery if cache missing. CLI `registry refresh` still works (overrides static mode). |
 | `MCPBASH_DEPRECATION_NOTICE` | `true` | When the project uses APIs that change in mcp-bash 2.0, the server prints one line to stderr at startup, at most once a day (stamp: `deprecation-notice.stamp` in the registry dir). `false` turns it off. Skipped for bundles (`MCPBASH_STATIC_REGISTRY=1`), vendored runtimes, minimal mode and a read-only registry dir. Details: `mcp-bash validate`. |
 | `MCPBASH_MAX_CONCURRENT_REQUESTS` | `16` | Worker slot cap. |
+| `MCPBASH_LOCK_POLL_INTERVAL` | `0.02` | Seconds between attempts while waiting for an internal lock (stdout and others). |
+| `MCPBASH_LOCK_REAP_GRACE_SECS` | `1` | Seconds a lock with no owner recorded yet is left alone (its creator may still be writing it) before a waiter removes it. |
+| `MCPBASH_LOCK_REAP_GUARD_STALE_SECS` | `5` | Seconds after which a lock-cleanup guard left by a process that died is cleared. |
 | `MCPBASH_MAX_TEXT_BYTES` | `102400` | Max bytes for `content[].text` in `mcp_result_json` before the text is replaced by a short summary (the data stays in `structuredContent`; 100KB default ensures LLMs see full data). |
 | `MCPBASH_MAX_TOOL_OUTPUT_SIZE` | `10485760` | Tool stdout limit (bytes). |
 | `MCPBASH_MAX_TOOL_STDERR_SIZE` | `$MCPBASH_MAX_TOOL_OUTPUT_SIZE` | Tool stderr limit (bytes). |
-| `MCPBASH_MAX_RESOURCE_BYTES` | `$MCPBASH_MAX_TOOL_OUTPUT_SIZE` | Resource payload limit (bytes). |
-| `MCPBASH_MAX_UI_RESOURCE_BYTES` | `1048576` | Max size of a `ui://` resource (bytes). |
+| `MCPBASH_MAX_RESOURCE_BYTES` | `$MCPBASH_MAX_TOOL_OUTPUT_SIZE` | Resource payload limit (bytes). `file://` reads stop at this size. A value that is not a plain byte count (such as `1M` or `-1`) means 10 MiB. |
+| `MCPBASH_MAX_UI_RESOURCE_BYTES` | `1048576` | Max size of a `ui://` resource (bytes). A value that is not a plain byte count (such as `1M`) means the default. |
 | `MCPBASH_MAX_PROGRESS_PER_MIN` | `100` | Progress events per request per minute. |
 | `MCPBASH_MAX_LOGS_PER_MIN` | `$MCPBASH_MAX_PROGRESS_PER_MIN` | Log events per request per minute. |
-| `MCPBASH_DEFAULT_TOOL_TIMEOUT` | `30` | Default tool timeout (seconds). |
-| `MCPBASH_DEFAULT_SUBSCRIBE_TIMEOUT` | `120` | Default `resources/subscribe` timeout (seconds). |
+| `MCPBASH_DEFAULT_TOOL_TIMEOUT` | `30` | Default tool timeout (seconds); also applies to `tools/list`. |
+| `MCPBASH_DEFAULT_SUBSCRIBE_TIMEOUT` | `120` | Default `resources/subscribe` timeout (seconds); `0` disables it. A subscribe that times out gets a `-32603` error. |
+| `MCPBASH_DEFAULT_RESOURCE_TIMEOUT` | `120` | Default `resources/read` timeout (seconds); `0` disables it. A read that runs longer is stopped and the client gets a `-32603` error. A request's `params.timeoutSecs` overrides it for that request. |
 | `MCPBASH_SHUTDOWN_TIMEOUT` | `5` | Graceful shutdown timeout (seconds). |
 | `MCPBASH_IDLE_TIMEOUT` | `3600` | Seconds to wait for client activity before exiting (0 = disabled). Prevents zombie processes when clients disconnect without shutdown. |
 | `MCPBASH_IDLE_TIMEOUT_ENABLED` | `true` | Set to `false` to disable idle timeout entirely. |
 | `MCPBASH_ORPHAN_CHECK_ENABLED` | `true` (Unix), `false` (Windows/CI) | Enable parent-death detection. Server exits if original parent process dies. Disabled by default when `MCPBASH_CI_MODE=true`. |
 | `MCPBASH_ORPHAN_CHECK_INTERVAL` | `30` | Seconds between orphan detection checks. |
-| `MCPBASH_PROGRESS_EXTENDS_TIMEOUT` | `false` | When `true`, activity detection (pattern matches or progress emissions) resets the idle timeout, allowing long-running tools to continue as long as they show activity. |
+| `MCPBASH_PROGRESS_EXTENDS_TIMEOUT` | `false` | When `true`, each progress emission or pattern match restarts the tool's `timeoutSecs` watchdog, so a long-running tool continues as long as it shows activity, up to `MCPBASH_MAX_TIMEOUT_SECS`. Unrelated to `MCPBASH_IDLE_TIMEOUT` (client silence). |
 | `MCPBASH_MAX_TIMEOUT_SECS` | `600` | Hard cap on tool runtime (seconds) when progress-aware timeout is enabled. |
 | `MCPBASH_LOG_LEVEL` | `info` | RFC-5424 level; `debug` shows discovery traces. Boolean values `true`/`1` are normalized to `debug`, `false`/`0` to `info`. Can also be enabled via `server.d/.debug` file (only when env var is unset; see [DEBUGGING.md](DEBUGGING.md#debug-file-persistent-debug-mode)). |
 | `MCPBASH_LOG_VERBOSE` | (unset) | `true` logs full paths/manual registration output (security risk). |
@@ -84,7 +88,8 @@ Authoritative list of supported environment variables. Defaults shown are the sh
 | `MCPBASH_GIT_TIMEOUT` | `30` (cap ≤60s) | Git provider timeout (seconds). |
 | `MCPBASH_GIT_MAX_KB` | `51200` (cap ≤1048576) | Git repository size guard (KB). |
 | `MCPBASH_CORRUPTION_WINDOW` | `60` | Stdout corruption tracking window (seconds). |
-| `MCPBASH_CORRUPTION_THRESHOLD` | `3` | Corruption events allowed within the window before exit. |
+| `MCPBASH_CORRUPTION_THRESHOLD` | `3` | The server stops when this many corruption events (multi-line or non-UTF-8 payloads) occur within the window. A failed write to stdout stops it at once. |
+| `MCPBASH_ALLOW_CORRUPT_STDOUT` | `false` | `true` keeps the server running past the corruption threshold (events are still logged). It does not cover a failed write to stdout (including a transient error such as `EAGAIN` or a full disk when stdout is a file), which always stops the server. |
 | `MCPBASH_MAX_MANUAL_REGISTRY_BYTES` | `1048576` | Max bytes accepted from manual registration inputs: `server.d/register.json` file size and `server.d/register.sh` captured stdout/stderr output. |
 | `MCPBASH_ALLOW_PROJECT_HOOKS` | `false` | Must be `true` to execute project `server.d/register.sh` hooks. Refused if file is group/world-writable or ownership mismatches. |
 | `MCPBASH_FRAMEWORK_VERSION` | (auto) | Framework version from `${MCPBASH_HOME}/VERSION`. Read-only, set automatically at startup. |
@@ -100,9 +105,19 @@ Example allowlist usage to keep tool env minimal while letting HOME/PATH through
 MCPBASH_TOOL_ENV_MODE=allowlist MCPBASH_TOOL_ENV_ALLOWLIST=HOME,PATH mcp-bash ...
 ```
 
+## Runtime directories
+
+Operators may set these; the defaults suit most setups. The server refuses to start if `MCPBASH_STATE_DIR` or `MCPBASH_LOCK_ROOT` is a symlink (see [SECURITY.md](SECURITY.md)). What the server writes inside them is internal.
+
+| Variable | Default | Notes |
+|---|---|---|
+| `MCPBASH_TMP_ROOT` | `TMPDIR`, else `/tmp` (CI mode: the runner's temp dir) | Parent of the per-process state directory. Set it to a short, writable path when the default is too long (Windows) or not writable. |
+| `MCPBASH_STATE_DIR` | a new `mktemp -d` directory (mode 0700) under `MCPBASH_TMP_ROOT` | Per-process runtime state (worker files, logs, traces). A directory the server created is removed on exit unless `MCPBASH_PRESERVE_STATE=true` or `MCPBASH_KEEP_LOGS=true`; one you set is never removed. |
+| `MCPBASH_LOCK_ROOT` | `<state dir>/locks` | Lock directories (stdout and others). |
+
 ## Internal Runtime State (do not override)
 
-Examples: `MCPBASH_STATE_DIR`, `MCPBASH_LOCK_ROOT`, `MCPBASH_TMP_ROOT`, `MCPBASH_STDOUT_LOCK_NAME`, `MCPBASH_INITIALIZED`, `MCPBASH_ROOTS_*` (not to be confused with the user-facing `MCPBASH_ROOTS`), `MCPBASH_CLIENT_SUPPORTS_*`, `MCPBASH_PROGRESS_FLUSHER_PID`, `MCPBASH_RESOURCE_POLL_PID`, `MCPBASH_NEXT_OUTGOING_ID`, `MCPBASH_HANDLER_OUTPUT`. These are set by the runtime to coordinate sourced scripts and are not user-facing.
+Examples: `MCPBASH_STDOUT_LOCK_NAME`, `MCPBASH_INITIALIZED`, `MCPBASH_ROOTS_*` (not to be confused with the user-facing `MCPBASH_ROOTS`), `MCPBASH_CLIENT_SUPPORTS_*`, `MCPBASH_PROGRESS_FLUSHER_PID`, `MCPBASH_RESOURCE_POLL_PID`, `MCPBASH_NEXT_OUTGOING_ID`, `MCPBASH_HANDLER_OUTPUT`. These are set by the runtime to coordinate sourced scripts and are not user-facing.
 
 ## Test/Scaffold/Installer Helpers
 
@@ -111,4 +126,4 @@ Examples: `MCPBASH_STATE_DIR`, `MCPBASH_LOCK_ROOT`, `MCPBASH_TMP_ROOT`, `MCPBASH
 | `MCPBASH_RUN_TOOL_SOURCE_SERVER_ENV` | (unset) | When `true` or `1`, `mcp-bash run-tool` implicitly sources `server.d/env.sh` before tool execution (equivalent to `--with-server-env` flag). Useful in CI pipelines where all `run-tool` invocations should use server environment. |
 | `MCPBASH_INTEGRATION_DEBUG_FAILED` | `false` | Re-run failed integration tests with `bash -x` tracing. |
 
-Examples: `MCPBASH_BASE_TAR` / `MCPBASH_BASE_TAR_META` / `MCPBASH_BASE_TAR_KEY`, `MCPBASH_STAGING_TAR`, `MCPBASH_TEST_ROOT`, `MCPBASH_INTEGRATION_TMP`, `MCPBASH_RUN_SDK_TYPESCRIPT`, `MCPBASH_LOG_JSON_TOOL` (suite logging), integration runner controls (`MCPBASH_INTEGRATION_ONLY`, `MCPBASH_INTEGRATION_SKIP`, `MCPBASH_INTEGRATION_TEST_TIMEOUT_SECONDS`, `MCPBASH_INTEGRATION_DEBUG_FAILED`), installer overrides (`MCPBASH_INSTALL_REPO_URL`). Keep these scoped to testing or packaging workflows. 
+Examples: `MCPBASH_BASE_TAR` / `MCPBASH_BASE_TAR_META` / `MCPBASH_BASE_TAR_KEY`, `MCPBASH_STAGING_TAR`, `MCPBASH_TEST_ROOT`, `MCPBASH_INTEGRATION_TMP`, `MCPBASH_RUN_SDK_TYPESCRIPT`, `MCPBASH_LOG_JSON_TOOL` (suite logging), integration runner controls (`MCPBASH_INTEGRATION_ONLY`, `MCPBASH_INTEGRATION_SKIP`, `MCPBASH_INTEGRATION_TEST_TIMEOUT_SECONDS`, `MCPBASH_INTEGRATION_DEBUG_FAILED`), schema conformance test (`MCPBASH_JV_BIN`, `MCPBASH_CONFORMANCE_REQUIRE_SCHEMA`, `MCPBASH_CONFORMANCE_OUT`, `MCPBASH_CONFORMANCE_SERVER_JSON_TOOL`), installer overrides (`MCPBASH_INSTALL_REPO_URL`). Keep these scoped to testing or packaging workflows. 

@@ -40,7 +40,7 @@ The SDK exposes helpers in `sdk/tool-sdk.sh`:
 - `mcp_elicit_titled_multi_choice <message> "val1:Label 1" ...` — checkboxes with labels
 
 ### URL Mode (out-of-band, SEP-1036)
-- `mcp_elicit_url <message> <url> [timeout_secs]` — opens browser for OAuth/payments
+- `mcp_elicit_url <message> <url> [timeout_secs]` — opens browser for OAuth/payments. The server gives each request a unique `elicitationId`, as the spec requires.
 
 ```bash
 # Example: OAuth authorization

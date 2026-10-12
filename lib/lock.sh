@@ -14,6 +14,24 @@ mcp_lock_init() {
 	mkdir -p "${MCPBASH_LOCK_ROOT}"
 }
 
+# Set _MCP_LOCK_SELF_PID to the calling process's own pid. $$ is the server's
+# pid in every subshell, so with it all workers would own each lock and a
+# killed worker's lock would never look stale. bash 4+ has BASHPID; bash 3.2
+# asks a child for its parent: the command substitution's child is forked by
+# the calling shell and exec keeps its pid, so sh's PPID is that shell.
+# Call it directly, never inside $(...).
+mcp_lock_self_pid() {
+	if [ -n "${BASHPID:-}" ]; then
+		_MCP_LOCK_SELF_PID="${BASHPID}"
+		return 0
+	fi
+	_MCP_LOCK_SELF_PID="$(exec sh -c 'echo "$PPID"' 2>/dev/null)" || _MCP_LOCK_SELF_PID=""
+	# Never an empty owner: that is reaped as an acquire in progress.
+	case "${_MCP_LOCK_SELF_PID}" in
+	"" | *[!0-9]*) _MCP_LOCK_SELF_PID="$$" ;;
+	esac
+}
+
 mcp_lock_path() {
 	printf '%s/%s.lock' "${MCPBASH_LOCK_ROOT}" "$1"
 }
@@ -26,11 +44,11 @@ mcp_lock_stat_mtime() {
 		return 0
 	fi
 	if command -v stat >/dev/null 2>&1; then
-		if stat -c %Y "${path}" >/dev/null 2>&1; then
-			mtime="$(stat -c %Y "${path}")"
-		elif stat -f %m "${path}" >/dev/null 2>&1; then
-			mtime="$(stat -f %m "${path}")"
-		fi
+		# The path can vanish between checks (another process released it).
+		mtime="$(stat -c %Y "${path}" 2>/dev/null || stat -f %m "${path}" 2>/dev/null || printf '0')"
+		case "${mtime}" in
+		'' | *[!0-9]*) mtime="0" ;;
+		esac
 	fi
 	printf '%s' "${mtime}"
 }
@@ -42,24 +60,49 @@ mcp_lock_root_gone() {
 	[ ! -d "${MCPBASH_LOCK_ROOT}" ]
 }
 
+# Create the lock dir and record this process as its owner. The pid is written
+# to a temp file in the lock root and renamed into place, so a lock's pid file
+# is either absent (acquire in progress) or complete, never empty. Returns 1 if
+# the lock is held, or if the dir vanished before the pid landed (the caller
+# retries).
+mcp_lock_try_create() {
+	local path="$1"
+	local self="${2:-}"
+	local tmp
+	# The caller passes its pid, worked out before the mkdir: on bash 3.2 that
+	# takes a fork, which would otherwise widen the window in which the lock
+	# exists without a pid.
+	if [ -z "${self}" ]; then
+		mcp_lock_self_pid
+		self="${_MCP_LOCK_SELF_PID}"
+	fi
+	mkdir "${path}" 2>/dev/null || return 1
+	tmp="${MCPBASH_LOCK_ROOT}/.pid.${path##*/}.${self}.${RANDOM}"
+	if printf '%s' "${self}" >"${tmp}" 2>/dev/null && mv -f "${tmp}" "${path}/pid" 2>/dev/null; then
+		return 0
+	fi
+	rm -f "${tmp}" 2>/dev/null || true
+	# rmdir only removes the dir while it is still empty, i.e. not yet owned.
+	rmdir "${path}" 2>/dev/null || true
+	return 1
+}
+
 mcp_lock_acquire() {
 	local name="$1"
 	local path
 	path="$(mcp_lock_path "${name}")"
+	mcp_lock_self_pid
+	local self="${_MCP_LOCK_SELF_PID}"
 
 	while :; do
-		if mkdir "${path}" 2>/dev/null; then
-			if printf '%s' "${BASHPID:-$$}" >"${path}/pid" 2>/dev/null; then
-				break
-			fi
-			rm -rf "${path}" 2>/dev/null || true
-		else
-			if mcp_lock_root_gone; then
-				return 1
-			fi
-			mcp_lock_try_reap "${path}"
-			sleep "${MCPBASH_LOCK_POLL_INTERVAL}"
+		if mcp_lock_try_create "${path}" "${self}"; then
+			break
 		fi
+		if mcp_lock_root_gone; then
+			return 1
+		fi
+		mcp_lock_try_reap "${path}"
+		sleep "${MCPBASH_LOCK_POLL_INTERVAL}"
 	done
 }
 
@@ -70,107 +113,140 @@ mcp_lock_acquire_timeout() {
 	path="$(mcp_lock_path "${name}")"
 	local start
 	start="$(date +%s)"
+	mcp_lock_self_pid
+	local self="${_MCP_LOCK_SELF_PID}"
 
 	while :; do
-		if mkdir "${path}" 2>/dev/null; then
-			if printf '%s' "${BASHPID:-$$}" >"${path}/pid" 2>/dev/null; then
-				break
-			fi
-			rm -rf "${path}" 2>/dev/null || true
-		else
-			if mcp_lock_root_gone; then
+		if mcp_lock_try_create "${path}" "${self}"; then
+			break
+		fi
+		if mcp_lock_root_gone; then
+			return 1
+		fi
+		mcp_lock_try_reap "${path}"
+		if [ "${timeout_secs}" -gt 0 ]; then
+			local now
+			now="$(date +%s)"
+			if [ $((now - start)) -ge "${timeout_secs}" ]; then
 				return 1
 			fi
-			mcp_lock_try_reap "${path}"
-			if [ "${timeout_secs}" -gt 0 ]; then
-				local now
-				now="$(date +%s)"
-				if [ $((now - start)) -ge "${timeout_secs}" ]; then
-					return 1
-				fi
-			fi
-			sleep "${MCPBASH_LOCK_POLL_INTERVAL}"
 		fi
+		sleep "${MCPBASH_LOCK_POLL_INTERVAL}"
 	done
 }
 
+mcp_lock_debug() {
+	if [ "${MCPBASH_LOG_LEVEL:-info}" = "debug" ]; then
+		printf 'mcp-lock: %s\n' "$1" >&2
+	fi
+}
+
+# Release a lock this process holds. Anything else is left alone: a lock owned
+# by another live process, or one with no pid yet (another process is in the
+# middle of acquiring it). Locks of dead owners are removed by reaping.
 mcp_lock_release() {
 	local name="$1"
 	local path
 	local owner=""
-	local current_pid="${BASHPID:-$$}"
+	local current_pid
 	path="$(mcp_lock_path "${name}")"
 	if [ -d "${path}" ]; then
+		mcp_lock_self_pid
+		current_pid="${_MCP_LOCK_SELF_PID}"
 		owner="$(cat "${path}/pid" 2>/dev/null || true)"
-		if [ -z "${owner}" ] || [ "${owner}" = "${current_pid}" ] || ! kill -0 "${owner}" 2>/dev/null; then
-			rm -rf "${path}"
+		if [ "${owner}" = "${current_pid}" ]; then
+			rm -rf "${path}" 2>/dev/null || true
 		else
-			printf '%s\n' "mcp-lock: refusing to release lock ${name} owned by pid ${owner}" >&2
+			mcp_lock_debug "not releasing lock ${name}: owner is '${owner}', not ${current_pid}"
 		fi
 	fi
+}
+
+# Run "mcp_lock_reap_now PATH [EXPECTED_PID]" while holding the lock's reap
+# guard, so only one process at a time can remove a lock it did not create.
+# Without the guard, two reapers that both saw a dead owner could interleave
+# with a fresh acquire, and the slower one would delete the new holder's lock.
+# A guard older than MCPBASH_LOCK_REAP_GUARD_STALE_SECS belongs to a reaper
+# that died; it is cleared, and reaping happens on a later poll.
+mcp_lock_with_reap_guard() {
+	local path="$1"
+	local expected="${2:-}"
+	local guard="${MCPBASH_LOCK_ROOT}/.reap.${path##*/}"
+	if ! mkdir "${guard}" 2>/dev/null; then
+		local now mtime
+		now="$(date +%s)"
+		mtime="$(mcp_lock_stat_mtime "${guard}")"
+		if [ "${mtime}" != "0" ] && [ $((now - mtime)) -gt "${MCPBASH_LOCK_REAP_GUARD_STALE_SECS:-5}" ]; then
+			rmdir "${guard}" 2>/dev/null || true
+		fi
+		return 0
+	fi
+	mcp_lock_reap_now "${path}" "${expected}"
+	rmdir "${guard}" 2>/dev/null || true
+}
+
+# Remove the lock at PATH if it is stale: no pid file after the grace period,
+# or a dead owner. With EXPECTED_PID, also remove it if that pid owns it (the
+# caller knows that process is gone). Call only through mcp_lock_with_reap_guard.
+mcp_lock_reap_now() {
+	local path="$1"
+	local expected="${2:-}"
+	local owner now mtime age
+	[ -d "${path}" ] || return 0
+	owner="$(cat "${path}/pid" 2>/dev/null || true)"
+	if [ -z "${owner}" ]; then
+		now="$(date +%s)"
+		mtime="$(mcp_lock_stat_mtime "${path}")"
+		# 0 means the lock vanished (its holder released it) or could not be
+		# stat'd. Removing the path now could delete a lock another process
+		# has just created there, so leave it for a later poll.
+		if [ "${mtime}" = "0" ]; then
+			return 0
+		fi
+		age=$((now - mtime))
+		# Grace window: allow the creator to finish writing the pid file.
+		# Times are whole seconds, so age 1 can mean 10ms; -le makes the
+		# real minimum at least GRACE seconds.
+		if [ "${age}" -le "${MCPBASH_LOCK_REAP_GRACE_SECS}" ]; then
+			return 0
+		fi
+		rm -rf "${path}" 2>/dev/null || true
+		return 0
+	fi
+	if [ -n "${expected}" ] && [ "${owner}" = "${expected}" ]; then
+		rm -rf "${path}" 2>/dev/null || true
+		return 0
+	fi
+	if kill -0 "${owner}" 2>/dev/null; then
+		return 0
+	fi
+	rm -rf "${path}" 2>/dev/null || true
 }
 
 mcp_lock_try_reap() {
 	local path="$1"
 	local owner
-	local current
-	local now age mtime
-	if [ ! -d "${path}" ]; then
-		return
-	fi
-	if [ ! -f "${path}/pid" ]; then
-		now="$(date +%s)"
-		mtime="$(mcp_lock_stat_mtime "${path}")"
-		age=$((now - mtime))
-		if [ "${age}" -lt "${MCPBASH_LOCK_REAP_GRACE_SECS}" ]; then
-			# Grace window: allow the creator to finish writing the pid file.
-			return
-		fi
-		rm -rf "${path}"
-		return
-	fi
-
+	[ -d "${path}" ] || return 0
+	# Fast path: a live owner means nothing to reap, no guard needed.
 	owner="$(cat "${path}/pid" 2>/dev/null || true)"
-	if [ -z "${owner}" ]; then
-		rm -rf "${path}"
-		return
+	if [ -n "${owner}" ] && kill -0 "${owner}" 2>/dev/null; then
+		return 0
 	fi
-
-	if kill -0 "${owner}" 2>/dev/null; then
-		return
-	fi
-
-	current="$(cat "${path}/pid" 2>/dev/null || true)"
-	if [ "${current}" != "${owner}" ]; then
-		return
-	fi
-
-	rm -rf "${path}"
+	mcp_lock_with_reap_guard "${path}"
 }
 
+# Clear a lock held by OWNER_PID, a process the caller knows has exited, or by
+# any dead owner.
 mcp_lock_release_owned() {
 	local name="$1"
 	local owner_pid="$2"
 	local path
-	local recorded=""
 
 	if [ -z "${name}" ] || [ -z "${owner_pid}" ]; then
 		return 0
 	fi
 
 	path="$(mcp_lock_path "${name}")"
-	if [ ! -d "${path}" ]; then
-		return 0
-	fi
-
-	recorded="$(cat "${path}/pid" 2>/dev/null || true)"
-	if [ -z "${recorded}" ]; then
-		rm -rf "${path}"
-		return 0
-	fi
-
-	# Clear the lock if it belongs to the specified pid or the recorded owner is gone.
-	if [ "${recorded}" = "${owner_pid}" ] || ! kill -0 "${recorded}" 2>/dev/null; then
-		rm -rf "${path}"
-	fi
+	[ -d "${path}" ] || return 0
+	mcp_lock_with_reap_guard "${path}" "${owner_pid}"
 }

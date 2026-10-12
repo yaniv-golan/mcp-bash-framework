@@ -178,3 +178,36 @@ victim_is_empty() {
 	refute_output --partial "mcpbash.state."
 	refute_output --partial "mcpbash.locks"
 }
+
+@test "runtime dirs: cleanup leaves operator-set dirs alone, without complaint" {
+	mcp_io_log_corruption_summary() { :; }
+	export MCPBASH_STATE_DIR="${BATS_TEST_TMPDIR}/op-state"
+	export MCPBASH_LOCK_ROOT="${BATS_TEST_TMPDIR}/op-locks"
+	mcp_runtime_init_paths
+	run mcp_runtime_cleanup
+	assert_success
+	assert_output ""
+	assert_dir_exist "${BATS_TEST_TMPDIR}/op-state"
+	assert_dir_exist "${BATS_TEST_TMPDIR}/op-locks"
+}
+
+@test "runtime dirs: an operator-set dir is kept even when named like the server's own" {
+	mcp_io_log_corruption_summary() { :; }
+	export MCPBASH_STATE_DIR="${TMP_BASE}/mcpbash.state.op"
+	mcp_runtime_init_paths
+	touch "${MCPBASH_STATE_DIR}/keep"
+	run mcp_runtime_cleanup
+	assert_output ""
+	assert_file_exist "${TMP_BASE}/mcpbash.state.op/keep"
+}
+
+@test "runtime dirs: with KEEP_LOGS the derived lock root is still removed" {
+	mcp_io_log_corruption_summary() { :; }
+	mcp_runtime_init_paths
+	local locks="${MCPBASH_LOCK_ROOT}"
+	assert_dir_exist "${locks}"
+	MCPBASH_KEEP_LOGS=true mcp_runtime_cleanup 2>/dev/null
+	assert_dir_exist "${MCPBASH_STATE_DIR}"
+	assert_dir_not_exist "${locks}"
+	rm -rf "${MCPBASH_STATE_DIR}"
+}

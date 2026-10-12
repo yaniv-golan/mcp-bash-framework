@@ -148,6 +148,44 @@ EOF
 	refute_output --partial 'tool not found'
 }
 
+@test "run_tool_cli: keeps a newer-file match when find is cut off by SIGPIPE" {
+	run "${MCPBASH_HOME}/bin/mcp-bash" run-tool test.echo --args '{"value":"ok"}'
+	assert_success
+
+	mkdir -p "${PROJECT_ROOT}/tools/added"
+	cat >"${PROJECT_ROOT}/tools/added/tool.meta.json" <<'EOF'
+{"name": "test.added", "description": "Added after the first run", "inputSchema": {"type": "object"}}
+EOF
+	cat >"${PROJECT_ROOT}/tools/added/tool.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+source "${MCP_SDK}/tool-sdk.sh"
+mcp_emit_json "$(mcp_json_obj message "added")"
+EOF
+	chmod +x "${PROJECT_ROOT}/tools/added/tool.sh"
+
+	# The stale-cache checks pipe find into a reader that stops at the first
+	# match. When the reader exits first, find dies of SIGPIPE (141); the
+	# stub makes that happen every time, after find has printed its output.
+	local stub_bin="${BATS_TEST_TMPDIR}/stub-bin" real_find
+	real_find="$(command -v find)"
+	mkdir -p "${stub_bin}"
+	cat >"${stub_bin}/find" <<EOF
+#!/bin/sh
+"${real_find}" "\$@"
+rc=\$?
+case " \$* " in
+*" -newer "* | *" stat "*) exit 141 ;;
+esac
+exit "\${rc}"
+EOF
+	chmod +x "${stub_bin}/find"
+
+	PATH="${stub_bin}:${PATH}" run "${MCPBASH_HOME}/bin/mcp-bash" run-tool test.added
+	assert_success
+	assert_output --partial 'added'
+}
+
 @test "run_tool_cli: invalid args must be rejected" {
 	run "${MCPBASH_HOME}/bin/mcp-bash" run-tool test.echo --args '"not-an-object"'
 	assert_failure

@@ -179,7 +179,7 @@ It does **not** protect against a determined attacker who has write access to th
 
 ### Source authenticity
 
-`vendor --verify` checks that vendored files match the hash recorded at vendor time — it detects post-vendor drift. To verify the *source* of the framework install before vendoring, install from a release tarball checked against the `SHA256SUMS` published with each GitHub release. The steps (with `shasum` for macOS and `sha256sum` for Linux) are in the README under [Verified install](../README.md#1-install-the-framework). Then vendor from the verified install:
+`vendor --verify` checks that vendored files match the hash recorded at vendor time — it detects post-vendor drift. To verify the *source* of the framework install before vendoring, install from a release tarball checked against the `SHA256SUMS` published with each GitHub release. The steps (with `shasum` for macOS and `sha256sum` for Linux) are in the README under [Verified install](../README.md#2-install-the-framework). Then vendor from the verified install:
 
 ```bash
 mcp-bash vendor

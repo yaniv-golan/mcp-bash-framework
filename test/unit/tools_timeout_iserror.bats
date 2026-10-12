@@ -4,8 +4,6 @@
 # Tests the _mcp_tools_emit_timeout_result helper and the structured error
 # format returned when tools timeout. This ensures LLMs receive actionable
 # feedback per MCP spec guidance.
-#
-# Related: docs/internal/spec-timeout-iserror-migration-2026-01.md
 
 load '../../node_modules/bats-support/load'
 load '../../node_modules/bats-assert/load'

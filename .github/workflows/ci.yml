@@ -32,7 +32,7 @@ jobs:
         id: go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
+          go-version: '1.25'
           cache: true
           cache-dependency-path: tools/go.sum
       - name: Cache Go build cache
@@ -77,7 +77,7 @@ jobs:
         id: go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
+          go-version: '1.25'
           cache: true
           cache-dependency-path: tools/go.sum
       - name: Cache Go build cache
@@ -142,7 +142,7 @@ jobs:
         id: go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
+          go-version: '1.25'
           cache: true
           cache-dependency-path: tools/go.sum
       - name: Cache Go build cache
@@ -151,16 +151,19 @@ jobs:
         with:
           path: ${{ env.GOCACHE }}
           key: ${{ runner.os }}-gocache-${{ hashFiles('tools/go.sum') }}-${{ steps.go.outputs.go-version }}
-      - name: Install gojq
+      - name: Install gojq and jv
         run: |
           set -euo pipefail
           pushd tools >/dev/null
           go install github.com/itchyny/gojq/cmd/gojq@v0.12.16
+          # JSON Schema validator for test_conformance_schema.sh
+          go install github.com/santhosh-tekuri/jsonschema/cmd/jv@v0.7.0
           popd >/dev/null
       - name: Integration suite
         id: integration
         env:
           MCPBASH_CI_MODE: "true"
+          MCPBASH_CONFORMANCE_REQUIRE_SCHEMA: "1"
           MCPBASH_LOG_DIR: ${{ runner.temp }}/mcpbash-logs
           MCPBASH_LOG_TIMESTAMP: "true"
           MCPBASH_KEEP_LOGS: "true"
@@ -327,6 +330,8 @@ jobs:
             test_preinit_discover_probe.sh
             test_stdin_eof_shutdown.sh
             test_background_loops_exit.sh
+            test_idle_timeout.sh
+            test_orphan_detection.sh
             test_sigterm_prompt_exit.sh
             test_stdout_closed_exit.sh
             test_short_read_timeout_stays_up.sh
@@ -341,6 +346,9 @@ jobs:
             test_completion_registered_timeout.sh
             test_deprecation_notice.sh
             test_tool_termination.sh
+            test_exit_stops_tools.sh
+            test_zombie_server_helpers.sh
+            test_resource_read_timeout.sh
         run: |
           set -euo pipefail
           unset MCPBASH_CI_MODE
@@ -359,6 +367,21 @@ jobs:
             ${{ runner.temp }}/mcpbash-logs
             ${{ runner.temp }}/integration-bash32.log
           retention-days: 7
+
+  # Alpine: ps, stat, find, tar and date are BusyBox. JavaScript actions
+  # cannot run inside an Alpine job container, so start it with docker.
+  # The container gets none of this workflow's env: CI-only settings such as
+  # MCPBASH_CONFORMANCE_REQUIRE_SCHEMA do not apply here, and the schema
+  # conformance test skips (no jv); the integration job enforces it.
+  alpine:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install bats helpers
+        run: npm ci
+      - name: Unit and integration tests (alpine:3.20)
+        run: docker run --rm -v "${PWD}:/src:ro" alpine:3.20 sh /src/test/ci-alpine.sh
 
   # Windows integration tests - runs in parallel but does not block release
   integration-windows:
@@ -393,7 +416,7 @@ jobs:
         id: go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
+          go-version: '1.25'
           cache: true
           cache-dependency-path: tools/go.sum
       - name: Cache Go build cache
@@ -502,7 +525,7 @@ jobs:
         id: go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
+          go-version: '1.25'
           cache: true
           cache-dependency-path: tools/go.sum
       - name: Cache Go build cache
@@ -536,7 +559,7 @@ jobs:
         id: go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
+          go-version: '1.25'
           cache: true
           cache-dependency-path: tools/go.sum
       - name: Cache Go build cache

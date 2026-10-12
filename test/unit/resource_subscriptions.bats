@@ -185,3 +185,95 @@ load_dispatch_helpers() {
 	run ls "${MCPBASH_STATE_DIR}"
 	assert_output "resource_subscription.sub-a"
 }
+
+@test "subscriptions: an unsubscribe leaves alone a subscribe dispatched after it" {
+	load_dispatch_helpers
+	# subscribe, unsubscribe, subscribe again, all for one uri. Each worker
+	# runs with the dispatch sequence number the main shell had when it forked.
+	mcp_resources_subscription_note_dispatch resources/subscribe \
+		'{"jsonrpc":"2.0","id":"s1","method":"resources/subscribe","params":{"uri":"file:///a.txt"}}' '"s1"'
+	local s1_seq="${MCPBASH_SUBSCRIPTION_DISPATCH_SEQ:-}"
+	mcp_resources_subscription_store "sub-a" "" "file:///a.txt" "fp" "file:///a.txt" create "${s1_seq}"
+	mcp_resources_subscription_settle_pending "$(mcp_ids_key_from_json '"s1"')" "sub-a" || true
+	mcp_resources_subscription_note_dispatch resources/unsubscribe \
+		'{"jsonrpc":"2.0","id":"u1","method":"resources/unsubscribe","params":{"uri":"file:///a.txt"}}' '"u1"'
+	local u1_seq="${MCPBASH_SUBSCRIPTION_DISPATCH_SEQ:-}"
+	mcp_resources_subscription_note_dispatch resources/subscribe \
+		'{"jsonrpc":"2.0","id":"s2","method":"resources/subscribe","params":{"uri":"file:///a.txt"}}' '"s2"'
+	local s2_seq="${MCPBASH_SUBSCRIPTION_DISPATCH_SEQ:-}"
+	# The second subscribe's worker stores its record before the unsubscribe
+	# worker gets to run.
+	mcp_resources_subscription_store "sub-b" "" "file:///a.txt" "fp" "file:///a.txt" create "${s2_seq}"
+	run mcp_resources_subscription_settle_pending "$(mcp_ids_key_from_json '"s2"')" "sub-b"
+	assert_failure
+
+	run mcp_resources_subscription_remove_by_uri "file:///a.txt" "${u1_seq}"
+	assert_output "1"
+	assert [ ! -e "$(record_path sub-a)" ]
+	assert [ -f "$(record_path sub-b)" ]
+}
+
+@test "subscriptions: the poller keeps a record's dispatch sequence number" {
+	stub_read_ok
+	mcp_resources_subscription_store "sub-a" "" "file:///a.txt" "old" "file:///a.txt" create 7
+	mcp_resources_poll_subscriptions
+	run "${MCPBASH_JSON_TOOL_BIN}" -r '.seq' "$(record_path sub-a)"
+	assert_output "7"
+	# An unsubscribe dispatched before it leaves it; one dispatched after removes it.
+	run mcp_resources_subscription_remove_by_uri "file:///a.txt" 6
+	assert_output "0"
+	run mcp_resources_subscription_remove_by_uri "file:///a.txt" 8
+	assert_output "1"
+}
+
+# A poll whose read logs from inside a $(...) capture, as the real read does
+# when it refreshes a registry. Logging follows mcp_logging_emit: queue when a
+# queue is active, otherwise write to the current stdout.
+setup_logging_read() {
+	# shellcheck source=lib/io.sh
+	# shellcheck disable=SC1091
+	. "${MCPBASH_HOME}/lib/io.sh"
+	MCP_NOTIFICATION_QUEUE_FILE=""
+	unset MCPBASH_DIRECT_FD
+	CAPTURED="${BATS_TEST_TMPDIR}/captured"
+	FLUSHED="${BATS_TEST_TMPDIR}/flushed"
+	: >"${CAPTURED}"
+	: >"${FLUSHED}"
+	mcp_logging_warning() {
+		local n='{"jsonrpc":"2.0","method":"notifications/message","params":{"level":"warning","data":"w"}}'
+		if mcp_notification_queue_active; then
+			mcp_notification_queue_append "${n}"
+		else
+			printf '%s\n' "${n}"
+		fi
+	}
+	mcp_io_send_line() { printf '%s\n' "$1" >>"${FLUSHED}"; }
+	mcp_resources_read() {
+		local metadata
+		metadata="$(
+			mcp_logging_warning "mcp.resources" "w"
+			printf 'meta'
+		)"
+		printf '%s\n' "${metadata}" >>"${CAPTURED}"
+		_MCP_RESOURCES_RESULT="{\"contents\":[{\"uri\":\"${2}\",\"text\":\"new\"}]}"
+		return 0
+	}
+}
+
+@test "subscriptions: the poller's poll queues warnings logged inside a read's capture" {
+	setup_logging_read
+	mcp_resources_subscription_store "sub-q" "live" "file:///live.txt" "fp-old"
+	mcp_resources_poll_subscriptions_queued
+	assert_equal "$(cat "${CAPTURED}")" "meta"
+	run grep -c '"notifications/message"' "${FLUSHED}"
+	assert_output "1"
+	[ -z "${MCP_NOTIFICATION_QUEUE_FILE}" ] || fail "queue left active"
+}
+
+@test "subscriptions: without the queue, a warning lands in the read's capture" {
+	setup_logging_read
+	mcp_resources_subscription_store "sub-raw" "live" "file:///live.txt" "fp-old"
+	mcp_resources_poll_subscriptions
+	run grep -c 'notifications/message' "${CAPTURED}"
+	assert_output "1"
+}

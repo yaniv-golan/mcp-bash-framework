@@ -21,6 +21,9 @@ Edit README.md.in and run: bash scripts/render-readme.sh
 
 ## Contents
 
+- [TL;DR](#tldr)
+- [What you’ll build](#what-youll-build)
+- [Design Principles](#design-principles)
 - [MCP Spec Coverage](#mcp-spec-coverage)
 - [Why Bash?](#why-bash)
 - [Quick Start](#quick-start)
@@ -29,8 +32,19 @@ Edit README.md.in and run: bash scripts/render-readme.sh
 - [MCPB Bundles](#mcpb-bundles)
 - [Vendoring the Runtime](#vendoring-the-runtime)
 - [Project Structure](#project-structure)
-- [Configuration](#configuration)
+- [Direct Tool Execution (run-tool)](#direct-tool-execution-run-tool)
+- [Embedded resources in tool output](#embedded-resources-in-tool-output)
+- [Diagnostics & Validation](#diagnostics--validation)
+- [SDK Discovery](#sdk-discovery)
+- [Roots (scoping filesystem access)](#roots-scoping-filesystem-access)
+- [Completions](#completions)
+- [Tool Policy Hook (optional)](#tool-policy-hook-optional)
 - [Learn by Example](#learn-by-example)
+- [Features at a Glance](#features-at-a-glance)
+- [Configuration](#configuration)
+- [Troubleshooting (quick hits)](#troubleshooting-quick-hits)
+- [Requirements](#requirements)
+- [Uninstall](#uninstall)
 - [Documentation](#documentation)
 - [Built with mcp-bash](#built-with-mcp-bash)
 - [FAQ](#faq)
@@ -51,6 +65,8 @@ mcp-bash scaffold tool my-tool   # edit tools/my-tool/tool.sh
 mcp-bash config --client cursor  # paste into your MCP client
 mcp-bash bundle                  # create distributable package
 ```
+
+![mcp-bash demo: create a project, scaffold a tool, run it, and print a Claude Desktop config](assets/mcp-bash-demo.gif)
 
 ## What you’ll build
 
@@ -110,15 +126,15 @@ If your tools are already shell scripts, wrapping them in Node or Python adds co
 
 When you run `mcp-bash` from inside a project (a directory containing `server.d/server.meta.json`), it auto-detects the project root. Running `mcp-bash` outside any project starts a temporary getting-started helper tool. For MCP clients, set `MCPBASH_PROJECT_ROOT` so the server can find your project regardless of working directory.
 
-### 0. Requirements (10 seconds)
+### 1. Check Requirements (10 seconds)
 
 ```bash
-# Preflight: Bash 3.2+ and jq/gojq for full functionality (tools/resources/prompts).
+# Preflight: Bash 3.2+ and jq (or gojq) for full functionality (tools/resources/prompts).
 bash --version | head -1
 command -v jq >/dev/null 2>&1 || command -v gojq >/dev/null 2>&1 || printf '%s\n' '⚠ jq/gojq missing: minimal mode only (tools/resources/prompts disabled)'
 ```
 
-### 1. Install the Framework
+### 2. Install the Framework
 
 **Homebrew** (macOS and Linux — recommended):
 
@@ -169,7 +185,7 @@ Pin a release with the installer (auto-prefixes `v` for bare versions):
 bash install.sh --verify <sha256-from-SHA256SUMS> --version 1.8.0
 ```
 
-### 1.5 Verify It Works (30 seconds)
+### 3. Verify It Works (30 seconds)
 
 Security defaults: the `server.d/register.sh` hook is disabled unless `MCPBASH_ALLOW_PROJECT_HOOKS=true` (`server.d/policy.sh` and `register.json` are always loaded), and tools require an explicit allowlist (`MCPBASH_TOOL_ALLOWLIST=*` to allow all in trusted projects).
 
@@ -194,31 +210,6 @@ mcp-bash run-tool hello --allow-self --args '{"name":"World"}'
 cd .. && rm -rf demo-server
 ```
 
-### 1.6 Uninstall (if needed)
-
-To completely remove mcp-bash from your system:
-
-```bash
-# 1. Remove the framework installation
-rm -rf ~/.local/share/mcp-bash
-
-# 2. Remove the symlink
-rm -f ~/.local/bin/mcp-bash
-
-# 3. Remove the wrapper script, if you created one with `mcp-bash config --wrapper`
-#    (one file per project, named after the server; your other scripts stay)
-rm -f /path/to/your/project/<server-name>.sh  # e.g., my-server.sh
-
-# 4. (Optional) Remove PATH addition from your shell config
-#    Edit ~/.bashrc or ~/.zshrc and remove the line:
-#    export PATH="$HOME/.local/bin:$PATH"
-```
-
-**Notes:**
-- Your project directories (`tools/`, `resources/`, `prompts/`) are untouched—they live in your own repos.
-- Wrapper scripts are only created if you ran `mcp-bash config --wrapper` or `--wrapper-env`.
-- After uninstalling, you can reinstall anytime with the Quick Install command above.
-
 <details>
 <summary><strong>Something not working?</strong> (click to expand)</summary>
 
@@ -235,7 +226,7 @@ Still stuck? Run `mcp-bash doctor` (or `mcp-bash doctor --json`) and include out
 
 </details>
 
-### 2. Create Your Project
+### 4. Create Your Project
 
 Your server code lives in a separate project directory:
 
@@ -246,7 +237,7 @@ cd my-mcp-server
 
 Already in a directory you created yourself? Run `mcp-bash init --name my-mcp-server [--no-hello]` instead.
 
-### 3. Scaffold Your First Tool
+### 5. Scaffold Your First Tool
 
 ```bash
 mcp-bash scaffold tool check-disk
@@ -255,7 +246,7 @@ mcp-bash scaffold tool check-disk
 This scaffolds `tools/check-disk/tool.sh` and `tools/check-disk/tool.meta.json` in your project. You write the logic.
 Each scaffolded tool also includes `tools/check-disk/smoke.sh`—run it after edits to ensure your tool’s stdout is valid JSON (update the sample args in the script if you change `tool.meta.json`).
 
-### 3.5 (Optional) Add a Test Harness
+### 6. (Optional) Add a Test Harness
 
 Create a lightweight runner for tool smoke tests:
 
@@ -395,21 +386,25 @@ Picking a wrapper:
   ) as server:
       ...
   ```
-- **OpenClaw** (formerly Clawdbot): [OpenClaw](https://github.com/openclaw/openclaw) uses [mcporter](https://github.com/openclaw/mcporter) for MCP. Add to `~/.mcporter/mcporter.json`:
-  ```json
-  {
-    "mcpServers": {
-      "mcp-bash": {
-        "command": "/Users/you/.local/bin/mcp-bash",
-        "env": {
-          "MCPBASH_PROJECT_ROOT": "/Users/you/my-mcp-server",
-          "MCPBASH_TOOL_ALLOWLIST": "*"
-        }
-      }
-    }
-  }
+- **OpenClaw** (formerly Clawdbot): register the server with [OpenClaw](https://github.com/openclaw/openclaw)'s MCP registry, which saves it under `mcp.servers` in OpenClaw's config:
+  ```bash
+  openclaw mcp add mcp-bash \
+    --command /Users/you/.local/bin/mcp-bash \
+    --env MCPBASH_PROJECT_ROOT=/Users/you/my-mcp-server \
+    --env 'MCPBASH_TOOL_ALLOWLIST=*'
   ```
-  Verify with `npx mcporter list mcp-bash`. OpenClaw agents call tools via its bundled `mcporter` skill.
+  Check it with `openclaw mcp show mcp-bash`. Servers in mcporter's own config are a separate registry that `openclaw mcp` does not read.
+- **NanoClaw** ([nanoclaw.dev](https://nanoclaw.dev); checked against v2026.10.0): MCP servers run inside each agent group's container, so mount the framework and your project into it, add `jq` (not in the default image), and register the server. Point the registry cache at a writable path, because the mounts are read-only:
+  ```bash
+  ncl groups config add-mount --id <group-id> --host ~/.local/share/mcp-bash --container /opt/mcp-bash --ro
+  ncl groups config add-mount --id <group-id> --host /Users/you/my-mcp-server --container /opt/my-mcp-server --ro
+  ncl groups config add-package --id <group-id> --apt jq
+  ncl groups config add-mcp-server --id <group-id> --name mcp-bash \
+    --command /opt/mcp-bash/bin/mcp-bash \
+    --env '{"MCPBASH_PROJECT_ROOT":"/opt/my-mcp-server","MCPBASH_TOOL_ALLOWLIST":"*","MCPBASH_REGISTRY_DIR":"/tmp/mcp-bash-registry"}'
+  ncl groups restart --id <group-id> --rebuild
+  ```
+  `--host` is the framework install directory (`~/.local/share/mcp-bash` for the curl installer). Mounting host paths needs operator approval.
 - **Highlight AI**: Go to Highlight → Settings → Connections → Add → Custom command:
   - **Connection name**: `mcp-bash`
   - **Command**: `/Users/you/.local/bin/mcp-bash`
@@ -424,7 +419,8 @@ Picking a wrapper:
 |--------|--------|----------------------|
 | Claude Desktop | Tested (macOS, Windows) | macOS: non-login shell PATH/env (use `config --wrapper-env`); macOS quarantine/TCC can block execution; restart required after config changes |
 | Claude CLI / Claude Code | Tested | Generally straightforward; ensure `MCPBASH_PROJECT_ROOT` points at your project |
-| OpenClaw (formerly Clawdbot) | Config documented | Uses mcporter for MCP; config in `~/.mcporter/mcporter.json` |
+| OpenClaw (formerly Clawdbot) | Config documented | `openclaw mcp add`; saved under `mcp.servers` in OpenClaw's config |
+| NanoClaw | Config documented | Runs in the agent's container: mount the framework and project, add `jq`, set `MCPBASH_REGISTRY_DIR` to a writable path |
 | Highlight AI | Tested | UI-based config: Settings → Connections → Add → Custom command |
 | Cursor | Config documented | Config file location differs by install; use `mcp-bash config --client cursor` |
 | Windsurf (Cascade) | Config documented | Use the app's MCP config UI/file; see snippet in README |
@@ -470,6 +466,8 @@ mcp-bash bundle --verbose           # Show detailed progress
 ```
 
 The bundle includes your tools, resources, prompts, and an embedded copy of the mcp-bash framework—fully self-contained for distribution.
+
+To list the bundle in the MCP Registry, run `mcp-bash publish my-server-1.0.0.mcpb` (`--dry-run` validates without submitting; needs a registry token, see `mcp-bash publish --help`).
 
 > [Full bundling guide](docs/MCPB.md)
 
@@ -523,6 +521,22 @@ Flags: `--args` (JSON object), `--roots` (comma-separated paths), `--dry-run`, `
 The scaffolder and examples use per-tool directories (e.g., `tools/check-disk/tool.sh`); automatic discovery requires tools to live under subdirectories of `tools/` (root-level scripts are not discovered).
 
 See [**Project Structure Guide**](docs/PROJECT-STRUCTURE.md) for detailed layouts, Docker deployment, and multi-environment setups.
+
+## Embedded resources in tool output
+
+Tools can attach files directly to the MCP response as `type:"resource"` content parts; binary files are auto-base64-encoded into the `blob` field, text stays in `text`.
+
+Use `mcp_result_text_with_resource` to embed files with your tool result:
+
+```bash
+payload_path="${MCPBASH_PROJECT_ROOT}/resources/report.txt"
+printf 'Report content' >"${payload_path}"
+mcp_result_text_with_resource \
+  "$(mcp_json_obj message "See embedded report")" \
+  --path "${payload_path}" --mime text/plain
+```
+
+This helper stays as is in 1.x and changes in 2.0; `mcp-bash migrate` will show the replacement once it is final. See the dedicated example at `examples/06-embedded-resources/` and [BEST-PRACTICES.md](docs/BEST-PRACTICES.md#embedding-resources-in-tool-responses) for full documentation.
 
 ## Diagnostics & Validation
 
@@ -614,6 +628,11 @@ The [`examples/`](examples/) directory shows common patterns end-to-end:
 | [**09-registry-overrides**](examples/09-registry-overrides/) | Declarative registry overrides, live progress streaming, and a custom resource provider. |
 | [**10-completions**](examples/10-completions/) | Completion registration, query filtering, and pagination/hasMore. |
 | [**11-resource-templates**](examples/11-resource-templates/) | Resource template discovery, manual overrides, client-side expansion, and template-aware reads. |
+| [**12-config-and-downloads**](examples/12-config-and-downloads/) | Layered configuration (`mcp_config_load`) and SSRF-safe downloads (`mcp_download_safe`). |
+| [**13-ui-basics**](examples/13-ui-basics/) | MCP Apps: `ui://` resources, tool-associated and standalone UIs, `ui.meta.json`. |
+| [**14-ui-templates**](examples/14-ui-templates/) | A result-driven dashboard built with the bundled UI templates. |
+| [**15-cli-wrapper**](examples/15-cli-wrapper/) | Wrapping an external CLI: PATH resolution (`mcp_detect_cli`), error handling, result formatting. Start here if your server calls a CLI. |
+| [**Advanced: register-sh-hooks**](examples/advanced/register-sh-hooks/) | Dynamic registration from `server.d/register.sh` (opt-in project hook). |
 | [**Advanced: ffmpeg-studio**](examples/advanced/ffmpeg-studio/) | Real-world application: video processing pipeline with media inspection (optional, heavy deps). |
 
 ## Features at a Glance
@@ -622,9 +641,13 @@ The [`examples/`](examples/) directory shows common patterns end-to-end:
 - **Scaffolding**: Generate compliant tool, resource, prompt templates, and a test harness (`mcp-bash scaffold <type> <name>`, `mcp-bash scaffold test`).
 - **Stdio Transport**: Standard input/output. No custom daemons or sidecars.
 - **Framework/Project Separation**: Install the framework once, create unlimited projects.
-- **Graceful Degradation**: Automatically detects available JSON tools (`gojq`, `jq`) or falls back to minimal mode if none are present.
+- **Graceful Degradation**: Automatically detects an available JSON tool (`jq`, then `gojq`) or falls back to minimal mode if none are present.
 - **Progress Streaming**: Emits progress and log notifications; set `MCPBASH_ENABLE_LIVE_PROGRESS=true` to stream them during execution (uses a lightweight background flusher).
 - **Debug Mode**: Run `mcp-bash debug` to capture all JSON-RPC messages for analysis. See [docs/DEBUGGING.md](docs/DEBUGGING.md).
+- **Elicitation**: Ask the user for input mid-tool (form and URL modes) when the client supports it. See [docs/ELICITATION.md](docs/ELICITATION.md).
+- **Completions**: Argument completions for prompts and resource templates. See [docs/COMPLETION.md](docs/COMPLETION.md).
+- **MCP Apps (UI resources)**: Serve `ui://` HTML views alongside tools, from files or built-in templates. See [docs/guides/ui-resources.md](docs/guides/ui-resources.md).
+- **Distribution**: `mcp-bash bundle` builds an MCPB package, `mcp-bash publish` submits it to the MCP Registry, and `mcp-bash vendor` embeds the runtime in your repo. See [MCPB Bundles](#mcpb-bundles) and [Vendoring the Runtime](#vendoring-the-runtime).
 
 ## Configuration
 
@@ -743,7 +766,7 @@ When annotations are absent, the field is omitted from `resources/list` response
 
 ### Runtime Requirements
 *   **Bash**: version 3.2 or higher (standard on macOS, Linux, WSL, and Git Bash on Windows).
-*   **JSON Processor**: `gojq` (recommended) or `jq`.
+*   **JSON Processor**: `jq` (preferred) or `gojq`.
     *   *Note*: If no JSON tool is found, the server runs in "Minimal Mode" (Lifecycle & Ping only).
 
 ### Development Requirements
@@ -766,9 +789,42 @@ From the repo root:
 - Large payloads can be slower under MSYS; keep registry TTLs reasonable.
 See [docs/WINDOWS.md](docs/WINDOWS.md) for full guidance and workarounds.
 
+## Uninstall
+
+**Homebrew:**
+
+```bash
+brew uninstall mcp-bash
+brew untap yaniv-golan/mcp-bash  # optional
+```
+
+**curl installer or manual install:**
+
+```bash
+# 1. Remove the framework installation
+rm -rf ~/.local/share/mcp-bash
+
+# 2. Remove the symlink
+rm -f ~/.local/bin/mcp-bash
+
+# 3. (Optional) Remove the PATH addition from your shell config
+#    Edit ~/.bashrc or ~/.zshrc and remove the line:
+#    export PATH="$HOME/.local/bin:$PATH"
+```
+
+**Either way**, remove the wrapper script if you created one with `mcp-bash config --wrapper` or `--wrapper-env` (one file per project, named after the server; your other scripts stay):
+
+```bash
+rm -f /path/to/your/project/<server-name>.sh  # e.g., my-server.sh
+```
+
+Your project directories (`tools/`, `resources/`, `prompts/`) are untouched; they live in your own repos. To reinstall, follow [Install the Framework](#2-install-the-framework).
+
 ---
 
 ## Documentation
+
+The [**documentation index**](docs/README.md) lists every guide.
 
 ### Getting Started
 - [**Project Structure Guide**](docs/PROJECT-STRUCTURE.md) - Layouts, Docker deployment, multi-environment setups.
@@ -785,6 +841,13 @@ See [docs/WINDOWS.md](docs/WINDOWS.md) for full guidance and workarounds.
 - [**Limits & Performance**](docs/LIMITS.md) - Concurrency, payload ceilings, throttling.
 - [**Errors**](docs/ERRORS.md) - Protocol errors vs tool execution errors (SEP-1303).
 - [**Best Practices**](docs/BEST-PRACTICES.md) - Development, testing, operations guidance.
+- [**Environment Variables**](docs/ENV_REFERENCE.md) - Every setting the server reads.
+- [**Debugging**](docs/DEBUGGING.md) / [**Logging**](docs/LOGGING.md) / [**Inspector**](docs/INSPECTOR.md) - Capture traffic, read logs, and test with the MCP Inspector.
+
+### MCP Apps (UI)
+- [**MCP Apps concepts**](docs/concepts/mcp-apps.md) - How UI resources work and what clients support.
+- [**UI resources guide**](docs/guides/ui-resources.md) - Adding `ui://` views to a server.
+- [**UI SDK reference**](docs/reference/ui-sdk.md) and [**UI templates reference**](docs/reference/ui-templates.md).
 
 ### Deep Dive
 - [**Architecture Guide**](docs/ARCHITECTURE.md) - Internal architecture, lifecycle loop, concurrency model.
@@ -797,25 +860,9 @@ See [docs/WINDOWS.md](docs/WINDOWS.md) for full guidance and workarounds.
 - [**Remote Connectivity**](docs/REMOTE.md) - Exposing mcp-bash over HTTP/SSE via external gateways.
 
 ### Scope and Goals
-- Bash-only Model Context Protocol server verified on macOS Bash 3.2, Linux Bash ≥3.2, and Windows (Git Bash is CI-tested; WSL behaves like Linux).
+- Bash-only Model Context Protocol server verified on macOS Bash 3.2, Linux Bash ≥3.2 (including Alpine/BusyBox, CI-tested), and Windows (Git Bash is CI-tested; WSL behaves like Linux).
 - Targets MCP protocol version `2025-11-25` while supporting negotiated downgrades.
 - Transport support is limited to stdio; HTTP/SSE/OAuth transports remain out of scope (see [Remote Connectivity](docs/REMOTE.md) for gateway options).
-
-## Embedded resources in tool output
-
-Tools can attach files directly to the MCP response as `type:"resource"` content parts; binary files are auto-base64-encoded into the `blob` field, text stays in `text`.
-
-Use `mcp_result_text_with_resource` to embed files with your tool result:
-
-```bash
-payload_path="${MCPBASH_PROJECT_ROOT}/resources/report.txt"
-printf 'Report content' >"${payload_path}"
-mcp_result_text_with_resource \
-  "$(mcp_json_obj message "See embedded report")" \
-  --path "${payload_path}" --mime text/plain
-```
-
-This helper stays as is in 1.x and changes in 2.0; `mcp-bash migrate` will show the replacement once it is final. See the dedicated example at `examples/06-embedded-resources/` and [BEST-PRACTICES.md](docs/BEST-PRACTICES.md#embedding-resources-in-tool-responses) for full documentation.
 
 ## Built with mcp-bash
 
@@ -840,6 +887,10 @@ We'd love to see what you build—consider [opening a discussion](https://github
 ### Why is the repository named `mcp-bash-framework` but the CLI is `mcp-bash`?
 
 The repository name `mcp-bash-framework` reflects what this project is: a framework you install once and use to create multiple MCP server projects. The CLI/binary is named `mcp-bash` because that's what you invoke—short and memorable. The name `mcp-bash` was already taken on GitHub, so we chose `mcp-bash-framework` to accurately describe the architecture while avoiding namespace conflicts.
+
+### Do I need jq? What about gojq?
+
+You need one of them for tools, resources and prompts; without either, the server runs in [minimal mode](docs/MINIMAL-MODE.md) (lifecycle and ping only). Prefer `jq` (`brew install jq`, `apt install jq`); the server looks for it first. `gojq` works too. To choose explicitly, set `MCPBASH_JSON_TOOL=jq` or `gojq`.
 
 ---
 

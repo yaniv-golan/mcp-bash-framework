@@ -21,7 +21,8 @@ if ! declare -F mcp_file_read_verified >/dev/null 2>&1; then
 fi
 
 # Configuration defaults
-MCPBASH_MAX_UI_RESOURCE_BYTES="${MCPBASH_MAX_UI_RESOURCE_BYTES:-1048576}"  # 1MB
+# A malformed value (such as "1M") means the default, not no limit.
+MCPBASH_MAX_UI_RESOURCE_BYTES="$(mcp_file_read_limit "${MCPBASH_MAX_UI_RESOURCE_BYTES:-}" 1048576)" # 1MB
 MCPBASH_UI_CACHE_MAX_TEMPLATES="${MCPBASH_UI_CACHE_MAX_TEMPLATES:-50}"
 
 # --- Discovery functions ---

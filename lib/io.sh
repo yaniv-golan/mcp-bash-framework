@@ -15,9 +15,15 @@ MCP_NOTIFICATION_QUEUE_FILE=""
 mcp_notification_queue_init() {
 	# Initialize the notification queue file for the current handler invocation.
 	# Called before handler execution to enable deferred notification emission.
+	# Each frame needs its own file: the main loop, the subscription poller and
+	# workers queue at the same time, and bash 3.2 has no BASHPID, so a name
+	# built from the pid is shared between them.
 	if [ -n "${MCPBASH_STATE_DIR:-}" ]; then
-		MCP_NOTIFICATION_QUEUE_FILE="${MCPBASH_STATE_DIR}/notifications.${BASHPID:-$$}.queue"
-		: >"${MCP_NOTIFICATION_QUEUE_FILE}"
+		MCP_NOTIFICATION_QUEUE_FILE="$(mktemp "${MCPBASH_STATE_DIR}/notifications.XXXXXX" 2>/dev/null)" || MCP_NOTIFICATION_QUEUE_FILE=""
+		if [ -z "${MCP_NOTIFICATION_QUEUE_FILE}" ]; then
+			MCP_NOTIFICATION_QUEUE_FILE="${MCPBASH_STATE_DIR}/notifications.${BASHPID:-$$}.${RANDOM}${RANDOM}.queue"
+			: >"${MCP_NOTIFICATION_QUEUE_FILE}"
+		fi
 	fi
 }
 
@@ -50,6 +56,25 @@ mcp_notification_queue_flush() {
 mcp_notification_queue_active() {
 	# Check if notification queueing is active (we're inside a handler context).
 	[ -n "${MCP_NOTIFICATION_QUEUE_FILE:-}" ]
+}
+
+# mcp_notification_queue_run COMMAND [ARGS...]
+# Run COMMAND with log notifications queued, then flush them. Code that logs
+# inside a $(...) (registry builds do) would otherwise write the notification
+# into the captured value outside a handler, where no queue is active. Inside
+# a handler the handler's queue is already active and is used as is. Call it
+# only where stdout is not captured: the flush writes to stdout. With
+# MCPBASH_DIRECT_FD set, logging already bypasses stdout, so no queue is needed.
+mcp_notification_queue_run() {
+	if mcp_notification_queue_active || [ -n "${MCPBASH_DIRECT_FD:-}" ]; then
+		"$@"
+		return
+	fi
+	mcp_notification_queue_init
+	local status=0
+	"$@" || status=$?
+	mcp_notification_queue_flush
+	return "${status}"
 }
 
 mcp_io_corruption_file() {
@@ -103,6 +128,40 @@ mcp_io_read_file_exact() {
 	printf '%s' "${data%"${marker}"}"
 }
 
+# Stop the whole server, from the main shell or from a worker subshell ($$ is
+# the server's pid in both, and bash 3.2 cannot tell them apart). The server's
+# TERM trap exits 143 and runs cleanup; a worker then exits too.
+mcp_io_terminate_server() {
+	kill -TERM "$$" 2>/dev/null || true
+	exit 143
+}
+
+# A write to the client's stdout failed: the client stopped reading, so nothing
+# more can be delivered. Stop the server at once, whatever
+# MCPBASH_ALLOW_CORRUPT_STDOUT says. No command substitutions here: on bash 3.2
+# the bytes of a failed builtin printf stay in this process's stdout buffer and
+# every later $(...) would flush them into its result.
+# A worker's stderr goes to a per-request file, so the reason is left in the
+# state directory for the server's exit handler to report
+# (mcp_io_report_stdout_gone).
+mcp_io_stdout_gone() {
+	if [ -z "${MCPBASH_STATE_DIR:-}" ] \
+		|| ! printf '%s\n' "$1" 2>/dev/null >"${MCPBASH_STATE_DIR}/stdout.gone"; then
+		printf 'mcp-bash: %s; the client stopped reading, shutting down.\n' "$1" >&2
+	fi
+	mcp_io_terminate_server
+}
+
+# Called by the server's exit handler: report why the server stopped, if a
+# write to stdout failed.
+mcp_io_report_stdout_gone() {
+	local marker="${MCPBASH_STATE_DIR:-}/stdout.gone"
+	local reason=""
+	[ -n "${MCPBASH_STATE_DIR:-}" ] && [ -f "${marker}" ] || return 0
+	IFS= read -r reason <"${marker}" || true
+	printf 'mcp-bash: %s; the client stopped reading, shutting down.\n' "${reason:-stdout write failed}" >&2
+}
+
 mcp_io_handle_corruption() {
 	local reason="$1"
 	local key="${2:-}"
@@ -137,7 +196,7 @@ mcp_io_handle_corruption() {
 		while IFS= read -r line; do
 			[ -z "${line}" ] && continue
 			if [ $((now - line)) -lt "${window}" ]; then
-				preserved="${preserved}${line}\n"
+				preserved="${preserved}${line}"$'\n'
 				count=$((count + 1))
 			fi
 		done <"${file}"
@@ -163,7 +222,7 @@ mcp_io_handle_corruption() {
 	if [ $((count + 1)) -ge "${threshold}" ]; then
 		printf '%s\n' 'mcp-bash: exiting due to repeated stdout corruption.' >&2
 		mcp_lock_release "${lock_name}"
-		exit 2
+		mcp_io_terminate_server
 	fi
 
 	mcp_lock_release "${lock_name}"
@@ -427,15 +486,20 @@ mcp_io_write_payload() {
 	# write to a closed stdout (host ignoring SIGPIPE) the server then built
 	# paths out of the payload and spun forever. Writing from a subshell leaves
 	# the stale buffer in the child. bash 4+ discards it, so no fork there.
+	# The trap turns SIGPIPE into a failed write we can report: with the
+	# default action a worker would die silently and the server would keep
+	# running with no one reading. (A trap, unlike an ignored signal, is reset
+	# for commands the worker execs.)
 	local write_ok=true
 	if [ "${BASH_VERSINFO[0]}" -lt 4 ]; then
 		(printf '%s\n' "${normalized}") || write_ok=false
 	else
+		trap ':' PIPE
 		printf '%s\n' "${normalized}" || write_ok=false
+		trap - PIPE
 	fi
 	if [ "${write_ok}" != true ]; then
-		mcp_io_handle_corruption "stdout write failure" "${key}" "${category}" "${normalized}"
-		return 1
+		mcp_io_stdout_gone "stdout write failed"
 	fi
 	return 0
 }
@@ -446,9 +510,10 @@ _mcp_io_write_to_fd3() {
 	# >&3 redirection is applied correctly regardless of shell context.
 	#
 	# Verify fd 3 is valid and different from fd 1 before writing.
+	# Returns 2 when fd 3 cannot be used, 1 when the write itself fails.
 	if ! { : >&3; } 2>/dev/null; then
 		printf 'mcp-bash: fd 3 unavailable in direct write context\n' >&2
-		return 1
+		return 2
 	fi
 	# Check if fd 3 and fd 1 point to the same file (would cause corruption)
 	local fd1_inode fd3_inode
@@ -456,9 +521,20 @@ _mcp_io_write_to_fd3() {
 	fd3_inode="$(stat -f '%i' /dev/fd/3 2>/dev/null || stat -c '%i' /dev/fd/3 2>/dev/null || echo "3")"
 	if [ "${fd1_inode}" = "${fd3_inode}" ]; then
 		printf 'mcp-bash: fd 3 same as fd 1 (inode %s), skipping direct write\n' "${fd1_inode}" >&2
-		return 1
+		return 2
 	fi
-	printf '%s\n' "$1" >&3
+	# Fork on bash 3.2, as in mcp_io_write_payload: a failed builtin printf
+	# would leave its bytes in this process's stdout buffer.
+	# Catch SIGPIPE as in mcp_io_write_payload.
+	if [ "${BASH_VERSINFO[0]}" -lt 4 ]; then
+		(printf '%s\n' "$1" >&3)
+	else
+		local status=0
+		trap ':' PIPE
+		printf '%s\n' "$1" >&3 || status=1
+		trap - PIPE
+		return "${status}"
+	fi
 }
 
 mcp_io_write_payload_to_fd() {
@@ -489,14 +565,23 @@ mcp_io_write_payload_to_fd() {
 	# MCPBASH_DIRECT_FD is set), use a dedicated helper function. For
 	# other fds, fall back to eval.
 	if [ "${target_fd}" = "3" ]; then
-		if ! _mcp_io_write_to_fd3 "${normalized}"; then
+		local fd3_status=0
+		_mcp_io_write_to_fd3 "${normalized}" || fd3_status=$?
+		case "${fd3_status}" in
+		0) ;;
+		2)
 			mcp_io_handle_corruption "fd write failure" "${key}" "${category}" "${normalized}"
 			return 1
-		fi
+			;;
+		*) mcp_io_stdout_gone "stdout write failed" ;;
+		esac
 	else
-		if ! eval "printf '%s\\n' \"\${normalized}\" >&${target_fd}"; then
-			mcp_io_handle_corruption "fd write failure" "${key}" "${category}" "${normalized}"
-			return 1
+		local write_ok=true
+		trap ':' PIPE
+		eval "printf '%s\\n' \"\${normalized}\" >&${target_fd}" || write_ok=false
+		trap - PIPE
+		if [ "${write_ok}" != true ]; then
+			mcp_io_stdout_gone "stdout write failed"
 		fi
 	fi
 	return 0

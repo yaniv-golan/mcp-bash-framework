@@ -127,8 +127,8 @@ Entries describe resources and providers. Paths are relative to `MCPBASH_RESOURC
 }
 ```
 
-- Metadata that cannot be parsed (missing `uri` or `uriTemplate`, unsupported `provider`, non-object `arguments`, unreadable `.meta.json`) is skipped and logged as a warning through the structured logging subsystem.
-- When no `provider` is specified, the scanner infers one from the URI scheme (`file://`, `git+https://`, `https://`, `ui://`). Any other scheme maps to a project provider of the same name when `${MCPBASH_PROVIDERS_DIR}/<scheme>.sh` exists (e.g., `myapi://status` → `providers/myapi.sh`); otherwise it defaults to `file` and is rejected if the provider script is unavailable. The file name must match the scheme exactly, including case. Manual registration (`register.sh` / `register.json`) does not infer custom providers: set `provider` explicitly.
+- Resource metadata is read field by field. A resource file whose `.meta.json` is missing, unreadable or has no `uri` is still registered, as a `file://` URI for that file, named after the file (without its extension). Template entries without `name` or `uriTemplate`, or whose `uriTemplate` has no `{variable}`, are skipped with a warning. A static resource's `provider` is not checked at scan time: an unknown one fails when the resource is read (`Unsupported resource provider`). For template providers, see [RESOURCE-TEMPLATES.md](RESOURCE-TEMPLATES.md).
+- When a static resource has no `provider` (or an empty one), it is inferred from the URI scheme. The same rule applies to auto-discovery, `register.sh` (`mcp_register_resource` or printed JSON) and `register.json`: `file://`, `git+https://`, `https://` and `ui://` use the built-in providers, and `echo://` the bundled demo provider. Any other scheme maps to a project provider of the same name when `${MCPBASH_PROVIDERS_DIR}/<scheme>.sh` exists (e.g., `myapi://status` → `providers/myapi.sh`). Otherwise the resource uses `file` and a warning is logged at registration (`no providers/<scheme>.sh ...`). The file name must match the scheme exactly, including case. An explicit `provider` is never changed. Resource templates are routed when read: by their own `provider` when set and usable, otherwise by scheme (see [RESOURCE-TEMPLATES.md](RESOURCE-TEMPLATES.md)).
 - Discovery records `name`, `description`, `path`, `uri`, `mimeType`, and `provider`; argument/template schemas are not persisted today.
 - **`mimeType` is a label; detection decides the encoding.**
   - **Declared:** when a resource sets a non-empty string `mimeType` (in `.meta.json`, `mcp_register_resource` in `register.sh`, or `register.json`), `resources/read` reports it exactly as written.
@@ -141,7 +141,7 @@ Entries describe resources and providers. Paths are relative to `MCPBASH_RESOURC
 - Subscription notifications (`notifications/resources/updated`) are spec-shaped and only include `params.uri`; clients should call `resources/read` to fetch the updated content.
 - **Subscriptions:**
   - `resources/subscribe` takes `{uri}` (or a registered `name`). Its result carries an extra `subscriptionId`; the spec result is empty, and extra fields are allowed.
-  - `resources/unsubscribe` takes `{uri}`, as in the spec, and removes every subscription to that uri on the connection. It also accepts `{subscriptionId}` to remove one subscription.
+  - `resources/unsubscribe` takes `{uri}`, as in the spec, and removes every subscription to that uri on the connection that was requested before the unsubscribe (a subscribe sent right after it is kept). It also accepts `{subscriptionId}` to remove one subscription.
   - Unsubscribing a uri or id that is not subscribed succeeds with no effect. A request with neither field returns `-32602`.
   - Polling starts as soon as the first `resources/subscribe` arrives, so a client that subscribes and then waits still receives updates. The interval is `MCPBASH_RESOURCES_POLL_INTERVAL_SECS` (default `2`).
 
@@ -169,11 +169,13 @@ my-project/
 
 Project providers follow the same contract as framework providers:
 
-**Arguments**: Provider receives the full URI as `$1`. This can be any URI in the provider's scheme, not only the URIs the project registers, so validate it and exit `3` or `4` for URIs the provider does not serve.
+**Arguments**: Provider receives the full URI as `$1`. This can be any URI in the provider's scheme, not only the URIs the project registers, and, for a resource template that names the provider, any URI the template matches, in any scheme. Validate it and exit `3` or `4` for URIs the provider does not serve.
+
+**Timeout**: a `resources/read` is stopped (TERM, then KILL, to the provider's process group) after `MCPBASH_DEFAULT_RESOURCE_TIMEOUT` (120 seconds by default; `0` disables it), and the client gets `-32603`. A request's `params.timeoutSecs` overrides it.
 
 **Exit codes**:
 - `0`: Success (content on stdout)
-- `2`: Resource outside allowed roots
+- `2`: Resource outside allowed roots, or access refused (the provider's stderr text, if any, becomes the error message)
 - `3`: Resource not found
 - `4`: Invalid resource specification
 - `5`: Fetch failed

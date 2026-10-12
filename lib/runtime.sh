@@ -12,6 +12,7 @@
 : "${MCPBASH_STATE_DIR:=}"
 : "${MCPBASH_STATE_SEED:=}"
 : "${MCPBASH_STATE_DIR_CREATED:=false}"
+: "${MCPBASH_LOCK_ROOT_CREATED:=false}"
 : "${MCPBASH_CLEANUP_REGISTERED:=false}"
 : "${MCPBASH_JOB_CONTROL_ENABLED:=false}"
 : "${MCPBASH_LOG_JSON_TOOL:=quiet}"
@@ -471,8 +472,11 @@ mcp_runtime_init_paths() {
 		fi
 	fi
 
+	MCPBASH_LOCK_ROOT_CREATED="false"
 	if [ -z "${MCPBASH_LOCK_ROOT}" ]; then
 		MCPBASH_LOCK_ROOT="${MCPBASH_STATE_DIR}/locks"
+		# Ours only if the state dir it lives in is.
+		MCPBASH_LOCK_ROOT_CREATED="${MCPBASH_STATE_DIR_CREATED}"
 	fi
 	mcp_runtime_prepare_override_dir "MCPBASH_LOCK_ROOT" "${MCPBASH_LOCK_ROOT}" || exit 1
 
@@ -601,19 +605,38 @@ mcp_runtime_cleanup() {
 				printf 'mcp-bash: state preserved at %s\n' "${MCPBASH_STATE_DIR}" >&2
 			fi
 		else
-			mcp_runtime_safe_rmrf "${MCPBASH_STATE_DIR}" || true
+			mcp_runtime_safe_rmrf "${MCPBASH_STATE_DIR}" "$(mcp_runtime_rmrf_mode "${MCPBASH_STATE_DIR_CREATED}")" || true
 		fi
 	fi
 
 	if [ -n "${MCPBASH_LOCK_ROOT}" ] && { [ -d "${MCPBASH_LOCK_ROOT}" ] || [ -L "${MCPBASH_LOCK_ROOT}" ]; }; then
-		mcp_runtime_safe_rmrf "${MCPBASH_LOCK_ROOT}" || true
+		mcp_runtime_safe_rmrf "${MCPBASH_LOCK_ROOT}" "$(mcp_runtime_rmrf_mode "${MCPBASH_LOCK_ROOT_CREATED}")" || true
 	fi
 
 	mcp_runtime_cleanup_bootstrap
 }
 
+# "operator" for a directory the operator chose (MCPBASH_STATE_DIR or
+# MCPBASH_LOCK_ROOT set in the environment), "" for one the server created.
+mcp_runtime_rmrf_mode() {
+	if [ "$1" = "true" ]; then
+		printf ''
+	else
+		printf 'operator'
+	fi
+}
+
+# mcp_runtime_safe_rmrf TARGET [MODE]
+# Removes TARGET only if it is one of the server's own temp dirs under
+# MCPBASH_TMP_ROOT; anything else is refused with a message. With MODE
+# "operator" (a dir the operator set) nothing is removed and nothing is said:
+# keeping it is intended, not a problem to report on every exit.
 mcp_runtime_safe_rmrf() {
 	local target="$1"
+	local mode="${2:-}"
+	if [ "${mode}" = "operator" ]; then
+		return 0
+	fi
 	if [ -z "${target}" ] || [ "${target}" = "/" ]; then
 		printf '%s\n' "mcp-bash: refusing to remove unsafe path '${target:-/}'" >&2
 		return 1
@@ -1110,7 +1133,7 @@ mcp_runtime_set_process_group() {
 
 	# Check if the process is already its own group leader (job control worked)
 	local pgid
-	pgid="$(ps -o pgid= -p "${pid}" 2>/dev/null | tr -d ' ' || true)"
+	pgid="$(mcp_runtime_query_pgid "${pid}")" || pgid=""
 	if [ -n "${pgid}" ] && [ "${pgid}" = "${pid}" ]; then
 		return 0
 	fi
@@ -1129,6 +1152,8 @@ mcp_runtime_descendants() {
 	[ -n "${root}" ] || return 0
 	local table
 	table="$(ps -axo pid=,ppid= 2>/dev/null || true)"
+	# BusyBox ps has no -a/-x; it lists every process anyway.
+	[ -n "${table}" ] || table="$(ps -o pid=,ppid= 2>/dev/null || true)"
 	[ -n "${table}" ] || return 0
 	printf '%s\n' "${table}" | awk -v root="${root}" '
 		{ kids[$2] = kids[$2] " " $1 }
@@ -1145,13 +1170,41 @@ mcp_runtime_descendants() {
 		}'
 }
 
+# Print PID's process group from /proc (Linux, including BusyBox systems whose
+# ps has no -p). Returns 1 where /proc has no entry for it.
+mcp_runtime_proc_pgid() {
+	local pid="$1" line state ppid pgrp
+	[ -r "/proc/${pid}/stat" ] || return 1
+	line="$(cat "/proc/${pid}/stat" 2>/dev/null)" || return 1
+	# "pid (comm) state ppid pgrp ...": comm may contain spaces and ")", so
+	# split after the last ") ".
+	IFS=' ' read -r state ppid pgrp _ <<<"${line##*) }"
+	case "${pgrp:-}" in
+	'' | *[!0-9]*) return 1 ;;
+	esac
+	printf '%s' "${pgrp}"
+}
+
+# Print PID's process group: /proc where available, else ps.
+mcp_runtime_query_pgid() {
+	local pid="$1" pgid=""
+	pgid="$(mcp_runtime_proc_pgid "${pid}")" || pgid=""
+	if [ -z "${pgid}" ]; then
+		pgid="$(ps -o pgid= -p "${pid}" 2>/dev/null | tr -d ' ' || true)"
+		case "${pgid}" in
+		*[!0-9]*) pgid="" ;;
+		esac
+	fi
+	[ -n "${pgid}" ] || return 1
+	printf '%s' "${pgid}"
+}
+
 mcp_runtime_lookup_pgid() {
 	local pid="$1"
 	local pgid=""
 	[ -n "${pid}" ] || return 1
 
-	# Use ps to look up the process group ID (POSIX-compliant)
-	pgid="$(ps -o pgid= -p "${pid}" 2>/dev/null | tr -d ' ' || true)"
+	pgid="$(mcp_runtime_query_pgid "${pid}")" || pgid=""
 
 	# Fallback to assuming pid == pgid if ps fails
 	if [ -z "${pgid}" ]; then

@@ -117,7 +117,7 @@ mcp_handle_resources() {
 		fi
 		# The requested uri is kept too, so resources/unsubscribe {uri} matches
 		# even when the provider reports a different (canonical) uri.
-		mcp_resources_subscription_store_payload "${subscription_id}" "${name}" "${effective_uri}" "${result_json}" "${uri}"
+		mcp_resources_subscription_store_payload "${subscription_id}" "${name}" "${effective_uri}" "${result_json}" "${uri}" "${MCPBASH_SUBSCRIPTION_DISPATCH_SEQ:-}"
 		# An unsubscribe for this uri dispatched after this subscribe may have
 		# finished before the record existed; it marked this request revoked.
 		if mcp_resources_subscription_settle_pending "${key}" "${subscription_id}"; then
@@ -161,7 +161,7 @@ mcp_handle_resources() {
 		fi
 		if [ -n "${MCPBASH_STATE_DIR:-}" ]; then
 			if [ -n "${unsubscribe_uri}" ]; then
-				mcp_resources_subscription_remove_by_uri "${unsubscribe_uri}" >/dev/null
+				mcp_resources_subscription_remove_by_uri "${unsubscribe_uri}" "${MCPBASH_SUBSCRIPTION_DISPATCH_SEQ:-}" >/dev/null
 			fi
 			if [ -n "${subscription_id}" ]; then
 				mcp_resources_subscription_remove "${subscription_id}" || true
