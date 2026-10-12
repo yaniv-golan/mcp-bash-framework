@@ -211,6 +211,7 @@ mcp_result_json "$(printf '%s' "$result" | jq -c '.')"
 - Concurrency, timeouts, sizes:
   - `MCPBASH_MAX_CONCURRENT_REQUESTS` (default `16` worker slots).
   - Per-tool timeout via `timeoutSecs` in metadata; global default from `MCPBASH_DEFAULT_TOOL_TIMEOUT` (30s if unset).
+  - A tool that times out returns an error result like `mcp_fail`: `isError: true`, no `structuredContent`, `_meta["mcpbash/error"]` = `{type: "timeout", message, hint (from `timeoutHint`), data: {reason (`fixed`/`idle`/`max_exceeded`), timeoutSecs, exitCode, progressExtendsTimeout?, maxTimeoutSecs?}}`, plus `_meta.exitCode`/`_meta.stderr`. Before 1.9.1 the details were in `structuredContent.error`.
   - `MCPBASH_MAX_TOOL_OUTPUT_SIZE` (default 10MB logical limit).
   - `MCPBASH_MAX_TOOL_STDERR_SIZE` (default same as output limit).
   - `MCPBASH_MAX_RESOURCE_BYTES` (default same as output limit; `file://` reads stop at it). `ui://` resources: `MCPBASH_MAX_UI_RESOURCE_BYTES` (default 1 MiB). A value that is not a plain byte count means the default.

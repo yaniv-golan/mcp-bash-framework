@@ -857,24 +857,22 @@ If progress doesn't make sense, use a generous static timeout and accept that st
 
 ##### Timeout Error Response
 
-When a tool times out, the response uses `isError: true` (not a JSON-RPC error) so LLMs can see the details and potentially adjust their approach. The structured error includes:
+When a tool times out, the response uses `isError: true` (not a JSON-RPC error) so LLMs can see the details and potentially adjust their approach. It has the same shape as other tool errors: no `structuredContent`, and `_meta["mcpbash/error"]` with `type: "timeout"`, `message`, `hint` (when set) and `data`. `data` includes:
 
 | Field | Description |
 |-------|-------------|
-| `type` | Always `"timeout"` |
 | `reason` | `"fixed"` (static), `"idle"` (no progress), or `"max_exceeded"` (hit hard cap) |
 | `timeoutSecs` | The timeout duration that was exceeded |
 | `exitCode` | 124 (timeout), 137 (SIGKILL), or 143 (SIGTERM) |
 | `progressExtendsTimeout` | Present when progress-aware timeout is enabled |
 | `maxTimeoutSecs` | Present when progress-aware timeout is enabled |
-| `hint` | Present when `timeoutHint` is configured in `tool.meta.json` |
 
-The error message also includes the `timeoutHint` text if configured in `tool.meta.json`:
+When `timeoutHint` is configured in `tool.meta.json`, it is `_meta["mcpbash/error"].hint` and is added to the text the model sees:
 
 ```
 Tool timed out after 30s
 
-Suggestion: Use dryRun=true first. For large datasets, try limit <= 100.
+Hint: Use dryRun=true first. For large datasets, try limit <= 100.
 ```
 
 ##### Common Pitfalls
