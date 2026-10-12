@@ -5,7 +5,7 @@ All notable changes to mcp-bash-framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.9.0] - 2026-10-12
 
 ### Behaviour changes to check before upgrading
 - **`resources/read` has a default timeout of 120 seconds**: a provider that takes longer is stopped and the client gets a `-32603` error. Before, a read had no limit unless the client sent `timeoutSecs`. Set `MCPBASH_DEFAULT_RESOURCE_TIMEOUT` to raise it, or to `0` to turn it off.
