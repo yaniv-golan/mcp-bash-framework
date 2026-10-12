@@ -2,7 +2,7 @@
 name: mcp-bash
 description: Build, debug and package MCP servers written in Bash with the mcp-bash framework (mcp-bash-framework). Use whenever the user wants to create an MCP server from shell scripts or CLIs, add or fix tools, resources, prompts or completions in an mcp-bash project, wire one into Claude Desktop, Cursor or another client, figure out why a tool is "blocked by policy", can't see an environment variable or API key, or works in a terminal but not in Claude Desktop, when tool errors show only an exit code, when completions or suggestions don't appear in Claude Desktop, when wrapping an existing CLI (Python, Node, Go) as MCP tools, or to build an .mcpb bundle. Also use when a repo has server.d/server.meta.json, tools/*/tool.meta.json, mcp-bash.lock, a vendored .mcp-bash/ directory or mcpb.conf.
 metadata:
-  version: 0.4.0
+  version: 0.4.1
 ---
 
 # Building MCP servers with mcp-bash
@@ -76,8 +76,8 @@ mcp_result_json "$(mcp_json_obj query "${query}" name "${name}")"
   `mcp_result_error` or `mcp_error`, follow them with `exit 0` in an early-return branch, or the <!-- lint-api-usage: allow -->
   tool keeps going and prints a second result (or does the work it just refused).
 - Long work: `mcp_progress <pct> "msg"`, and check `mcp_is_cancelled` in loops.
-- Tool names: letters, digits, `_` and `-` only, up to 64 characters. **No dots** — Claude
-  Desktop rejects them.
+- Tool names: letters, digits, `_` and `-` only, up to 64 characters, not starting with
+  `-`. **No dots** — Claude Desktop rejects them.
 - **Wrapping a CLI:** pass its error through once. `mcp_with_retry` retries every exit code
   above 2, so a CLI whose codes 3+ are permanent (auth, not found) runs three times and
   prints three JSON error documents into one stdout. That is invalid JSON, and the model sees
@@ -209,7 +209,8 @@ work".
 - **Read-only project directory** (container mounts): tools work, but every registry refresh
   logs cache-write errors. Set `MCPBASH_REGISTRY_DIR` to a writable path.
 - **"tool not found" right after adding a tool:** before mcp-bash 1.7.0, `run-tool` reused a
-  cached registry; run `mcp-bash registry refresh`. A running client sees new tools after it
+  cached registry (and on Alpine it still could, now and then, before 1.9.0); run
+  `mcp-bash registry refresh`. A running client sees new tools after it
   reconnects or gets `list_changed`.
 - **`server.d/register.sh` only runs with `MCPBASH_ALLOW_PROJECT_HOOKS=true`.** Prefer the
   data-only `server.d/register.json`. Both are refused if group- or world-writable
