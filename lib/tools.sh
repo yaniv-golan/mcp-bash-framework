@@ -1382,7 +1382,7 @@ mcp_tools_metadata_for_name() {
 	local name="$1"
 	mcp_tools_refresh_registry || return 1
 	local metadata
-	if ! metadata="$(printf '%s' "${MCP_TOOLS_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -c --arg name "${name}" '.items[] | select(.name == $name)' | head -n 1)"; then
+	if ! metadata="$(printf '%s' "${MCP_TOOLS_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -c --arg name "${name}" 'first(.items[] | select(.name == $name))')"; then
 		return 1
 	fi
 	if [ -z "${metadata}" ]; then

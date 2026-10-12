@@ -325,7 +325,7 @@ mcp_completion_lookup_manual() {
 		return 1
 	fi
 	local entry
-	if ! entry="$(printf '%s' "${MCP_COMPLETION_MANUAL_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -c --arg name "${name}" '.items[] | select(.name == $name)' | head -n 1)"; then
+	if ! entry="$(printf '%s' "${MCP_COMPLETION_MANUAL_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -c --arg name "${name}" 'first(.items[] | select(.name == $name))')"; then
 		return 1
 	fi
 	[ -z "${entry}" ] && return 1
