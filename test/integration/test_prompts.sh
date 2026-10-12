@@ -254,13 +254,14 @@ send() {
 	printf '%s\n' "$1" >&3
 }
 
+# Sets RESPONSE to the next line, or empty after 5s without one (callers
+# check for empty). Uses test_read_line, which keeps a line that arrives across
+# the timeout (a plain `read -t` drops its start); call it directly, not in $(...).
 read_response() {
-	local line
-	# Safety timeout to avoid hanging if the server stops producing output
-	if read -r -t 5 -u 4 line; then
-		printf '%s' "${line}"
+	RESPONSE=""
+	if test_read_line 4 5; then
+		RESPONSE="${TEST_LINE}"
 	fi
-	# Return 0 regardless - callers check if response is empty to detect timeout
 	return 0
 }
 
@@ -272,9 +273,8 @@ wait_for() {
 
 	while [ "$(date +%s)" -lt "${end_time}" ]; do
 		local response
-		if ! response="$(read_response)"; then
-			return 1
-		fi
+		read_response
+		response="${RESPONSE}"
 		if [ -z "${response}" ]; then
 			continue
 		fi
@@ -320,7 +320,8 @@ while [ "$(date +%s)" -lt "${end_time}" ]; do
 	if [ "${seen_update}" = "true" ] && [ "${seen_list}" = "true" ]; then
 		break
 	fi
-	response="$(read_response || true)"
+	read_response
+	response="${RESPONSE}"
 	if [ -z "${response}" ]; then
 		continue
 	fi

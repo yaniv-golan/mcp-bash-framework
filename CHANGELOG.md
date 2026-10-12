@@ -5,6 +5,15 @@ All notable changes to mcp-bash-framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Behaviour changes to check before upgrading
+- **A tool timeout is an error result like any other**: a timed-out tool now returns the same shape as `mcp_fail` and policy denials: `isError: true`, no `structuredContent`, and `_meta["mcpbash/error"]` with `type: "timeout"`, `message`, `hint` (the tool's `timeoutHint`) and `data` (`reason`, `timeoutSecs`, `exitCode`, and `progressExtendsTimeout`/`maxTimeoutSecs` when progress-aware timeout is on). `_meta.exitCode` and `_meta.stderr` are unchanged. Before, the details were in `structuredContent` as `{success: false, error: {...}}`, which a tool's `outputSchema` doesn't describe, and the hint followed `Suggestion:` in the text (now `Hint:`). Clients that read `structuredContent.error.type` or `.reason` on a timeout should read `_meta["mcpbash/error"].type` and `.data.reason`.
+
+### Fixed
+- **Reading a resource by URI could report it missing when two resources share the URI**: lookups by name or URI piped every match into `head -n 1`. With large registry entries, `head` could exit while jq was still writing the second match; jq was then stopped by SIGPIPE and the lookup reported "not found". Tool, prompt, resource and completion lookups now take the first match in jq itself.
+- **Timeouts without jq carry the error details**: in minimal mode (no jq/gojq) a timeout result had only the message; it now has `_meta["mcpbash/error"]` and `_meta.exitCode` too.
+
 ## [1.9.0] - 2026-10-12
 
 ### Behaviour changes to check before upgrading

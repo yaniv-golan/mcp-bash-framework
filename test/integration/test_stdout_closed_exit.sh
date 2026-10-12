@@ -53,7 +53,8 @@ run_case() {
 
 	local line=""
 	printf '%s\n' '{"jsonrpc":"2.0","id":"init","method":"initialize","params":{}}' >&7
-	IFS= read -r -t 10 line <&8 || test_fail "${label}: no initialize response"
+	# Generous: only a loaded runner takes more than a second.
+	IFS= read -r -t 60 line <&8 || test_fail "${label}: no initialize response"
 
 	if [ "${writer}" = "main" ]; then
 		# The client stops reading but keeps stdin open. One request whose
@@ -65,7 +66,7 @@ run_case() {
 		# Read until tools/list answers, so nothing the main shell sends is
 		# still pending when the client stops reading.
 		printf '%s\n' '{"jsonrpc":"2.0","id":"tl","method":"tools/list","params":{}}' >&7
-		while IFS= read -r -t 10 line <&8; do
+		while IFS= read -r -t 60 line <&8; do
 			case "${line}" in *'"id":"tl"'*) break ;; esac
 		done
 		printf '%s\n' '{"jsonrpc":"2.0","id":"c1","method":"tools/call","params":{"name":"slow","arguments":{}}}' >&7

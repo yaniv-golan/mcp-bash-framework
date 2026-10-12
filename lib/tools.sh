@@ -718,47 +718,39 @@ _mcp_tools_emit_error() {
 	fi
 }
 
-# Emit timeout as tool execution error (isError: true) instead of protocol error
-# This allows LLMs to receive and act on timeout information per MCP spec guidance
-# Usage: _mcp_tools_emit_timeout_result <message> <structured_error_json> <stderr_tail> <exit_code>
+# Emit a timeout as a tool error result (isError: true), not a protocol error,
+# so the model sees it and can adjust. Same shape as every other tool error
+# (sdk/tool-error.sh): no structuredContent, details in _meta["mcpbash/error"]
+# with type "timeout", plus _meta.exitCode and, when captured, _meta.stderr.
+# Works without jq.
+# Usage: _mcp_tools_emit_timeout_result <message> <hint> <data_json> <stderr_tail> <exit_code>
 _mcp_tools_emit_timeout_result() {
 	local message="$1"
-	local structured_error="$2"
-	local stderr_tail="$3"
-	local exit_code="$4"
+	local hint="$2"
+	local data="$3"
+	local stderr_tail="$4"
+	local exit_code="$5"
+
+	if ! declare -F mcp_tool_error_result >/dev/null 2>&1; then
+		# shellcheck source=../sdk/tool-error.sh disable=SC1091
+		. "${MCPBASH_HOME}/sdk/tool-error.sh"
+	fi
+	[[ "${exit_code}" =~ ^[0-9]+$ ]] || exit_code=124
 
 	local result
-	if [ "${MCPBASH_JSON_TOOL:-none}" != "none" ]; then
-		# Full mode: build complete structured response
-		# Use -c for compact (single-line) output required for NDJSON format
-		result="$(
-			"${MCPBASH_JSON_TOOL_BIN}" -cn \
-				--arg msg "${message}" \
-				--argjson err "${structured_error}" \
-				--arg stderr "${stderr_tail}" \
-				--argjson exitcode "${exit_code}" \
-				'{
-					content: [{type: "text", text: $msg}],
-					isError: true,
-					structuredContent: {
-						success: false,
-						error: $err
-					},
-					_meta: ({exitCode: $exitcode} + (if ($stderr | length) > 0 then {stderr: $stderr} else {} end))
-				}'
-		)"
+	if [ -n "${hint}" ]; then
+		result="$(mcp_tool_error_result timeout "${message}" --hint "${hint}" --data "${data}")"
 	else
-		# Minimal mode: basic JSON (consistent with _mcp_tools_emit_error fallback)
-		# Escape backslashes, quotes, newlines, tabs, and carriage returns
-		local msg_escaped="${message//\\/\\\\}"
-		msg_escaped="${msg_escaped//\"/\\\"}"
-		msg_escaped="${msg_escaped//$'\n'/\\n}"
-		msg_escaped="${msg_escaped//$'\t'/\\t}"
-		msg_escaped="${msg_escaped//$'\r'/\\r}"
-		result="{\"content\":[{\"type\":\"text\",\"text\":\"${msg_escaped}\"}],\"isError\":true}"
+		result="$(mcp_tool_error_result timeout "${message}" --data "${data}")"
 	fi
 
-	_MCP_TOOLS_RESULT="${result}"
+	# Add exitCode and stderr next to "mcpbash/error": drop the closing "}}"
+	# of _meta and the result, and close them again.
+	local extra=",\"exitCode\":${exit_code}"
+	if [ -n "${stderr_tail}" ]; then
+		extra="${extra},\"stderr\":$(__mcp_tool_error_json_string "${stderr_tail}")"
+	fi
+	_MCP_TOOLS_RESULT="${result%\}\}}${extra}}}"
 }
 
 # Format timeout error message based on MCPBASH_TIMEOUT_REASON
@@ -767,7 +759,6 @@ _mcp_tools_emit_timeout_result() {
 mcp_tools_format_timeout_error() {
 	local timeout="$1"
 	local max_timeout="${MCPBASH_MAX_TIMEOUT_SECS:-600}"
-	local hint="${MCPBASH_TIMEOUT_HINT:-}"
 	local msg
 	case "${MCPBASH_TIMEOUT_REASON:-}" in
 	idle)
@@ -780,11 +771,7 @@ mcp_tools_format_timeout_error() {
 		msg="Tool timed out after ${timeout}s"
 		;;
 	esac
-	if [ -n "${hint}" ]; then
-		printf '%s\n\nSuggestion: %s' "${msg}" "${hint}"
-	else
-		printf '%s' "${msg}"
-	fi
+	printf '%s' "${msg}"
 }
 
 mcp_tools_init() {
@@ -1395,7 +1382,7 @@ mcp_tools_metadata_for_name() {
 	local name="$1"
 	mcp_tools_refresh_registry || return 1
 	local metadata
-	if ! metadata="$(printf '%s' "${MCP_TOOLS_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -c --arg name "${name}" '.items[] | select(.name == $name)' | head -n 1)"; then
+	if ! metadata="$(printf '%s' "${MCP_TOOLS_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -c --arg name "${name}" 'first(.items[] | select(.name == $name))')"; then
 		return 1
 	fi
 	if [ -z "${metadata}" ]; then
@@ -2261,70 +2248,28 @@ mcp_tools_call() {
 		local safe_exit_code="${exit_code:-124}"
 		[[ "${safe_exit_code}" =~ ^[0-9]+$ ]] || safe_exit_code=124
 
-		# Build structured error - only when JSON tooling available (matches existing pattern)
-		local structured_error="{}"
-		if [ "${MCPBASH_JSON_TOOL:-none}" != "none" ]; then
+		# Details for _meta["mcpbash/error"].data. Every value is a number or a
+		# fixed word, so this needs no JSON tool.
+		local timeout_secs="${effective_timeout}"
+		[[ "${timeout_secs}" =~ ^[0-9]+$ ]] || timeout_secs=0
+		case "${timeout_reason}" in
+		fixed | idle | max_exceeded) ;;
+		*) timeout_reason="fixed" ;;
+		esac
+		local timeout_data="{\"timeoutSecs\":${timeout_secs},\"reason\":\"${timeout_reason}\",\"exitCode\":${safe_exit_code}"
+		if [ "${MCPBASH_PROGRESS_EXTENDS_TIMEOUT:-false}" = "true" ]; then
 			local max_timeout="${MCPBASH_MAX_TIMEOUT_SECS:-600}"
-			local progress_enabled="${MCPBASH_PROGRESS_EXTENDS_TIMEOUT:-false}"
-			local hint="${MCPBASH_TIMEOUT_HINT:-}"
-
-			if [ "${progress_enabled}" = "true" ]; then
-				if [ -n "${hint}" ]; then
-					structured_error="$(
-						"${MCPBASH_JSON_TOOL_BIN}" -n \
-							--arg type "timeout" \
-							--arg msg "${timeout_msg}" \
-							--argjson timeoutSecs "${effective_timeout}" \
-							--arg reason "${timeout_reason}" \
-							--argjson exitCode "${safe_exit_code}" \
-							--argjson maxTimeoutSecs "${max_timeout}" \
-							--arg hint "${hint}" \
-							'{type: $type, message: $msg, timeoutSecs: $timeoutSecs, reason: $reason, exitCode: $exitCode, progressExtendsTimeout: true, maxTimeoutSecs: $maxTimeoutSecs, hint: $hint}'
-					)"
-				else
-					structured_error="$(
-						"${MCPBASH_JSON_TOOL_BIN}" -n \
-							--arg type "timeout" \
-							--arg msg "${timeout_msg}" \
-							--argjson timeoutSecs "${effective_timeout}" \
-							--arg reason "${timeout_reason}" \
-							--argjson exitCode "${safe_exit_code}" \
-							--argjson maxTimeoutSecs "${max_timeout}" \
-							'{type: $type, message: $msg, timeoutSecs: $timeoutSecs, reason: $reason, exitCode: $exitCode, progressExtendsTimeout: true, maxTimeoutSecs: $maxTimeoutSecs}'
-					)"
-				fi
-			else
-				if [ -n "${hint}" ]; then
-					structured_error="$(
-						"${MCPBASH_JSON_TOOL_BIN}" -n \
-							--arg type "timeout" \
-							--arg msg "${timeout_msg}" \
-							--argjson timeoutSecs "${effective_timeout}" \
-							--arg reason "${timeout_reason}" \
-							--argjson exitCode "${safe_exit_code}" \
-							--arg hint "${hint}" \
-							'{type: $type, message: $msg, timeoutSecs: $timeoutSecs, reason: $reason, exitCode: $exitCode, hint: $hint}'
-					)"
-				else
-					structured_error="$(
-						"${MCPBASH_JSON_TOOL_BIN}" -n \
-							--arg type "timeout" \
-							--arg msg "${timeout_msg}" \
-							--argjson timeoutSecs "${effective_timeout}" \
-							--arg reason "${timeout_reason}" \
-							--argjson exitCode "${safe_exit_code}" \
-							'{type: $type, message: $msg, timeoutSecs: $timeoutSecs, reason: $reason, exitCode: $exitCode}'
-					)"
-				fi
-			fi
+			[[ "${max_timeout}" =~ ^[0-9]+$ ]] || max_timeout=600
+			timeout_data="${timeout_data},\"progressExtendsTimeout\":true,\"maxTimeoutSecs\":${max_timeout}"
 		fi
+		timeout_data="${timeout_data}}"
 
 		mcp_tools_emit_github_annotation "${name}" "${timeout_msg}" "${trace_line}"
 		mcp_tools_append_failure_summary "${name}" "${exit_code}" "${timeout_msg}" "${stderr_tail}" "${trace_line}" "${arg_count}" "${arg_bytes}" "${meta_count}" "${MCP_ROOTS_COUNT:-0}" "true"
 
 		# Emit as tool execution error (isError: true) instead of protocol error (-32603)
 		# This allows LLMs to receive and act on timeout information per MCP spec guidance
-		_mcp_tools_emit_timeout_result "${timeout_msg}" "${structured_error}" "${stderr_tail}" "${safe_exit_code}"
+		_mcp_tools_emit_timeout_result "${timeout_msg}" "${MCPBASH_TIMEOUT_HINT:-}" "${timeout_data}" "${stderr_tail}" "${safe_exit_code}"
 
 		# Suggest enabling progress-aware timeout if tool emitted progress but feature was disabled
 		if [ "${MCPBASH_PROGRESS_EXTENDS_TIMEOUT:-false}" != "true" ] && [ -n "${MCP_PROGRESS_STREAM:-}" ] && [ -s "${MCP_PROGRESS_STREAM}" ]; then

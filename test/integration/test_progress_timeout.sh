@@ -99,8 +99,8 @@ if ! echo "${no_progress_resp}" | jq -e '.result.isError == true' >/dev/null 2>&
 	test_fail "slow-no-progress should timeout with isError:true but got: $(echo "${no_progress_resp}" | jq -c '.result // .error // "no response"')"
 fi
 
-# Verify structured error has type: "timeout"
-error_type="$(echo "${no_progress_resp}" | jq -r '.result.structuredContent.error.type // empty')"
+# Verify the error type is "timeout"
+error_type="$(echo "${no_progress_resp}" | jq -r '.result._meta["mcpbash/error"].type // empty')"
 test_assert_eq "${error_type}" "timeout"
 
 # Verify error message in content mentions timeout
@@ -110,7 +110,7 @@ if [[ "${error_msg}" != *"timed out"* ]]; then
 fi
 
 # Verify reason is "idle" (no progress reported)
-error_reason="$(echo "${no_progress_resp}" | jq -r '.result.structuredContent.error.reason // empty')"
+error_reason="$(echo "${no_progress_resp}" | jq -r '.result._meta["mcpbash/error"].data.reason // empty')"
 test_assert_eq "${error_reason}" "idle"
 
 printf 'Test 2 passed: tool without progress times out as expected.\n'
@@ -144,12 +144,12 @@ if ! echo "${hard_cap_resp}" | jq -e '.result.isError == true' >/dev/null 2>&1; 
 	test_fail "slow-with-progress should hit hard cap with isError:true but got: $(echo "${hard_cap_resp}" | jq -c '.result // .error // "no response"')"
 fi
 
-# Verify structured error has type: "timeout"
-hard_cap_type="$(echo "${hard_cap_resp}" | jq -r '.result.structuredContent.error.type // empty')"
+# Verify the error type is "timeout"
+hard_cap_type="$(echo "${hard_cap_resp}" | jq -r '.result._meta["mcpbash/error"].type // empty')"
 test_assert_eq "${hard_cap_type}" "timeout"
 
 # Verify reason is "max_exceeded" (hit hard cap despite progress)
-hard_cap_reason="$(echo "${hard_cap_resp}" | jq -r '.result.structuredContent.error.reason // empty')"
+hard_cap_reason="$(echo "${hard_cap_resp}" | jq -r '.result._meta["mcpbash/error"].data.reason // empty')"
 test_assert_eq "${hard_cap_reason}" "max_exceeded"
 
 printf 'Test 3 passed: hard cap is enforced despite continuous progress.\n'

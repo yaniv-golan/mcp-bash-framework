@@ -208,6 +208,19 @@ test_extract_state_dir_from_stderr() {
 	return 0
 }
 
+# Run a command until it succeeds, checking every 0.2s for up to $1 seconds;
+# returns 1 if it never does. Use it instead of a fixed sleep: a loaded or slow
+# runner only makes the wait longer, not the test fail.
+test_wait_until() {
+	local limit="$1" tries=0
+	shift
+	until "$@"; do
+		tries=$((tries + 1))
+		[ "${tries}" -lt $((limit * 5)) ] || return 1
+		sleep 0.2
+	done
+}
+
 test_require_command() {
 	local cmd="$1"
 	if ! command -v "${cmd}" >/dev/null 2>&1; then

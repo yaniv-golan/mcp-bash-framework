@@ -96,9 +96,13 @@ fi
 # Timeout errors now return isError:true per MCP spec guidance (not JSON-RPC -32603)
 slow_is_error="$(echo "${slow_resp}" | jq -r '.result.isError')"
 test_assert_eq "${slow_is_error}" "true"
-slow_error_type="$(echo "${slow_resp}" | jq -r '.result.structuredContent.error.type')"
+slow_error_type="$(echo "${slow_resp}" | jq -r '.result._meta["mcpbash/error"].type')"
 test_assert_eq "${slow_error_type}" "timeout"
-slow_exit_code="$(echo "${slow_resp}" | jq -r '.result._meta.exitCode // .result.structuredContent.error.exitCode // empty')"
+# Same shape as other tool errors: no structuredContent to check against an outputSchema.
+if echo "${slow_resp}" | jq -e '.result | has("structuredContent")' >/dev/null; then
+	test_fail "timeout result should not have structuredContent: $(echo "${slow_resp}" | jq -c '.result')"
+fi
+slow_exit_code="$(echo "${slow_resp}" | jq -r '.result._meta.exitCode // empty')"
 case "${slow_exit_code}" in
 124 | 137 | 143) ;;
 *) test_fail "unexpected timeout exit code: ${slow_exit_code}" ;;

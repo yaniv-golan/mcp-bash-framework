@@ -207,7 +207,7 @@ EOF
 	timeout_is_error="$(printf '%s\n' "${timeout_output}" | jq -r '.isError')"
 	assert_equal "true" "${timeout_is_error}"
 	# Verify it's a timeout error
-	timeout_type="$(printf '%s\n' "${timeout_output}" | jq -r '.structuredContent.error.type')"
+	timeout_type="$(printf '%s\n' "${timeout_output}" | jq -r '._meta["mcpbash/error"].type')"
 	assert_equal "timeout" "${timeout_type}"
 
 	# With override, tool should complete successfully

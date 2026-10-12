@@ -20,8 +20,11 @@ printf '%s\n' '{"name": "sigterm"}' >"${WS}/server.d/server.meta.json"
 
 # A tool that outlives stdin, for the "signal while waiting for workers" case.
 mkdir -p "${WS}/tools/slow"
-cat >"${WS}/tools/slow/tool.sh" <<'EOF_TOOL'
+# It marks when it has started, so the test knows a worker is running.
+TOOL_STARTED="${TEST_TMPDIR}/tool.started"
+cat >"${WS}/tools/slow/tool.sh" <<EOF_TOOL
 #!/usr/bin/env bash
+: >"${TOOL_STARTED}"
 sleep 30
 printf '{"content":[{"type":"text","text":"done"}]}\n'
 EOF_TOOL
@@ -60,22 +63,35 @@ state_dirs() {
 # phase "draining": stdin closed, signal while waiting for a running tool.
 check_signal() {
 	local signal="$1" mode="$2" expected="$3" phase="${4:-idle}" fifo="${TEST_TMPDIR}/in.${RANDOM}"
+	local out="${TEST_TMPDIR}/out.${RANDOM}"
 	mkfifo "${fifo}"
+	rm -f "${TOOL_STARTED}"
 	if [ "${mode}" = "ci" ]; then
-		(cd "${WS}" && export MCPBASH_CI_MODE=true && launch bash ./bin/mcp-bash <"${fifo}" >/dev/null 2>&1) &
+		(cd "${WS}" && export MCPBASH_CI_MODE=true && launch bash ./bin/mcp-bash <"${fifo}" >"${out}" 2>/dev/null) &
 	else
-		(cd "${WS}" && unset MCPBASH_CI_MODE && launch bash ./bin/mcp-bash <"${fifo}" >/dev/null 2>&1) &
+		(cd "${WS}" && unset MCPBASH_CI_MODE && launch bash ./bin/mcp-bash <"${fifo}" >"${out}" 2>/dev/null) &
 	fi
 	local pid=$!
 	exec 7>"${fifo}"
 	printf '%s\n' '{"jsonrpc":"2.0","id":"init","method":"initialize","params":{}}' >&7
+	# Answered initialize: the server is set up and in its read loop.
+	if ! test_wait_until 60 grep -q '"id":"init"' "${out}"; then
+		kill -KILL "${pid}" 2>/dev/null || true
+		test_fail "${signal} (${mode}, ${phase}): no initialize response"
+	fi
 	if [ "${phase}" = "draining" ]; then
 		printf '%s\n' '{"jsonrpc":"2.0","method":"notifications/initialized"}' >&7
 		printf '%s\n' '{"jsonrpc":"2.0","id":"call","method":"tools/call","params":{"name":"slow","arguments":{}}}' >&7
-		sleep 2
+		if ! test_wait_until 60 test -e "${TOOL_STARTED}"; then
+			kill -KILL "${pid}" 2>/dev/null || true
+			test_fail "${signal} (${mode}, ${phase}): the tool never started"
+		fi
 		exec 7>&-
+		# Give the server a moment to see end of input. If the signal still
+		# comes first, the server exits from its read loop instead, which
+		# the idle phase covers; the test does not fail either way.
+		sleep 1
 	fi
-	sleep 2
 	if [ -z "$(state_dirs)" ]; then
 		kill -KILL "${pid}" 2>/dev/null || true
 		test_fail "${signal} (${mode}, ${phase}): no state directory before the signal"
@@ -95,7 +111,7 @@ check_signal() {
 	local status=0
 	wait "${pid}" 2>/dev/null || status=$?
 	{ exec 7>&-; } 2>/dev/null || true
-	rm -f "${fifo}"
+	rm -f "${fifo}" "${out}"
 	assert_eq "${expected}" "${status}" "${signal} (${mode}, ${phase}): exit status"
 	local left
 	left="$(state_dirs)"

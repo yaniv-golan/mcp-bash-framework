@@ -23,6 +23,8 @@ printf '%s\n' '{"name": "split-read"}' >"${WS}/server.d/server.meta.json"
 # (real mode, 1s read timeout here) a pause longer than the timeout used to
 # drop the first chunk (bash 3.2) or answer it as a separate, broken message
 # (bash 4+); either way the request itself was never answered.
+exited() { ! kill -0 "$1" 2>/dev/null; }
+
 check() {
 	local shell_bin="$1" mode="$2" split="$3"
 	local fifo="${TEST_TMPDIR}/in.${RANDOM}" out="${TEST_TMPDIR}/out.${RANDOM}"
@@ -50,11 +52,9 @@ check() {
 	# The last request has no trailing newline; closing stdin ends it.
 	printf '%s' '{"jsonrpc":"2.0","id":"last","method":"ping"}' >&7
 	exec 7>&-
-	local waited=0
-	while kill -0 "${pid}" 2>/dev/null && [ "${waited}" -lt 15 ]; do
-		sleep 1
-		waited=$((waited + 1))
-	done
+	# The server exits once it has answered everything; the limit only
+	# guards against a hang, so it is generous for loaded runners.
+	test_wait_until 60 exited "${pid}" || true
 	kill -KILL "${pid}" 2>/dev/null || true
 	wait "${pid}" 2>/dev/null || true
 	rm -f "${fifo}"
