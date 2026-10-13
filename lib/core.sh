@@ -94,6 +94,7 @@ mcp_core_require_handlers() {
 	. "${MCPBASH_HOME}/handlers/prompts.sh"
 	. "${MCPBASH_HOME}/handlers/completion.sh"
 	. "${MCPBASH_HOME}/handlers/roots.sh"
+	. "${MCPBASH_HOME}/handlers/discover.sh"
 }
 
 mcp_core_bootstrap_state() {
@@ -1156,6 +1157,11 @@ mcp_core_dispatch_modern() {
 		mcp_core_emit_method_not_found "${id_json}"
 		return 0
 	fi
+	# server/discover reads only static data, so it is answered at once.
+	if [ "${method}" = "server/discover" ]; then
+		mcp_core_execute_handler "${MCPBASH_RESOLVED_HANDLER}" "${method}" "${json_line}" "${id_json}"
+		return 0
+	fi
 	mcp_core_spawn_worker "${MCPBASH_RESOLVED_HANDLER}" "${method}" "${json_line}" "${id_json}"
 }
 
@@ -1198,6 +1204,11 @@ mcp_core_resolve_handler() {
 		;;
 	roots/* | notifications/roots/*)
 		MCPBASH_RESOLVED_HANDLER="mcp_handle_roots"
+		;;
+	server/discover)
+		# Unknown ("Method not found") unless modern requests are switched on.
+		mcp_modern_enabled || return 1
+		MCPBASH_RESOLVED_HANDLER="mcp_handle_discover"
 		;;
 	*)
 		return 1
@@ -1643,6 +1654,11 @@ mcp_core_method_allowed_preinit() {
 	case "$1" in
 	initialize | notifications/initialized | notifications/cancelled | ping | shutdown | exit)
 		return 0
+		;;
+	server/discover)
+		# Probed before initialize; answered -32602 without the modern _meta.
+		mcp_modern_enabled
+		return
 		;;
 	*)
 		return 1

@@ -59,6 +59,7 @@ mcp_modern_classify() {
 		else empty end
 	' 2>/dev/null || true)"
 	[ -n "${meta}" ] || return 0
+	# shellcheck disable=SC2034  # Read by lib/core.sh and handlers/discover.sh
 	MCPBASH_REQUEST_ERA="modern"
 	MCPBASH_REQUEST_META="${meta}"
 }
@@ -159,4 +160,45 @@ mcp_modern_apply_worker_context() {
 		mcp_logging_set_level "off"
 		export MCP_LOG_STREAM=""
 	fi
+}
+
+# Caching hints (ttlMs, cacheScope), which 2026-07-28 requires on
+# server/discover, the list results and resources/read. Lists default to the
+# registry refresh interval (5 s; 0 when MCPBASH_LOG_LEVEL=debug, so edits
+# show up at once while developing), reads to 0. The scope is "private": the
+# lists depend on the operator's allowlist and environment.
+# Usage: mcp_modern_cache_ttl_ms list|read
+mcp_modern_cache_ttl_ms() {
+	local kind="$1" ttl
+	if [ "${kind}" = "read" ]; then
+		ttl="${MCPBASH_MODERN_READ_TTL_MS:-0}"
+	elif [ "${MCPBASH_LOG_LEVEL:-}" = "debug" ] && [ -z "${MCPBASH_MODERN_LIST_TTL_MS:-}" ]; then
+		ttl=0
+	else
+		ttl="${MCPBASH_MODERN_LIST_TTL_MS:-5000}"
+	fi
+	case "${ttl}" in
+	'' | *[!0-9]*) ttl=0 ;;
+	esac
+	printf '%s' "${ttl}"
+}
+
+mcp_modern_cache_scope() {
+	case "${MCPBASH_MODERN_CACHE_SCOPE:-private}" in
+	public) printf 'public' ;;
+	*) printf 'private' ;;
+	esac
+}
+
+# Server capabilities for a modern client with capabilities CAPS_JSON. No
+# listChanged or subscribe yet: on 2026-07-28 those mean subscriptions/listen,
+# which the server doesn't serve yet. logging: a request's logLevel is
+# honoured (log notifications are sent only when a request asks for them).
+mcp_modern_server_capabilities() {
+	local caps_json="$1"
+	printf '%s' "${caps_json}" | "${MCPBASH_JSON_TOOL_BIN}" -c --argjson ui "${MCP_UI_SUPPORTED_MIMETYPES:-[]}" '
+		{logging: {}, tools: {}, resources: {}, prompts: {}, completions: {}}
+		+ (if (.extensions["io.modelcontextprotocol/ui"] // null) != null
+			then {extensions: {"io.modelcontextprotocol/ui": {mimeTypes: $ui}}} else {} end)
+	'
 }
