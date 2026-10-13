@@ -183,7 +183,7 @@ mcp_core_removed_api_note() {
 	files="${files% }"
 	[ "${n}" -gt 3 ] && files="${files} and $((n - 3)) more"
 	# shellcheck disable=SC2016  # Backticks are literal text.
-	printf 'Some of this server'"'"'s tools call mcp-bash helpers removed in 2.0 (in %s): calls to those tools return a migration_required error until the project runs `mcp-bash migrate`.' "${files}"
+	printf 'Some of this server'"'"'s scripts call mcp-bash helpers removed in 2.0 (in %s): tools that use them return an error until they are migrated (`mcp-bash migrate` lists the changes).' "${files}"
 }
 
 # The instructions sent by initialize and server/discover: the project's
