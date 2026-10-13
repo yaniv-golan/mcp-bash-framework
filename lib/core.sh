@@ -1799,10 +1799,48 @@ mcp_core_poll_registries_once() {
 	mcp_prompts_poll
 }
 
+# Send the lines of a worker's progress or log stream that were not sent yet.
+# Two processes flush the same stream: the background flusher and the
+# worker's own final flush. Each reads the offset file, sends from there and
+# then writes the new offset, so without a lock both could send the same
+# lines. A flush that can't get the lock in time is skipped: the holder is
+# sending those lines.
 mcp_core_flush_stream() {
+	local lock_name="flush.$2.$1"
+	# Cheap check first: the background flusher calls this for every stream on
+	# every pass, and most have nothing new.
+	local stream size offset=""
+	stream="$(_mcp_core_stream_path "$1" "$2")"
+	[ -f "${stream}" ] || return 0
+	size="$(wc -c <"${stream}" 2>/dev/null | tr -d ' ')"
+	[ -f "${stream}.offset" ] && offset="$(cat "${stream}.offset" 2>/dev/null)"
+	if [ -n "${size}" ] && [ "${size}" = "${offset}" ]; then
+		return 0
+	fi
+	if declare -F mcp_lock_acquire_timeout >/dev/null 2>&1 && [ -n "${MCPBASH_LOCK_ROOT:-}" ]; then
+		mcp_lock_acquire_timeout "${lock_name}" 5 || return 0
+		_mcp_core_flush_stream_unlocked "$1" "$2"
+		local rc=$?
+		mcp_lock_release "${lock_name}"
+		return "${rc}"
+	fi
+	_mcp_core_flush_stream_unlocked "$1" "$2"
+}
+
+# The worker's streams are progress.<key>.ndjson and logs.<key>.ndjson.
+_mcp_core_stream_path() {
+	if [ "$2" = "log" ]; then
+		printf '%s' "${MCPBASH_STATE_DIR}/logs.$1.ndjson"
+	else
+		printf '%s' "${MCPBASH_STATE_DIR}/$2.$1.ndjson"
+	fi
+}
+
+_mcp_core_flush_stream_unlocked() {
 	local key="$1"
 	local kind="$2"
-	local stream="${MCPBASH_STATE_DIR}/${kind}.${key}.ndjson"
+	local stream
+	stream="$(_mcp_core_stream_path "${key}" "${kind}")"
 	local offset_file="${stream}.offset"
 	[ -f "${stream}" ] || return 0
 	local last_offset=0
@@ -1810,19 +1848,33 @@ mcp_core_flush_stream() {
 		last_offset="$(cat "${offset_file}")"
 	fi
 	local size
-	size="$(wc -c <"${stream}" 2>/dev/null || echo 0)"
+	size="$(wc -c <"${stream}" 2>/dev/null | tr -d ' ')"
+	case "${size}" in '' | *[!0-9]*) size=0 ;; esac
+	case "${last_offset}" in '' | *[!0-9]*) last_offset=0 ;; esac
 	if [ "${size}" -lt "${last_offset}" ]; then
 		last_offset=0
 	fi
 	if [ "${size}" -eq "${last_offset}" ]; then
 		return 0
 	fi
-	# Continue emitting from the last offset so progress/log lines survive worker
-	# restarts without replaying already-sent messages.
+	# The tool may still be appending, so read exactly the bytes measured
+	# (reading on to the end of the file would send lines past ${size} and
+	# then send them again on the next flush), and send only complete lines:
+	# an incomplete last line is sent once it is complete.
 	# Git Bash/coreutils `tail -c +N` has been observed to be flaky in CI; use dd
 	# for a more portable byte-offset reader.
-	dd if="${stream}" bs=1 skip="${last_offset}" 2>/dev/null \
-		| while IFS= read -r line || [ -n "${line}" ]; do
+	local chunk
+	chunk="$(mktemp "${MCPBASH_STATE_DIR}/flush.${kind}.${key}.XXXXXX" 2>/dev/null)" || return 0
+	dd if="${stream}" of="${chunk}" bs=1 skip="${last_offset}" count=$((size - last_offset)) 2>/dev/null || true
+	local complete_lines complete_bytes
+	complete_lines="$(LC_ALL=C tr -cd '\n' <"${chunk}" | wc -c | tr -d ' ')"
+	if [ "${complete_lines:-0}" -eq 0 ] 2>/dev/null; then
+		rm -f "${chunk}"
+		return 0
+	fi
+	complete_bytes="$(head -n "${complete_lines}" "${chunk}" | wc -c | tr -d ' ')"
+	head -n "${complete_lines}" "${chunk}" \
+		| while IFS= read -r line; do
 			[ -z "${line}" ] && continue
 			if [ "${kind}" = "log" ]; then
 				local level
@@ -1835,7 +1887,8 @@ mcp_core_flush_stream() {
 				rpc_send_line "${line}"
 			fi
 		done
-	echo "${size}" >"${offset_file}"
+	rm -f "${chunk}"
+	echo "$((last_offset + complete_bytes))" >"${offset_file}"
 }
 
 mcp_core_flush_worker_streams_once() {
