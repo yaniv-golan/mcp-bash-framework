@@ -73,14 +73,20 @@ cp "${TEST_TMPDIR}/envelope.meta.json" "${WS2}/tools/env/tool.meta.json"
 WS="${WS2}" session "${TEST_TMPDIR}/tracked-before.ndjson"
 printf '%s\n' '{"tracked":true}' >"${WS2}/.registry/prompts.json"
 printf '%s\n' '{"tracked":true}' >"${WS2}/.registry/resources.json"
+# A findings file someone committed anyway: emptied, not just re-dated,
+# so the next start sends no stale note.
+mkdir -p "${WS2}/.registry/scan"
+printf '%s\n' tools/env/tool.sh >"${WS2}/.registry/scan/removed-api.findings"
 (
-	cd "${WS2}" && git init -q && git add -A && git -c user.email=t@t -c user.name=t commit -q -m init
+	cd "${WS2}" && git init -q && git add -A && git add -f .registry/scan/removed-api.findings \
+		&& git -c user.email=t@t -c user.name=t commit -q -m init
 ) || test_fail "git setup failed"
 (cd "${FW}" && ./bin/mcp-bash migrate --project-root "${WS2}" --write >"${TEST_TMPDIR}/migrate2.out" 2>&1) || true
 grep -q 'mcp_result_json' "${WS2}/tools/env/tool.sh" || test_fail "tracked project: not migrated"
 deleted="$(git -C "${WS2}" status --porcelain | awk '$1 == "D"')"
 [ -z "${deleted}" ] || test_fail "migrate --write deleted tracked files: ${deleted}"
 test_assert_eq "$(cat "${WS2}/.registry/prompts.json")" '{"tracked":true}'
+test_assert_eq "$(wc -c <"${WS2}/.registry/scan/removed-api.findings" | tr -d ' ')" "0"
 WS="${WS2}" session "${TEST_TMPDIR}/tracked-after.ndjson"
 r="$(result "${TEST_TMPDIR}/tracked-after.ndjson")"
 assert_eq '[false,"1"]' "$(printf '%s' "${r}" | jq -c '[.isError, .structuredContent.n]')" "tracked tools.json, right after migrate --write: ${r}"

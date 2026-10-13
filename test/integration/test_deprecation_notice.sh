@@ -117,7 +117,13 @@ printf ' -> first start: no instructions note yet, findings written\n'
 if instructions first | grep -q "${NOTE_RE}"; then
 	test_fail "first start: note sent before any scan finished"
 fi
-test_assert_eq "$(cat "${TEST_TMPDIR}/old/proj/.registry/removed-api.findings")" "tools/hello/tool.sh"
+test_assert_eq "$(cat "${TEST_TMPDIR}/old/proj/.registry/scan/removed-api.findings")" "tools/hello/tool.sh"
+# The scan's files ignore themselves, so projects that commit .registry
+# don't see them as untracked.
+test_assert_eq "$(cat "${TEST_TMPDIR}/old/proj/.registry/scan/.gitignore")" "*"
+for f in removed-api.findings removed-api.scan removed-api.attempt deprecation-notice.stamp; do
+	[ ! -e "${TEST_TMPDIR}/old/proj/.registry/${f}" ] || test_fail "scan file outside .registry/scan: ${f}"
+done
 
 printf ' -> same day: no second notice, instructions name the file\n'
 run old second
@@ -127,8 +133,8 @@ if ! instructions second | grep -q "${NOTE_RE}.*tools/hello/tool.sh.*mcp-bash mi
 fi
 
 printf ' -> nothing changed: the scan is skipped\n'
-F="${TEST_TMPDIR}/old/proj/.registry/removed-api.findings"
-[ -f "${TEST_TMPDIR}/old/proj/.registry/removed-api.scan" ] || test_fail "no scan record after a scan"
+F="${TEST_TMPDIR}/old/proj/.registry/scan/removed-api.findings"
+[ -f "${TEST_TMPDIR}/old/proj/.registry/scan/removed-api.scan" ] || test_fail "no scan record after a scan"
 # A line no scan would write survives a start that skips the scan.
 printf '%s\n' tools/fake/tool.sh >>"${F}"
 run old skipped
@@ -141,7 +147,7 @@ run old too-soon
 grep -q '^tools/fake/tool.sh$' "${F}" || test_fail "a scan started again within the hour"
 
 printf ' -> a changed file, an hour later: scanned again\n'
-touch -t 202001010000 "${TEST_TMPDIR}/old/proj/.registry/removed-api.attempt"
+touch -t 202001010000 "${TEST_TMPDIR}/old/proj/.registry/scan/removed-api.attempt"
 WAIT_GONE="${F}:tools/fake/tool.sh" run old rescanned
 if grep -q '^tools/fake/tool.sh$' "${F}"; then
 	test_fail "a changed project was not scanned again"
@@ -158,9 +164,9 @@ instructions third | grep -q "${NOTE_RE}" || test_fail "third start: note missin
 
 printf ' -> after migrate: the next scan clears the note\n'
 (cd "${TEST_TMPDIR}/old/proj" && MCPBASH_HOME="${TEST_TMPDIR}/old/fw" bash "${TEST_TMPDIR}/old/fw/bin/mcp-bash" migrate --write >/dev/null 2>&1) || test_fail "migrate --write failed"
-rm -f "${TEST_TMPDIR}/old/proj/.registry/removed-api.findings"
-WAIT_FILE="${TEST_TMPDIR}/old/proj/.registry/removed-api.findings" run old fourth
-test_assert_eq "$(wc -c <"${TEST_TMPDIR}/old/proj/.registry/removed-api.findings" | tr -d ' ')" "0"
+rm -f "${TEST_TMPDIR}/old/proj/.registry/scan/removed-api.findings"
+WAIT_FILE="${TEST_TMPDIR}/old/proj/.registry/scan/removed-api.findings" run old fourth
+test_assert_eq "$(wc -c <"${TEST_TMPDIR}/old/proj/.registry/scan/removed-api.findings" | tr -d ' ')" "0"
 run old fifth
 if instructions fifth | grep -q "${NOTE_RE}"; then
 	test_fail "fifth start: note still sent after migrate"
@@ -175,11 +181,12 @@ printf ' -> opt-out: no notice, no scan, no note\n'
 stage optout deprecated
 run optout optout MCPBASH_DEPRECATION_NOTICE=false
 test_assert_eq "$(notice_count optout)" "0"
-for f in removed-api.findings removed-api.attempt deprecation-notice.stamp; do
+for f in scan/removed-api.findings scan/removed-api.attempt scan/deprecation-notice.stamp; do
 	[ ! -e "${TEST_TMPDIR}/optout/proj/.registry/${f}" ] || test_fail "opt-out: the scan ran (${f} written)"
 done
 # A findings file left from before the opt-out isn't trusted either.
-printf '%s\n' tools/hello/tool.sh >"${TEST_TMPDIR}/optout/proj/.registry/removed-api.findings"
+mkdir -p "${TEST_TMPDIR}/optout/proj/.registry/scan"
+printf '%s\n' tools/hello/tool.sh >"${TEST_TMPDIR}/optout/proj/.registry/scan/removed-api.findings"
 run optout optout2 MCPBASH_DEPRECATION_NOTICE=false
 if instructions optout2 | grep -q "${NOTE_RE}"; then
 	test_fail "opt-out: note sent"

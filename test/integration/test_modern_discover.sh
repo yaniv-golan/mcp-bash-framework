@@ -86,9 +86,9 @@ for t in a b c d; do
 	printf '#!/usr/bin/env bash\nmcp_error not_found x\nexit 0\n' >"${NWS}/tools/old-${t}/tool.sh"
 	chmod +x "${NWS}/tools/old-${t}/tool.sh"
 done
-mkdir -p "${NWS}/.registry"
-printf '%s\n' tools/old-a/tool.sh tools/old-b/tool.sh tools/old-c/tool.sh tools/old-d/tool.sh >"${NWS}/.registry/removed-api.findings"
-: >"${NWS}/.registry/removed-api.attempt"
+mkdir -p "${NWS}/.registry/scan"
+printf '%s\n' tools/old-a/tool.sh tools/old-b/tool.sh tools/old-c/tool.sh tools/old-d/tool.sh >"${NWS}/.registry/scan/removed-api.findings"
+: >"${NWS}/.registry/scan/removed-api.attempt"
 REQ="${TEST_TMPDIR}/note.ndjson"
 discover 1 >"${REQ}"
 MCPBASH_MODERN_PROTOCOL=true MCPBASH_DEPRECATION_NOTICE=true test_run_mcp "${NWS}" "${REQ}" "${TEST_TMPDIR}/note.out"

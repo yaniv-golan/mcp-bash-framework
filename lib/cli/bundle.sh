@@ -915,7 +915,9 @@ mcp_bundle_copy_project() {
 	# describe the developer's copy, and a bundle (static registry) never
 	# rescans to refresh them.
 	if [ -d "${staging_server}/.registry" ]; then
-		rm -f "${staging_server}/.registry/removed-api.findings" "${staging_server}/.registry/removed-api.scan" "${staging_server}/.registry/removed-api.attempt" "${staging_server}/.registry/deprecation-notice.stamp"
+		rm -rf "${staging_server}/.registry/scan"
+		# Written there by 1.8-1.9.
+		rm -f "${staging_server}/.registry/deprecation-notice.stamp"
 	fi
 
 	# Copy VERSION file if present

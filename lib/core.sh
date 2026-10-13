@@ -177,7 +177,7 @@ MCP_CORE_REMOVED_API_NOTE_ON=0
 # has entries.
 mcp_core_build_instructions() {
 	MCP_CORE_INSTRUCTIONS="${MCPBASH_SERVER_INSTRUCTIONS:-}"
-	local findings="${MCPBASH_REGISTRY_DIR:-}/removed-api.findings"
+	local findings="${MCPBASH_REGISTRY_DIR:-}/scan/removed-api.findings"
 	[ "${MCP_CORE_REMOVED_API_NOTE_ON}" = 1 ] && [ -s "${findings}" ] || return 0
 	local files="" n=0 line note
 	while IFS= read -r line; do
@@ -193,7 +193,7 @@ mcp_core_build_instructions() {
 }
 
 # The startup scan, in the background, never on the request path:
-# - removed-api.findings in the registry dir lists the project files that
+# - removed-api.findings lists the project files that
 #   call an SDK helper removed in 2.0 (the rules in
 #   MCP_CORE_REMOVED_API_RULES), for the instructions note;
 # - once a day it runs every rule instead and prints one line to stderr with
@@ -219,13 +219,19 @@ mcp_core_start_deprecation_notice() {
 	MCP_CORE_REMOVED_API_NOTE_ON=1
 	local project_root="${MCPBASH_PROJECT_ROOT}"
 	local registry_dir="${MCPBASH_REGISTRY_DIR}"
-	local stamp="${registry_dir}/deprecation-notice.stamp"
-	local findings="${registry_dir}/removed-api.findings"
-	local scan_meta="${registry_dir}/removed-api.scan"
-	local attempt="${registry_dir}/removed-api.attempt"
+	# The scan's files live in .registry/scan, which ignores itself in git
+	# (projects that commit .registry don't see them as untracked).
+	local scan_dir="${registry_dir}/scan"
+	local stamp="${scan_dir}/deprecation-notice.stamp"
+	local findings="${scan_dir}/removed-api.findings"
+	local scan_meta="${scan_dir}/removed-api.scan"
+	local attempt="${scan_dir}/removed-api.attempt"
 
 	(
 		set +e
+		if [ ! -f "${scan_dir}/.gitignore" ]; then
+			mkdir -p "${scan_dir}" 2>/dev/null && printf '*\n' >"${scan_dir}/.gitignore" 2>/dev/null || exit 0
+		fi
 		announce=0
 		today="$(date +%Y-%m-%d 2>/dev/null)" || today=""
 		last=""
