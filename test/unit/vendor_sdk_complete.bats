@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 # Unit: a vendored runtime carries the whole SDK, not just tool-sdk.sh.
 # tool-sdk.sh loads its siblings (ui-sdk.sh) by path; when
-# they were missing, UI helpers such as mcp_result_with_ui did not exist in
+# they were missing, UI helpers (mcp_result_ui and the 1.x ones before it) did not exist in
 # vendored projects or MCPB bundles.
 
 load '../../node_modules/bats-support/load'
@@ -24,7 +24,7 @@ load '../common/fixtures'
 	mkdir -p "${dest}"
 	run mcp-bash vendor --output "${dest}"
 	assert_success
-	run bash -c '. "$1/.mcp-bash/sdk/tool-sdk.sh" && declare -F mcp_result_with_ui' _ "${dest}"
+	run bash -c '. "$1/.mcp-bash/sdk/tool-sdk.sh" && declare -F mcp_result_ui' _ "${dest}"
 	assert_success
 }
 

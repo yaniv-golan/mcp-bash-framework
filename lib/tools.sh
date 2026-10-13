@@ -805,7 +805,7 @@ _mcp_tools_side_channel_error_result() {
 # still calls one gets a migration_required error result instead of running
 # (mcp_tools_removed_api_use), and a "command not found" for one gets a hint
 # (mcp_tools_removed_api_hint).
-MCP_TOOLS_REMOVED_SDK_NAMES="mcp_error mcp_result_error mcp_fail_invalid_args mcp_result_success mcp_emit_text mcp_emit_json mcp_result_text_with_resource"
+MCP_TOOLS_REMOVED_SDK_NAMES="mcp_error mcp_result_error mcp_fail_invalid_args mcp_result_success mcp_emit_text mcp_emit_json mcp_result_text_with_resource mcp_result_with_ui mcp_result_with_ui_data"
 
 # Print the first removed SDK helper called by the tool at PATH, or nothing.
 # Scans the tool's own script and every *.sh in its directory, skipping

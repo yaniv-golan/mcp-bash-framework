@@ -8,8 +8,7 @@
 #
 # Functions:
 #   mcp_client_supports_ui       - Check if client supports UI extension
-#   mcp_result_with_ui           - Emit result with UI resource reference
-#   mcp_result_with_ui_data      - Emit result with UI resource + structured data
+#   mcp_result_ui                - Result for a tool with a UI: text, plus data for UI clients
 #   mcp_ui_form                  - Generate dynamic form HTML
 #   mcp_ui_table                 - Generate dynamic table HTML
 
@@ -57,88 +56,12 @@ __mcp_ui_text_result() {
 	fi
 }
 
-# Emit tool result with structured data for UI rendering
-# Usage: mcp_result_with_ui <resource_uri> <text_fallback> [structured_data]
-#
-# NOTE: Per MCP Apps spec (2026-01-26), the UI resource is declared in the tool
-# DEFINITION (_meta.ui in tool.meta.json), not in tool results. This function
-# returns structured data that the UI template will receive via notification.
-# The resource_uri parameter is kept for backward compatibility but is ignored.
-#
-# Arguments:
-#   resource_uri    - DEPRECATED: UI resource is in tool.meta.json, not results
-#   text_fallback   - Plain text for clients without UI support
-#   structured_data - Optional JSON data for UI (default: null)
-#
-# Example:
-#   mcp_result_with_ui "" "Dashboard ready" '{"items": 42}'
-mcp_result_with_ui() {
-	local resource_uri="$1" # Ignored per spec - UI declared in tool definition
-	local text_fallback="$2"
-	local structured_data="${3:-null}"
-
-	# If client doesn't support UI, return text-only result
-	if ! mcp_client_supports_ui; then
-		__mcp_ui_text_result "${text_fallback}"
-		return
-	fi
-
-	# Return result with structured data (host knows UI from tool definition)
-	# Text and data go on stdin: either can outgrow one argument.
-	{
-		printf '%s' "${text_fallback}" | "${MCPBASH_JSON_TOOL_BIN}" -R -s '.'
-		printf '\n%s' "${structured_data}"
-	} | "${MCPBASH_JSON_TOOL_BIN}" -s \
-		'.[0] as $text | .[1] as $data
-		| {content: [{type: "text", text: $text}], isError: false}
-		+ (if $data != null then {structuredContent: $data} else {} end)'
-}
-
-# Emit tool result with structured data for UI rendering
-# Usage: mcp_result_with_ui_data <resource_uri> <text_fallback> <ui_data>
-#
-# NOTE: Per MCP Apps spec (2026-01-26), the UI resource is declared in the tool
-# DEFINITION (_meta.ui in tool.meta.json), not in tool results. This function
-# returns structured data that the UI template will receive via notification.
-# The resource_uri parameter is kept for backward compatibility but is ignored.
-#
-# Arguments:
-#   resource_uri  - DEPRECATED: UI resource is in tool.meta.json, not results
-#   text_fallback - Plain text for clients without UI support
-#   ui_data       - JSON data for the UI (required)
-#
-# Example:
-#   mcp_result_with_ui_data "" "Query returned 10 rows" "$json_results"
-mcp_result_with_ui_data() {
-	local resource_uri="$1" # Ignored per spec - UI declared in tool definition
-	local text_fallback="$2"
-	local ui_data="$3"
-
-	if ! mcp_client_supports_ui; then
-		__mcp_ui_text_result "${text_fallback}"
-		return
-	fi
-
-	# Return result with structured data (host knows UI from tool definition)
-	# Text and data go on stdin: either can outgrow one argument.
-	{
-		printf '%s' "${text_fallback}" | "${MCPBASH_JSON_TOOL_BIN}" -R -s '.'
-		printf '\n%s' "${ui_data}"
-	} | "${MCPBASH_JSON_TOOL_BIN}" -s \
-		'.[0] as $text | .[1] as $data
-		| {
-			content: [{type: "text", text: $text}],
-			structuredContent: $data,
-			isError: false
-		}'
-}
-
 # mcp_result_ui TEXT [DATA]
 # A result for a tool with an MCP Apps UI (declared in tool.meta.json
 # _meta.ui). A client with the UI extension gets TEXT and DATA (JSON) as
 # structuredContent, which the UI receives; any other client gets TEXT only.
-# Replaces mcp_result_with_ui and mcp_result_with_ui_data (2.0), whose first
-# argument, a resource URI, was ignored. Prints the result; does not end the
+# Replaced mcp_result_with_ui and mcp_result_with_ui_data in 2.0 (their first
+# argument, a resource URI, was ignored). Prints the result; does not end the
 # tool.
 mcp_result_ui() {
 	local text="${1-}"

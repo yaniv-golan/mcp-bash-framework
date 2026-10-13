@@ -65,21 +65,21 @@ teardown() {
 	assert_success
 }
 
-@test "sdk: mcp_result_with_ui returns text-only when UI not supported" {
+@test "sdk: mcp_result_ui returns text-only when UI not supported" {
 	MCPBASH_CLIENT_SUPPORTS_UI=0
 	rm -f "${MCPBASH_STATE_DIR}/extensions.ui.support" 2>/dev/null || true
 
-	result="$(mcp_result_with_ui "ui://server/resource" "Fallback text")"
+	result="$(mcp_result_ui "Fallback text")"
 
 	# Should be text-only result without _meta.ui
 	has_ui="$("${MCPBASH_JSON_TOOL_BIN}" -r '._meta.ui // empty' <<< "${result}")"
 	assert_equal "${has_ui}" ""
 }
 
-@test "sdk: mcp_result_with_ui includes structuredContent when supported" {
+@test "sdk: mcp_result_ui includes structuredContent when supported" {
 	MCPBASH_CLIENT_SUPPORTS_UI=1
 
-	result="$(mcp_result_with_ui "ui://server/resource" "Fallback text" '{"items": 5}')"
+	result="$(mcp_result_ui "Fallback text" '{"items": 5}')"
 
 	# Per MCP Apps spec, UI is declared in tool.meta.json, not in results.
 	# Results include structuredContent for UI rendering.
@@ -87,29 +87,29 @@ teardown() {
 	assert_equal "${items}" "5"
 }
 
-@test "sdk: mcp_result_with_ui includes text content" {
+@test "sdk: mcp_result_ui includes text content" {
 	MCPBASH_CLIENT_SUPPORTS_UI=1
 
-	result="$(mcp_result_with_ui "ui://server/resource" "My fallback message")"
+	result="$(mcp_result_ui "My fallback message")"
 
 	text="$("${MCPBASH_JSON_TOOL_BIN}" -r '.content[0].text' <<< "${result}")"
 	assert_equal "${text}" "My fallback message"
 }
 
-@test "sdk: mcp_result_with_ui_data includes structured content" {
+@test "sdk: mcp_result_ui includes structured content" {
 	MCPBASH_CLIENT_SUPPORTS_UI=1
 
-	result="$(mcp_result_with_ui_data "ui://server/resource" "Text" '{"items": 42}')"
+	result="$(mcp_result_ui "Text" '{"items": 42}')"
 
 	# Check structuredContent
 	items="$("${MCPBASH_JSON_TOOL_BIN}" -r '.structuredContent.items' <<< "${result}")"
 	assert_equal "${items}" "42"
 }
 
-@test "sdk: mcp_result_with_ui sets isError to false" {
+@test "sdk: mcp_result_ui sets isError to false" {
 	MCPBASH_CLIENT_SUPPORTS_UI=1
 
-	result="$(mcp_result_with_ui "ui://server/resource" "Text")"
+	result="$(mcp_result_ui "Text")"
 
 	is_error="$("${MCPBASH_JSON_TOOL_BIN}" -r '.isError' <<< "${result}")"
 	assert_equal "${is_error}" "false"
