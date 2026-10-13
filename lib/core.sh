@@ -1876,12 +1876,12 @@ mcp_core_flush_stream() {
 		return 0
 	fi
 	local status=0
-	mcp_core_flush_stream_unlocked "$@" || status=$?
+	_mcp_core_flush_stream_unlocked "$@" || status=$?
 	mcp_lock_release "${lock_name}"
 	return "${status}"
 }
 
-mcp_core_flush_stream_unlocked() {
+_mcp_core_flush_stream_unlocked() {
 	local key="$1"
 	local kind="$2"
 	# The worker's streams are progress.<key>.ndjson and logs.<key>.ndjson.
