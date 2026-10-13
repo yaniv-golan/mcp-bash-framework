@@ -211,3 +211,33 @@ victim_is_empty() {
 	assert_dir_not_exist "${locks}"
 	rm -rf "${MCPBASH_STATE_DIR}"
 }
+
+# CI mode outside GitHub Actions picks its temp root from TMPDIR, or /tmp.
+# "${TMPDIR%/:-/tmp}" was a malformed expansion: with TMPDIR unset, bash 4+
+# stopped at startup with "TMPDIR: unbound variable" (set -u), and bash 3.2
+# got an empty root that a later fallback replaced.
+ci_tmp_root() {
+	# A separate bash, with lib/runtime.sh's own set -euo pipefail, as in the
+	# server: inside bats, `run` keeps errexit off for everything it calls,
+	# subshells included, so an expansion error would go unnoticed here.
+	local tmpdir_env=(-u TMPDIR)
+	if [ "$1" != "unset" ]; then
+		tmpdir_env=(TMPDIR="$1")
+	fi
+	env -u MCPBASH_TMP_ROOT -u RUNNER_TEMP -u GITHUB_WORKSPACE "${tmpdir_env[@]}" \
+		MCPBASH_CI_MODE=true MCPBASH_HOME="${MCPBASH_HOME}" \
+		bash -c '. "${MCPBASH_HOME}/lib/runtime.sh"; mcp_runtime_init_paths >/dev/null 2>&1; printf "%s" "${MCPBASH_TMP_ROOT}"'
+}
+
+@test "runtime dirs: CI mode without RUNNER_TEMP uses /tmp when TMPDIR is unset" {
+	run ci_tmp_root unset
+	assert_success
+	assert_output "/tmp"
+}
+
+@test "runtime dirs: CI mode without RUNNER_TEMP uses TMPDIR, without a trailing slash" {
+	mkdir -p "${BATS_TEST_TMPDIR}/ci-tmp"
+	run ci_tmp_root "${BATS_TEST_TMPDIR}/ci-tmp/"
+	assert_success
+	assert_output "${BATS_TEST_TMPDIR}/ci-tmp"
+}
