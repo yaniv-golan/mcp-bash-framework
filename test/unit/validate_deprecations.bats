@@ -67,3 +67,18 @@ SH
 	run mcp-bash validate --project-root "${PROJ}"
 	refute_output --partial "deprecation"
 }
+
+@test "validate: a non-object outputSchema warns that older clients get text only" {
+	mkdir -p "${PROJ}/tools/proj-list"
+	cat >"${PROJ}/tools/proj-list/tool.meta.json" <<'JSON'
+{"name":"proj-list","description":"returns an array","inputSchema":{"type":"object","properties":{}},"outputSchema":{"type":"array"}}
+JSON
+	printf '#!/usr/bin/env bash\nprintf "[1]"\n' >"${PROJ}/tools/proj-list/tool.sh"
+	chmod +x "${PROJ}/tools/proj-list/tool.sh"
+	run mcp-bash validate --project-root "${PROJ}"
+	assert_output --partial "tools/proj-list/tool.meta.json - outputSchema type is array: only 2026-07-28 clients get structured output"
+	# An object schema, or one without a type, doesn't warn.
+	printf '%s\n' '{"name":"proj-list","description":"d","inputSchema":{"type":"object","properties":{}},"outputSchema":{"properties":{}}}' >"${PROJ}/tools/proj-list/tool.meta.json"
+	run mcp-bash validate --project-root "${PROJ}"
+	refute_output --partial "outputSchema type is"
+}

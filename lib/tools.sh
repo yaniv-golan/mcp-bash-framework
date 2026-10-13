@@ -1128,6 +1128,12 @@ mcp_tools_validate_output_schema() {
 	if [ "${output_schema}" = "null" ] || [ -z "${output_schema}" ] || [ "${has_json_tool}" != "true" ]; then
 		return 0
 	fi
+	# Before 2026-07-28 a non-object outputSchema isn't advertised and the
+	# result carries no structured content to check against it.
+	if [ "${MCPBASH_PROTOCOL_ERA:-legacy}" != "modern" ] \
+		&& printf '%s' "${output_schema}" | "${MCPBASH_JSON_TOOL_BIN}" -e 'type == "object" and has("type") and .type != "object"' >/dev/null 2>&1; then
+		return 0
+	fi
 
 	# Parse the tool output as JSON
 	local structured_json=""
@@ -1664,11 +1670,17 @@ mcp_tools_list() {
 	local listed
 	listed="$(printf '%s' "${MCP_TOOLS_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -r \
 		--argjson offset "${offset}" --argjson limit "${numeric_limit}" \
-		--arg filter "${filter}" --arg names "${names}" '
+		--arg filter "${filter}" --arg names "${names}" --arg era "${MCPBASH_PROTOCOL_ERA:-legacy}" '
 		($names | split(" ") | map(select(. != ""))) as $allowed
 		| (if $filter == "true" then (.items | map(select(.name as $n | any($allowed[]; . == $n)))) else .items end) as $items
 		| ((.items | map(.name)) - ($items | map(.name))) as $blocked
-		| "\($items | length)\t\($blocked | length)\t\($blocked[0:10] | join(", "))\t\({tools: $items[$offset:$offset+$limit], _meta: {"mcpbash/total": ($items | length)}} | tojson)"
+		# Before 2026-07-28 an outputSchema must describe an object: one with
+		# another explicit type is left out for those clients.
+		| ($items[$offset:$offset+$limit]
+			| if $era == "modern" then . else map(
+				if (.outputSchema | type) == "object" and (.outputSchema | has("type")) and .outputSchema.type != "object"
+				then del(.outputSchema) else . end) end) as $page
+		| "\($items | length)\t\($blocked | length)\t\($blocked[0:10] | join(", "))\t\({tools: $page, _meta: {"mcpbash/total": ($items | length)}} | tojson)"
 	')" || listed=""
 	if [ -z "${listed}" ]; then
 		mcp_tools_error -32603 "Unable to list tools"
@@ -2660,6 +2672,7 @@ mcp_tools_call() {
 	local result_json
 	result_json="$(
 		"${MCPBASH_JSON_TOOL_BIN}" -n -c \
+			--arg era "${MCPBASH_PROTOCOL_ERA:-legacy}" \
 			--rawfile stdout "${stdout_content}" \
 			--arg stderr "${stderr_tail}" \
 			--argjson exit_code "${exit_code}" \
@@ -2684,13 +2697,17 @@ mcp_tools_call() {
 					# Tool already emitted CallToolResult - use it directly with metadata
 					# Merge existing _meta with framework metadata (preserving ui field, etc.)
 					$json
+					# Before 2026-07-28 structuredContent must be an object.
+					| if $era != "modern" and has("structuredContent") and (.structuredContent | type) != "object" then del(.structuredContent) else . end
 					| ._meta = ((._meta // {}) + {exitCode: $meta_exit_code} + (if ($stderr | length > 0) then {stderr: $stderr} else {} end))
 					| if $exit_code != 0 then .isError = true else . end
 				else
 					# Normal JSON output - wrap in CallToolResult
 					$base
 					| .content += [{type: "text", text: $stdout}]
-					| .structuredContent = $json
+					# Before 2026-07-28 structuredContent must be an object; other
+					# JSON is sent as text only.
+					| if $era == "modern" or ($json | type) == "object" then .structuredContent = $json else . end
 				end
 			) catch (
 				$base | .content += [{type: "text", text: $stdout}]

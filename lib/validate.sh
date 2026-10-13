@@ -178,6 +178,13 @@ mcp_validate_tools() {
 							printf '⚠ %s - inputSchema has no "type" or "properties"\n' "${rel_meta}"
 							warnings=$((warnings + 1))
 						fi
+						# Clients before 2026-07-28 take object outputSchemas only.
+						local out_type
+						out_type="$("${MCPBASH_JSON_TOOL_BIN}" -r 'if (.outputSchema | type) == "object" and (.outputSchema | has("type")) and .outputSchema.type != "object" then (.outputSchema.type | tostring) else "" end' "${meta_path}" 2>/dev/null || printf '')"
+						if [ -n "${out_type}" ]; then
+							printf '⚠ %s - outputSchema type is %s: only 2026-07-28 clients get structured output (older ones get text only)\n' "${rel_meta}" "${out_type}"
+							warnings=$((warnings + 1))
+						fi
 						# Validate icons format
 						local icons_result
 						icons_result="$(mcp_validate_icons "${MCPBASH_JSON_TOOL_BIN}" "${meta_path}")"

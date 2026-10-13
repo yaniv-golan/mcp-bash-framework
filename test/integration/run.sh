@@ -86,6 +86,7 @@ TESTS=(
 	"test_windows_registry_large_icons.sh"
 	"test_tools_policy.sh"
 	"test_tools_list_allowlist.sh"
+	"test_legacy_object_rule.sh"
 	"test_tools_policy_denied.sh"
 	"test_project_level_providers.sh"
 	"test_meta_env.sh"
