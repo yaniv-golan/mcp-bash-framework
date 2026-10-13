@@ -2031,6 +2031,14 @@ mcp_tools_call() {
 			export MCP_TOOL_ERROR_FILE
 			export MCP_TOOL_RESOURCES_FILE="${tool_resources_file}"
 			export MCP_ELICIT_SUPPORTED="${elicit_supported}"
+			# The client's MCP Apps (UI) capability, for mcp_client_supports_ui in
+			# the tool: the server knows it, the tool's environment doesn't
+			# otherwise (the state dir isn't passed to tools).
+			if declare -F mcp_client_supports_ui >/dev/null 2>&1 && mcp_client_supports_ui; then
+				export MCPBASH_CLIENT_SUPPORTS_UI=1
+			else
+				export MCPBASH_CLIENT_SUPPORTS_UI=0
+			fi
 			export MCPBASH_JSON_TOOL="${MCPBASH_JSON_TOOL:-}"
 			export MCPBASH_JSON_TOOL_BIN="${MCPBASH_JSON_TOOL_BIN:-}"
 			export MCPBASH_MODE="${MCPBASH_MODE:-full}"
