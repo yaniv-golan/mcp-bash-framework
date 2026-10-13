@@ -197,8 +197,7 @@ mcp_core_build_instructions() {
 #   call an SDK helper removed in 2.0 (the rules in
 #   MCP_CORE_REMOVED_API_RULES), for the instructions note;
 # - once a day it runs every rule instead and prints one line to stderr with
-#   the number of uses of APIs that change in 2.0 (the stamp holds the date;
-#   MCPBASH_DEPRECATION_NOTICE=false turns the line off, not the scan).
+#   the number of uses of APIs that change in 2.0 (the stamp holds the date).
 # A scan is started at most once an hour per project (removed-api.attempt is
 # touched as it starts, so a scan cut short by a server that exits doesn't
 # start again on every launch), and only when the rules (lib/core.sh, the
@@ -208,11 +207,14 @@ mcp_core_build_instructions() {
 # second as a scan start waits for the next change; so do files replaced
 # with an older mtime (cp -p) and tools or server dirs outside the project.
 mcp_core_start_deprecation_notice() {
-	local quiet=0
-	case "${MCPBASH_DEPRECATION_NOTICE:-true}" in
-	false | 0 | no | off) quiet=1 ;;
-	esac
 	MCP_CORE_REMOVED_API_NOTE_ON=0
+	# MCPBASH_DEPRECATION_NOTICE=false turns the scan off, and with it the
+	# stderr line and the instructions note (a findings file nothing
+	# refreshes isn't trusted). Tools calling removed helpers still get
+	# migration_required per call.
+	case "${MCPBASH_DEPRECATION_NOTICE:-true}" in
+	false | 0 | no | off) return 0 ;;
+	esac
 	mcp_core_startup_scan_possible || return 0
 	MCP_CORE_REMOVED_API_NOTE_ON=1
 	local project_root="${MCPBASH_PROJECT_ROOT}"
@@ -225,13 +227,11 @@ mcp_core_start_deprecation_notice() {
 	(
 		set +e
 		announce=0
-		if [ "${quiet}" = 0 ]; then
-			today="$(date +%Y-%m-%d 2>/dev/null)" || today=""
-			last=""
-			[ -f "${stamp}" ] && IFS= read -r last <"${stamp}" 2>/dev/null
-			if [ -n "${today}" ] && [ "${last}" != "${today}" ] && printf '%s\n' "${today}" >"${stamp}" 2>/dev/null; then
-				announce=1
-			fi
+		today="$(date +%Y-%m-%d 2>/dev/null)" || today=""
+		last=""
+		[ -f "${stamp}" ] && IFS= read -r last <"${stamp}" 2>/dev/null
+		if [ -n "${today}" ] && [ "${last}" != "${today}" ] && printf '%s\n' "${today}" >"${stamp}" 2>/dev/null; then
+			announce=1
 		fi
 		if [ "${announce}" = 0 ]; then
 			# A scan started within the hour, finished or not: nothing to do.

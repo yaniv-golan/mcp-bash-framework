@@ -171,15 +171,19 @@ stage clean
 run clean clean
 test_assert_eq "$(notice_count clean)" "0"
 
-printf ' -> opt-out: no notice\n'
+printf ' -> opt-out: no notice, no scan, no note\n'
 stage optout deprecated
-WAIT_FILE="${TEST_TMPDIR}/optout/proj/.registry/removed-api.findings" run optout optout MCPBASH_DEPRECATION_NOTICE=false
+run optout optout MCPBASH_DEPRECATION_NOTICE=false
 test_assert_eq "$(notice_count optout)" "0"
-
-printf ' -> opt-out silences stderr only: the note is still sent\n'
+for f in removed-api.findings removed-api.attempt deprecation-notice.stamp; do
+	[ ! -e "${TEST_TMPDIR}/optout/proj/.registry/${f}" ] || test_fail "opt-out: the scan ran (${f} written)"
+done
+# A findings file left from before the opt-out isn't trusted either.
+printf '%s\n' tools/hello/tool.sh >"${TEST_TMPDIR}/optout/proj/.registry/removed-api.findings"
 run optout optout2 MCPBASH_DEPRECATION_NOTICE=false
-test_assert_eq "$(notice_count optout2)" "0"
-instructions optout2 | grep -q "${NOTE_RE}" || test_fail "opt-out: note missing from instructions"
+if instructions optout2 | grep -q "${NOTE_RE}"; then
+	test_fail "opt-out: note sent"
+fi
 
 printf ' -> static registry (bundles): no notice\n'
 stage static deprecated

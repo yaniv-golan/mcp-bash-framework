@@ -91,7 +91,7 @@ printf '%s\n' tools/old-a/tool.sh tools/old-b/tool.sh tools/old-c/tool.sh tools/
 : >"${NWS}/.registry/removed-api.attempt"
 REQ="${TEST_TMPDIR}/note.ndjson"
 discover 1 >"${REQ}"
-MCPBASH_MODERN_PROTOCOL=true MCPBASH_DEPRECATION_NOTICE=false test_run_mcp "${NWS}" "${REQ}" "${TEST_TMPDIR}/note.out"
+MCPBASH_MODERN_PROTOCOL=true MCPBASH_DEPRECATION_NOTICE=true test_run_mcp "${NWS}" "${REQ}" "${TEST_TMPDIR}/note.out"
 note="$(resp "${TEST_TMPDIR}/note.out" 1 | jq -r '.result.instructions')"
 assert_eq "Use the hello tool." "$(printf '%s\n' "${note}" | head -n 1)" "project instructions first"
 printf '%s' "${note}" | grep -q 'helpers removed in 2\.0 (in tools/old-a/tool.sh tools/old-b/tool.sh tools/old-c/tool.sh and 1 more): tools that use them return an error until they are migrated (`mcp-bash migrate` lists the changes)\.' || test_fail "removed-API note missing: ${note}"
