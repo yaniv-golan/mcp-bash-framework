@@ -117,7 +117,9 @@ mcp_modern_refusal() {
 # Run inside the worker forked for one modern request, before the handler.
 # Every client-capability global comes from this request's _meta only, never
 # from a legacy session that initialized this process.
+# Usage: mcp_modern_apply_worker_context WORKER_KEY
 mcp_modern_apply_worker_context() {
+	local key="${1:-}"
 	export MCPBASH_PROTOCOL_ERA="modern"
 	# shellcheck disable=SC2034  # Read by the handlers and spec helpers
 	MCPBASH_NEGOTIATED_PROTOCOL_VERSION="${MCP_MODERN_PROTOCOL_VERSION}"
@@ -156,6 +158,10 @@ mcp_modern_apply_worker_context() {
 	level="$(printf '%s' "${MCPBASH_REQUEST_META}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.logLevel // ""' 2>/dev/null || true)"
 	if [ -n "${level}" ]; then
 		mcp_logging_set_level "${level}"
+		# The live-progress flusher runs in the main process: tell it the level.
+		if [ -n "${key}" ] && [ -n "${MCPBASH_STATE_DIR:-}" ]; then
+			printf '%s' "${level}" >"${MCPBASH_STATE_DIR}/loglevel.${key}" 2>/dev/null || true
+		fi
 	else
 		mcp_logging_set_level "off"
 		export MCP_LOG_STREAM=""

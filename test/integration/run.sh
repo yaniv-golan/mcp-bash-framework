@@ -98,6 +98,7 @@ TESTS=(
 	"test_modern_core.sh"
 	"test_modern_discover.sh"
 	"test_modern_results.sh"
+	"test_modern_logging.sh"
 	"test_tools_refusals.sh"
 	"test_tools_schema.sh"
 	"test_prompts.sh"

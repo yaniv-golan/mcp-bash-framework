@@ -356,6 +356,7 @@ jobs:
             test_modern_core.sh
             test_modern_discover.sh
             test_modern_results.sh
+            test_modern_logging.sh
         run: |
           set -euo pipefail
           unset MCPBASH_CI_MODE

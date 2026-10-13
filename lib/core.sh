@@ -1298,7 +1298,7 @@ mcp_core_spawn_worker() {
 		export MCP_PROGRESS_TOKEN="${progress_token}"
 		export MCP_CANCEL_FILE="${cancel_file}"
 		if [ "${MCPBASH_REQUEST_ERA:-legacy}" = "modern" ]; then
-			mcp_modern_apply_worker_context
+			mcp_modern_apply_worker_context "${key}"
 		fi
 		if [ -n "${timeout}" ]; then
 			local timeout_status=0
@@ -1482,6 +1482,7 @@ mcp_core_worker_cleanup() {
 		rm -f "${MCPBASH_STATE_DIR}/rate.log.${key}.log"
 		rm -f "${MCPBASH_STATE_DIR}/progress.${key}.ndjson.offset"
 		rm -f "${MCPBASH_STATE_DIR}/logs.${key}.ndjson.offset"
+		rm -f "${MCPBASH_STATE_DIR}/loglevel.${key}"
 	fi
 
 	if [ -n "${stderr_file}" ] && [ -f "${stderr_file}" ]; then
@@ -1885,8 +1886,13 @@ mcp_core_flush_stream_unlocked() {
 	local kind="$2"
 	# The worker's streams are progress.<key>.ndjson and logs.<key>.ndjson.
 	local stream="${MCPBASH_STATE_DIR}/${kind}.${key}.ndjson"
+	local request_level=""
 	if [ "${kind}" = "log" ]; then
 		stream="${MCPBASH_STATE_DIR}/logs.${key}.ndjson"
+		# A modern request's own log level (lib/modern.sh), when it set one.
+		if [ -f "${MCPBASH_STATE_DIR}/loglevel.${key}" ]; then
+			request_level="$(cat "${MCPBASH_STATE_DIR}/loglevel.${key}" 2>/dev/null || true)"
+		fi
 	fi
 	local offset_file="${stream}.offset"
 	[ -f "${stream}" ] || return 0
@@ -1912,7 +1918,11 @@ mcp_core_flush_stream_unlocked() {
 			if [ "${kind}" = "log" ]; then
 				local level
 				level="$(mcp_core_extract_log_level "${line}")"
-				if ! mcp_logging_is_enabled "${level}"; then
+				if [ -n "${request_level}" ]; then
+					if [ "$(mcp_logging_level_rank "${level}")" -lt "$(mcp_logging_level_rank "${request_level}")" ]; then
+						continue
+					fi
+				elif ! mcp_logging_is_enabled "${level}"; then
 					continue
 				fi
 			fi
