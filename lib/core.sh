@@ -1807,6 +1807,16 @@ mcp_core_poll_registries_once() {
 # sending those lines.
 mcp_core_flush_stream() {
 	local lock_name="flush.$2.$1"
+	# Cheap check first: the background flusher calls this for every stream on
+	# every pass, and most have nothing new.
+	local stream size offset=""
+	stream="$(_mcp_core_stream_path "$1" "$2")"
+	[ -f "${stream}" ] || return 0
+	size="$(wc -c <"${stream}" 2>/dev/null | tr -d ' ')"
+	[ -f "${stream}.offset" ] && offset="$(cat "${stream}.offset" 2>/dev/null)"
+	if [ -n "${size}" ] && [ "${size}" = "${offset}" ]; then
+		return 0
+	fi
 	if declare -F mcp_lock_acquire_timeout >/dev/null 2>&1 && [ -n "${MCPBASH_LOCK_ROOT:-}" ]; then
 		mcp_lock_acquire_timeout "${lock_name}" 5 || return 0
 		_mcp_core_flush_stream_unlocked "$1" "$2"
@@ -1817,14 +1827,20 @@ mcp_core_flush_stream() {
 	_mcp_core_flush_stream_unlocked "$1" "$2"
 }
 
+# The worker's streams are progress.<key>.ndjson and logs.<key>.ndjson.
+_mcp_core_stream_path() {
+	if [ "$2" = "log" ]; then
+		printf '%s' "${MCPBASH_STATE_DIR}/logs.$1.ndjson"
+	else
+		printf '%s' "${MCPBASH_STATE_DIR}/$2.$1.ndjson"
+	fi
+}
+
 _mcp_core_flush_stream_unlocked() {
 	local key="$1"
 	local kind="$2"
-	# The worker's streams are progress.<key>.ndjson and logs.<key>.ndjson.
-	local stream="${MCPBASH_STATE_DIR}/${kind}.${key}.ndjson"
-	if [ "${kind}" = "log" ]; then
-		stream="${MCPBASH_STATE_DIR}/logs.${key}.ndjson"
-	fi
+	local stream
+	stream="$(_mcp_core_stream_path "${key}" "${kind}")"
 	local offset_file="${stream}.offset"
 	[ -f "${stream}" ] || return 0
 	local last_offset=0

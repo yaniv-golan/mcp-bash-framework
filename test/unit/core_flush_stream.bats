@@ -47,7 +47,9 @@ setup() {
 			command wc "$@"
 		fi
 	}
-	mcp_core_flush_stream k1 progress
+	# Call the inner flush, where the size is measured (the outer one runs a
+	# cheap check first, which would use up the stubbed wc call).
+	_mcp_core_flush_stream_unlocked k1 progress
 	mcp_core_flush_stream k1 progress
 
 	run cat "${SENT}"
@@ -72,4 +74,24 @@ setup() {
 	mcp_core_flush_stream k1 progress
 	run cat "${SENT}"
 	assert_output '{"n":1}'
+}
+
+@test "flush_stream: no lock is taken when there is nothing new to send" {
+	# The background flusher calls this for every stream on every pass.
+	LOCKS="${BATS_TEST_TMPDIR}/locks"
+	: >"${LOCKS}"
+	MCPBASH_LOCK_ROOT="${BATS_TEST_TMPDIR}/lockroot"
+	mcp_lock_acquire_timeout() { printf '%s\n' "$1" >>"${LOCKS}"; return 0; }
+	mcp_lock_release() { :; }
+
+	# No stream yet, then a stream already sent in full.
+	mcp_core_flush_stream k1 progress
+	printf '%s\n' '{"n":1}' >"${STREAM}"
+	mcp_core_flush_stream k1 progress
+	mcp_core_flush_stream k1 progress
+
+	run cat "${SENT}"
+	assert_output '{"n":1}'
+	run cat "${LOCKS}"
+	assert_output 'flush.progress.k1'
 }
