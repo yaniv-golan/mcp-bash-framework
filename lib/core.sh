@@ -194,6 +194,14 @@ MCP_CORE_REMOVED_API_NOTE_ON=0
 # has entries.
 mcp_core_build_instructions() {
 	MCP_CORE_INSTRUCTIONS="${MCPBASH_SERVER_INSTRUCTIONS:-}"
+	# From the environment only (no registry load): the allowlist decides
+	# what tools/list shows.
+	if declare -F mcp_tools_policy_allowlist_effective >/dev/null 2>&1; then
+		mcp_tools_policy_allowlist_effective
+		if [ "${MCP_TOOLS_ALLOWLIST_ALL}" != "true" ]; then
+			MCP_CORE_INSTRUCTIONS="${MCP_CORE_INSTRUCTIONS:+${MCP_CORE_INSTRUCTIONS}$'\n\n'}Tools outside the server operator's allowlist (MCPBASH_TOOL_ALLOWLIST) are not listed and can't be called."
+		fi
+	fi
 	if [ "${MCP_CORE_POLICY_LEGACY_HOOK}" = "true" ]; then
 		# shellcheck disable=SC2016  # Backticks are literal text.
 		MCP_CORE_INSTRUCTIONS="${MCP_CORE_INSTRUCTIONS:+${MCP_CORE_INSTRUCTIONS}$'\n\n'}This server's tool policy (server.d/policy.sh) uses the mcp-bash 1.x hook, so every tool call is refused until it is migrated (\`mcp-bash migrate\`)."

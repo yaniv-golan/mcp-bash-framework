@@ -1681,14 +1681,36 @@ mcp_tools_list() {
 		fi
 	fi
 
-	local total="${MCP_TOOLS_TOTAL}"
-	local result_json
-	result_json="$(printf '%s' "${MCP_TOOLS_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -c --argjson offset "${offset}" --argjson limit "${numeric_limit}" --argjson total "${total}" '
-		{
-			tools: .items[$offset:$offset+$limit],
-			_meta: {"mcpbash/total": $total}
-		}
-	')"
+	# Tools the operator's allowlist blocks aren't listed: a client that saw
+	# them would only get a policy denial when calling them. The project hook
+	# (mcp_tools_policy_project) takes the call's arguments, so it can't
+	# filter a listing; it applies at call time.
+	local total="${MCP_TOOLS_TOTAL}" result_json filter=false names=""
+	mcp_tools_policy_allowlist_effective
+	if [ "${MCP_TOOLS_ALLOWLIST_ALL}" != "true" ]; then
+		filter=true
+		names="${MCP_TOOLS_ALLOWLIST_NAMES}"
+	fi
+	local listed
+	listed="$(printf '%s' "${MCP_TOOLS_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -r \
+		--argjson offset "${offset}" --argjson limit "${numeric_limit}" \
+		--arg filter "${filter}" --arg names "${names}" '
+		($names | split(" ") | map(select(. != ""))) as $allowed
+		| (if $filter == "true" then (.items | map(select(.name as $n | any($allowed[]; . == $n)))) else .items end) as $items
+		| ((.items | map(.name)) - ($items | map(.name))) as $blocked
+		| "\($items | length)\t\($blocked | length)\t\($blocked[0:10] | join(", "))\t\({tools: $items[$offset:$offset+$limit], _meta: {"mcpbash/total": ($items | length)}} | tojson)"
+	')" || listed=""
+	if [ -z "${listed}" ]; then
+		mcp_tools_error -32603 "Unable to list tools"
+		return 1
+	fi
+	total="${listed%%$'\t'*}"
+	listed="${listed#*$'\t'}"
+	local blocked_count="${listed%%$'\t'*}"
+	listed="${listed#*$'\t'}"
+	local blocked_names="${listed%%$'\t'*}"
+	result_json="${listed#*$'\t'}"
+	mcp_tools_note_unlisted "${blocked_count}" "${blocked_names}"
 
 	if ! result_json="$(mcp_paginate_attach_next_cursor "${result_json}" "tools" "${offset}" "${numeric_limit}" "${total}" "${MCP_TOOLS_REGISTRY_HASH}")"; then
 		mcp_tools_error -32603 "Unable to encode tools cursor"
@@ -1696,6 +1718,22 @@ mcp_tools_list() {
 	fi
 
 	printf '%s' "${result_json}"
+}
+
+# Say once per server which tools the allowlist keeps out of tools/list (up
+# to ten names), as a warning log message: tools/list runs in a worker,
+# whose stderr isn't the server's. A marker in the state dir makes it once
+# per server. `mcp-bash doctor` names them too.
+mcp_tools_note_unlisted() {
+	local count="$1" names="$2" marker="${MCPBASH_STATE_DIR:-}/allowlist.noted"
+	case "${count}" in '' | 0 | *[!0-9]*) return 0 ;; esac
+	if [ -n "${MCPBASH_STATE_DIR:-}" ]; then
+		[ -e "${marker}" ] && return 0
+		: >"${marker}" 2>/dev/null || true
+	fi
+	local more=""
+	[ "${count}" -le 10 ] || more=" and $((count - 10)) more"
+	mcp_logging_warning "${MCP_TOOLS_LOGGER}" "${count} tool(s) not listed because MCPBASH_TOOL_ALLOWLIST does not allow them: ${names}${more}"
 }
 
 mcp_tools_metadata_for_name() {

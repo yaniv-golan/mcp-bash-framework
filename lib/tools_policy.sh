@@ -208,6 +208,40 @@ mcp_tools_policy_file_has_legacy_hook() {
 	return 1
 }
 
+# The operator's allowlist as the policy applies it, builtins only. Sets
+# MCP_TOOLS_ALLOWLIST_ALL=true when every tool is allowed ("*"/"all", or
+# MCPBASH_TOOL_ALLOW_DEFAULT=allow|all with no list); otherwise false, with
+# MCP_TOOLS_ALLOWLIST_NAMES the allowed names, space-separated (empty: deny
+# by default, nothing allowed).
+# shellcheck disable=SC2034  # The two results are read by the callers.
+mcp_tools_policy_allowlist_effective() {
+	local raw="${MCPBASH_TOOL_ALLOWLIST:-}" entry
+	MCP_TOOLS_ALLOWLIST_ALL=false
+	MCP_TOOLS_ALLOWLIST_NAMES=""
+	if [ -z "${raw}" ]; then
+		case "${MCPBASH_TOOL_ALLOW_DEFAULT:-deny}" in
+		allow | all) MCP_TOOLS_ALLOWLIST_ALL=true ;;
+		esac
+		return 0
+	fi
+	local IFS=' ,' noglob=0
+	case $- in *f*) noglob=1 ;; esac
+	set -f
+	# shellcheck disable=SC2086  # Word splitting on " ," is the point.
+	for entry in ${raw}; do
+		case "${entry}" in
+		'') ;;
+		'*' | all)
+			MCP_TOOLS_ALLOWLIST_ALL=true
+			MCP_TOOLS_ALLOWLIST_NAMES=""
+			break
+			;;
+		*) MCP_TOOLS_ALLOWLIST_NAMES="${MCP_TOOLS_ALLOWLIST_NAMES:+${MCP_TOOLS_ALLOWLIST_NAMES} }${entry}" ;;
+		esac
+	done
+	[ "${noglob}" = 1 ] || set +f
+}
+
 mcp_tools_policy_check_default() {
 	# $1: tool name; $2: tool metadata JSON string
 	local name="$1"

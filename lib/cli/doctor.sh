@@ -645,6 +645,13 @@ EOF
 				errors=$((errors + 1))
 				add_finding "project.policy_legacy_hook" "error" 'policy.sh defines mcp_tools_policy_check, the mcp-bash 1.x policy hook: every tool call is refused until it is renamed to mcp_tools_policy_project (run mcp-bash migrate)' "false" ""
 			fi
+			# The operator allowlist as this shell sets it; the client config
+			# may differ. Tools it doesn't allow aren't listed.
+			mcp_tools_policy_allowlist_effective
+			if [ "${MCP_TOOLS_ALLOWLIST_ALL}" != "true" ] && [ -z "${MCP_TOOLS_ALLOWLIST_NAMES}" ]; then
+				warnings=$((warnings + 1))
+				add_finding "project.tool_allowlist_empty" "warning" 'MCPBASH_TOOL_ALLOWLIST is not set in this shell: every tool is denied and none is listed (set it in the MCP client config, e.g. "*" or tool names)' "false" ""
+			fi
 
 			# Tool/provider env policy, as seen from this shell. Names and states
 			# only; values are never included.
@@ -1785,6 +1792,15 @@ EOF
 			errors=$((errors + 1))
 		fi
 
+		mcp_tools_policy_allowlist_effective
+		if [ "${MCP_TOOLS_ALLOWLIST_ALL}" = "true" ]; then
+			printf '  ✓ %s\n' 'Tool allowlist (this shell): every tool allowed'
+		elif [ -n "${MCP_TOOLS_ALLOWLIST_NAMES}" ]; then
+			printf '  ✓ %s\n' "Tool allowlist (this shell): ${MCP_TOOLS_ALLOWLIST_NAMES}; other tools are not listed"
+		else
+			printf '  ⚠ %s\n' 'MCPBASH_TOOL_ALLOWLIST is not set in this shell: every tool is denied and none is listed (set it in the MCP client config, e.g. "*" or tool names)'
+			warnings=$((warnings + 1))
+		fi
 		mcp_doctor_print_env_policy "$(mcp_runtime_effective_server_dir "${detected_root}")/server.meta.json" "${gojq_path:-${jq_path}}"
 	else
 		printf '  (no project detected in current directory)\n'

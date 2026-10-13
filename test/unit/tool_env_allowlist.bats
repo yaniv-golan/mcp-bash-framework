@@ -236,3 +236,13 @@ EOF2
 	run "${MCPBASH_HOME}/bin/mcp-bash" doctor
 	refute_output --partial "${want}"
 }
+
+@test "tool_env_allowlist: doctor states the effective tool allowlist" {
+	cd "${PROJECT_ROOT}"
+	MCPBASH_TOOL_ALLOWLIST="" MCPBASH_TOOL_ALLOW_DEFAULT="" run "${MCPBASH_HOME}/bin/mcp-bash" doctor
+	assert_output --partial "every tool is denied and none is listed"
+	MCPBASH_TOOL_ALLOWLIST="" MCPBASH_TOOL_ALLOW_DEFAULT="" run "${MCPBASH_HOME}/bin/mcp-bash" doctor --json
+	assert_output --partial "project.tool_allowlist_empty"
+	MCPBASH_TOOL_ALLOWLIST="echo-env" run "${MCPBASH_HOME}/bin/mcp-bash" doctor
+	assert_output --partial "Tool allowlist (this shell): echo-env; other tools are not listed"
+}
