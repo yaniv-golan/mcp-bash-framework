@@ -328,3 +328,14 @@ run_tool_cli_add_tool() {
 	assert_equal "$(printf '%s' "${output}" | jq -c '[.content[].type]')" '["text"]'
 	refute_output --partial 'notifications/message'
 }
+
+@test "run_tool_cli: a flat _meta[\"ui/resourceUri\"] is sent as the tool printed it (no 2.0 rewrite)" {
+	mkdir -p "${PROJECT_ROOT}/tools/flatui"
+	printf '{"name":"test.flatui","description":"f","inputSchema":{"type":"object"}}\n' >"${PROJECT_ROOT}/tools/flatui/tool.meta.json"
+	printf '%s\n' '#!/usr/bin/env bash' "printf '%s' '{\"content\":[{\"type\":\"text\",\"text\":\"x\"}],\"isError\":false,\"_meta\":{\"ui/resourceUri\":\"ui://s/r\"}}'" >"${PROJECT_ROOT}/tools/flatui/tool.sh"
+	chmod +x "${PROJECT_ROOT}/tools/flatui/tool.sh"
+	run "${MCPBASH_HOME}/bin/mcp-bash" run-tool test.flatui
+	assert_success
+	run jq -e 'select(has("content")) | ._meta["ui/resourceUri"] == "ui://s/r" and (._meta.ui | not)' <<<"${output}"
+	assert_success
+}

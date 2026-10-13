@@ -271,36 +271,6 @@ mcp_tools_normalize_schema() {
 	printf '%s' "${normalized}"
 }
 
-# Normalize deprecated _meta format to current nested structure
-# Converts _meta["ui/resourceUri"] to _meta.ui.resourceUri per MCP Apps spec
-mcp_tools_normalize_meta() {
-	local output="$1"
-
-	# Only process if JSON tooling is available
-	if [ "${MCPBASH_JSON_TOOL:-none}" = "none" ]; then
-		printf '%s' "${output}"
-		return
-	fi
-
-	# Check for deprecated flat format: _meta["ui/resourceUri"]
-	local has_deprecated
-	has_deprecated="$("${MCPBASH_JSON_TOOL_BIN}" -r '._meta["ui/resourceUri"] // empty' <<<"${output}" 2>/dev/null || true)"
-
-	if [ -n "${has_deprecated}" ]; then
-		# Convert to nested format
-		output="$("${MCPBASH_JSON_TOOL_BIN}" -c '
-			if ._meta["ui/resourceUri"] then
-				._meta.ui.resourceUri = ._meta["ui/resourceUri"] |
-				del(._meta["ui/resourceUri"])
-			else
-				.
-			end
-		' <<<"${output}" 2>/dev/null || printf '%s' "${output}")"
-	fi
-
-	printf '%s' "${output}"
-}
-
 mcp_tools_normalize_local_path() {
 	local raw="$1"
 	if [ -z "${raw}" ]; then
@@ -2783,9 +2753,6 @@ mcp_tools_call() {
 	fi
 
 	cleanup_tool_temp_files
-
-	# Normalize deprecated _meta format (ui/resourceUri -> ui.resourceUri)
-	result_json="$(mcp_tools_normalize_meta "${result_json}")"
 
 	_MCP_TOOLS_RESULT="${result_json}"
 }
