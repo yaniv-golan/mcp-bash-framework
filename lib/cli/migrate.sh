@@ -216,6 +216,19 @@ mcp_cli_migrate() {
 		fi
 	fi
 
+	# A running or restarted server reuses its registry cache while it is
+	# younger than the TTL, and would keep checking results against the
+	# metadata migrate just rewrote. Drop the cache when anything changed.
+	local cache_cleared="false"
+	if [ "${write}" = "true" ] && [ "${applied}" -gt 0 ]; then
+		local registry_dir="${MCPBASH_REGISTRY_DIR:-${project_root}/.registry}" cache_file
+		for cache_file in tools.json resources.json resource-templates.json prompts.json ui-resources.json removed-api.findings; do
+			if [ -e "${registry_dir}/${cache_file}" ]; then
+				rm -f "${registry_dir}/${cache_file}" && cache_cleared="true"
+			fi
+		done
+	fi
+
 	local auto=0 manual=0
 	manual="$(printf '%s\n' "${findings}" | awk -F'\t' '$2 == "manual"' | wc -l | tr -d ' ')"
 	# The marker is only set once nothing else is pending, so while manual
@@ -237,11 +250,14 @@ mcp_cli_migrate() {
 				"$(mcp_json_quote_text "${f_summary}")" "$(mcp_json_quote_text "${f_fix}")" \
 				"$(mcp_json_quote_text "${f_text}")")"
 		done <<<"${findings}"
-		printf '{"projectRoot":%s,"written":%s,"applied":%s,"vendoredRuntimeTooOld":%s,"pending":{"auto":%s,"manual":%s},"findings":[%s]}\n' \
-			"$(mcp_json_quote_text "${project_root}")" "${write}" "${applied}" "${vendor_too_old}" "${auto}" "${manual}" "${items}"
+		printf '{"projectRoot":%s,"written":%s,"applied":%s,"registryCacheCleared":%s,"vendoredRuntimeTooOld":%s,"pending":{"auto":%s,"manual":%s},"findings":[%s]}\n' \
+			"$(mcp_json_quote_text "${project_root}")" "${write}" "${applied}" "${cache_cleared}" "${vendor_too_old}" "${auto}" "${manual}" "${items}"
 	else
 		if [ "${write}" = "true" ]; then
 			printf 'Applied %d automatic fix(es).\n' "${applied}"
+			if [ "${cache_cleared}" = "true" ]; then
+				printf 'Cleared the registry cache; the server rebuilds it on its next start. Restart running servers to pick up the changes.\n'
+			fi
 		fi
 		if [ -n "${findings}" ]; then
 			local f_summary f_fix f_text
