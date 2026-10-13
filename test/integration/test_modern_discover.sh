@@ -72,6 +72,19 @@ REQ="${TEST_TMPDIR}/mixed.ndjson"
 MCPBASH_MODERN_PROTOCOL=true test_run_mcp "${WS}" "${REQ}" "${TEST_TMPDIR}/mixed.out"
 assert_eq "complete" "$(resp "${TEST_TMPDIR}/mixed.out" 1 | jq -r '.result.resultType')" "discover after a legacy initialize"
 
+# --- The removed-API note: from the last startup scan's findings file -------
+mkdir -p "${WS}/.registry"
+printf '%s\n' tools/a.sh tools/b.sh tools/c.sh tools/d.sh >"${WS}/.registry/removed-api.findings"
+REQ="${TEST_TMPDIR}/note.ndjson"
+discover 1 >"${REQ}"
+# A static registry skips the startup scan, which would otherwise rewrite the
+# file (this project is clean) while the test reads it.
+MCPBASH_MODERN_PROTOCOL=true MCPBASH_STATIC_REGISTRY=1 test_run_mcp "${WS}" "${REQ}" "${TEST_TMPDIR}/note.out"
+note="$(resp "${TEST_TMPDIR}/note.out" 1 | jq -r '.result.instructions')"
+assert_eq "Use the hello tool." "$(printf '%s\n' "${note}" | head -n 1)" "project instructions first"
+printf '%s' "${note}" | grep -q 'helpers removed in 2\.0 (in tools/a.sh tools/b.sh tools/c.sh and 1 more).*mcp-bash migrate' || test_fail "removed-API note missing: ${note}"
+rm -rf "${WS}/.registry"
+
 # --- Large instructions (over Linux's 128 KiB argument and macOS's ~1 MiB limit)
 {
 	printf 'Use the hello tool.\n'

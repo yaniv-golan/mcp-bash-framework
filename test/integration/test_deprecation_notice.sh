@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Integration: once-a-day stderr notice when a project uses APIs that change in 2.0.
+# Integration: once-a-day stderr notice when a project uses APIs that change in 2.0,
+# and the instructions note about SDK helpers removed in 2.0.
 # shellcheck disable=SC2034  # Used by test runner for reporting.
-TEST_DESC="Startup notice for deprecated APIs: stderr only, once a day, with opt-outs."
+TEST_DESC="Startup notice for deprecated APIs (stderr, once a day) and the removed-API instructions note."
 
 set -euo pipefail
 
@@ -72,6 +73,10 @@ run() {
 			cat "${TEST_TMPDIR}/requests.ndjson"
 			local i=0
 			while [ "${i}" -lt 50 ] && ! grep -q "${NOTICE_RE}" "${err}" 2>/dev/null; do
+				# WAIT_FILE: also stop once the scan has written this file.
+				if [ -n "${WAIT_FILE:-}" ] && [ -f "${WAIT_FILE}" ]; then
+					break
+				fi
 				sleep 0.1
 				i=$((i + 1))
 			done
@@ -85,6 +90,13 @@ run() {
 	fi
 }
 
+# instructions LABEL: the instructions initialize returned in that run.
+instructions() {
+	jq -r 'select(.id=="init") | .result.instructions // ""' "${TEST_TMPDIR}/$1.out"
+}
+
+NOTE_RE='helpers removed in 2\.0'
+
 notice_count() {
 	grep -c "${NOTICE_RE}" "${TEST_TMPDIR}/$1.err" 2>/dev/null || true
 }
@@ -97,9 +109,36 @@ if ! grep -q '^mcp-bash: 1 use of APIs that change in mcp-bash 2.0' "${TEST_TMPD
 	test_fail "unexpected notice text: $(cat "${TEST_TMPDIR}/first.err")"
 fi
 
-printf ' -> same day: no second notice\n'
+printf ' -> first start: no instructions note yet, findings written\n'
+if instructions first | grep -q "${NOTE_RE}"; then
+	test_fail "first start: note sent before any scan finished"
+fi
+test_assert_eq "$(cat "${TEST_TMPDIR}/old/proj/.registry/removed-api.findings")" "tools/hello/tool.sh"
+
+printf ' -> same day: no second notice, instructions name the file\n'
 run old second
 test_assert_eq "$(notice_count second)" "0"
+if ! instructions second | grep -q "${NOTE_RE}.*tools/hello/tool.sh.*mcp-bash migrate"; then
+	test_fail "second start: instructions lack the note: $(instructions second)"
+fi
+
+printf ' -> server.instructions.md comes first, then the note\n'
+printf '%s\n' 'Project instructions.' >"${TEST_TMPDIR}/old/proj/server.d/server.instructions.md"
+run old third
+if ! instructions third | head -n 1 | grep -q '^Project instructions\.$'; then
+	test_fail "third start: project instructions not first: $(instructions third)"
+fi
+instructions third | grep -q "${NOTE_RE}" || test_fail "third start: note missing"
+
+printf ' -> after migrate: the next scan clears the note\n'
+(cd "${TEST_TMPDIR}/old/proj" && MCPBASH_HOME="${TEST_TMPDIR}/old/fw" bash "${TEST_TMPDIR}/old/fw/bin/mcp-bash" migrate --write >/dev/null 2>&1) || test_fail "migrate --write failed"
+rm -f "${TEST_TMPDIR}/old/proj/.registry/removed-api.findings"
+WAIT_FILE="${TEST_TMPDIR}/old/proj/.registry/removed-api.findings" run old fourth
+test_assert_eq "$(wc -c <"${TEST_TMPDIR}/old/proj/.registry/removed-api.findings" | tr -d ' ')" "0"
+run old fifth
+if instructions fifth | grep -q "${NOTE_RE}"; then
+	test_fail "fifth start: note still sent after migrate"
+fi
 
 printf ' -> clean project: no notice\n'
 stage clean
@@ -108,8 +147,13 @@ test_assert_eq "$(notice_count clean)" "0"
 
 printf ' -> opt-out: no notice\n'
 stage optout deprecated
-run optout optout MCPBASH_DEPRECATION_NOTICE=false
+WAIT_FILE="${TEST_TMPDIR}/optout/proj/.registry/removed-api.findings" run optout optout MCPBASH_DEPRECATION_NOTICE=false
 test_assert_eq "$(notice_count optout)" "0"
+
+printf ' -> opt-out silences stderr only: the note is still sent\n'
+run optout optout2 MCPBASH_DEPRECATION_NOTICE=false
+test_assert_eq "$(notice_count optout2)" "0"
+instructions optout2 | grep -q "${NOTE_RE}" || test_fail "opt-out: note missing from instructions"
 
 printf ' -> static registry (bundles): no notice\n'
 stage static deprecated

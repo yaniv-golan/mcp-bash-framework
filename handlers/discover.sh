@@ -27,7 +27,7 @@ mcp_handle_discover() {
 	# jq on stdin, never as arguments.
 	{
 		printf '%s\n' "${server_info}"
-		printf '%s' "${MCPBASH_SERVER_INSTRUCTIONS:-}" | "${MCPBASH_JSON_TOOL_BIN}" -Rs '.'
+		mcp_core_instructions_text | "${MCPBASH_JSON_TOOL_BIN}" -Rs '.'
 	} | "${MCPBASH_JSON_TOOL_BIN}" -c -s \
 		--argjson id "${id}" \
 		--argjson versions "$(mcp_modern_supported_versions_json)" \

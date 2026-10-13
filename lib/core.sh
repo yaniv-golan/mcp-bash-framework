@@ -155,9 +155,46 @@ mcp_core_bootstrap_state() {
 # touches stdout, and any failure is silent. Skipped when the rule engine isn't
 # installed (vendored runtimes), for bundles (static registry, whose users
 # can't act on it), in minimal mode, and with MCPBASH_DEPRECATION_NOTICE=false.
+# Migrate rules about SDK helpers removed in 2.0 (their findings feed the
+# instructions note; lib/tools.sh blocks the tools that use them).
+MCP_CORE_REMOVED_API_RULES="2-mcp-error 2-result-error 2-fail-invalid-args 2-result-success 2-emit-helpers 2-text-with-resource 2-ui-resource-uri"
+
+# One sentence for the instructions when the last startup scan found
+# removed SDK helpers in the project; prints nothing otherwise. Reads the
+# findings file only: never scans (server/discover must stay fast).
+mcp_core_removed_api_note() {
+	local findings="${MCPBASH_REGISTRY_DIR:-}/removed-api.findings"
+	[ -n "${MCPBASH_REGISTRY_DIR:-}" ] && [ -s "${findings}" ] || return 0
+	local files n
+	n="$(grep -c . "${findings}" 2>/dev/null)" || n=0
+	files="$(head -n 3 "${findings}" 2>/dev/null | tr '\n' ' ')"
+	files="${files% }"
+	[ "${n}" -gt 3 ] && files="${files} and $((n - 3)) more"
+	# shellcheck disable=SC2016  # Backticks are literal text.
+	printf 'Some of this server'"'"'s tools call mcp-bash helpers removed in 2.0 (in %s): calls to those tools return a migration_required error until the project runs `mcp-bash migrate`.' "${files}"
+}
+
+# The instructions sent by initialize and server/discover: the project's
+# server.instructions.md, then the removed-API note when there is one.
+mcp_core_instructions_text() {
+	local text="${MCPBASH_SERVER_INSTRUCTIONS:-}" note
+	note="$(mcp_core_removed_api_note)"
+	if [ -n "${note}" ]; then
+		if [ -n "${text}" ]; then
+			text="${text}"$'\n\n'"${note}"
+		else
+			text="${note}"
+		fi
+	fi
+	printf '%s' "${text}"
+}
+
 mcp_core_start_deprecation_notice() {
+	# MCPBASH_DEPRECATION_NOTICE=false silences the stderr notice only: the
+	# scan still runs, so the instructions note stays current.
+	local quiet=0
 	case "${MCPBASH_DEPRECATION_NOTICE:-true}" in
-	false | 0 | no | off) return 0 ;;
+	false | 0 | no | off) quiet=1 ;;
 	esac
 	[ "${MCPBASH_STATIC_REGISTRY:-0}" = "1" ] && return 0
 	mcp_runtime_is_minimal_mode && return 0
@@ -167,18 +204,24 @@ mcp_core_start_deprecation_notice() {
 	[ -n "${project_root}" ] && [ -d "${project_root}" ] || return 0
 	[ -n "${registry_dir}" ] && [ -d "${registry_dir}" ] && [ -w "${registry_dir}" ] || return 0
 
-	# The stamp holds the date of the last scan. Claim today's slot before
-	# scanning so servers started together report once, and a clean project
-	# is scanned at most once a day.
+	# Every start scans in the background. The findings of the rules for SDK
+	# helpers removed in 2.0 go to removed-api.findings in the registry dir
+	# (one file per line), which initialize and server/discover turn into a
+	# sentence in the instructions once it exists (mcp_core_removed_api_note).
+	# The stderr notice, about every rule, is printed at most once a day: the
+	# stamp holds the date it was last printed.
 	local stamp="${registry_dir}/deprecation-notice.stamp"
-	local today last=""
-	today="$(date +%Y-%m-%d 2>/dev/null)" || return 0
-	[ -n "${today}" ] || return 0
-	if [ -f "${stamp}" ]; then
-		last="$(head -n 1 "${stamp}" 2>/dev/null || true)"
+	local findings="${registry_dir}/removed-api.findings"
+	local today last="" announce=0
+	today="$(date +%Y-%m-%d 2>/dev/null)" || today=""
+	if [ "${quiet}" = 0 ] && [ -n "${today}" ]; then
+		if [ -f "${stamp}" ]; then
+			last="$(head -n 1 "${stamp}" 2>/dev/null || true)"
+		fi
+		if [ "${last}" != "${today}" ] && printf '%s\n' "${today}" >"${stamp}" 2>/dev/null; then
+			announce=1
+		fi
 	fi
-	[ "${last}" = "${today}" ] && return 0
-	printf '%s\n' "${today}" >"${stamp}" 2>/dev/null || return 0
 
 	(
 		set +e
@@ -188,17 +231,29 @@ mcp_core_start_deprecation_notice() {
 		# server's PID even in this subshell): background helpers must not
 		# outlive a server that was killed.
 		count=0
+		removed_tmp="$(mktemp "${findings}.XXXXXX" 2>/dev/null)" || removed_tmp=""
 		while IFS= read -r rule; do
 			mcp_core_server_alive || exit 0
 			id="${rule##*/}"
 			id="${id%.sh}"
-			n="$(mcp_migrate_detect "${project_root}" --validate --only "${id}" 2>/dev/null | grep -c . 2>/dev/null)"
+			out="$(mcp_migrate_detect "${project_root}" --validate --only "${id}" 2>/dev/null)"
+			n="$(printf '%s' "${out}" | grep -c . 2>/dev/null)"
 			case "${n}" in '' | *[!0-9]*) n=0 ;; esac
 			count=$((count + n))
+			case " ${MCP_CORE_REMOVED_API_RULES} " in
+			*" ${id} "*)
+				[ -n "${removed_tmp}" ] && [ -n "${out}" ] && printf '%s\n' "${out}" | awk -F'\t' '{ print $3 }' >>"${removed_tmp}"
+				;;
+			esac
 		done <<EOF_RULES
 $(mcp_migrate_rule_files 2>/dev/null)
 EOF_RULES
 		mcp_core_server_alive || exit 0
+		if [ -n "${removed_tmp}" ]; then
+			LC_ALL=C sort -u "${removed_tmp}" >"${removed_tmp}.sorted" 2>/dev/null && mv -f "${removed_tmp}.sorted" "${findings}" 2>/dev/null
+			rm -f "${removed_tmp}" "${removed_tmp}.sorted"
+		fi
+		[ "${announce}" = 1 ] || exit 0
 		[ "${count}" -gt 0 ] || exit 0
 		noun="uses"
 		[ "${count}" -eq 1 ] && noun="use"
