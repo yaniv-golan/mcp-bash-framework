@@ -122,6 +122,9 @@ EOF
 # Server metadata (name, version, title, etc.) is loaded from server.d/server.meta.json
 # with smart defaults derived from the project structure. See mcp_runtime_load_server_meta().
 MCPBASH_PROTOCOL_VERSION="2025-11-25"
+# Set by the server per request (lib/modern.sh), never taken from the
+# environment: an mcp-bash started by a tool would inherit the tool's values.
+unset MCPBASH_PROTOCOL_ERA MCPBASH_CLIENT_SUPPORTS_UI
 MCPBASH_NEGOTIATED_PROTOCOL_VERSION="${MCPBASH_PROTOCOL_VERSION}"
 
 require_bash_runtime() {

@@ -53,6 +53,7 @@ mcp_modern_classify() {
 			{
 				version: $m["io.modelcontextprotocol/protocolVersion"],
 				hasCaps: ($m | has("io.modelcontextprotocol/clientCapabilities")),
+				capsIsObject: (($m["io.modelcontextprotocol/clientCapabilities"] | type) == "object"),
 				caps: (($m["io.modelcontextprotocol/clientCapabilities"] // {}) | if type == "object" then . else {} end),
 				logLevel: ($m["io.modelcontextprotocol/logLevel"] // null)
 			}
@@ -83,12 +84,19 @@ mcp_modern_refusal() {
 	local id_json="$2"
 	local checks version has_caps level
 	checks="$(printf '%s' "${MCPBASH_REQUEST_META}" | "${MCPBASH_JSON_TOOL_BIN}" -r '
-		[(.version | if type == "string" then . else tojson end), (.hasCaps | tostring), (.logLevel // "" | tostring)] | @tsv
+		[(.version | if type == "string" then . else "" end),
+			(if .hasCaps and .capsIsObject then "true" else "false" end),
+			(.logLevel // "" | tostring)] | @tsv
 	' 2>/dev/null || true)"
 	version="${checks%%	*}"
 	checks="${checks#*	}"
 	has_caps="${checks%%	*}"
 	level="${checks#*	}"
+	# The version must be a string: -32022's data.requested is one.
+	if [ -z "${version}" ]; then
+		mcp_core_build_error_response "${id_json}" -32602 "_meta[\"io.modelcontextprotocol/protocolVersion\"] must be a string" ""
+		return 0
+	fi
 	if [ "${version}" != "${MCP_MODERN_PROTOCOL_VERSION}" ]; then
 		local requested_json
 		requested_json="$(printf '%s' "${MCPBASH_REQUEST_META}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.version' 2>/dev/null || printf 'null')"
@@ -97,7 +105,7 @@ mcp_modern_refusal() {
 		return 0
 	fi
 	if [ "${has_caps}" != "true" ]; then
-		mcp_core_build_error_response "${id_json}" -32602 "Missing _meta[\"io.modelcontextprotocol/clientCapabilities\"]" ""
+		mcp_core_build_error_response "${id_json}" -32602 "_meta[\"io.modelcontextprotocol/clientCapabilities\"] must be an object" ""
 		return 0
 	fi
 	case "${level}" in
@@ -149,6 +157,8 @@ mcp_modern_apply_worker_context() {
 	MCPBASH_ROOTS_PENDING_REQUEST=0
 	# shellcheck disable=SC2034
 	MCPBASH_ROOTS_PENDING_REQUEST_ID=""
+	# MCPBASH_PROTOCOL_ERA=modern (set above) keeps the legacy session's
+	# roots.debug file as it is.
 	mcp_roots_load_all_fallbacks >/dev/null 2>&1 || true
 	# shellcheck disable=SC2034
 	MCPBASH_ROOTS_READY=1

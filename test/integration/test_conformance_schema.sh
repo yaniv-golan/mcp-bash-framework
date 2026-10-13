@@ -189,8 +189,22 @@ write_modern_requests() {
 		printf '%s\n' '{"jsonrpc":"2.0","id":"prompts/get#18","method":"prompts/get","params":{"name":"conf.greeting","arguments":{"name":"Ada"},'"${meta}"'}}'
 		printf '%s\n' '{"jsonrpc":"2.0","id":"completion/complete#19","method":"completion/complete","params":{"ref":{"type":"ref/prompt","name":"conf.greeting"},"argument":{"name":"name","value":"a"},'"${meta}"'}}'
 		printf '%s\n' '{"jsonrpc":"2.0","id":"no/such/method#20","method":"no/such/method","params":{'"${meta}"'}}'
+		printf '%s\n' '{"jsonrpc":"2.0","id":"tools/list#21","method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2099-01-01","io.modelcontextprotocol/clientCapabilities":{}}}}'
+		printf '%s\n' '{"jsonrpc":"2.0","id":"tools/list#22","method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":5,"io.modelcontextprotocol/clientCapabilities":{}}}}'
 		printf '%s\n' 'this is not json'
 	} >"${file}"
+}
+
+# 2026-07-28 names a type for each error code; check those too.
+modern_error_def_for() {
+	case "$1" in
+	-32022) printf 'UnsupportedProtocolVersionError' ;;
+	-32601) printf 'MethodNotFoundError' ;;
+	-32602) printf 'InvalidParamsError' ;;
+	-32603) printf 'InternalError' ;;
+	-32700) printf 'ParseError' ;;
+	*) return 1 ;;
+	esac
 }
 
 # Result type for each method, as named in the schemas.
@@ -239,7 +253,7 @@ for version in ${VERSIONS}; do
 	if [ "${version}" = "${MODERN_VERSION}" ]; then
 		MCPBASH_MODERN_PROTOCOL=true test_run_mcp "${WORKSPACE}" "${run_dir}/requests.ndjson" "${run_dir}/responses.ndjson" || true
 		# No initialize, and no EmptyResult (ping and friends were removed).
-		required_defs="DiscoverResult ListToolsResult CallToolResult ListResourcesResult ListResourceTemplatesResult ReadResourceResult ListPromptsResult GetPromptResult CompleteResult ServerNotification"
+		required_defs="DiscoverResult ListToolsResult CallToolResult ListResourcesResult ListResourceTemplatesResult ReadResourceResult ListPromptsResult GetPromptResult CompleteResult ServerNotification UnsupportedProtocolVersionError MethodNotFoundError"
 		for removed in ping#2 logging/setLevel#3 resources/subscribe#15; do
 			if ! jq -e --arg id "${removed}" 'select(.id == $id) | .error.code == -32601' "${run_dir}/responses.ndjson" >/dev/null; then
 				printf '%s: %s should get -32601\n' "${version}" "${removed}" >&2
@@ -280,6 +294,18 @@ for version in ${VERSIONS}; do
 		notification)
 			mkdir -p "${run_dir}/instances/ServerNotification"
 			printf '%s\n' "${line}" >"${run_dir}/instances/ServerNotification/${n}.json"
+			;;
+		error)
+			if [ "${version}" = "${MODERN_VERSION}" ] && def="$(modern_error_def_for "$(printf '%s' "${line}" | jq -r '.error.code')")"; then
+				mkdir -p "${run_dir}/instances/${def}"
+				# UnsupportedProtocolVersionError describes the whole response; the
+				# other error types describe the error object.
+				if [ "${def}" = "UnsupportedProtocolVersionError" ]; then
+					printf '%s\n' "${line}" >"${run_dir}/instances/${def}/${n}.json"
+				else
+					printf '%s' "${line}" | jq -c '.error' >"${run_dir}/instances/${def}/${n}.json"
+				fi
+			fi
 			;;
 		result)
 			id="$(printf '%s' "${line}" | jq -r '.id | tostring')"

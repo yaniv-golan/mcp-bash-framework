@@ -1071,7 +1071,10 @@ mcp_core_dispatch_object() {
 
 	# A modern (2026-07-28) request is served on its own terms: no initialize
 	# gate, and never in the main process (see mcp_core_dispatch_modern).
-	mcp_modern_classify "${json_line}"
+	# initialize selects legacy semantics whatever _meta it carries.
+	if [ "${method}" != "initialize" ]; then
+		mcp_modern_classify "${json_line}"
+	fi
 	if [ "${MCPBASH_REQUEST_ERA}" = "modern" ]; then
 		mcp_core_dispatch_modern "${json_line}" "${method}" "${id_json}" "${is_notification}"
 		MCPBASH_REQUEST_ERA="legacy"
@@ -1281,6 +1284,9 @@ mcp_core_spawn_worker() {
 	local cancel_file
 	cancel_file="$(mcp_ids_state_path "cancelled" "${key}")"
 	rm -f "${cancel_file}"
+	# A modern request's log level for the live flusher; a worker killed
+	# before its cleanup must not leave one for a later request with this id.
+	[ -z "${key}" ] || rm -f "${MCPBASH_STATE_DIR}/loglevel.${key}"
 	local progress_token
 	progress_token="$(mcp_json_extract_progress_token "${json_line}")"
 	local handled_file=""

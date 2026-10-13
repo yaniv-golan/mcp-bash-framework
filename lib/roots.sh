@@ -158,8 +158,8 @@ mcp_roots_load_all_fallbacks() {
 	if [ "${#MCPBASH_ROOTS_PATHS[@]}" -eq 0 ]; then
 		mcp_roots_add_default_project_root || had_error=1
 	fi
-	# Debug dump to state dir if available
-	if [ -n "${MCPBASH_STATE_DIR:-}" ]; then
+	# Debug dump to state dir if available (the legacy session's roots only)
+	if [ -n "${MCPBASH_STATE_DIR:-}" ] && [ "${MCPBASH_PROTOCOL_ERA:-legacy}" != "modern" ]; then
 		{
 			local i
 			for i in "${!MCPBASH_ROOTS_PATHS[@]}"; do

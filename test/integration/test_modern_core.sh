@@ -36,7 +36,7 @@ add_tool uicheck 'if mcp_client_supports_ui; then echo ui-yes; else echo ui-no; 
 add_tool elicit 'if mcp_elicit_confirm "Proceed?" >/dev/null; then echo answered; else echo no-elicit; fi'
 # shellcheck disable=SC2016
 add_tool roots 'printf "roots=%s" "${MCP_ROOTS_PATHS:-}"'
-add_tool slow 'sleep 5; echo done'
+add_tool slow 'sleep 30; echo done'
 
 # modern METHOD ID [PARAMS_JSON] [CLIENT_CAPS_JSON] [VERSION]: one modern request line.
 modern() {
@@ -86,6 +86,9 @@ REQ="${TEST_TMPDIR}/on.ndjson"
 	modern tools/call 7 "$(call_params roots)" '{"roots":{"listChanged":true}}'
 	modern tools/call 8 "$(call_params elicit)" '{"elicitation":{}}'
 	modern tools/call 9 "$(call_params uicheck)" '{"extensions":{"io.modelcontextprotocol/ui":{}}}'
+	jq -cn '{jsonrpc: "2.0", id: 10, method: "tools/list", params: {_meta: {"io.modelcontextprotocol/protocolVersion": 5, "io.modelcontextprotocol/clientCapabilities": {}}}}'
+	jq -cn '{jsonrpc: "2.0", id: 11, method: "tools/list", params: {_meta: {"io.modelcontextprotocol/protocolVersion": "2026-07-28", "io.modelcontextprotocol/clientCapabilities": "x"}}}'
+	jq -cn '{jsonrpc: "2.0", id: 12, method: "tools/list", params: {_meta: {"io.modelcontextprotocol/protocolVersion": "2026-07-28", "io.modelcontextprotocol/clientCapabilities": null}}}'
 } >"${REQ}"
 run "${TEST_TMPDIR}/on.out" "${REQ}" MCPBASH_MODERN_PROTOCOL=true MCPBASH_ROOTS="${WS}/roots-from-env"
 OUT="${TEST_TMPDIR}/on.out"
@@ -95,6 +98,9 @@ assert_eq "-32022" "$(printf '%s' "${r}" | jq -r '.error.code')" "on: a legacy v
 assert_eq '["2026-07-28","2025-11-25","2025-06-18","2025-03-26","2024-11-05"]' "$(printf '%s' "${r}" | jq -c '.error.data.supported')" "on: -32022 lists every version"
 assert_eq '"2025-11-25"' "$(printf '%s' "${r}" | jq -c '.error.data.requested')" "on: -32022 echoes the requested version"
 assert_eq "-32602" "$(resp "${OUT}" 3 | jq -r '.error.code')" "on: missing clientCapabilities"
+for id in 10 11 12; do
+	assert_eq "-32602" "$(resp "${OUT}" "${id}" | jq -r '.error.code')" "on: a non-string version or non-object capabilities (id ${id}): $(resp "${OUT}" "${id}")"
+done
 for id in 4 5 6; do
 	assert_eq "-32601" "$(resp "${OUT}" "${id}" | jq -r '.error.code')" "on: removed method (id ${id})"
 done
@@ -123,6 +129,21 @@ assert_eq "ui-no" "$(text_of "${OUT}" 1 | tr -d '\n')" "mixed: a modern call mus
 assert_eq "ui-yes" "$(text_of "${OUT}" 2 | tr -d '\n')" "mixed: the legacy session keeps its UI capability"
 assert_eq "no-elicit" "$(text_of "${OUT}" 3 | tr -d '\n')" "mixed: a modern call never elicits, even when the legacy client can"
 
+# --- initialize stays legacy whatever _meta it carries; inherited per-request
+# variables (a nested mcp-bash gets a tool's) don't reach the legacy session --
+REQ="${TEST_TMPDIR}/init.ndjson"
+{
+	printf '%s\n' '{"jsonrpc":"2.0","id":"init","method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{"elicitation":{}},"clientInfo":{"name":"t","version":"1"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}'
+	printf '%s\n' '{"jsonrpc":"2.0","method":"notifications/initialized"}'
+	printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"uicheck","arguments":{}}}'
+	printf '%s\n' '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"elicit","arguments":{}}}'
+} >"${REQ}"
+run "${TEST_TMPDIR}/init.out" "${REQ}" MCPBASH_MODERN_PROTOCOL=true MCPBASH_PROTOCOL_ERA=modern MCPBASH_CLIENT_SUPPORTS_UI=1 MCPBASH_ELICITATION_TIMEOUT=1
+OUT="${TEST_TMPDIR}/init.out"
+assert_eq "2025-11-25" "$(jq -r 'select(.id == "init") | .result.protocolVersion' "${OUT}")" "initialize with modern _meta is a legacy initialize: $(jq -c 'select(.id == "init")' "${OUT}")"
+assert_eq "ui-no" "$(text_of "${OUT}" 1 | tr -d '\n')" "an inherited MCPBASH_CLIENT_SUPPORTS_UI=1 must not reach the legacy session"
+grep -q '"method":"elicitation/create"' "${OUT}" || test_fail "an inherited MCPBASH_PROTOCOL_ERA=modern turned off legacy elicitation"
+
 # --- Switch on, cancelling a modern call in a process never initialized --------
 REQ="${TEST_TMPDIR}/cancel.ndjson"
 {
@@ -135,6 +156,6 @@ run "${TEST_TMPDIR}/cancel.out" "${REQ}" MCPBASH_MODERN_PROTOCOL=true
 OUT="${TEST_TMPDIR}/cancel.out"
 [ -z "$(resp "${OUT}" 1)" ] || test_fail "cancel: a cancelled call must get no response: $(resp "${OUT}" 1)"
 resp "${OUT}" 2 | jq -e '.result.tools' >/dev/null || test_fail "cancel: the next call was not answered"
-[ $((SECONDS - start)) -lt 5 ] || test_fail "cancel: the slow tool was not stopped"
+[ $((SECONDS - start)) -lt 15 ] || test_fail "cancel: the slow tool (sleep 30) was not stopped"
 
 printf 'Modern core checks passed.\n'
