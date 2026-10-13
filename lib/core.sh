@@ -1418,6 +1418,12 @@ mcp_core_worker_entry() {
 		fi
 	fi
 
+	# A modern (2026-07-28) request's progress and log notifications go out
+	# before its result: progress MUST stop once the request completes.
+	if [ "${MCPBASH_REQUEST_ERA:-legacy}" = "modern" ]; then
+		mcp_core_worker_deliver_streams "${key}" "${progress_stream}" "${log_stream}"
+	fi
+
 	if [ -n "${response}" ]; then
 		if [ "${MCPBASH_REQUEST_ERA:-legacy}" = "modern" ]; then
 			response="$(mcp_modern_decorate_response "${method}" "${response}")"
@@ -1432,13 +1438,22 @@ mcp_core_worker_entry() {
 		: >"${MCPBASH_STATE_DIR}/handled.${key}" 2>/dev/null || true
 	fi
 
-	# Progress/log delivery:
-	# - When live progress is disabled, emit all buffered progress/log lines here.
-	# - When live progress is enabled, a background flusher streams lines while the
-	#   worker runs, but Git Bash/CI scheduling can cause the worker to exit and
-	#   delete its stream files before the flusher observes the final writes.
-	#   Do a final best-effort flush before cleanup so at least one progress event
-	#   is emitted when tools report progress (avoids flaky CI on Windows).
+	if [ "${MCPBASH_REQUEST_ERA:-legacy}" != "modern" ]; then
+		mcp_core_worker_deliver_streams "${key}" "${progress_stream}" "${log_stream}"
+	fi
+}
+
+# Progress/log delivery for one worker:
+# - When live progress is disabled, emit all buffered progress/log lines here.
+# - When live progress is enabled, a background flusher streams lines while the
+#   worker runs, but Git Bash/CI scheduling can cause the worker to exit and
+#   delete its stream files before the flusher observes the final writes.
+#   Do a final best-effort flush before cleanup so at least one progress event
+#   is emitted when tools report progress (avoids flaky CI on Windows).
+mcp_core_worker_deliver_streams() {
+	local key="$1"
+	local progress_stream="$2"
+	local log_stream="$3"
 	if [ "${MCPBASH_ENABLE_LIVE_PROGRESS:-false}" = "true" ] && [ -n "${key}" ]; then
 		mcp_core_flush_stream "${key}" "progress" || true
 		mcp_core_flush_stream "${key}" "log" || true

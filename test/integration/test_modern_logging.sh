@@ -23,6 +23,7 @@ printf '%s\n' '{"name":"logger","description":"t","inputSchema":{"type":"object"
 cat >"${WS}/tools/logger/tool.sh" <<'SH'
 #!/usr/bin/env bash
 source "${MCP_SDK}/tool-sdk.sh"
+mcp_progress 50 "half"
 mcp_log info t '"hello-info"'
 mcp_log error t '"hello-error"'
 echo ok
@@ -39,7 +40,7 @@ call() {
 	local id="$1" level="${2:-}"
 	jq -cn --argjson id "${id}" --arg l "${level}" '
 		{jsonrpc: "2.0", id: $id, method: "tools/call", params: {name: "logger", arguments: {}, _meta: (
-			{"io.modelcontextprotocol/protocolVersion": "2026-07-28", "io.modelcontextprotocol/clientCapabilities": {}}
+			{"io.modelcontextprotocol/protocolVersion": "2026-07-28", "io.modelcontextprotocol/clientCapabilities": {}, progressToken: "p1"}
 			+ (if $l != "" then {"io.modelcontextprotocol/logLevel": $l} else {} end))}}'
 }
 # logs OUT: the data of every notifications/message, sorted.
@@ -57,7 +58,12 @@ for live in false true; do
 			test_run_mcp "${WS}" "${REQ}" "${OUT}"
 		assert_json_lines "${OUT}"
 		jq -e 'select(.id == 1) | .result' "${OUT}" >/dev/null || test_fail "no result (live=${live}, level=${level:-none})"
-		assert_eq "${want}" "$(logs "${OUT}")" "log notifications (live=${live}, level=${level:-none})"
+		assert_eq "${want}" "$(logs "${OUT}")" "log notifications (live=${live}, level=${level:-none}): got $(logs "${OUT}")"
+		# Logs and progress come before the result: progress MUST stop when the
+		# request completes, and a log after the result has no request to go with.
+		after="$(awk '/"id":1[,}]/ { seen = 1; next } seen && /"method":"notifications\// { print }' "${OUT}")"
+		[ -z "${after}" ] || test_fail "notifications after the result (live=${live}, level=${level:-none}): ${after}"
+		grep -q '"method":"notifications/progress"' "${OUT}" || test_fail "no progress notification (live=${live})"
 	done
 done
 
