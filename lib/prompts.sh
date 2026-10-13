@@ -163,7 +163,6 @@ mcp_prompts_init() {
 }
 
 mcp_prompts_load_cache_if_empty() {
-	local caller_now="${1:-}"
 	if [ -n "${MCP_PROMPTS_REGISTRY_JSON}" ] || [ ! -f "${MCP_PROMPTS_REGISTRY_PATH}" ]; then
 		return 0
 	fi
@@ -178,7 +177,7 @@ mcp_prompts_load_cache_if_empty() {
 				return 1
 			fi
 			if [ -z "${MCP_PROMPTS_LAST_SCAN}" ]; then
-				MCP_PROMPTS_LAST_SCAN="${caller_now:-$(date +%s)}"
+				MCP_PROMPTS_LAST_SCAN="$(mcp_registry_cache_scan_time "${MCP_PROMPTS_REGISTRY_PATH}")"
 			fi
 		else
 			mcp_logging_warning "${MCP_PROMPTS_LOGGER}" "Discarding invalid prompt registry cache"
@@ -305,7 +304,7 @@ mcp_prompts_refresh_registry() {
 	local now
 	now="$(date +%s)"
 
-	if ! mcp_prompts_load_cache_if_empty "${now}"; then
+	if ! mcp_prompts_load_cache_if_empty; then
 		return 1
 	fi
 

@@ -565,7 +565,6 @@ mcp_tools_apply_manual_registration() {
 }
 
 mcp_tools_load_cache_if_empty() {
-	local caller_now="${1:-}"
 	if [ -n "${MCP_TOOLS_REGISTRY_JSON}" ] || [ ! -f "${MCP_TOOLS_REGISTRY_PATH}" ]; then
 		return 0
 	fi
@@ -580,7 +579,7 @@ mcp_tools_load_cache_if_empty() {
 				return 1
 			fi
 			if [ -z "${MCP_TOOLS_LAST_SCAN}" ]; then
-				MCP_TOOLS_LAST_SCAN="${caller_now:-$(date +%s)}"
+				MCP_TOOLS_LAST_SCAN="$(mcp_registry_cache_scan_time "${MCP_TOOLS_REGISTRY_PATH}")"
 			fi
 		else
 			MCP_TOOLS_REGISTRY_JSON=""
@@ -1025,7 +1024,7 @@ mcp_tools_refresh_registry() {
 	local now
 	now="$(date +%s)"
 
-	if ! mcp_tools_load_cache_if_empty "${now}"; then
+	if ! mcp_tools_load_cache_if_empty; then
 		return 1
 	fi
 
@@ -2410,6 +2409,7 @@ mcp_tools_call() {
 			--arg stderr "${stderr_tail}" \
 			--argjson exit_code "${exit_code}" \
 			--arg has_json "${has_json_tool}" \
+			--arg has_schema "$([ "${output_schema}" != "null" ] && [ -n "${output_schema}" ] && printf true || printf false)" \
 			'
 		{
 			name: $name,
@@ -2453,6 +2453,25 @@ mcp_tools_call() {
 		# Set isError if exit code non-zero (for non-CallToolResult outputs)
 		if $exit_code != 0 then
 			.isError = true
+		else . end |
+
+		# An error result with an outputSchema carries no structuredContent:
+		# clients that check it against the schema on errors too (the
+		# TypeScript SDK client) would reject it. The {success:false, error}
+		# envelope from mcp_error/mcp_result_error moves to
+		# _meta["mcpbash/error"], the shape of every other tool error.
+		if $has_schema == "true" and .isError == true and has("structuredContent") then
+			(.structuredContent.error // null) as $e |
+			if ($e | type) == "object" and ((._meta // {}) | has("mcpbash/error") | not) then
+				._meta["mcpbash/error"] = (
+					{type: (($e.type // "internal") | tostring), message: (($e.message // "Unknown error") | tostring)}
+					+ (if ($e.hint | type) == "string" and ($e.hint | length) > 0 then {hint: $e.hint} else {} end)
+					+ (if ($e | has("data")) and $e.data != null then {data: $e.data}
+					   else ($e | del(.type, .message, .hint, .data)) as $rest
+					   | if ($rest | length) > 0 then {data: $rest} else {} end end)
+				)
+			else . end
+			| del(.structuredContent)
 		else . end
 		'
 	)"

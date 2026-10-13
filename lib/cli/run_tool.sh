@@ -84,9 +84,14 @@ mcp_cli_run_tool_mark_stale_cache() {
 			esac
 		fi
 	fi
+	# shellcheck disable=SC2034  # Consumed by mcp_tools_refresh_registry
 	if [ -n "${newer}" ]; then
-		# shellcheck disable=SC2034  # Consumed by mcp_tools_refresh_registry
 		MCP_TOOLS_LAST_SCAN=0
+	else
+		# Nothing under tools/ is newer than the cache: it is current, however
+		# old. Count it as scanned now, or the loader would date it by its
+		# mtime and rescan any cache older than the TTL.
+		MCP_TOOLS_LAST_SCAN="$(date +%s)"
 	fi
 	return 0
 }

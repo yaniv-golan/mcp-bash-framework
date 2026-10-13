@@ -126,6 +126,8 @@ Unlike `mcp_fail --type`, these helpers **do not end the tool**: in an early-ret
 The 1.x helpers `mcp_result_success`, `mcp_result_error`, `mcp_error`, `mcp_fail_invalid_args` and numeric `mcp_fail CODE MESSAGE` still work in 1.x but are removed in 2.0; `mcp-bash migrate` lists them and rewrites the ones it can. <!-- lint-api-usage: allow -->
 `mcp_result_success`/`mcp_result_error` wrap data in a `{success, result}`/`{success, error}` envelope, `mcp_error` and `mcp_result_*` do not end the tool, and the numeric `mcp_fail` form returns a JSON-RPC protocol error the model can't see. <!-- lint-api-usage: allow -->
 
+When a tool that declares an `outputSchema` returns an error result with `structuredContent` (as `mcp_error` and `mcp_result_error` do), the server drops `structuredContent` and moves its `error` object to `_meta["mcpbash/error"]` (`type`, `message`, `hint`, and `data` or the error's other fields), since 1.9.2. Clients that check `structuredContent` against the schema on error results too, such as the TypeScript SDK client used by Claude Desktop, rejected the envelope. Tools without an `outputSchema` are unchanged. <!-- lint-api-usage: allow -->
+
 For validation that happens early in a tool (before doing real work), prefer returning `isError: true` so the LLM learns from the feedback.
 
 ---

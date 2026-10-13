@@ -148,6 +148,66 @@ EOF
 	refute_output --partial 'tool not found'
 }
 
+@test "run_tool_cli: reuses an old cache when nothing under tools/ is newer" {
+	run "${MCPBASH_HOME}/bin/mcp-bash" run-tool test.echo --args '{"value":"ok"}'
+	assert_success
+	local cache="${PROJECT_ROOT}/.registry/tools.json"
+	[ -f "${cache}" ]
+
+	# An old cache over an older, unchanged tools/ tree: run-tool's own
+	# newer-file check says it is current, so it must not rescan (and rewrite)
+	# it just because it is older than the TTL.
+	find "${PROJECT_ROOT}/tools" -exec touch -t 202501010000 {} +
+	touch -t 202601010000 "${cache}"
+	touch -t 202601010001 "${BATS_TEST_TMPDIR}/after-cache"
+
+	run "${MCPBASH_HOME}/bin/mcp-bash" run-tool test.echo --args '{"value":"ok"}'
+	assert_success
+	run find "${cache}" -newer "${BATS_TEST_TMPDIR}/after-cache"
+	assert_output ""
+}
+
+@test "run_tool_cli: an error result has no structuredContent when the tool declares an outputSchema" {
+	# Clients that validate structuredContent against outputSchema on error
+	# results too (the TypeScript SDK client, used by Claude Desktop) reject
+	# the {success:false, error} envelope that mcp_error and mcp_result_error
+	# emit. With an outputSchema it is dropped and its error moves to
+	# _meta["mcpbash/error"].
+	mkdir -p "${PROJECT_ROOT}/tools/oops" "${PROJECT_ROOT}/tools/oops-plain"
+	cat >"${PROJECT_ROOT}/tools/oops/tool.meta.json" <<'EOF'
+{"name": "test.oops", "description": "Fails with mcp_error", "inputSchema": {"type": "object"},
+ "outputSchema": {"type": "object", "required": ["message"], "properties": {"message": {"type": "string"}}}}
+EOF
+	cat >"${PROJECT_ROOT}/tools/oops/tool.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+source "${MCP_SDK}/tool-sdk.sh"
+mcp_error not_found "No such item" --hint "List the items first" --data '{"id":7}'
+EOF
+	# Same failure without an outputSchema: unchanged (envelope kept).
+	cat >"${PROJECT_ROOT}/tools/oops-plain/tool.meta.json" <<'EOF'
+{"name": "test.oops-plain", "description": "Fails with mcp_error", "inputSchema": {"type": "object"}}
+EOF
+	cp "${PROJECT_ROOT}/tools/oops/tool.sh" "${PROJECT_ROOT}/tools/oops-plain/tool.sh"
+	chmod +x "${PROJECT_ROOT}/tools/oops/tool.sh" "${PROJECT_ROOT}/tools/oops-plain/tool.sh"
+
+	run "${MCPBASH_HOME}/bin/mcp-bash" run-tool test.oops
+	local result
+	result="$(printf '%s\n' "${output}" | jq -c 'select(.name == "test.oops")')"
+	[ -n "${result}" ] || fail "no result: ${output}"
+	run jq -e '.isError == true and (has("structuredContent") | not)' <<<"${result}"
+	assert_success
+	run jq -e '._meta["mcpbash/error"] == {type: "not_found", message: "No such item", hint: "List the items first", data: {id: 7}}' <<<"${result}"
+	assert_success
+	run jq -r '.content[0].text' <<<"${result}"
+	assert_output --partial "No such item"
+
+	run "${MCPBASH_HOME}/bin/mcp-bash" run-tool test.oops-plain
+	result="$(printf '%s\n' "${output}" | jq -c 'select(.name == "test.oops-plain")')"
+	run jq -e '.isError == true and .structuredContent.success == false and .structuredContent.error.type == "not_found"' <<<"${result}"
+	assert_success
+}
+
 @test "run_tool_cli: keeps a newer-file match when find is cut off by SIGPIPE" {
 	run "${MCPBASH_HOME}/bin/mcp-bash" run-tool test.echo --args '{"value":"ok"}'
 	assert_success
