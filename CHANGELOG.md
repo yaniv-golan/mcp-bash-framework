@@ -5,7 +5,7 @@ All notable changes to mcp-bash-framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.9.3] - 2026-10-13
 
 ### Fixed
 - **Tool log messages never arrived with live progress on**: with `MCPBASH_ENABLE_LIVE_PROGRESS=true`, the server flushed a tool's log stream from the wrong file name (`log.<key>.ndjson` instead of `logs.<key>.ndjson`), so `mcp_log` notifications from tools never reached the client. Fixing that exposed a race: the background flusher and the worker's final flush could both send the same progress or log line. Each stream's flush now holds a lock, and sends exactly the bytes it measured and only complete lines (a line the tool appended while the flush ran, or a line still being written, waits for the next flush), so every line is sent once.
