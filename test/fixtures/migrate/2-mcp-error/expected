@@ -14,3 +14,5 @@ tools/b/tool.sh:20:manual
 tools/b/tool.sh:21:manual
 tools/b/tool.sh:23:manual
 tools/b/tool.sh:25:manual
+tools/b/tool.sh:27:manual
+tools/b/tool.sh:29:auto

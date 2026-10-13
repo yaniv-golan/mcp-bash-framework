@@ -24,3 +24,7 @@ mcp_error k "background" &
 exit 0
 mcp_error l "pipe" | tee x
 exit 0
+mcp_error m 'x' # note; exit 0
+echo after
+mcp_error n "y" # trailing comment
+exit 0

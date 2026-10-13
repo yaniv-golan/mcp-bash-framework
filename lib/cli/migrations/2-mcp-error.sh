@@ -23,9 +23,10 @@ mig_detect() {
 	local fndef='[(][[:space:]]*[)][[:space:]]*[{]|^[[:space:]]*function[[:space:]]'
 	local rest only_args='^[^;&|]*' sep='[;&|]'
 	mig_grep_word mcp_error "${file}" | while IFS=$'\t' read -r line kind text; do
-		# The call and what follows it on its line, quoted strings removed:
-		# nothing may run between mcp_error and the exit.
-		rest="$(printf '%s\n' "${text#*mcp_error}" | sed -E "s/'[^']*'//g; s/\"([^\"\\\\]|\\\\.)*\"//g")"
+		# The call and what follows it on its line, quoted strings and then a
+		# trailing comment removed: nothing may run between mcp_error and the
+		# exit (an "exit" inside the comment isn't one).
+		rest="$(printf '%s\n' "${text#*mcp_error}" | sed -E "s/'[^']*'//g; s/\"([^\"\\\\]|\\\\.)*\"//g; s/(^|[[:space:]])#.*\$//")"
 		if [[ ${text} =~ ${fndef} ]]; then
 			# A one-line function: the exit after it isn't what runs after a call.
 			printf '%s\tmanual\t%s (inside a one-line function: callers go on after it today)\n' "${line}" "${text}"
