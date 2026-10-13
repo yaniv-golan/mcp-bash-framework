@@ -1866,7 +1866,21 @@ mcp_core_poll_registries_once() {
 	mcp_prompts_poll
 }
 
+# The live-progress flusher (main process) and a finishing worker both flush
+# a worker's streams; the lock keeps them from reading the same offset and
+# sending a line twice.
 mcp_core_flush_stream() {
+	local lock_name="flush.${2}.${1}"
+	if ! mcp_lock_acquire_timeout "${lock_name}" 5; then
+		return 0
+	fi
+	local status=0
+	mcp_core_flush_stream_unlocked "$@" || status=$?
+	mcp_lock_release "${lock_name}"
+	return "${status}"
+}
+
+mcp_core_flush_stream_unlocked() {
 	local key="$1"
 	local kind="$2"
 	# The worker's streams are progress.<key>.ndjson and logs.<key>.ndjson.

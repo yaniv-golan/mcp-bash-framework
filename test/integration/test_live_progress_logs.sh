@@ -34,9 +34,11 @@ REQ="${TEST_TMPDIR}/req.ndjson"
 	printf '%s\n' '{"jsonrpc":"2.0","method":"notifications/initialized"}'
 	printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"logger","arguments":{}}}'
 } >"${REQ}"
-for live in false true; do
+# The live flusher and the worker's final flush race for the same lines:
+# repeat the live run so a line sent twice shows up.
+for live in false true true true true true; do
 	OUT="${TEST_TMPDIR}/out.${live}.ndjson"
-	MCPBASH_ENABLE_LIVE_PROGRESS="${live}" MCPBASH_TOOL_ALLOWLIST='*' test_run_mcp "${WS}" "${REQ}" "${OUT}"
+	MCPBASH_ENABLE_LIVE_PROGRESS="${live}" MCPBASH_LOG_LEVEL=debug MCPBASH_TOOL_ALLOWLIST='*' test_run_mcp "${WS}" "${REQ}" "${OUT}"
 	assert_json_lines "${OUT}"
 	assert_eq "1" "$(jq -r 'select(.method == "notifications/message" and .params.data == "hello-info") | 1' "${OUT}" | wc -l | tr -d ' ')" "tool log delivered once (live=${live})"
 done
