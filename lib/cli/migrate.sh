@@ -216,15 +216,23 @@ mcp_cli_migrate() {
 		fi
 	fi
 
-	# A running or restarted server reuses its registry cache while it is
-	# younger than the TTL, and would keep checking results against the
-	# metadata migrate just rewrote. Drop the cache when anything changed.
+	# A running or restarted server reuses its tools cache while it is younger
+	# than the TTL, and would keep checking results against the tool metadata
+	# migrate just rewrote. Invalidate it, and the startup scan's record, when
+	# anything changed. Only those: the other registry files don't depend on
+	# what migrate rewrites. A file the project tracks in git is expired (its
+	# mtime set far in the past) rather than deleted, so the migration commit
+	# shows no deletion.
 	local cache_cleared="false"
 	if [ "${write}" = "true" ] && [ "${applied}" -gt 0 ]; then
-		local registry_dir="${MCPBASH_REGISTRY_DIR:-${project_root}/.registry}" cache_file
-		for cache_file in tools.json resources.json resource-templates.json prompts.json ui-resources.json removed-api.findings removed-api.scan; do
-			if [ -e "${registry_dir}/${cache_file}" ]; then
-				rm -f "${registry_dir}/${cache_file}" && cache_cleared="true"
+		local registry_dir="${MCPBASH_REGISTRY_DIR:-${project_root}/.registry}" cache_file target
+		for cache_file in tools.json removed-api.findings removed-api.scan; do
+			target="${registry_dir}/${cache_file}"
+			[ -e "${target}" ] || continue
+			if [ "${in_git:-false}" = "true" ] && git -C "${project_root}" ls-files --error-unmatch -- "${target}" >/dev/null 2>&1; then
+				touch -t 197001020000 "${target}" && cache_cleared="true"
+			else
+				rm -f "${target}" && cache_cleared="true"
 			fi
 		done
 	fi
@@ -256,7 +264,7 @@ mcp_cli_migrate() {
 		if [ "${write}" = "true" ]; then
 			printf 'Applied %d automatic fix(es).\n' "${applied}"
 			if [ "${cache_cleared}" = "true" ]; then
-				printf 'Cleared the registry cache; the server rebuilds it on its next start. Restart running servers to pick up the changes.\n'
+				printf 'Invalidated the tools cache; the server rebuilds it on its next start. Restart running servers to pick up the changes.\n'
 			fi
 		fi
 		if [ -n "${findings}" ]; then

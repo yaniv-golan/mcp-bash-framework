@@ -29,11 +29,12 @@ printf '%s\n' '{"name": "migrate-cache"}' >"${WS}/server.d/server.meta.json"
 	printf 'mcp_result_success "$(mcp_json_obj n 1)"\n'
 } >"${WS}/tools/env/tool.sh"
 chmod +x "${WS}/tools/env/tool.sh"
-cat >"${WS}/tools/env/tool.meta.json" <<'JSON'
+cat >"${TEST_TMPDIR}/envelope.meta.json" <<'JSON'
 {"name": "env", "description": "t", "inputSchema": {"type": "object"},
  "outputSchema": {"type": "object", "required": ["success", "result"], "properties": {"success": {"type": "boolean"},
   "result": {"type": "object", "properties": {"n": {"type": "string"}}}}}}
 JSON
+cp "${TEST_TMPDIR}/envelope.meta.json" "${WS}/tools/env/tool.meta.json"
 
 REQ="${TEST_TMPDIR}/req.ndjson"
 {
@@ -54,11 +55,34 @@ assert_eq "migration_required" "$(result "${TEST_TMPDIR}/before.ndjson" | jq -r 
 [ -f "${WS}/.registry/tools.json" ] || test_fail "the first session wrote no tools cache"
 
 (cd "${FW}" && ./bin/mcp-bash migrate --project-root "${WS}" --write >"${TEST_TMPDIR}/migrate.out" 2>&1) || true
-grep -q 'registry cache' "${TEST_TMPDIR}/migrate.out" || test_fail "migrate --write did not say it cleared the cache: $(cat "${TEST_TMPDIR}/migrate.out")"
+grep -q 'tools cache' "${TEST_TMPDIR}/migrate.out" || test_fail "migrate --write did not say it cleared the cache: $(cat "${TEST_TMPDIR}/migrate.out")"
 [ ! -e "${WS}/.registry/tools.json" ] || test_fail "tools.json is still cached after migrate --write"
 
 session "${TEST_TMPDIR}/after.ndjson"
 r="$(result "${TEST_TMPDIR}/after.ndjson")"
 assert_eq '[false,"1"]' "$(printf '%s' "${r}" | jq -c '[.isError, .structuredContent.n]')" "right after migrate --write: ${r}"
+
+# A project in git that tracks some registry files: they stay as they are.
+# migrate only invalidates the tools cache (it rewrites tool metadata); a
+# tracked tools.json is expired rather than deleted.
+WS2="${TEST_TMPDIR}/tracked"
+cp -R "${WS}" "${WS2}"
+rm -rf "${WS2}/.registry"
+printf '%s\n' '#!/usr/bin/env bash' 'source "${MCP_SDK}/tool-sdk.sh"' 'mcp_result_success "$(mcp_json_obj n 1)"' >"${WS2}/tools/env/tool.sh"
+cp "${TEST_TMPDIR}/envelope.meta.json" "${WS2}/tools/env/tool.meta.json"
+WS="${WS2}" session "${TEST_TMPDIR}/tracked-before.ndjson"
+printf '%s\n' '{"tracked":true}' >"${WS2}/.registry/prompts.json"
+printf '%s\n' '{"tracked":true}' >"${WS2}/.registry/resources.json"
+(
+	cd "${WS2}" && git init -q && git add -A && git -c user.email=t@t -c user.name=t commit -q -m init
+) || test_fail "git setup failed"
+(cd "${FW}" && ./bin/mcp-bash migrate --project-root "${WS2}" --write >"${TEST_TMPDIR}/migrate2.out" 2>&1) || true
+grep -q 'mcp_result_json' "${WS2}/tools/env/tool.sh" || test_fail "tracked project: not migrated"
+deleted="$(git -C "${WS2}" status --porcelain | awk '$1 == "D"')"
+[ -z "${deleted}" ] || test_fail "migrate --write deleted tracked files: ${deleted}"
+test_assert_eq "$(cat "${WS2}/.registry/prompts.json")" '{"tracked":true}'
+WS="${WS2}" session "${TEST_TMPDIR}/tracked-after.ndjson"
+r="$(result "${TEST_TMPDIR}/tracked-after.ndjson")"
+assert_eq '[false,"1"]' "$(printf '%s' "${r}" | jq -c '[.isError, .structuredContent.n]')" "tracked tools.json, right after migrate --write: ${r}"
 
 printf 'Migrate registry cache checks passed.\n'
