@@ -89,6 +89,7 @@ REQ="${TEST_TMPDIR}/on.ndjson"
 	jq -cn '{jsonrpc: "2.0", id: 10, method: "tools/list", params: {_meta: {"io.modelcontextprotocol/protocolVersion": 5, "io.modelcontextprotocol/clientCapabilities": {}}}}'
 	jq -cn '{jsonrpc: "2.0", id: 11, method: "tools/list", params: {_meta: {"io.modelcontextprotocol/protocolVersion": "2026-07-28", "io.modelcontextprotocol/clientCapabilities": "x"}}}'
 	jq -cn '{jsonrpc: "2.0", id: 12, method: "tools/list", params: {_meta: {"io.modelcontextprotocol/protocolVersion": "2026-07-28", "io.modelcontextprotocol/clientCapabilities": null}}}'
+	jq -cn '{jsonrpc: "2.0", id: 13, method: "tools/list", params: {_meta: {"io.modelcontextprotocol/protocolVersion": "", "io.modelcontextprotocol/clientCapabilities": {}}}}'
 } >"${REQ}"
 run "${TEST_TMPDIR}/on.out" "${REQ}" MCPBASH_MODERN_PROTOCOL=true MCPBASH_ROOTS="${WS}/roots-from-env"
 OUT="${TEST_TMPDIR}/on.out"
@@ -101,6 +102,8 @@ assert_eq "-32602" "$(resp "${OUT}" 3 | jq -r '.error.code')" "on: missing clien
 for id in 10 11 12; do
 	assert_eq "-32602" "$(resp "${OUT}" "${id}" | jq -r '.error.code')" "on: a non-string version or non-object capabilities (id ${id}): $(resp "${OUT}" "${id}")"
 done
+# An empty string is a string: an unsupported version, not invalid params.
+assert_eq "-32022" "$(resp "${OUT}" 13 | jq -r '.error.code')" "on: an empty version string"
 for id in 4 5 6; do
 	assert_eq "-32601" "$(resp "${OUT}" "${id}" | jq -r '.error.code')" "on: removed method (id ${id})"
 done
@@ -134,7 +137,8 @@ assert_eq "no-elicit" "$(text_of "${OUT}" 3 | tr -d '\n')" "mixed: a modern call
 REQ="${TEST_TMPDIR}/init.ndjson"
 {
 	printf '%s\n' '{"jsonrpc":"2.0","id":"init","method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{"elicitation":{}},"clientInfo":{"name":"t","version":"1"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}'
-	printf '%s\n' '{"jsonrpc":"2.0","method":"notifications/initialized"}'
+	# A notification carrying modern _meta is still a legacy notification.
+	printf '%s\n' '{"jsonrpc":"2.0","method":"notifications/initialized","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}'
 	printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"uicheck","arguments":{}}}'
 	printf '%s\n' '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"elicit","arguments":{}}}'
 } >"${REQ}"

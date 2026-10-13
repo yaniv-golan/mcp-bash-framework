@@ -1071,8 +1071,10 @@ mcp_core_dispatch_object() {
 
 	# A modern (2026-07-28) request is served on its own terms: no initialize
 	# gate, and never in the main process (see mcp_core_dispatch_modern).
-	# initialize selects legacy semantics whatever _meta it carries.
-	if [ "${method}" != "initialize" ]; then
+	# initialize selects legacy semantics whatever _meta it carries. Only
+	# requests are modern: a notification has no result to shape, and one
+	# such as notifications/initialized belongs to the legacy session.
+	if [ "${method}" != "initialize" ] && [ "${is_notification}" != "true" ]; then
 		mcp_modern_classify "${json_line}"
 	fi
 	if [ "${MCPBASH_REQUEST_ERA}" = "modern" ]; then

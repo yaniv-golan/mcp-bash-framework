@@ -84,7 +84,7 @@ mcp_modern_refusal() {
 	local id_json="$2"
 	local checks version has_caps level
 	checks="$(printf '%s' "${MCPBASH_REQUEST_META}" | "${MCPBASH_JSON_TOOL_BIN}" -r '
-		[(.version | if type == "string" then . else "" end),
+		[(.version | if type == "string" then "s:" + . else "x:" end),
 			(if .hasCaps and .capsIsObject then "true" else "false" end),
 			(.logLevel // "" | tostring)] | @tsv
 	' 2>/dev/null || true)"
@@ -92,11 +92,13 @@ mcp_modern_refusal() {
 	checks="${checks#*	}"
 	has_caps="${checks%%	*}"
 	level="${checks#*	}"
-	# The version must be a string: -32022's data.requested is one.
-	if [ -z "${version}" ]; then
+	# The version must be a string: -32022's data.requested is one. Any string,
+	# even an empty one, is a version the server may not support.
+	if [ "${version}" = "x:" ] || [ -z "${version}" ]; then
 		mcp_core_build_error_response "${id_json}" -32602 "_meta[\"io.modelcontextprotocol/protocolVersion\"] must be a string" ""
 		return 0
 	fi
+	version="${version#s:}"
 	if [ "${version}" != "${MCP_MODERN_PROTOCOL_VERSION}" ]; then
 		local requested_json
 		requested_json="$(printf '%s' "${MCPBASH_REQUEST_META}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.version' 2>/dev/null || printf 'null')"
