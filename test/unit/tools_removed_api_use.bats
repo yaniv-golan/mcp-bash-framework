@@ -95,6 +95,29 @@ check() {
 	assert_output ""
 }
 
+@test "removed api: ANSI-C quotes, case patterns, arrays and (( )) are not calls" {
+	# $'...' takes backslash escapes: \' doesn't end it.
+	check "$(tool "$(printf '%s\n' "echo \$'don\\'t'" "echo 'ok'; mcp_result_text 'then; mcp_error x'")")"
+	assert_output ""
+	check "$(tool "$(printf 'case "$1" in\n  mcp_error) echo old ;;\n  (mcp_result_success | x) echo y ;;\nesac')")"
+	assert_output ""
+	check "$(tool 'names=(mcp_error mcp_emit_json)')"
+	assert_output ""
+	check "$(tool "$(printf 'names=(\n  mcp_error\n  mcp_emit_text\n)')")"
+	assert_output ""
+	check "$(tool "$(printf '(( x = 1 << 2 ))\nmcp_result_text ok')")"
+	assert_output ""
+	# ... while real calls around them still count.
+	check "$(tool "$(printf '%s\n' "echo \$'it\\'s'" 'mcp_error a b')")"
+	assert_output "mcp_error"
+	check "$(tool "$(printf 'case "$1" in\n  a) mcp_emit_text x ;;\nesac')")"
+	assert_output "mcp_emit_text"
+	check "$(tool "$(printf 'names=(a b)\nmcp_result_success x')")"
+	assert_output "mcp_result_success"
+	check "$(tool "$(printf '(( x << 2 ))\nmcp_error a b')")"
+	assert_output "mcp_error"
+}
+
 @test "removed api: only the tool's own script is read" {
 	# Another tool in the same directory, a nested tool and an unsourced
 	# script don't block this one.

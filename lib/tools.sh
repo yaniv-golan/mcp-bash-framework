@@ -869,6 +869,15 @@ MCP_TOOLS_REMOVED_API_AWK='
 	# $(...), backticks, $((...)), comments, heredoc bodies and redirections
 	# are tracked, so strings, comments and arguments never count.
 	function endword() {
+		# Words in a case pattern or an array literal are never commands.
+		if (word != "" && (pat || inarr)) {
+			if (pat && word == "esac" && casedepth > 0) { casedepth--; pat = 0; cmdpos = 0 }
+			word = ""
+			return
+		}
+		if (word == "esac" && casedepth > 0) { casedepth--; cmdpos = 0; word = ""; return }
+		if (word == "in" && casehdr) { casehdr = 0; casedepth++; pat = 1; word = ""; return }
+		if (word != "" && cmdpos && word == "case") { casehdr = 1; cmdpos = 0; word = ""; return }
 		if (word != "" && cmdpos) {
 			if (word ~ /^[A-Za-z_][A-Za-z0-9_]*(\[[^]]*\])?\+?=/) {
 				# An assignment prefix: the command comes next.
@@ -882,8 +891,8 @@ MCP_TOOLS_REMOVED_API_AWK='
 		if (redir && word != "") { redir = 0 }
 		word = ""
 	}
-	function push(closer) { sp++; st_state[sp] = state; st_close[sp] = closer; st_word[sp] = word; st_cmd[sp] = cmdpos }
-	function pop() { state = st_state[sp]; word = st_word[sp] "x"; cmdpos = st_cmd[sp]; sp-- }
+	function push(closer) { sp++; st_state[sp] = state; st_close[sp] = closer; st_word[sp] = word; st_cmd[sp] = cmdpos; st_arr[sp] = inarr; inarr = 0 }
+	function pop() { state = st_state[sp]; word = st_word[sp] "x"; cmdpos = st_cmd[sp]; inarr = st_arr[sp]; sp-- }
 	BEGIN {
 		n = split(names, list, " ")
 		for (i = 1; i <= n; i++) {
@@ -894,6 +903,7 @@ MCP_TOOLS_REMOVED_API_AWK='
 		split("then do else elif if while until ! { } time", k, " ")
 		for (i in k) kw[k[i]] = 1
 		state = "N"; sp = 0; cmdpos = 1; word = ""; redir = 0; inhd = ""; cont = 0
+		pat = 0; casehdr = 0; casedepth = 0; inarr = 0
 	}
 	{
 		line = $0
@@ -912,6 +922,12 @@ MCP_TOOLS_REMOVED_API_AWK='
 		for (i = 1; i <= L; i++) {
 			c = substr(line, i, 1)
 			if (state == "S") { if (c == "\047") { state = "N"; word = word "x" } ; continue }
+			if (state == "C") {
+				# $'...': a backslash escapes the next character, \047 included.
+				if (c == "\\") { i++; continue }
+				if (c == "\047") { state = "N"; word = word "x" }
+				continue
+			}
 			if (state == "D") {
 				if (c == "\\") { i++; continue }
 				if (c == "\"") { pop(); continue }
@@ -929,6 +945,7 @@ MCP_TOOLS_REMOVED_API_AWK='
 			if (c == "#" && word == "") break
 			if (c == "\\") { if (i == L) cont = 1; else word = word "x"; i++; continue }
 			if (c == "\047") { state = "S"; continue }
+			if (c == "$" && substr(line, i + 1, 1) == "\047") { state = "C"; i++; continue }
 			if (c == "\"") { push("\""); state = "D"; continue }
 			if (c == "$" && substr(line, i + 1, 2) == "((") { push("))"); state = "A"; adepth = 0; i += 2; continue }
 			if (c == "$" && substr(line, i + 1, 1) == "(") { push(")"); word = ""; cmdpos = 1; i++; continue }
@@ -937,13 +954,26 @@ MCP_TOOLS_REMOVED_API_AWK='
 				else { push("`"); word = ""; cmdpos = 1 }
 				continue
 			}
-			if (c == "(") { endword(); push(")"); word = ""; cmdpos = 1; continue }
+			if (c == "(") {
+				if (pat) continue
+				if (word == "" && cmdpos && substr(line, i + 1, 1) == "(") { push("))"); state = "A"; adepth = 0; i++; continue }
+				if (word ~ /=$/) { push(")"); inarr = 1; word = ""; continue }
+				endword(); push(")"); word = ""; cmdpos = 1; continue
+			}
 			if (c == ")") {
+				if (pat) { word = ""; pat = 0; cmdpos = 1; continue }
 				endword()
 				if (sp > 0 && st_close[sp] == ")") pop()
 				else cmdpos = 1
 				continue
 			}
+			if (c == ";" && casedepth > 0 && (substr(line, i + 1, 1) == ";" || substr(line, i + 1, 1) == "&")) {
+				# ;; ;& ;;& end a case arm: a pattern comes next.
+				endword(); pat = 1
+				while (substr(line, i + 1, 1) == ";" || substr(line, i + 1, 1) == "&") i++
+				continue
+			}
+			if (pat && c == "|") { word = ""; continue }
 			if (c == ";" || c == "|" || (c == "&" && substr(line, i - 1, 1) != ">" && substr(line, i - 1, 1) != "<")) { endword(); cmdpos = 1; continue }
 			if (c == "<" && substr(line, i + 1, 2) == "<<") { endword(); redir = 1; i += 2; continue }
 			if (c == "<" || c == ">") {
