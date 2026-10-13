@@ -166,3 +166,18 @@ check() {
 	mcp_tools_removed_api_check "${path}"
 	assert_equal "${MCP_TOOLS_REMOVED_API_HIT}" ""
 }
+
+@test "removed api: a script replaced with an older mtime is read again" {
+	MCPBASH_STATE_DIR="${BATS_TEST_TMPDIR}/state"
+	mkdir -p "${MCPBASH_STATE_DIR}"
+	local path
+	path="$(tool 'mcp_result_text ok')"
+	mcp_tools_removed_api_check "${path}"
+	assert_equal "${MCP_TOOLS_REMOVED_API_HIT}" ""
+	# cp -p of an old unmigrated script: content changes, mtime goes back.
+	printf '#!/usr/bin/env bash\nmcp_error not_found x\n' >"${BATS_TEST_TMPDIR}/old.sh"
+	touch -t 201901010000 "${BATS_TEST_TMPDIR}/old.sh"
+	cp -p "${BATS_TEST_TMPDIR}/old.sh" "${path}"
+	mcp_tools_removed_api_check "${path}"
+	assert_equal "${MCP_TOOLS_REMOVED_API_HIT}" "mcp_error"
+}

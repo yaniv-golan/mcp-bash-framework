@@ -823,12 +823,13 @@ mcp_tools_removed_api_use() {
 # with "command not found", and mcp_tools_removed_api_hint names it). Only
 # calls in command position count; strings, comments, heredoc bodies,
 # arguments, assignments and a function of the same name defined in the
-# script don't. The result is cached in the state dir while the cache file
-# is newer than the script, so a repeat call starts no process; a script
-# edited in place (mcp-bash migrate --write) is read again on its next call.
+# script don't. The result is cached in the state dir together with the
+# script's content, and reused while the content is the same: a repeat call
+# starts no process (the script is read with the read builtin), and a script
+# changed in any way, an older mtime included, is checked again.
 # Usage: mcp_tools_removed_api_check TOOL_PATH
 mcp_tools_removed_api_check() {
-	local path="$1" first="" cache="" cached_path="" cached_hit=""
+	local path="$1" first="" cache="" cached_path="" cached_hit="" content="" cached_content=""
 	MCP_TOOLS_REMOVED_API_HIT=""
 	[ -n "${MCP_TOOLS_REMOVED_SDK_NAMES}" ] && [ -f "${path}" ] && [ -r "${path}" ] || return 0
 	case "${path}" in
@@ -844,21 +845,21 @@ mcp_tools_removed_api_check() {
 	if [ -n "${MCPBASH_STATE_DIR:-}" ] && [ -d "${MCPBASH_STATE_DIR}" ]; then
 		local key="${path//[^A-Za-z0-9.-]/-}"
 		cache="${MCPBASH_STATE_DIR}/removed-api.${key}"
-		# Strictly newer: a script written in the same second as the cache
-		# (file times may be whole seconds) is read again.
-		if [ -f "${cache}" ] && [ "${cache}" -nt "${path}" ]; then
+		IFS= read -r -d '' content <"${path}" 2>/dev/null || true
+		if [ -f "${cache}" ]; then
 			{
 				IFS= read -r cached_path
 				IFS= read -r cached_hit
-			} <"${cache}" 2>/dev/null
-			if [ "${cached_path}" = "${path}" ]; then
+				IFS= read -r -d '' cached_content || true
+			} <"${cache}" 2>/dev/null || true
+			if [ "${cached_path}" = "${path}" ] && [ "${cached_content}" = "${content}" ]; then
 				MCP_TOOLS_REMOVED_API_HIT="${cached_hit}"
 				return 0
 			fi
 		fi
 	fi
 	MCP_TOOLS_REMOVED_API_HIT="$(awk -v names="${MCP_TOOLS_REMOVED_SDK_NAMES}" "${MCP_TOOLS_REMOVED_API_AWK}" "${path}" 2>/dev/null)" || MCP_TOOLS_REMOVED_API_HIT=""
-	[ -z "${cache}" ] || printf '%s\n%s\n' "${path}" "${MCP_TOOLS_REMOVED_API_HIT}" >"${cache}" 2>/dev/null || true
+	[ -z "${cache}" ] || printf '%s\n%s\n%s' "${path}" "${MCP_TOOLS_REMOVED_API_HIT}" "${content}" >"${cache}" 2>/dev/null || true
 }
 
 # The awk program for mcp_tools_removed_api_check: a small shell tokenizer.
