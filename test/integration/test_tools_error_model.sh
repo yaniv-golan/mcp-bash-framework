@@ -55,6 +55,13 @@ add_tool ownresult 'printf "%s\n" "{\"content\":[{\"type\":\"text\",\"text\":\"o
 # The same with structuredContent that doesn't match the tool's outputSchema:
 # it is an error result anyway, so its own text is kept.
 add_tool ownresultschema 'printf "%s\n" "{\"content\":[{\"type\":\"text\",\"text\":\"own schema\"}],\"isError\":false,\"structuredContent\":{\"x\":1}}"; exit 2' '{"type":"object","required":["greeting"],"properties":{"greeting":{"type":"string"}}}'
+# The side channel as a 1.x SDK wrote it ({code, message}), or plain text.
+# shellcheck disable=SC2016  # Literals for the generated tool scripts
+add_tool sidevendored 'printf "%s" "{\"code\":-32602,\"message\":\"vendored\"}" >"${MCP_TOOL_ERROR_FILE}"; echo warn-line >&2; exit 1'
+# shellcheck disable=SC2016
+add_tool sideraw 'printf "raw side text" >"${MCP_TOOL_ERROR_FILE}"; exit 1'
+# shellcheck disable=SC2016
+add_tool sidebig 'm="$(head -c 9000 /dev/zero | tr "\\0" m)"; d="$(head -c 100000 /dev/zero | tr "\\0" d)"; printf "{\"code\":1,\"message\":\"%s\",\"data\":\"%s\"}" "${m}" "${d}" >"${MCP_TOOL_ERROR_FILE}"; exit 1'
 # mcp_fail forms.
 add_tool failtyped 'mcp_fail --type not_found "nope"'
 add_tool failone 'mcp_fail "one arg"'
@@ -96,7 +103,9 @@ for l in C.UTF-8 en_US.UTF-8; do
 		break
 	fi
 done
-LC_ALL="${utf8_locale:-${LC_ALL:-}}" MCPBASH_TOOL_ALLOWLIST='*' MCPBASH_MAX_TOOL_OUTPUT_SIZE=1000 test_run_mcp "${WS}" "${REQ}" "${OUT}"
+# Small output and error-text limits keep the oversized rows cheap; responses
+# must stay under the output limit too.
+LC_ALL="${utf8_locale:-${LC_ALL:-}}" MCPBASH_TOOL_ALLOWLIST='*' MCPBASH_MAX_TOOL_OUTPUT_SIZE=1000 MCPBASH_TOOL_STDERR_TAIL_LIMIT=200 test_run_mcp "${WS}" "${REQ}" "${OUT}"
 assert_json_lines "${OUT}"
 
 resp() { jq -c --arg id "$1" 'select(.id == $id)' "${OUT}"; }
@@ -132,6 +141,16 @@ check_error faildash tool_failed "--type"
 check_error badutf8err tool_failed "utf ok"
 check_error badutf8out tool_failed "bytes ok"
 check_error bigout output_too_large "1000"
+check_error sidevendored invalid_args "vendored"
+case "$(resp sidevendored | jq -r '.result._meta.stderr // empty')" in
+*warn-line*) ;;
+*) test_fail "sidevendored: _meta.stderr lost: $(resp sidevendored)" ;;
+esac
+check_error sideraw tool_failed "raw side text"
+check_error sidebig tool_failed "mmmm"
+r="$(resp sidebig)"
+[ "$(printf '%s' "${r}" | jq -r '.result.content[0].text | length')" -le 200 ] || test_fail "sidebig: text not capped"
+printf '%s' "${r}" | jq -e '.result._meta["mcpbash/error"] | has("data") | not' >/dev/null || test_fail "sidebig: oversized data kept"
 check_error schemamismatch output_schema "outputSchema"
 check_error schemanotjson output_schema "outputSchema"
 check_error schemaarray output_schema "outputSchema"

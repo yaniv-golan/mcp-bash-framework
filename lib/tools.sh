@@ -763,28 +763,40 @@ _mcp_tools_load_tool_error_sdk() {
 
 # Turn a side-channel entry that is not an error result (a 1.x
 # {"code","message","data"} object, or text) into a tool_failed error result
-# (invalid_args for -32602). The code itself is never sent.
-# Usage: _mcp_tools_side_channel_error_result <file> <exit_code>
+# (invalid_args for -32602). The code itself is never sent. The message is
+# capped like any error text, and data over 64 KiB is left out.
+# Usage: _mcp_tools_side_channel_error_result <file> <exit_code> <stderr_file>
 _mcp_tools_side_channel_error_result() {
-	local file="$1" exit_code="${2:-1}"
-	local raw type="tool_failed" message="" data=""
+	local file="$1" exit_code="${2:-1}" stderr_file="${3:-}"
+	local limit="${MCPBASH_TOOL_STDERR_TAIL_LIMIT:-4096}"
+	case "${limit}" in
+	'' | *[!0-9]*) limit=4096 ;;
+	esac
+	local raw type="tool_failed" message="" data="" stderr_tail=""
 	raw="$(cat "${file}" 2>/dev/null || true)"
 	if [ "${MCPBASH_JSON_TOOL:-none}" != "none" ]; then
 		local parsed
 		parsed="$(printf '%s' "${raw}" | "${MCPBASH_JSON_TOOL_BIN}" -c 'select(type == "object" and (.message | type) == "string") | {code: (.code // null), message, data: (.data // null)}' 2>/dev/null || true)"
 		if [ -n "${parsed}" ]; then
-			message="$(printf '%s' "${parsed}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.message')"
+			message="$(printf '%s' "${parsed}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.message' | head -c "${limit}")"
 			if [ "$(printf '%s' "${parsed}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.code')" = "-32602" ]; then
 				type="invalid_args"
 			fi
 			data="$(printf '%s' "${parsed}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.data // empty')"
+			if [ "${#data}" -gt 65536 ]; then
+				data=""
+			fi
 		fi
 	fi
 	if [ -z "${message}" ]; then
-		message="$(printf '%s' "${raw}" | head -c 4096 | LC_ALL=C tr -d '\000-\010\013\014\016-\037')"
+		message="$(printf '%s' "${raw}" | head -c "${limit}")"
 	fi
+	message="$(printf '%s' "${message}" | LC_ALL=C tr -d '\000-\010\013\014\016-\037')"
 	[ -n "${message}" ] || message="Tool failed"
-	_mcp_tools_emit_error_result "${type}" "${message}" "" "${data}" "" "${exit_code}"
+	if [ -n "${stderr_file}" ] && mcp_tools_stderr_capture_enabled && [ -s "${stderr_file}" ]; then
+		stderr_tail="$(mcp_tools_stderr_tail "${stderr_file}" "${limit}")"
+	fi
+	_mcp_tools_emit_error_result "${type}" "${message}" "" "${data}" "${stderr_tail}" "${exit_code}"
 }
 
 # True when the tool's stdout is itself a CallToolResult (an object with a
@@ -2205,7 +2217,7 @@ mcp_tools_call() {
 	# Anything else in the side channel (a 1.x {code, message} error object,
 	# or plain text) is an error result too. A tool's code is never sent.
 	if [ -n "${tool_error_file}" ] && [ -s "${tool_error_file}" ]; then
-		_mcp_tools_side_channel_error_result "${tool_error_file}" "${exit_code}"
+		_mcp_tools_side_channel_error_result "${tool_error_file}" "${exit_code}" "${stderr_file}"
 		cleanup_tool_temp_files
 		return 0
 	fi
@@ -2346,13 +2358,6 @@ mcp_tools_call() {
 		fi
 		cleanup_tool_temp_files
 		return 0 # Changed from return 1 - flows to success path in handler with isError: true
-	fi
-
-	# A side-channel entry that appeared after the check above.
-	if [ -n "${tool_error_file}" ] && [ -s "${tool_error_file}" ]; then
-		_mcp_tools_side_channel_error_result "${tool_error_file}" "${exit_code}"
-		cleanup_tool_temp_files
-		return 0
 	fi
 
 	# A non-zero exit is an error result (isError: true), never a JSON-RPC
