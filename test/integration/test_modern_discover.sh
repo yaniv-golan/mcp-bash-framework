@@ -72,4 +72,20 @@ REQ="${TEST_TMPDIR}/mixed.ndjson"
 MCPBASH_MODERN_PROTOCOL=true test_run_mcp "${WS}" "${REQ}" "${TEST_TMPDIR}/mixed.out"
 assert_eq "complete" "$(resp "${TEST_TMPDIR}/mixed.out" 1 | jq -r '.result.resultType')" "discover after a legacy initialize"
 
+# --- Large instructions (over Linux's 128 KiB argument and macOS's ~1 MiB limit)
+{
+	printf 'Use the hello tool.\n'
+	head -c 1200000 /dev/zero | tr '\0' 'x'
+	printf '\n'
+} >"${WS}/server.d/server.instructions.md"
+REQ="${TEST_TMPDIR}/big.ndjson"
+{
+	discover 1
+	jq -cn '{jsonrpc: "2.0", id: 2, method: "tools/list", params: {_meta: {"io.modelcontextprotocol/protocolVersion": "2026-07-28", "io.modelcontextprotocol/clientCapabilities": {}}}}'
+} >"${REQ}"
+MCPBASH_MODERN_PROTOCOL=true MCPBASH_TOOL_ALLOWLIST='*' test_run_mcp "${WS}" "${REQ}" "${TEST_TMPDIR}/big.out"
+r="$(resp "${TEST_TMPDIR}/big.out" 1)"
+[ "$(printf '%s' "${r}" | jq -r '.result.instructions | length')" -ge 1200000 ] || test_fail "large instructions: $(printf '%s' "${r}" | head -c 300)"
+assert_eq "complete" "$(resp "${TEST_TMPDIR}/big.out" 2 | jq -r '.result.resultType')" "a modern result with large server data"
+
 printf 'server/discover checks passed.\n'

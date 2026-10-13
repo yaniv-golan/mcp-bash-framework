@@ -23,14 +23,18 @@ mcp_handle_discover() {
 	local caps server_info
 	caps="$(printf '%s' "${MCPBASH_REQUEST_META}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.caps // {}')"
 	server_info="$(mcp_spec_build_server_info)"
-	printf '%s' "${server_info}" | "${MCPBASH_JSON_TOOL_BIN}" -c \
+	# The server info (icons) and the instructions can be large: they go to
+	# jq on stdin, never as arguments.
+	{
+		printf '%s\n' "${server_info}"
+		printf '%s' "${MCPBASH_SERVER_INSTRUCTIONS:-}" | "${MCPBASH_JSON_TOOL_BIN}" -Rs '.'
+	} | "${MCPBASH_JSON_TOOL_BIN}" -c -s \
 		--argjson id "${id}" \
 		--argjson versions "$(mcp_modern_supported_versions_json)" \
 		--argjson capabilities "$(mcp_modern_server_capabilities "${caps}")" \
-		--arg instructions "${MCPBASH_SERVER_INSTRUCTIONS:-}" \
 		--argjson ttl "$(mcp_modern_cache_ttl_ms list)" \
 		--arg scope "$(mcp_modern_cache_scope)" '
-		. as $info
+		.[0] as $info | .[1] as $instructions
 		| {jsonrpc: "2.0", id: $id, result: (
 			{supportedVersions: $versions, capabilities: $capabilities}
 			+ (if $instructions != "" then {instructions: $instructions} else {} end)

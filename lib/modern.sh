@@ -228,12 +228,16 @@ mcp_modern_decorate_response() {
 		ttl="$(mcp_modern_cache_ttl_ms "${cache}")"
 	fi
 	local decorated
-	if decorated="$(printf '%s' "${response}" | "${MCPBASH_JSON_TOOL_BIN}" -c \
-		--argjson info "$(mcp_spec_build_server_info)" \
+	# The server info (icons) can be large: it goes on stdin with the response.
+	if decorated="$({
+		mcp_spec_build_server_info
+		printf '\n%s' "${response}"
+	} | "${MCPBASH_JSON_TOOL_BIN}" -c -s \
 		--arg cache "${cache}" \
 		--argjson ttl "${ttl}" \
 		--arg scope "$(mcp_modern_cache_scope)" '
-		if (.result | type) == "object" then
+		.[0] as $info | .[1]
+		| if (.result | type) == "object" then
 			.result |= (
 				.resultType = (.resultType // "complete")
 				| ._meta = ((._meta // {}) + {"io.modelcontextprotocol/serverInfo": $info})
