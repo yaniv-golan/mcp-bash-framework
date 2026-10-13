@@ -1799,10 +1799,32 @@ mcp_core_poll_registries_once() {
 	mcp_prompts_poll
 }
 
+# Send the lines of a worker's progress or log stream that were not sent yet.
+# Two processes flush the same stream: the background flusher and the
+# worker's own final flush. Each reads the offset file, sends from there and
+# then writes the new offset, so without a lock both could send the same
+# lines. A flush that can't get the lock in time is skipped: the holder is
+# sending those lines.
 mcp_core_flush_stream() {
+	local lock_name="flush.$2.$1"
+	if declare -F mcp_lock_acquire_timeout >/dev/null 2>&1 && [ -n "${MCPBASH_LOCK_ROOT:-}" ]; then
+		mcp_lock_acquire_timeout "${lock_name}" 5 || return 0
+		_mcp_core_flush_stream_unlocked "$1" "$2"
+		local rc=$?
+		mcp_lock_release "${lock_name}"
+		return "${rc}"
+	fi
+	_mcp_core_flush_stream_unlocked "$1" "$2"
+}
+
+_mcp_core_flush_stream_unlocked() {
 	local key="$1"
 	local kind="$2"
+	# The worker's streams are progress.<key>.ndjson and logs.<key>.ndjson.
 	local stream="${MCPBASH_STATE_DIR}/${kind}.${key}.ndjson"
+	if [ "${kind}" = "log" ]; then
+		stream="${MCPBASH_STATE_DIR}/logs.${key}.ndjson"
+	fi
 	local offset_file="${stream}.offset"
 	[ -f "${stream}" ] || return 0
 	local last_offset=0
