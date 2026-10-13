@@ -176,8 +176,8 @@ For manual control without the `debug` subcommand:
 | `MCPBASH_DEBUG_LOG` | (unset) | Per-tool debug log path (auto-set per invocation); SDK `mcp_debug` appends to it |
 | `MCPBASH_LOG_LEVEL` | `info` | Set to `debug` for verbose stderr logging |
 | `MCPBASH_LOG_VERBOSE` | (unset) | Set to `true` to include file paths in logs |
-| `MCPBASH_TOOL_STDERR_CAPTURE` | `true` | Include a bounded stderr tail in tool error responses (`error.data._meta.stderr` / `stderrTail`) |
-| `MCPBASH_TOOL_STDERR_TAIL_LIMIT` | `4096` | Max bytes of stderr tail to attach to responses |
+| `MCPBASH_TOOL_STDERR_CAPTURE` | `true` | Include a bounded stderr tail in tool results (`result._meta.stderr`); for a tool that exits non-zero it is also the error text the model reads |
+| `MCPBASH_TOOL_STDERR_TAIL_LIMIT` | `4096` | Max bytes of the stderr tail, and of a failed tool's error text |
 | `MCPBASH_TOOL_TIMEOUT_CAPTURE` | `true` | Include timeout exit code and stderr tail (when available) in timeout errors |
 | `MCPBASH_TRACE_TOOLS` | `false` | Enable `set -x` tracing for shell tools; traces go to per-invocation logs under `MCPBASH_STATE_DIR`. SDK helpers suppress xtrace around secret-bearing args/_meta payload expansions. |
 | `MCPBASH_TRACE_PS4` | `+ ${BASH_SOURCE[0]##*/}:${LINENO}: ` | Override PS4 used for traces (timestamps or custom format) |

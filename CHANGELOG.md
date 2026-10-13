@@ -10,19 +10,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Changes for 2.0.0.
 
 ### Behaviour changes to check before upgrading
-- **Every tool failure is an error result, never a JSON-RPC error**: once a tool has run, the client always gets a result with `isError: true`, `_meta["mcpbash/error"]` (with `type`), `_meta.exitCode` and `_meta.stderr`, so the model can read why the call failed. Before, these were JSON-RPC errors the model never saw:
+- **Every tool failure is an error result, never a JSON-RPC error**: once a tool has run, the client always gets a result with `isError: true`, `_meta.exitCode` and `_meta.stderr`, so the model can read why the call failed. The error results below also have `_meta["mcpbash/error"]` (with `type`). Before, these were JSON-RPC errors the model never saw:
   - a non-zero exit (`-32603 "Tool failed"`): now type `tool_failed`, with the stderr tail as the text (or the end of stdout when stderr is empty);
   - a `{"code": N, "message": "..."}` object printed on stdout before a non-zero exit, whose code was sent as the JSON-RPC error code: now its message is the text, and the code is not sent;
   - output or stderr over `MCPBASH_MAX_TOOL_OUTPUT_SIZE`/`MCPBASH_MAX_TOOL_STDERR_SIZE`: now type `output_too_large`;
   - output that isn't valid JSON, is empty or doesn't match the tool's `outputSchema`: now type `output_schema`. Only a failure to run the check itself stays a `-32603` error.
 
-  Clients or tests that expected `error.code` from a failed `tools/call` must check `result.isError` instead.
-- **`mcp_fail CODE MESSAGE` no longer sends a JSON-RPC error**: the numeric form is removed in 2.0. It still ends the tool, with `MESSAGE` as an error result (type `invalid_args` for `-32602`, `tool_failed` otherwise), and the tool's stderr says the form was removed; the code is not sent. `mcp_fail_invalid_args` gives an `invalid_args` error result. Run `mcp-bash migrate` to rewrite both. <!-- lint-api-usage: allow -->
+  Clients or tests that expected `error.code` from a failed `tools/call` must check `result.isError` instead. The 1.x error's `error.data.exitCode`, `error.data.stderrTail` and `error.data.traceLine` are now `result._meta.exitCode`, `result._meta.stderr` and `result._meta["mcpbash/error"].data.traceLine`. The model now reads the tool's stderr tail: set `MCPBASH_TOOL_STDERR_CAPTURE=false` for tools that may print secrets to stderr.
+- **`mcp_fail CODE MESSAGE` no longer sends a JSON-RPC error**: the numeric form is removed in 2.0. It still ends the tool, with `MESSAGE` as an error result (type `invalid_args` for `-32602`, `tool_failed` otherwise), and the tool's stderr says the form was removed; the code is not sent. `mcp_fail_invalid_args` gives an `invalid_args` error result. Run `mcp-bash migrate` to rewrite both; it rewrites `mcp_fail -32603` to `--type tool_failed` (it was `--type internal`), and no longer reports a one-argument `mcp_fail "message"`, which is valid in 2.0. <!-- lint-api-usage: allow -->
 - **`mcp-bash run-tool` exits 1 for every error result**: including `mcp_fail --type`, a timeout and a failed exit, as well as a policy denial (which already did). Before, error results exited 0. Scripts that ran a tool with `run-tool` and ignored its result now see the failure.
 - **`_meta.exitCode` is the tool's real exit status** for results from `mcp_fail` (it was `0`).
 
 ### Added
-- **`mcp_fail` without `--type`**: `mcp_fail MESSAGE [--hint TEXT] [--data JSON]` ends the tool with an error result of type `tool_failed`; `mcp_fail -- MESSAGE` takes the message literally (a number, or text starting with `--`).
+- **`mcp_fail` without `--type`**: `mcp_fail MESSAGE [--hint TEXT] [--data JSON]` ends the tool with an error result of type `tool_failed`; `mcp_fail -- MESSAGE` takes the message literally (a number, or text starting with `--`). Arguments after the message other than `--hint` and `--data` are ignored, with a note on stderr.
 
 ## [1.9.2] - 2026-10-13
 
