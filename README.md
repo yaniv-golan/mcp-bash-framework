@@ -535,7 +535,7 @@ mcp_result_json "$(mcp_json_obj message "See embedded report")" \
   --resource "${payload_path}" --mime text/plain
 ```
 
-Before 2.0 this was `mcp_result_text_with_resource ... --path`; `mcp-bash migrate --write` rewrites it. See the dedicated example at `examples/06-embedded-resources/` and [BEST-PRACTICES.md](docs/BEST-PRACTICES.md#embedding-resources-in-tool-responses) for full documentation.
+Before 2.0 this was `mcp_result_text_with_resource ... --path`; `mcp-bash migrate --write` rewrites it. See the dedicated example at `examples/06-embedded-resources/` and [BEST-PRACTICES.md](docs/BEST-PRACTICES.md#embedding-resources-in-tool-responses) for full documentation. <!-- lint-api-usage: allow -->
 
 ## Diagnostics & Validation
 

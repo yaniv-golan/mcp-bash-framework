@@ -57,7 +57,7 @@ This guide distils hands-on recommendations for designing, building, and operati
 | `mcp_download_safe` ★ | SSRF-safe HTTPS download | `mcp_download_safe --url "$url" --allow "api.example.com"` |
 | `mcp_download_safe_or_fail` ★ | SSRF-safe download (fails on error) | `path=$(mcp_download_safe_or_fail --url "$url" --out "$tmp" --allow "x.com")` |
 | `mcp_tool_error_result` | Build an error result without ending the tool (advanced) | `mcp_tool_error_result not_found "User missing" --hint "Check ID"` |
-| `mcp_result_text_with_resource` ★ | Combined text + embedded resources | `mcp_result_text_with_resource "$json" --path /tmp/out.txt` |
+| `mcp_result_json --resource` ★ | Result with embedded files (also on `mcp_result_text`) | `mcp_result_json "$json" --resource /tmp/out.txt` |
 | `mcp_json_truncate` | Truncate large arrays for context limits | `mcp_json_truncate "$arr" 10000 --array-path ".data"` |
 | `mcp_is_valid_json` | Validate single JSON value | `if mcp_is_valid_json "$val"; then ...` |
 | `mcp_byte_length` | UTF-8 safe byte length | `len=$(mcp_byte_length "$str")` |
@@ -470,13 +470,13 @@ Neither helper ends the tool. In an early-return branch, follow it with `exit 0`
 
 Add file content to the `result.content` array so clients receive both text and attached files:
 
-**Preferred: Use `mcp_result_text_with_resource`**
+**Preferred: `--resource` on `mcp_result_json` or `mcp_result_text`**
 ```bash
 payload_path="${MCPBASH_PROJECT_ROOT}/resources/report.txt"
 printf 'Report content' >"${payload_path}"
-mcp_result_text_with_resource \
+mcp_result_json \
   "$(mcp_json_obj message "See embedded report")" \
-  --path "${payload_path}" --mime text/plain
+  --resource "${payload_path}" --mime text/plain
 ```
 
 See [Embedding resources in tool responses](#embedding-resources-in-tool-responses) for full documentation.
@@ -994,7 +994,7 @@ The result has the message (and the hint) as its text, no `structuredContent` (a
 
 - `mcp_fail --type` ends the tool. Inside `$(...)` (a helper whose output you capture, or the argument helpers such as `mcp_args_require`) it ends only the substitution: the client still gets the error result, but the rest of the tool stops only under `set -e`. Without `-e` (e.g. a CLI wrapper), add `|| exit 1`: `path="$(mcp_args_require '.path')" || exit 1`. `mcp_result_json` and `mcp_result_text` don't end the tool, so an early-return branch needs `exit 0` after them.
 - Use `internal` only for unexpected failures; a specific type tells the model whether retrying or changing the arguments can help.
-- The 1.x error helpers are removed in 2.0: `mcp_error` / `mcp_result_error` don't end the tool, and numeric `mcp_fail CODE MESSAGE` (a JSON-RPC error the model never saw in 1.x) now only ends the tool with its message and a note on stderr. `mcp-bash migrate` finds them (see [Migrating to the 2.0 helpers](#migrating-to-the-20-helpers)). <!-- lint-api-usage: allow -->
+- The 1.x error helpers are removed in 2.0 (`mcp_error` / `mcp_result_error` did not end the tool), and numeric `mcp_fail CODE MESSAGE` (a JSON-RPC error the model never saw in 1.x) now only ends the tool with its message and a note on stderr. `mcp-bash migrate` finds them (see [Migrating to the 2.0 helpers](#migrating-to-the-20-helpers)). <!-- lint-api-usage: allow -->
 - Capture stderr and propagate actionable diagnostics; see `examples/01-args-and-validation/tools/echo-arg/tool.sh:30-36` for human-readable error surfaces.
 - Wrap risky filesystem/network calls in helper functions so they can be retried or mocked in unit tests.
 - A tool that exits non-zero gets an error result whose text is its stderr tail (`MCPBASH_TOOL_STDERR_CAPTURE`, on by default; `MCPBASH_TOOL_STDERR_TAIL_LIMIT`, default 4096 bytes), so write the reason to stderr. **The model reads that text:** a tool that may print secrets to stderr should run with `MCPBASH_TOOL_STDERR_CAPTURE=false`. Timeouts include exit code and stderr tail when `MCPBASH_TOOL_TIMEOUT_CAPTURE` is on (default).
@@ -1344,7 +1344,7 @@ The helper prints the result and exits with status 0 (the tool completed; the er
 <a id="migrating-to-the-20-helpers"></a>
 #### Migrating to the 2.0 helpers
 
-mcp-bash 2.0 keeps `mcp_result_json`, `mcp_result_text` and `mcp_fail --type`, and removes the 1.x helpers: `mcp_result_success`, `mcp_result_error`, `mcp_error`, numeric `mcp_fail CODE MESSAGE`, `mcp_fail_invalid_args`, `mcp_emit_text`, `mcp_emit_json`, and the `MCPBASH_COMPAT_BATCHES` toggle. They all still work in 1.x. <!-- lint-api-usage: allow -->
+mcp-bash 2.0 keeps `mcp_result_json`, `mcp_result_text` and `mcp_fail --type`, and removes the 1.x helpers: `mcp_result_success`, `mcp_result_error`, `mcp_error`, numeric `mcp_fail CODE MESSAGE`, `mcp_fail_invalid_args`, `mcp_emit_text`, `mcp_emit_json`, `mcp_result_text_with_resource`, `mcp_result_with_ui`, `mcp_result_with_ui_data`, and the `MCPBASH_COMPAT_BATCHES` toggle. A tool whose own scripts still call a removed helper doesn't run in 2.0: each call returns an error result of type `migration_required` naming the helper, with a hint to run `mcp-bash migrate`, and from the second start on the server's instructions name the affected files. A removed helper called from a script outside the tool's directory fails with "command not found", and the error result's hint names it. <!-- lint-api-usage: allow -->
 
 1. **See what's affected.** `mcp-bash validate` reports these uses as *deprecations*, counted separately from errors and warnings (`--deprecations-as-errors` fails on them, e.g. in CI). `mcp-bash migrate` lists each use with its fix; `--list` shows the rules, `--explain ID` describes one, `--json` is machine-readable.
 2. **Upgrade a vendored runtime first.** If the project embeds the runtime in `.mcp-bash/`, run `mcp-bash vendor --upgrade` before rewriting: tools run against the vendored SDK, and an older one lacks the new helpers. `migrate --write` refuses until you do (or pass `--force`).
@@ -1352,7 +1352,7 @@ mcp-bash 2.0 keeps `mcp_result_json`, `mcp_result_text` and `mcp_fail --type`, a
 4. **Fix the rest by hand.** `mcp-bash migrate` exits 0 when nothing is pending, 1 when automatic fixes are pending and 2 when manual work remains. The result shape changes with the helpers: `mcp_result_json` sends no `{success, result}` envelope, so UI code that read `structuredContent.result` reads `structuredContent` instead. <!-- lint-api-usage: allow -->
 5. **Update your own tests.** Tests that assert the `{success, result}` envelope or the `_mcpToolError` marker need updating; policy denials are now `isError` results (`_meta["mcpbash/error"].type` = `policy_denied`).
 
-`mcp_result_text_with_resource` and capturing `mcp_elicit*` output with `$(...)` have no replacement in 1.x; keep them as they are. Both change in 2.0. <!-- lint-api-usage: allow -->
+The 2.0 replacements: `mcp_result_text_with_resource ... --path P` becomes `mcp_result_json ... --resource P`, and `mcp_result_with_ui[_data] URI TEXT [DATA]` becomes `mcp_result_ui TEXT [DATA]` (`migrate --write` rewrites both when the URI is empty). Capturing `mcp_elicit*` output with `$(...)` changes later in 2.0. <!-- lint-api-usage: allow -->
 
 #### Truncating large results
 
@@ -1443,23 +1443,23 @@ fi
 | Plain text | `mcp_result_text` |
 | LLM needs actionable error context | `mcp_fail --type TYPE "message" --hint "..." [--data JSON]` |
 | Large arrays that may exceed context | `mcp_json_truncate` + `mcp_result_json` |
-| Text plus embedded files | `mcp_result_text_with_resource` (changes in 2.0) |
+| Text or JSON plus embedded files | `mcp_result_text` / `mcp_result_json` with `--resource` |
 
 #### Embedding resources in tool responses
 
-Use `mcp_result_text_with_resource` to return text/structured data with optional embedded resources:
+Add `--resource PATH [--mime TYPE] [--uri URI]` (repeatable) to `mcp_result_text` or `mcp_result_json` to return text or structured data with embedded resources. `--mime` and `--uri` apply to the `--resource` before them:
 
 ```bash
 # Text with single resource
-mcp_result_text_with_resource "Report ready" --path /tmp/report.pdf --mime application/pdf
+mcp_result_text "Report ready" --resource /tmp/report.pdf --mime application/pdf
 
 # Multiple resources
-mcp_result_text_with_resource '{"status":"complete"}' \
-  --path /tmp/data.csv --mime text/csv \
-  --path /tmp/chart.png --mime image/png
+mcp_result_json '{"status":"complete"}' \
+  --resource /tmp/data.csv --mime text/csv \
+  --resource /tmp/chart.png --mime image/png
 
 # No --mime: the server detects the type (requires the `file` command)
-mcp_result_text_with_resource '{"done":true}' --path /tmp/output.json
+mcp_result_json '{"done":true}' --resource /tmp/output.json
 ```
 
 Resources are embedded in the `content[]` array alongside the text.
@@ -1467,11 +1467,13 @@ Resources are embedded in the `content[]` array alongside the text.
 - **Without `--mime`:** the helper writes no type and the server detects it with `file --mime`; without `file`, the type is `text/plain`.
 - **Encoding:** detection always decides whether the content is sent as `text` or as a base64 `blob`, so `--mime text/plain` on a PDF still sends a blob. Pass `--mime` only when detection gets the label wrong, for example `text/markdown`, which `file` reports as `text/plain`.
 
+A path that isn't a readable file is skipped with a warning on stderr.
+
 **Note:** Resources require `MCP_TOOL_RESOURCES_FILE` to be set (automatic in tool context). Outside tool context, resources are logged as warnings and skipped.
 
-**Warning:** This helper **overwrites** `MCP_TOOL_RESOURCES_FILE`. Do not mix with direct file writes; the helper will replace any existing content.
+**Warning:** `--resource` **overwrites** `MCP_TOOL_RESOURCES_FILE`. Do not mix it with direct writes to that file; the helper replaces any existing content.
 
-**Note:** Unlike `mcp_result_json`, this helper still sends its data in the 1.x `{success, result}` envelope. It has no replacement yet; keep using it as is. It changes in 2.0, and `mcp-bash migrate` will show the replacement once it is final.
+**Before 2.0** this was `mcp_result_text_with_resource ... --path`, which wrapped the data in a `{success, result}` envelope; `mcp-bash migrate --write` rewrites it. <!-- lint-api-usage: allow -->
 
 ### 4.9 Progress passthrough from subprocesses
 
