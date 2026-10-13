@@ -5,7 +5,7 @@ All notable changes to mcp-bash-framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.9.2] - 2026-10-13
 
 ### Behaviour changes to check before upgrading
 - **Error results from tools with an `outputSchema` have no `structuredContent`**: when a tool that declares an `outputSchema` returns an error result carrying `structuredContent` (the `{success: false, error}` envelope from `mcp_error` and `mcp_result_error`, or JSON output with a non-zero exit), the server now drops `structuredContent` and moves the envelope's `error` to `_meta["mcpbash/error"]` (`type`, `message`, `hint`, and `data`, or the error's other fields as `data`). The TypeScript SDK client, which Claude Desktop uses, checks `structuredContent` against the `outputSchema` on error results too, so those errors failed in Desktop instead of reaching the model. The text content is unchanged. Tools without an `outputSchema` are unchanged. <!-- lint-api-usage: allow -->
