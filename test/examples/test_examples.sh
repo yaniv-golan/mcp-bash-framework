@@ -66,15 +66,12 @@ run_example_suite() {
 			*.json)
 				tool_name="$(jq -r '.name // empty' "${meta_file}" 2>/dev/null || true)"
 				;;
-			*.yaml | *.yml)
-				tool_name="$(grep -E '^[[:space:]]*name:' "${meta_file}" 2>/dev/null | head -n1 | sed 's/^[[:space:]]*name:[[:space:]]*//' | tr -d '"' || true)"
-				;;
 			esac
 			tool_name="${tool_name%$'\r'}"
 			if [ -n "${tool_name}" ]; then
 				break
 			fi
-		done < <(find "${MCPBASH_HOME}/examples/${example_id}/tools" -maxdepth 2 -type f \( -name '*.meta.json' -o -name '*.meta.yaml' -o -name '*.meta.yml' \) | sort)
+		done < <(find "${MCPBASH_HOME}/examples/${example_id}/tools" -maxdepth 2 -type f \( -name '*.meta.json' \) | sort)
 	fi
 
 	cat <<'JSON' >"${workdir}/requests.ndjson"
