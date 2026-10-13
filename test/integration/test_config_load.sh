@@ -118,8 +118,8 @@ REQ
 run_server "${PROJECT_ROOT}" "${TEST_TMPDIR}/req2.jsonl" "${TEST_TMPDIR}/resp2.jsonl"
 
 # Verify it returned an error with the message about missing secret
-assert_ndjson_has "${TEST_TMPDIR}/resp2.jsonl" '.id == 2 and .error.code == -32602'
-assert_ndjson_has "${TEST_TMPDIR}/resp2.jsonl" '.id == 2 and (.error.message | contains("secret"))'
+assert_ndjson_has "${TEST_TMPDIR}/resp2.jsonl" '.id == 2 and .result.isError == true and .result._meta["mcpbash/error"].type == "invalid_args"'
+assert_ndjson_has "${TEST_TMPDIR}/resp2.jsonl" '.id == 2 and (.result._meta["mcpbash/error"].message | contains("secret"))'
 
 echo "✓ Test 2: Tool fails gracefully with missing config"
 

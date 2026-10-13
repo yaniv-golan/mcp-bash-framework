@@ -8,7 +8,9 @@ MIG_SCOPE="project-sh"
 MIG_SUMMARY="mcp_fail CODE MESSAGE (a protocol error the model can't see) is removed in 2.0"
 MIG_FIX='mcp_fail --type TYPE "MESSAGE" [--hint TEXT] [--data JSON]'
 # Auto for -32602/-32603 with a single message argument; other codes, a
-# variable code, a data argument or the one-argument form are manual.
+# variable code or a data argument are manual. The 2.0 message forms
+# (mcp_fail MESSAGE [--hint T] [--data J], mcp_fail -- MESSAGE) are not
+# findings: --type is optional in 2.0.
 mig_detect() {
 	local line kind text
 	mig_grep_word mcp_fail "$1" | while IFS=$'\t' read -r line kind text; do
@@ -21,7 +23,28 @@ mig_detect() {
 				printf '%s\tmanual\t%s\n' "${line}" "${text}"
 			fi
 			;;
-		*) printf '%s\tmanual\t%s\n' "${line}" "${text}" ;;
+		*)
+			local rest first argc
+			rest="${text#*mcp_fail}"
+			rest="${rest#"${rest%%[![:space:]]*}"}"
+			first="${rest%%[[:space:]]*}"
+			argc="$(mig_call_argc mcp_fail "${text}")"
+			case "${first}" in
+			--*) continue ;;
+			[-+0-9]*) printf '%s\tmanual\t%s\n' "${line}" "${text}" ;;
+			*)
+				# A message alone, or a message with --hint/--data, is the
+				# 2.0 form; two positional arguments may be CODE MESSAGE.
+				case "${argc}" in
+				'' | 0 | 1) continue ;;
+				esac
+				case "${text}" in
+				*' --hint'* | *' --data'*) continue ;;
+				esac
+				printf '%s\tmanual\t%s\n' "${line}" "${text}"
+				;;
+			esac
+			;;
 		esac
 	done
 }

@@ -356,29 +356,18 @@ mcp_args_get() {
 # stdout can't carry it. The non-zero exit ends the subshell and, under
 # set -e, the tool; either way the framework then returns this result as the
 # tool's result. Outside the framework the result is printed instead.
-# If tool-error.sh isn't loaded (tool-sdk.sh copied alone), fall back to the
-# 1.x JSON-RPC error: -32602 for invalid_args, -32603 otherwise.
+# If tool-error.sh isn't loaded (tool-sdk.sh copied alone), the result is a
+# bare error result with the message as its text.
 __mcp_sdk_end_with_error() {
 	local err_type="${1:-internal}"
 	local message="${2:-Tool failed}"
 	shift 2 2>/dev/null || shift $#
-	if ! declare -F mcp_tool_error_result >/dev/null 2>&1; then
-		local fallback_data="" arg
-		while [ $# -gt 0 ]; do
-			arg="$1"
-			shift
-			if [ "${arg}" = "--data" ]; then
-				fallback_data="${1-}"
-				shift 2>/dev/null || true
-			fi
-		done
-		if [ "${err_type}" = "invalid_args" ]; then
-			mcp_fail -32602 "${message}" "${fallback_data}"
-		fi
-		mcp_fail -32603 "${message}" "${fallback_data}"
-	fi
 	local result
-	result="$(mcp_tool_error_result "${err_type}" "${message}" "$@")"
+	if declare -F mcp_tool_error_result >/dev/null 2>&1; then
+		result="$(mcp_tool_error_result "${err_type}" "${message}" "$@")"
+	else
+		result="{\"content\":[{\"type\":\"text\",\"text\":$(__mcp_sdk_json_escape "${message}")}],\"isError\":true}"
+	fi
 	if [ -n "${MCP_TOOL_ERROR_FILE:-}" ] && [ -w "${MCP_TOOL_ERROR_FILE}" ] 2>/dev/null; then
 		printf '%s' "${result}" >"${MCP_TOOL_ERROR_FILE}" 2>/dev/null || true
 	else
@@ -388,8 +377,7 @@ __mcp_sdk_end_with_error() {
 	exit 1
 }
 
-# The argument helpers below report bad arguments this way; the public
-# mcp_fail_invalid_args keeps its 1.x JSON-RPC error.
+# The argument helpers below report bad arguments this way.
 __mcp_sdk_fail_invalid_args() {
 	__mcp_sdk_end_with_error invalid_args "${1:-Invalid params}"
 }
@@ -683,56 +671,54 @@ mcp_with_retry() {
 }
 
 mcp_fail() {
-	# Frozen form (mcp-bash 1.8+, unchanged in 2.0):
-	#   mcp_fail --type TYPE MESSAGE [--hint TEXT] [--data JSON]
-	# Ends the tool with an error result the model can see (isError: true),
+	# Ends the tool with an error result the model can read (isError: true),
 	# also when called inside $(...), e.g. from a helper whose output is
-	# captured (see __mcp_sdk_end_with_error). The numeric form below
-	# (mcp_fail CODE MESSAGE [DATA]) is the 1.x protocol-error form and is
-	# removed in 2.0.
-	if [ "${1-}" = "--type" ]; then
+	# captured (see __mcp_sdk_end_with_error). Forms:
+	#   mcp_fail --type TYPE MESSAGE [--hint TEXT] [--data JSON]   frozen since 1.8
+	#   mcp_fail MESSAGE [--hint TEXT] [--data JSON]               type tool_failed
+	#   mcp_fail -- MESSAGE [--hint TEXT] [--data JSON]            MESSAGE taken literally
+	# The 1.x numeric form, mcp_fail CODE MESSAGE [DATA] (an integer followed by
+	# a second positional argument), was a JSON-RPC error and is removed in 2.0.
+	# It still ends the tool with MESSAGE as the error text (type invalid_args
+	# for -32602, tool_failed otherwise), so the reason isn't lost, and says on
+	# stderr that it was removed. The code is never sent.
+	case "${1-}" in
+	--type)
 		local err_type="${2-}"
 		local err_message="${3-}"
 		shift 3 2>/dev/null || shift $#
 		__mcp_sdk_end_with_error "${err_type}" "${err_message}" "$@"
-	fi
-	local code="$1"
-	local message="${2:-}"
-	local data_raw="${3:-}"
-
-	if ! printf '%s' "${code}" | LC_ALL=C grep -Eq '^[-+]?[0-9]+$'; then
-		code="-32603"
-	fi
-	if [ -z "${message}" ]; then
-		message="Tool failed"
-	fi
-
-	local message_json
-	message_json="$(__mcp_sdk_json_escape "${message}")"
-
-	local data_json="null"
-	if [ -n "${data_raw}" ]; then
-		if command -v "${MCPBASH_JSON_TOOL_BIN:-}" >/dev/null 2>&1; then
-			local compact
-			compact="$(printf '%s' "${data_raw}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.' 2>/dev/null || true)"
-			[ -n "${compact}" ] && data_json="${compact}"
-		else
-			data_json="${data_raw}"
+		;;
+	--)
+		shift
+		;;
+	*)
+		if [ $# -ge 2 ] && printf '%s' "${1}" | LC_ALL=C grep -Eq '^[-+]?[0-9]+$'; then
+			case "${2}" in
+			--hint | --data) ;;
+			*)
+				local code="$1" message="${2:-Tool failed}" data_raw="${3:-}" numeric_type="tool_failed"
+				[ "${code}" = "-32602" ] && numeric_type="invalid_args"
+				printf 'mcp_fail CODE MESSAGE was removed in mcp-bash 2.0; use mcp_fail [--type TYPE] MESSAGE (run mcp-bash migrate)\n' >&2
+				if [ -n "${data_raw}" ]; then
+					__mcp_sdk_end_with_error "${numeric_type}" "${message}" --data "${data_raw}"
+				fi
+				__mcp_sdk_end_with_error "${numeric_type}" "${message}"
+				;;
+			esac
 		fi
-	fi
-
-	if [ -n "${MCP_TOOL_ERROR_FILE:-}" ] && [ -w "${MCP_TOOL_ERROR_FILE}" ] 2>/dev/null; then
-		printf '{"code":%s,"message":%s,"data":%s}\n' "${code}" "${message_json}" "${data_json}" >"${MCP_TOOL_ERROR_FILE}" 2>/dev/null || true
-	fi
-	printf '{"code":%s,"message":%s,"data":%s}\n' "${code}" "${message_json}" "${data_json}"
-	printf '%s\n' "${message}" >&2
-	exit 1
+		;;
+	esac
+	local fail_message="${1:-Tool failed}"
+	shift 2>/dev/null || true
+	__mcp_sdk_end_with_error tool_failed "${fail_message}" "$@"
 }
 
 mcp_fail_invalid_args() {
-	local message="${1:-Invalid params}"
-	local data="${2:-}"
-	mcp_fail -32602 "${message}" "${data}"
+	if [ -n "${2:-}" ]; then
+		__mcp_sdk_end_with_error invalid_args "${1:-Invalid params}" --data "$2"
+	fi
+	__mcp_sdk_end_with_error invalid_args "${1:-Invalid params}"
 }
 
 mcp_emit_text() {

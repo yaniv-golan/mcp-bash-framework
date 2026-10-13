@@ -92,6 +92,7 @@ TESTS=(
 	"test_env_mcp_names.sh"
 	"test_tools_errors.sh"
 	"test_registry_stale_cache_startup.sh"
+	"test_tools_error_model.sh"
 	"test_tools_refusals.sh"
 	"test_tools_schema.sh"
 	"test_prompts.sh"

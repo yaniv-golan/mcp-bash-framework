@@ -349,6 +349,10 @@ jobs:
             test_exit_stops_tools.sh
             test_zombie_server_helpers.sh
             test_resource_read_timeout.sh
+            test_tools_errors.sh
+            test_tools_error_model.sh
+            test_result_helpers.sh
+            test_tools_policy_denied.sh
         run: |
           set -euo pipefail
           unset MCPBASH_CI_MODE

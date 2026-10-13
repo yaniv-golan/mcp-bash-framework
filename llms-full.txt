@@ -143,9 +143,10 @@ mcp_result_json "$(printf '%s' "$result" | jq -c '.')"
   - `mcp_json_obj key1 "val1" key2 "val2" ...` → returns `{"key1":"val1","key2":"val2",...}` (all values treated as strings; odd arg count is a fatal error).
   - `mcp_json_arr "v1" "v2" ...` → returns `["v1","v2",...]` (all values treated as strings).
 - Errors:
-  - `mcp_fail --type TYPE "msg" [--hint TEXT] [--data JSON]` → ends the tool (inside `$(...)` it ends the substitution and the framework still delivers the result; the tool itself stops there only under `set -e`, otherwise write `x="$(…)" || exit 1`) with an `isError: true` result the model can read: the text is the message plus `\n\nHint: …`; details go in `_meta["mcpbash/error"]` (`{type, message, hint, data}`; no `structuredContent`). Types: `invalid_args`, `not_found`, `permission`, `policy_denied`, `timeout`, `unavailable`, `internal` (other strings are accepted).
+  - `mcp_fail --type TYPE "msg" [--hint TEXT] [--data JSON]` → ends the tool (inside `$(...)` it ends the substitution and the framework still delivers the result; the tool itself stops there only under `set -e`, otherwise write `x="$(…)" || exit 1`) with an `isError: true` result the model can read: the text is the message plus `\n\nHint: …`; details go in `_meta["mcpbash/error"]` (`{type, message, hint, data}`; no `structuredContent`). Types: `invalid_args`, `not_found`, `permission`, `policy_denied`, `timeout`, `unavailable`, `internal` (other strings are accepted). Without `--type` (`mcp_fail "msg" …`, since 2.0) the type is `tool_failed`; `mcp_fail -- "msg"` takes the message literally.
   - `mcp_tool_error_result TYPE "msg" [--hint TEXT] [--data JSON]` → prints the same result without ending the tool (advanced).
-  - 1.x helpers `mcp_result_success`, `mcp_result_error`, `mcp_error`, `mcp_fail CODE MSG`, `mcp_fail_invalid_args`, `mcp_emit_text`/`mcp_emit_json` still work in 1.x but are removed in 2.0; `mcp-bash migrate` rewrites them. <!-- lint-api-usage: allow -->
+  - 1.x helpers `mcp_result_success`, `mcp_result_error`, `mcp_error`, `mcp_fail_invalid_args`, `mcp_emit_text`/`mcp_emit_json` are removed in 2.0; `mcp-bash migrate` rewrites them. The numeric `mcp_fail CODE MSG` is removed too: in 2.0 it ends the tool with MSG as an error result (no code sent) and notes the removal on stderr. <!-- lint-api-usage: allow -->
+  - Every tool failure is an error result in 2.0, never a JSON-RPC error: a non-zero exit (type `tool_failed`; text = a stdout `{"code","message"}` object's message, else the stderr tail, else the end of stdout), output over the size limits (`output_too_large`), output that isn't JSON or doesn't match `outputSchema` (`output_schema`). `_meta.exitCode` is the real exit status. `mcp-bash run-tool` exits 1 for every error result. <!-- lint-api-usage: allow -->
   - For a tool that declares an `outputSchema`, the server drops `structuredContent` from its error results (e.g. the `mcp_error`/`mcp_result_error` envelope) and moves the envelope's `error` to `_meta["mcpbash/error"]` (since 1.9.2): the TypeScript SDK client checks `structuredContent` against the schema even on errors. <!-- lint-api-usage: allow -->
 - Progress & cancellation:
   - `mcp_progress <0-100> "msg" [total]` → progress notifications.
@@ -285,16 +286,15 @@ mcp_result_json "$(printf '%s' "$result" | jq -c '.')"
   - `-32600` → invalid request (missing method, disallowed batch arrays).
   - `-32601` → method not found / unsupported method.
   - `-32602` → invalid params (bad args, invalid cursor, invalid log level).
-  - `-32603` → internal error (provider failure, output size limit, registry errors, empty handler response).
+  - `-32603` → internal error (provider failure, registry errors, empty handler response, an `outputSchema` check that could not run).
   - `-32000` → server not initialized (`initialize` not completed). Unknown methods before `initialize`, such as a client's `server/discover` probe, get `-32601`.
-  - `-32001` → tool cancelled (SIGTERM/INT).
   - `-32002` → resource not found (`resources/read`).
   - `-32003` → server shutting down (rejecting new work).
   - `-32005` → `exit` called before `shutdown` requested.
 - Tool vs resource failures:
-  - Tool failures: use `isError=true` with `_meta.exitCode` and captured stderr; client sees a successful JSON-RPC response with error payload.
+  - Tool failures: always `isError=true` with `_meta["mcpbash/error"]`, `_meta.exitCode` and captured stderr; client sees a successful JSON-RPC response with error payload. A cancelled call gets no response.
   - Resource failures: use JSON-RPC error objects; no `isError` flag.
-  - Oversized tool/resource outputs: response is replaced with `-32603` error; partial payloads are never returned.
+  - Oversized outputs: a tool's gives an `output_too_large` error result, a resource's a `-32603` error; partial payloads are never returned.
 - Provider exit code mapping (from `docs/ERRORS.md`):
   - `file.sh`: exit `2` (outside allowed roots, or the read could not be verified; the provider's stderr is the message) → `-32603`; exit `3` (missing file) → `-32002`; exit `5` (reading failed) or `6` (file exceeds `MCPBASH_MAX_RESOURCE_BYTES`) → `-32603`.
   - `git.sh`: exit `4` (invalid URI or missing git) → `-32602`; exit `5` (clone/fetch failure) → `-32603`.

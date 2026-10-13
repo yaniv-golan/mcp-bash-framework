@@ -79,6 +79,12 @@ mcp_fail --type invalid_args "Date must be in the future" \
 
 # Report a missing required parameter yourself so the model sees it:
 mcp_fail --type invalid_args "date parameter is required" --hint "Pass date as YYYY-MM-DD"
+
+# Without --type the error type is tool_failed (since 2.0):
+mcp_fail "git push was rejected" --hint "pull first"
+
+# -- takes the next argument as the message, even if it is a number or starts with --:
+mcp_fail -- "${message}"
 ```
 
 `--data` must be valid JSON; with jq/gojq available, invalid data is dropped. To build the same result without ending the tool (for example to post-process it), call `mcp_tool_error_result TYPE MESSAGE [--hint TEXT] [--data JSON]`, which prints it and returns 0.
@@ -94,6 +100,9 @@ mcp_fail --type invalid_args "date parameter is required" --hint "Pass date as Y
 | `timeout` | Operation timed out |
 | `unavailable` | A dependency (API, CLI, network) is unavailable; retrying later may work |
 | `internal` | Unexpected/fallback error |
+| `tool_failed` | The tool failed: `mcp_fail` without `--type`, or a non-zero exit (set by the server) |
+| `output_too_large` | The tool's stdout or stderr went over `MCPBASH_MAX_TOOL_OUTPUT_SIZE` / `MCPBASH_MAX_TOOL_STDERR_SIZE` (set by the server) |
+| `output_schema` | The tool's output is not valid JSON, is empty, or doesn't match its `outputSchema` (set by the server) |
 
 Other type strings are accepted (for example `cli_error` or `network_error`); prefer the documented ones so clients can rely on them.
 
@@ -123,8 +132,10 @@ mcp_result_text "Deleted 3 files"
 
 Unlike `mcp_fail --type`, these helpers **do not end the tool**: in an early-return branch, follow them with `exit 0`. With `mcp_result_json` the tool's `outputSchema` describes the JSON itself (there is no `{success, result}` wrapper). See [BEST-PRACTICES.md §4.8](BEST-PRACTICES.md#48-building-calltoolresult-responses) for full documentation.
 
-The 1.x helpers `mcp_result_success`, `mcp_result_error`, `mcp_error`, `mcp_fail_invalid_args` and numeric `mcp_fail CODE MESSAGE` still work in 1.x but are removed in 2.0; `mcp-bash migrate` lists them and rewrites the ones it can. <!-- lint-api-usage: allow -->
-`mcp_result_success`/`mcp_result_error` wrap data in a `{success, result}`/`{success, error}` envelope, `mcp_error` and `mcp_result_*` do not end the tool, and the numeric `mcp_fail` form returns a JSON-RPC protocol error the model can't see. <!-- lint-api-usage: allow -->
+The 1.x helpers `mcp_result_success`, `mcp_result_error`, `mcp_error` and `mcp_fail_invalid_args` are removed in 2.0; `mcp-bash migrate` lists them and rewrites the ones it can. <!-- lint-api-usage: allow -->
+`mcp_result_success`/`mcp_result_error` wrap data in a `{success, result}`/`{success, error}` envelope, and `mcp_error` and `mcp_result_*` do not end the tool. <!-- lint-api-usage: allow -->
+
+The numeric form `mcp_fail CODE MESSAGE [DATA]` (an integer, then a second argument) was a JSON-RPC protocol error in 1.x, which the model never saw. 2.0 removes it: the tool still ends with `MESSAGE` as an error result (type `invalid_args` for `-32602`, `tool_failed` otherwise), the code is not sent, and the tool's stderr says the form was removed. Run `mcp-bash migrate` to rewrite it. <!-- lint-api-usage: allow -->
 
 When a tool that declares an `outputSchema` returns an error result with `structuredContent` (as `mcp_error` and `mcp_result_error` do), the server drops `structuredContent` and moves its `error` object to `_meta["mcpbash/error"]` (`type`, `message`, `hint`, and `data` or the error's other fields), since 1.9.2. Clients that check `structuredContent` against the schema on error results too, such as the TypeScript SDK client used by Claude Desktop, rejected the envelope. Tools without an `outputSchema` are unchanged. <!-- lint-api-usage: allow -->
 
@@ -134,9 +145,14 @@ For validation that happens early in a tool (before doing real work), prefer ret
 
 ## General Error Handling
 
-- Tool failures return `isError=true` with `_meta.exitCode` and captured stderr; error responses include `error.data.exitCode`, `error.data.stderrTail` (bounded), and `error.data.traceLine` when tracing is enabled, with the same `_meta.stderr` for compatibility. Disable capture with `MCPBASH_TOOL_STDERR_CAPTURE=false`; adjust the tail cap with `MCPBASH_TOOL_STDERR_TAIL_LIMIT` (default 4096 bytes).
+- **Every tool failure is an error result** (since 2.0): `isError: true`, no `structuredContent`, `_meta["mcpbash/error"]`, `_meta.exitCode` (the tool's real exit status) and `_meta.stderr` (the captured stderr tail). Once a tool has run, the server never answers with a JSON-RPC error for something the tool did. In 1.x a non-zero exit, a `{"code", "message"}` object on stdout, output over the size limits and an `outputSchema` mismatch were JSON-RPC errors (`-32603`, or the code the tool printed), which the model couldn't see.
+  - **Non-zero exit:** type `tool_failed`, `data` = `{exitCode, traceLine?}`. The text is, in order: the `message` of a 1.x error object the tool printed on stdout (`{"code": N, "message": "..."}`; the code is ignored), else the stderr tail, else the end of stdout, else "Tool failed with exit code N". It is capped at `MCPBASH_TOOL_STDERR_TAIL_LIMIT` bytes. A tool that printed its own `CallToolResult` keeps it (marked `isError`).
+  - **Output over the limits:** type `output_too_large`, `data` = `{limitBytes, bytes}`.
+  - **`outputSchema`:** output that isn't JSON, is empty or doesn't match gives type `output_schema`. Only a failure of the check itself (the JSON tool failing to run) is a JSON-RPC `-32603`.
+  - Disable stderr capture with `MCPBASH_TOOL_STDERR_CAPTURE=false`; adjust the tail cap with `MCPBASH_TOOL_STDERR_TAIL_LIMIT` (default 4096 bytes).
+- `mcp-bash run-tool` exits 1 for every error result, including a policy denial and a timeout, and 0 otherwise (since 2.0; before, only a policy denial and a JSON-RPC error exited 1).
 - **Timeouts** return an error result like any other tool error (since 1.9.1): `isError=true`, no `structuredContent`, and `_meta["mcpbash/error"]` with `type: "timeout"`, the `message`, and `data` holding the timeout `reason` (`fixed`, `idle`, or `max_exceeded`), `timeoutSecs` and `exitCode`. When progress-aware timeout is enabled, `data` also has `progressExtendsTimeout` and `maxTimeoutSecs`. If `timeoutHint` is configured in `tool.meta.json`, it is the `hint` and the text ends with `Hint: <timeoutHint>`. `_meta.exitCode` and `_meta.stderr` are set as for other tool failures. Before 1.9.1 the details were in `structuredContent.error` (with `success: false`), which a tool's `outputSchema` doesn't describe, and the hint followed `Suggestion:`.
-- Cancellation surfaces as JSON-RPC error (`-32001`) as it is client-initiated and not actionable by the LLM.
+- A cancelled call gets no response: the client asked to drop it.
 - Resource failures use JSON-RPC errors (no `isError` flag) consistent with the MCP spec: invalid cursors/params return `-32602`, provider failures and oversized payloads return `-32603`.
 - Malformed tool output triggers a substitution with an error payload and a logged incident.
 - Registry or discovery errors fall back to minimal capabilities while emitting `notifications/message` with severity `error`.
@@ -156,8 +172,7 @@ Example `resources/read` error payload:
 | `-32600` | Invalid request (missing method, batch arrays when disabled) | `lib/core.sh` |
 | `-32601` | Unknown or disallowed method (`notifications/message` from client, missing handler) | `lib/core.sh`, `handlers/*` |
 | `-32602` | Invalid params (non-string `protocolVersion`, invalid cursor/log level, missing/invalid remote token) | `handlers/lifecycle.sh`, `handlers/completion.sh`, `handlers/logging.sh`, `lib/auth.sh`, registry cursors |
-| `-32603` | Internal errors (empty handler response, registry size/parse failures, tool output/stderr over limits, provider failures, a request that timed out: `<method> timed out after Ns`) | `lib/core.sh`, `lib/tools.sh`, `lib/resources.sh`, `lib/prompts.sh` |
-| `-32001` | Tool cancelled (SIGTERM/INT from client) | `lib/tools.sh` |
+| `-32603` | Internal errors (empty handler response, registry size/parse failures, provider failures, a request that timed out: `<method> timed out after Ns`, an `outputSchema` check that could not run) | `lib/core.sh`, `lib/tools.sh`, `lib/resources.sh`, `lib/prompts.sh` |
 | `-32000` | Server not initialized (a request for a method the server implements, other than `ping`, before `initialize` completes; an unknown method such as `server/discover` gets `-32601` instead) | `lib/core.sh` |
 | `-32002` | Resource not found (`resources/read`) | `lib/resources.sh` |
 | `-32003` | Server shutting down (rejecting new work) | `lib/core.sh` |
@@ -196,5 +211,5 @@ Size guardrails: `mcp_core_guard_response_size` rejects oversized responses with
 - A failed write to stdout means the client stopped reading: the server stops at once (from the main loop or from a tool worker) and logs "the client stopped reading, shutting down" to stderr. Tools still running are stopped (TERM, then KILL after 1 second), as on SIGTERM/SIGINT or a dead parent. `MCPBASH_ALLOW_CORRUPT_STDOUT` does not change this.
 - Stdout corruption (multi-line payloads, non-UTF-8 payloads) is counted; when the count within `MCPBASH_CORRUPTION_WINDOW` reaches `MCPBASH_CORRUPTION_THRESHOLD`, the server stops.
 - Registry refresh enforces `MCPBASH_REGISTRY_MAX_BYTES`; exceeding the limit or encountering parse failures returns `-32603` and preserves the previous registry snapshot.
-- Resource and tool payloads are capped by `MCPBASH_MAX_RESOURCE_BYTES` and `MCPBASH_MAX_TOOL_OUTPUT_SIZE`/`MCPBASH_MAX_TOOL_STDERR_SIZE`; breaches return `-32603` with a logged diagnostic.
+- Resource payloads are capped by `MCPBASH_MAX_RESOURCE_BYTES` (a breach returns `-32603`); tool output by `MCPBASH_MAX_TOOL_OUTPUT_SIZE`/`MCPBASH_MAX_TOOL_STDERR_SIZE` (a breach is an `output_too_large` error result). Both log a diagnostic.
 - Minimal mode (missing JSON tooling or `MCPBASH_FORCE_MINIMAL=true`) accepts lifecycle, ping, and logging; other methods return `-32601` to avoid partial/ambiguous behavior.

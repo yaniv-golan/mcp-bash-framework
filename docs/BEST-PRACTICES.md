@@ -943,7 +943,7 @@ source "${MCP_SDK:?}/tool-sdk.sh"
 
 count="$(mcp_args_get '.count // 10')"
 
-# ❌ DON'T fail with a bare exit code or a JSON-RPC error: the model sees only "tool failed"
+# ❌ DON'T fail with a bare exit code: the model only sees your stderr (or "Tool failed with exit code N")
 # ✅ DO return an error result the model can read and act on (this ends the tool)
 if [ "${count}" -lt 1 ]; then
   mcp_fail --type invalid_args "count must be between 1 and 100 (received: ${count})" \

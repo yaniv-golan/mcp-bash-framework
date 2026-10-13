@@ -117,10 +117,14 @@ assert_golden() {
 	assert_golden tool_error_result "${out}"
 }
 
-@test "contract: legacy mcp_fail numeric form is unchanged in 1.x" {
-	run sdk_run full mcp_fail -32602 "bad args"
+# Replaces the 1.x-only case for the numeric form, which 2.0 removes: the
+# tool still ends with its message, as an error result, and a note on stderr
+# tells the developer to migrate. Not a frozen row.
+@test "contract: removed mcp_fail numeric form ends the tool with its message" {
+	run --separate-stderr sdk_run full mcp_fail -32602 "bad args"
 	assert_failure
-	assert_equal "$(printf '%s\n' "${output}" | head -n 1 | "${JQ}" -c '{code,message}')" '{"code":-32602,"message":"bad args"}'
+	assert_equal "$(printf '%s\n' "${output}" | head -n 1 | "${JQ}" -c '[.isError, ._meta["mcpbash/error"].type, .content[0].text, (.code // null)]')" '[true,"invalid_args","bad args",null]'
+	[[ "${stderr}" == *"removed in mcp-bash 2.0"* ]]
 }
 
 @test "contract: frozen helpers give the same output under bash 3.2" {

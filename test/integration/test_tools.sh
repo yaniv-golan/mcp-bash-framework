@@ -374,10 +374,13 @@ JSON
 run_server "${FAIL_ROOT}" "${FAIL_ROOT}/requests.ndjson" "${FAIL_ROOT}/responses.ndjson"
 
 fail_resp="$(grep '"id":"fail-call"' "${FAIL_ROOT}/responses.ndjson" | head -n1)"
-fail_code="$(echo "$fail_resp" | jq '.error.code')"
-fail_message="$(echo "$fail_resp" | jq -r '.error.message')"
-fail_hint="$(echo "$fail_resp" | jq -r '.error.data.hint // empty')"
+# 2.0: an invalid_args error result, not a JSON-RPC -32602 error.
+fail_is_error="$(echo "$fail_resp" | jq -r '.result.isError')"
+fail_type="$(echo "$fail_resp" | jq -r '.result._meta["mcpbash/error"].type')"
+fail_message="$(echo "$fail_resp" | jq -r '.result._meta["mcpbash/error"].message')"
+fail_hint="$(echo "$fail_resp" | jq -r '.result._meta["mcpbash/error"].data.hint // empty')"
 
-test_assert_eq "$fail_code" "-32602"
+test_assert_eq "$fail_is_error" "true"
+test_assert_eq "$fail_type" "invalid_args"
 test_assert_eq "$fail_message" "bad input"
 test_assert_eq "$fail_hint" "fix it"
