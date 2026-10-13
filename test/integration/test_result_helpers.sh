@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2034  # Used by test runner for reporting.
-TEST_DESC="SDK CallToolResult helpers (mcp_result_success, mcp_result_error, mcp_json_truncate)."
+TEST_DESC="SDK CallToolResult helpers (mcp_result_success, mcp_fail --type, mcp_json_truncate)."
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -58,12 +58,12 @@ mcp_result_success "$data"
 TOOL
 chmod +x "${PROJECT_ROOT}/tools/success-test/tool.sh"
 
-# Create a tool that uses mcp_result_error
+# Create a tool that fails with mcp_fail --type
 mkdir -p "${PROJECT_ROOT}/tools/error-test"
 cat <<'METADATA' >"${PROJECT_ROOT}/tools/error-test/tool.meta.json"
 {
   "name": "error-test",
-  "description": "Test mcp_result_error helper",
+  "description": "Test mcp_fail --type",
   "arguments": {
     "type": "object",
     "properties": {
@@ -82,7 +82,7 @@ source "${MCP_SDK}/tool-sdk.sh"
 
 error_type=$(mcp_args_require '.error_type')
 message=$(mcp_args_require '.message')
-mcp_result_error "$("${MCPBASH_JSON_TOOL_BIN}" -n --arg t "$error_type" --arg m "$message" '{type: $t, message: $m}')"
+mcp_fail --type "${error_type}" "${message}"
 TOOL
 chmod +x "${PROJECT_ROOT}/tools/error-test/tool.sh"
 
@@ -135,8 +135,8 @@ assert_ndjson_has "${TEST_TMPDIR}/success_response.ndjson" '.id == 2 and .result
 assert_ndjson_has "${TEST_TMPDIR}/success_response.ndjson" '.id == 2 and .result.structuredContent.result.foo == "bar"'
 assert_ndjson_has "${TEST_TMPDIR}/success_response.ndjson" '.id == 2 and .result.isError == false'
 
-# --- Test: mcp_result_error returns error envelope ---
-printf ' -> mcp_result_error returns error envelope with isError=true\n'
+# --- Test: mcp_fail --type returns an error result ---
+printf ' -> mcp_fail --type returns an error result with isError=true\n'
 
 cat <<'EOF' >"${TEST_TMPDIR}/error_request.ndjson"
 {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}
@@ -147,8 +147,8 @@ EOF
 run_server "${PROJECT_ROOT}" "${TEST_TMPDIR}/error_request.ndjson" "${TEST_TMPDIR}/error_response.ndjson"
 
 assert_ndjson_has "${TEST_TMPDIR}/error_response.ndjson" '.id == 2 and .result.isError == true'
-assert_ndjson_has "${TEST_TMPDIR}/error_response.ndjson" '.id == 2 and .result.structuredContent.success == false'
-assert_ndjson_has "${TEST_TMPDIR}/error_response.ndjson" '.id == 2 and .result.structuredContent.error.type == "not_found"'
+assert_ndjson_has "${TEST_TMPDIR}/error_response.ndjson" '.id == 2 and (.result | has("structuredContent") | not)'
+assert_ndjson_has "${TEST_TMPDIR}/error_response.ndjson" '.id == 2 and .result._meta["mcpbash/error"].type == "not_found"'
 assert_ndjson_has "${TEST_TMPDIR}/error_response.ndjson" '.id == 2 and .result.content[0].text == "User not found"'
 
 # --- Test: mcp_json_truncate truncates large arrays ---

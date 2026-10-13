@@ -43,21 +43,6 @@ jq_get() {
 	jq_check "$result" '.structuredContent.success == true'
 }
 
-@test "sdk_result_helpers_minimal: mcp_result_error produces valid JSON even with invalid input" {
-	result=$(mcp_result_error 'this is not json')
-	# Must be valid JSON (this is the critical assertion)
-	printf '%s' "$result" | "${JQ_BIN}" -e '.' >/dev/null 2>&1
-	jq_check "$result" '.isError == true'
-	raw=$(jq_get "$result" '.structuredContent.error.raw')
-	assert_equal "this is not json" "$raw"
-}
-
-@test "sdk_result_helpers_minimal: mcp_result_error handles empty input" {
-	result=$(mcp_result_error '')
-	printf '%s' "$result" | "${JQ_BIN}" -e '.' >/dev/null 2>&1
-	jq_check "$result" '.isError == true'
-}
-
 @test "sdk_result_helpers_minimal: mcp_json_truncate adds warning but returns data" {
 	result=$(mcp_json_truncate '[1,2,3]' 10)
 	printf '%s' "$result" | "${JQ_BIN}" -e '.' >/dev/null 2>&1

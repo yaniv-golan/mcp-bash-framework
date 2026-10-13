@@ -94,6 +94,7 @@ TESTS=(
 	"test_tools_stderr_invalid_utf8.sh"
 	"test_registry_stale_cache_startup.sh"
 	"test_tools_error_model.sh"
+	"test_removed_api.sh"
 	"test_tool_ui_capability.sh"
 	"test_live_progress_logs.sh"
 	"test_modern_core.sh"

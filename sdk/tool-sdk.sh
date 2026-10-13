@@ -718,13 +718,6 @@ mcp_fail() {
 	__mcp_sdk_end_with_error tool_failed "${fail_message}" "$@"
 }
 
-mcp_fail_invalid_args() {
-	if [ -n "${2:-}" ]; then
-		__mcp_sdk_end_with_error invalid_args "${1:-Invalid params}" --data "$2"
-	fi
-	__mcp_sdk_end_with_error invalid_args "${1:-Invalid params}"
-}
-
 mcp_emit_text() {
 	local text="$1"
 	printf '%s' "${text}"
@@ -1376,7 +1369,7 @@ mcp_result_success() {
 
 	# Guard: reject empty input
 	if [ -z "$data" ]; then
-		mcp_result_error '{"type":"internal_error","message":"Empty data passed to mcp_result_success"}'
+		mcp_tool_error_result internal "Empty data passed to mcp_result_success"
 		return 0 # Always return 0 after emitting CallToolResult
 	fi
 
@@ -1423,7 +1416,7 @@ mcp_result_success() {
             end
         ' 2>/dev/null || {
 			# jq failed (invalid JSON)
-			mcp_result_error '{"type":"internal_error","message":"Invalid JSON passed to mcp_result_success"}'
+			mcp_tool_error_result internal "Invalid JSON passed to mcp_result_success"
 		}
 	else
 		# Minimal mode: wrap blindly (can't validate or parse)
@@ -1448,160 +1441,6 @@ mcp_result_success() {
 		fi
 	fi
 	return 0
-}
-
-# mcp_result_error <error_json>
-# Emit MCP CallToolResult with error envelope
-#
-# Arguments:
-#   error_json - Error object with 'type' and 'message' fields
-#
-# Output: CallToolResult JSON to stdout
-# Returns: 0 always (MCP tool errors are expressed via isError, not exit codes)
-mcp_result_error() {
-	local error_json="$1"
-
-	# Guard: handle empty input
-	if [ -z "$error_json" ]; then
-		error_json='{"type":"internal_error","message":"Unknown error (empty error object)"}'
-	fi
-
-	# Extract message for text content (with fallback)
-	local message
-	if [ "${MCPBASH_MODE:-full}" != "minimal" ] && [ -n "${MCPBASH_JSON_TOOL_BIN:-}" ]; then
-		# Validate and normalize error_json:
-		# 1. Must be valid JSON (single value, not a stream)
-		# 2. Must be an object with type/message fields
-		# If not, wrap appropriately to guarantee well-formed error structure
-		error_json=$(printf '%s' "$error_json" | "${MCPBASH_JSON_TOOL_BIN}" -c -s '
-            if length != 1 then
-                {type:"internal_error", message:"Error payload must be single JSON value", raw:("multiple values: \(length)")}
-            elif .[0] | type != "object" then
-                {type:"internal_error", message:"Error payload must be an object", raw:(.[0] | tostring)}
-            else
-                .[0] + {type:(.[0].type // "internal_error"), message:(.[0].message // "Unknown error")}
-            end
-        ' 2>/dev/null) || {
-			# jq failed entirely (invalid JSON) - wrap raw string
-			local escaped_raw
-			escaped_raw=$(printf '%s' "$1" | "${MCPBASH_JSON_TOOL_BIN}" -Rs '.')
-			error_json=$(printf '{"type":"internal_error","message":"Invalid error JSON passed to mcp_result_error","raw":%s}' "$escaped_raw")
-		}
-
-		# Stream everything via stdin to avoid argv pressure (even for large error messages)
-		# Use tostring to ensure content[].text is always a string (even if .message is non-string)
-		printf '%s' "$error_json" | "${MCPBASH_JSON_TOOL_BIN}" -c '
-            . as $err |
-            (($err.message // "Unknown error") | tostring) as $msg |
-            {
-                content: [{type: "text", text: $msg}],
-                structuredContent: {success: false, error: $err},
-                isError: true
-            }
-        '
-	else
-		# Minimal mode: MUST produce valid JSON even if error_json is invalid
-		# Do NOT embed raw error_json; always wrap safely to guarantee valid output
-		message=$(printf '%s' "$error_json" | sed -n 's/.*"message"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
-		message="${message:-Unknown error}"
-		# __mcp_sdk_json_escape returns quoted string, use directly
-		local escaped_message escaped_raw
-		escaped_message=$(__mcp_sdk_json_escape "$message")
-		escaped_raw=$(__mcp_sdk_json_escape "$error_json")
-		# Wrap error_json as escaped string to guarantee valid JSON output
-		printf '{"content":[{"type":"text","text":%s}],"structuredContent":{"success":false,"error":{"type":"internal_error","message":%s,"raw":%s}},"isError":true}\n' \
-			"$escaped_message" "$escaped_message" "$escaped_raw"
-	fi
-	return 0
-}
-
-# mcp_error - Convenience wrapper for tool execution errors
-# Usage: mcp_error <type> <message> [--hint <hint>] [--data <json>]
-# Always returns 0. Errors expressed via isError flag in response.
-#
-# Note: --data must be valid JSON. In minimal mode, invalid JSON will corrupt output.
-# Caller is responsible for ensuring --data contains valid JSON.
-# Note: Flags (--hint, --data) must include a value. Missing values cause undefined behavior.
-mcp_error() {
-	local error_type="${1:-internal_error}"
-	local message="${2:-Unknown error}"
-	# Guard: shift 2 fails if <2 args; fallback shifts remaining
-	shift 2 || shift $#
-
-	local hint=""
-	local data=""
-
-	# Parse optional flags
-	while [[ $# -gt 0 ]]; do
-		case "$1" in
-		--hint)
-			hint="$2"
-			shift 2
-			;;
-		--data)
-			data="$2"
-			shift 2
-			;;
-		*)
-			# Silently ignore unknown flags for forward compatibility
-			shift
-			;;
-		esac
-	done
-
-	# Build error JSON
-	local error_json
-	if [ "${MCPBASH_MODE:-full}" != "minimal" ] && [ -n "${MCPBASH_JSON_TOOL_BIN:-}" ]; then
-		# Full mode: use jq for proper JSON construction
-		# Validate --data if provided (--argjson fails with non-zero exit on invalid JSON)
-		local data_json="null"
-		if [[ -n "$data" ]]; then
-			if data_json=$(printf '%s' "$data" | "${MCPBASH_JSON_TOOL_BIN}" -c '.' 2>/dev/null); then
-				: # valid JSON, data_json now holds normalized form
-			else
-				# Invalid JSON - wrap raw value for debugging
-				data_json=$(printf '%s' "$data" | "${MCPBASH_JSON_TOOL_BIN}" -c -R -s '{"_invalid_json": .}')
-			fi
-		fi
-		# Message and data go on stdin: either can outgrow one argument.
-		error_json=$({
-			printf '%s' "$message" | "${MCPBASH_JSON_TOOL_BIN}" -R -s '.'
-			printf '\n%s' "$data_json"
-		} | "${MCPBASH_JSON_TOOL_BIN}" -c -s \
-			--arg type "$error_type" \
-			--arg hint "$hint" \
-			'.[0] as $message | .[1] as $data
-       | {type: $type, message: $message} +
-       (if $hint != "" then {hint: $hint} else {} end) +
-       (if $data != null then {data: $data} else {} end)')
-	else
-		# Minimal mode: manual JSON construction
-		# __mcp_sdk_json_escape returns quoted strings like "value"
-		local escaped_type escaped_message escaped_hint
-		escaped_type=$(__mcp_sdk_json_escape "$error_type")
-		escaped_message=$(__mcp_sdk_json_escape "$message")
-		error_json="{\"type\":${escaped_type},\"message\":${escaped_message}"
-		if [[ -n "$hint" ]]; then
-			escaped_hint=$(__mcp_sdk_json_escape "$hint")
-			error_json="${error_json},\"hint\":${escaped_hint}"
-		fi
-		if [[ -n "$data" ]]; then
-			# In minimal mode, trust data is valid JSON - caller responsibility
-			error_json="${error_json},\"data\":${data}"
-		fi
-		error_json="${error_json}}"
-	fi
-
-	# Log all errors at debug level for observability
-	mcp_log_debug "mcp_error" "type=${error_type}: ${message}"
-
-	# Log at warn level if hint provided (actionable error)
-	if [[ -n "$hint" ]]; then
-		mcp_log_warn "mcp_error" "type=${error_type} hint: ${message}"
-	fi
-
-	# Delegate to existing helper
-	mcp_result_error "$error_json"
 }
 
 # mcp_result_text_with_resource <text_or_json> [--path <file>] [--mime <type>] [--uri <uri>]

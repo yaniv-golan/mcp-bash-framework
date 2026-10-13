@@ -170,23 +170,23 @@ EOF
 @test "run_tool_cli: an error result has no structuredContent when the tool declares an outputSchema" {
 	# Clients that validate structuredContent against outputSchema on error
 	# results too (the TypeScript SDK client, used by Claude Desktop) reject
-	# the {success:false, error} envelope that mcp_error and mcp_result_error
-	# emit. With an outputSchema it is dropped and its error moves to
-	# _meta["mcpbash/error"].
+	# a {success:false, error} envelope (what 1.x's mcp_error and
+	# mcp_result_error sent; some tools build it themselves). With an
+	# outputSchema it is dropped and its error moves to _meta["mcpbash/error"].
 	mkdir -p "${PROJECT_ROOT}/tools/oops" "${PROJECT_ROOT}/tools/oops-plain"
 	cat >"${PROJECT_ROOT}/tools/oops/tool.meta.json" <<'EOF'
-{"name": "test.oops", "description": "Fails with mcp_error", "inputSchema": {"type": "object"},
+{"name": "test.oops", "description": "Fails with a hand-built envelope", "inputSchema": {"type": "object"},
  "outputSchema": {"type": "object", "required": ["message"], "properties": {"message": {"type": "string"}}}}
 EOF
 	cat >"${PROJECT_ROOT}/tools/oops/tool.sh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 source "${MCP_SDK}/tool-sdk.sh"
-mcp_error not_found "No such item" --hint "List the items first" --data '{"id":7}'
+printf '%s\n' '{"content":[{"type":"text","text":"No such item"}],"structuredContent":{"success":false,"error":{"type":"not_found","message":"No such item","hint":"List the items first","data":{"id":7}}},"isError":true}'
 EOF
 	# Same failure without an outputSchema: unchanged (envelope kept).
 	cat >"${PROJECT_ROOT}/tools/oops-plain/tool.meta.json" <<'EOF'
-{"name": "test.oops-plain", "description": "Fails with mcp_error", "inputSchema": {"type": "object"}}
+{"name": "test.oops-plain", "description": "Fails with a hand-built envelope", "inputSchema": {"type": "object"}}
 EOF
 	cp "${PROJECT_ROOT}/tools/oops/tool.sh" "${PROJECT_ROOT}/tools/oops-plain/tool.sh"
 	chmod +x "${PROJECT_ROOT}/tools/oops/tool.sh" "${PROJECT_ROOT}/tools/oops-plain/tool.sh"

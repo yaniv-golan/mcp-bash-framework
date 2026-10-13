@@ -103,6 +103,7 @@ mcp_fail -- "${message}"
 | `tool_failed` | The tool failed: `mcp_fail` without `--type`, or a non-zero exit (set by the server) |
 | `output_too_large` | The tool's stdout or stderr went over `MCPBASH_MAX_TOOL_OUTPUT_SIZE` / `MCPBASH_MAX_TOOL_STDERR_SIZE` (set by the server) |
 | `output_schema` | The tool's output is not valid JSON, is empty, or doesn't match its `outputSchema` (set by the server) |
+| `migration_required` | The tool calls an SDK helper removed in 2.0, so it didn't run; `data.removed` names the helper and the hint says to run `mcp-bash migrate` (set by the server) |
 
 Other type strings are accepted (for example `cli_error` or `network_error`); prefer the documented ones so clients can rely on them.
 

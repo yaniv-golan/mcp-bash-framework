@@ -80,7 +80,7 @@ mcp_config_load \
   --defaults '{"other": "value"}'
 
 # Try to get required value (should fail and trigger the error)
-secret=$(mcp_config_get '.secret') || mcp_fail_invalid_args "Missing required config: secret"
+secret=$(mcp_config_get '.secret') || mcp_fail --type invalid_args "Missing required config: secret"
 
 mcp_result_success '{"ok":true}'
 TOOL

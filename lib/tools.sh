@@ -801,6 +801,50 @@ _mcp_tools_side_channel_error_result() {
 	_mcp_tools_emit_error_result "${type}" "${message}" "" "${data}" "${stderr_tail}" "${exit_code}"
 }
 
+# SDK helpers removed in mcp-bash 2.0 (see `mcp-bash migrate`). A tool that
+# still calls one gets a migration_required error result instead of running
+# (mcp_tools_removed_api_use), and a "command not found" for one gets a hint
+# (mcp_tools_removed_api_hint).
+MCP_TOOLS_REMOVED_SDK_NAMES="mcp_error mcp_result_error mcp_fail_invalid_args"
+
+# Print the first removed SDK helper called by the tool at PATH, or nothing.
+# Scans the tool's own script and every *.sh in its directory, skipping
+# comment lines. One find and one awk per call, with no cache, so a tool
+# fixed in place (mcp-bash migrate --write) runs on its next call.
+# Usage: mcp_tools_removed_api_use TOOL_PATH
+mcp_tools_removed_api_use() {
+	local path="$1"
+	[ -n "${MCP_TOOLS_REMOVED_SDK_NAMES}" ] || return 0
+	# One find and one awk: on bash 3.2 each extra process costs several ms.
+	find "${path%/*}" -type f \( -name '*.sh' -o -path "${path}" \) -exec awk -v names="${MCP_TOOLS_REMOVED_SDK_NAMES}" '
+		BEGIN {
+			n = split(names, list, " ")
+			for (i = 1; i <= n; i++) re[i] = "(^|[^A-Za-z0-9_])" list[i] "([^A-Za-z0-9_]|$)"
+		}
+		/^[[:space:]]*#/ { next }
+		{
+			for (i = 1; i <= n; i++) {
+				if ($0 ~ re[i]) { print list[i]; exit }
+			}
+		}' {} + 2>/dev/null | head -n 1
+}
+
+# The hint for a failed tool whose stderr says a removed SDK helper wasn't
+# found (a call the check above didn't see, e.g. in a shared script outside
+# the tool's directory). Prints nothing otherwise.
+# Usage: mcp_tools_removed_api_hint STDERR_TAIL
+mcp_tools_removed_api_hint() {
+	local stderr_tail="$1" name
+	for name in ${MCP_TOOLS_REMOVED_SDK_NAMES}; do
+		case "${stderr_tail}" in
+		*"${name}: command not found"*)
+			printf '`%s` was removed in mcp-bash 2.0; run `mcp-bash migrate` in the project' "${name}"
+			return 0
+			;;
+		esac
+	done
+}
+
 # True when the tool's stdout is itself a CallToolResult (an object with a
 # content array and isError).
 mcp_tools_stdout_is_call_tool_result() {
@@ -1789,6 +1833,19 @@ mcp_tools_call() {
 		# Fallback: invoke via shell if not marked executable but looks runnable
 		tool_runner=(bash "${absolute_path}")
 	fi
+	# A tool that still calls an SDK helper removed in 2.0 doesn't run: it would
+	# fail part-way (or, without set -e, carry on as if the helper had worked).
+	local removed_api
+	removed_api="$(mcp_tools_removed_api_use "${absolute_path}")"
+	if [ -n "${removed_api}" ]; then
+		# Like a policy denial, the tool didn't run: no exit code or stderr.
+		_mcp_tools_load_tool_error_sdk
+		_MCP_TOOLS_RESULT="$(mcp_tool_error_result migration_required \
+			"Tool '${name}' uses \`${removed_api}\`, which was removed in mcp-bash 2.0." \
+			--hint "Run \`mcp-bash migrate\` in the project (\`--write\` applies the safe rewrites)." \
+			--data "{\"removed\":\"${removed_api}\"}")"
+		return 0
+	fi
 	local safe_name
 	safe_name="$(printf '%s' "${name}" | tr -c 'A-Za-z0-9._-' '_')"
 	local trace_enabled="false"
@@ -2386,7 +2443,7 @@ mcp_tools_call() {
 		local fail_summary="${fail_message%%$'\n'*}"
 		mcp_tools_emit_github_annotation "${name}" "${fail_summary}" "${trace_line}"
 		mcp_tools_append_failure_summary "${name}" "${exit_code}" "${fail_summary}" "${stderr_tail}" "${trace_line}" "${arg_count}" "${arg_bytes}" "${meta_count}" "${MCP_ROOTS_COUNT:-0}" "false"
-		_mcp_tools_emit_error_result tool_failed "${fail_message}" "" "${fail_data}" "${stderr_tail}" "${exit_code}"
+		_mcp_tools_emit_error_result tool_failed "${fail_message}" "$(mcp_tools_removed_api_hint "${stderr_tail}")" "${fail_data}" "${stderr_tail}" "${exit_code}"
 		cleanup_tool_temp_files
 		return 0
 	fi
@@ -2463,9 +2520,10 @@ mcp_tools_call() {
 
 		# An error result with an outputSchema carries no structuredContent:
 		# clients that check it against the schema on errors too (the
-		# TypeScript SDK client) would reject it. The {success:false, error}
-		# envelope from mcp_error/mcp_result_error moves to
-		# _meta["mcpbash/error"], the shape of every other tool error.
+		# TypeScript SDK client) would reject it. A {success:false, error}
+		# envelope (from the 1.x mcp_error/mcp_result_error, or one a tool builds
+		# itself) moves to _meta["mcpbash/error"], the shape of every other
+		# tool error.
 		if $has_schema == "true" and .isError == true and has("structuredContent") then
 			(.structuredContent.error // null) as $e |
 			if ($e | type) == "object" and ((._meta // {}) | has("mcpbash/error") | not) then

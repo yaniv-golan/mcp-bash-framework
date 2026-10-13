@@ -17,7 +17,7 @@ setup() {
 #!/usr/bin/env bash
 set -euo pipefail
 source "${MCP_SDK}/tool-sdk.sh"
-mcp_result_error "$(mcp_json_obj type "refused" message "Output file exists")"
+printf '%s\n' '{"content":[{"type":"text","text":"Output file exists"}],"isError":true}'
 SH
 	printf '{"name":"badok","description":"d","inputSchema":{"type":"object"},%s}\n' "${schema}" >"${PROJECT_ROOT}/tools/badok/tool.meta.json"
 	cat >"${PROJECT_ROOT}/tools/badok/tool.sh" <<'SH'

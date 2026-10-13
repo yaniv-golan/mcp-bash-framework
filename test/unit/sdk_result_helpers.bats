@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Unit layer: SDK CallToolResult helper functions (mcp_result_success, mcp_result_error, mcp_json_truncate).
+# Unit layer: SDK CallToolResult helper functions (mcp_result_success, mcp_json_truncate).
 
 load '../../node_modules/bats-support/load'
 load '../../node_modules/bats-assert/load'
@@ -146,58 +146,6 @@ jq_check() {
 	jq_check "$result" '.isError == false'
 	text=$(jq_get "$result" '.content[0].text')
 	[ -n "$text" ]
-}
-
-# ============================================================================
-# mcp_result_error tests
-# ============================================================================
-
-@test "sdk_result_helpers: mcp_result_error sets isError true" {
-	result=$(mcp_result_error '{"type": "not_found", "message": "User not found"}')
-	jq_check "$result" '.isError == true'
-	text=$(jq_get "$result" '.content[0].text')
-	assert_equal "User not found" "$text"
-}
-
-@test "sdk_result_helpers: mcp_result_error handles empty input gracefully" {
-	result=$(mcp_result_error '')
-	jq_check "$result" '.isError == true'
-	# Must be valid JSON
-	printf '%s' "$result" | "${MCPBASH_JSON_TOOL_BIN}" -e '.' >/dev/null 2>&1
-}
-
-@test "sdk_result_helpers: mcp_result_error handles invalid JSON input" {
-	result=$(mcp_result_error 'this is not json')
-	jq_check "$result" '.isError == true'
-	raw=$(jq_get "$result" '.structuredContent.error.raw')
-	assert_equal "this is not json" "$raw"
-}
-
-@test "sdk_result_helpers: mcp_result_error always returns 0" {
-	result=$(mcp_result_error '{"type":"test","message":"test"}')
-	rc=$?
-	assert_equal "0" "$rc"
-}
-
-@test "sdk_result_helpers: mcp_result_error handles valid non-object JSON" {
-	result=$(mcp_result_error '"just a string"')
-	jq_check "$result" '.isError == true'
-	msg=$(jq_get "$result" '.structuredContent.error.message')
-	[[ "$msg" == *object* ]]
-}
-
-@test "sdk_result_helpers: mcp_result_error handles array input" {
-	result=$(mcp_result_error '[]')
-	jq_check "$result" '.isError == true'
-	msg=$(jq_get "$result" '.structuredContent.error.message')
-	[[ "$msg" == *object* ]]
-}
-
-@test "sdk_result_helpers: mcp_result_error with non-string message uses tostring" {
-	result=$(mcp_result_error '{"type":"test","message":42}')
-	jq_check "$result" '.isError == true'
-	text=$(jq_get "$result" '.content[0].text')
-	assert_equal "42" "$text"
 }
 
 # ============================================================================
