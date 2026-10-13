@@ -693,8 +693,10 @@ mcp_tools_policy_denied_result() {
 # Emit error JSON to stdout for propagation through command substitution.
 # Usage: _mcp_tools_emit_error <code> <message> [data]
 # The data argument should be valid JSON (object, string, null, etc.)
-# Codes are JSON-RPC 2.0 values; we also emit the reserved server range for
-# tool-specific states (-32001 cancelled, -32603 timed out).
+# Codes are JSON-RPC 2.0 values. Used only for framework faults and for
+# refusals before the tool runs; anything the tool does after it starts is an
+# error result (_mcp_tools_emit_error_result). -32001 marks a cancelled call,
+# whose response lib/io.sh drops.
 _mcp_tools_emit_error() {
 	local err_code="$1"
 	local err_message="$2"
