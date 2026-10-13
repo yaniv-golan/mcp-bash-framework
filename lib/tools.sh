@@ -796,25 +796,38 @@ mcp_tools_stdout_is_call_tool_result() {
 }
 
 # The text of a failed tool's error result, in order: the message of a 1.x
-# error object on stdout ({"code": N, "message": "..."}); the stderr tail;
-# the end of stdout. Capped at LIMIT bytes, control characters other than
-# tab and newline removed, trailing whitespace trimmed. Prints nothing when
-# none of them has text.
+# error object on stdout (a single {"code": N, "message": "..."} object);
+# the stderr tail; the end of stdout. Capped at LIMIT bytes before anything
+# else looks at it, control characters other than tab and newline removed,
+# trailing whitespace trimmed. Prints nothing when none of them has text.
 # Usage: mcp_tools_failure_message <stdout_file> <stderr_tail> <has_json> <limit>
 mcp_tools_failure_message() {
 	local file="$1" stderr_tail="$2" has_json="$3" limit="${4:-4096}"
 	local text=""
 	if [ "${has_json}" = "true" ] && [ -s "${file}" ]; then
-		text="$("${MCPBASH_JSON_TOOL_BIN}" -r 'if type == "object" and (.code | type) == "number" and (.message | type) == "string" then .message else empty end' "${file}" 2>/dev/null || true)"
+		text="$("${MCPBASH_JSON_TOOL_BIN}" -r -s '
+			if length == 1 and (.[0] | type) == "object" and (.[0].code | type) == "number" and (.[0].message | type) == "string"
+			then .[0].message else empty end
+		' "${file}" 2>/dev/null | head -c "${limit}" || true)"
 	fi
-	if [ -z "${text//[[:space:]]/}" ]; then
-		text="${stderr_tail}"
-	fi
-	if [ -z "${text//[[:space:]]/}" ] && [ -s "${file}" ]; then
-		text="$(tail -c "${limit}" "${file}" 2>/dev/null || true)"
-	fi
-	[ -n "${text//[[:space:]]/}" ] || return 0
-	text="$(printf '%s' "${text}" | head -c "${limit}" | LC_ALL=C tr -d '\000-\010\013\014\015\016-\037')"
+	case "${text}" in
+	*[![:space:]]*) ;;
+	*) text="$(printf '%s' "${stderr_tail}" | head -c "${limit}")" ;;
+	esac
+	case "${text}" in
+	*[![:space:]]*) ;;
+	*)
+		text=""
+		if [ -s "${file}" ]; then
+			text="$(tail -c "${limit}" "${file}" 2>/dev/null || true)"
+		fi
+		;;
+	esac
+	case "${text}" in
+	*[![:space:]]*) ;;
+	*) return 0 ;;
+	esac
+	text="$(printf '%s' "${text}" | LC_ALL=C tr -d '\000-\010\013\014\015\016-\037')"
 	text="${text%"${text##*[![:space:]]}"}"
 	printf '%s' "${text}"
 }
