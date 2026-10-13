@@ -147,7 +147,24 @@ mcp_core_bootstrap_state() {
 	: >"${MCP_PROGRESS_STREAM}"
 	: >"${MCP_LOG_STREAM}"
 	mcp_runtime_log_startup_summary
+	mcp_core_check_policy_hook
 	mcp_core_start_deprecation_notice
+}
+
+# Set once per start: true when server.d/policy.sh defines the 1.x hook
+# mcp_tools_policy_check, so every tool call is refused (lib/tools_policy.sh).
+# The instructions say so, and stderr says it once per start. Static and
+# builtins only: the file isn't sourced here.
+MCP_CORE_POLICY_LEGACY_HOOK=false
+mcp_core_check_policy_hook() {
+	MCP_CORE_POLICY_LEGACY_HOOK=false
+	local policy="${MCPBASH_SERVER_DIR:-}/policy.sh"
+	[ -n "${MCPBASH_SERVER_DIR:-}" ] || return 0
+	declare -F mcp_tools_policy_file_has_legacy_hook >/dev/null 2>&1 || return 0
+	mcp_tools_policy_file_has_legacy_hook "${policy}" || return 0
+	MCP_CORE_POLICY_LEGACY_HOOK=true
+	# shellcheck disable=SC2016  # Backticks are literal text.
+	printf '%s\n' 'mcp-bash: server.d/policy.sh defines mcp_tools_policy_check, the 1.x policy hook; mcp-bash 2.0 refuses every tool call until it is renamed to mcp_tools_policy_project (run `mcp-bash migrate`)' >&2
 }
 
 # Migrate rules about SDK helpers removed in 2.0 (their findings feed the
@@ -177,6 +194,10 @@ MCP_CORE_REMOVED_API_NOTE_ON=0
 # has entries.
 mcp_core_build_instructions() {
 	MCP_CORE_INSTRUCTIONS="${MCPBASH_SERVER_INSTRUCTIONS:-}"
+	if [ "${MCP_CORE_POLICY_LEGACY_HOOK}" = "true" ]; then
+		# shellcheck disable=SC2016  # Backticks are literal text.
+		MCP_CORE_INSTRUCTIONS="${MCP_CORE_INSTRUCTIONS:+${MCP_CORE_INSTRUCTIONS}$'\n\n'}This server's tool policy (server.d/policy.sh) uses the mcp-bash 1.x hook, so every tool call is refused until it is migrated (\`mcp-bash migrate\`)."
+	fi
 	local findings="${MCPBASH_REGISTRY_DIR:-}/scan/removed-api.findings"
 	[ "${MCP_CORE_REMOVED_API_NOTE_ON}" = 1 ] && [ -s "${findings}" ] || return 0
 	local files="" n=0 line note

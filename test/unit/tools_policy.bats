@@ -17,46 +17,55 @@ setup() {
 	mkdir -p "${MCPBASH_SERVER_DIR}"
 }
 
-@test "tools_policy: default policy allows when no override exists" {
+@test "tools_policy: the built-in policy allows an allowlisted tool when no policy.sh exists" {
 	MCP_TOOLS_POLICY_LOADED="false"
 	mcp_tools_policy_init
+	MCPBASH_TOOL_ALLOWLIST="demo" run mcp_tools_policy_enforce "demo" '{}' '{}'
+	assert_success
+	MCPBASH_TOOL_ALLOWLIST="" MCPBASH_TOOL_ALLOW_DEFAULT="" run mcp_tools_policy_enforce "demo" '{}' '{}'
+	assert_failure
+}
 
-	run mcp_tools_policy_check "demo" '{"path":"tools/demo/tool.sh"}'
+@test "tools_policy: the project hook restricts, with its stdout as the reason" {
+	cat <<'POLICY' >"${MCPBASH_SERVER_DIR}/policy.sh"
+mcp_tools_policy_project() {
+	[ "$1" != "blocked" ] && return 0
+	printf 'blocked by project policy'
+	return 1
+}
+POLICY
+	MCP_TOOLS_POLICY_LOADED="false"
+	mcp_tools_policy_init
+	MCPBASH_TOOL_ALLOWLIST="*"
+	mcp_tools_policy_enforce "ok" '{}' '{}'
+	if mcp_tools_policy_enforce "blocked" '{}' '{}'; then
+		fail "the project hook did not deny"
+	fi
+	assert_equal "${_MCP_TOOLS_ERROR_MESSAGE}" "blocked by project policy"
+}
+
+@test "tools_policy: a policy.sh with the 1.x hook fails closed, even for an allowlisted tool" {
+	cat <<'POLICY' >"${MCPBASH_SERVER_DIR}/policy.sh"
+mcp_tools_policy_check() {
+	return 0
+}
+POLICY
+	MCP_TOOLS_POLICY_LOADED="false"
+	mcp_tools_policy_init
+	MCPBASH_TOOL_ALLOWLIST="*"
+	if mcp_tools_policy_enforce "demo" '{}' '{}'; then
+		fail "the 1.x hook did not fail closed"
+	fi
+	assert_equal "${MCP_TOOLS_POLICY_LEGACY_HOOK}" "true"
+	run mcp_tools_policy_file_has_legacy_hook "${MCPBASH_SERVER_DIR}/policy.sh"
 	assert_success
 }
 
-@test "tools_policy: server.d/policy.sh override can deny with error" {
-	cat <<'POLICY' >"${MCPBASH_SERVER_DIR}/policy.sh"
-mcp_tools_policy_check() {
-	local tool_name="$1"
-	if [ "${tool_name}" = "blocked" ]; then
-		mcp_tools_error -32602 "blocked by policy"
-		return 1
-	fi
-	return 0
-}
-POLICY
-	MCP_TOOLS_POLICY_LOADED="false"
-	mcp_tools_policy_init
-
-	run mcp_tools_policy_check "blocked" '{"path":"tools/blocked/tool.sh"}'
+@test "tools_policy: the static check ignores comments and the _default name" {
+	printf '%s\n' '# mcp_tools_policy_check() was the 1.x hook' 'mcp_tools_policy_project() { mcp_tools_policy_check_default "$@"; }' >"${MCPBASH_SERVER_DIR}/policy.sh"
+	run mcp_tools_policy_file_has_legacy_hook "${MCPBASH_SERVER_DIR}/policy.sh"
 	assert_failure
-}
-
-@test "tools_policy: policy can attach error data and non-default codes" {
-	cat <<'POLICY' >"${MCPBASH_SERVER_DIR}/policy.sh"
-mcp_tools_policy_check() {
-	local tool_name="$1"
-	if [ "${tool_name}" = "auth" ]; then
-		mcp_tools_error -32600 "auth required" '{"reason":"auth"}'
-		return 1
-	fi
-	return 0
-}
-POLICY
-	MCP_TOOLS_POLICY_LOADED="false"
-	mcp_tools_policy_init
-
-	run mcp_tools_policy_check "auth" '{"path":"tools/auth/tool.sh"}'
-	assert_failure
+	printf '%s\n' 'function mcp_tools_policy_check { :; }' >"${MCPBASH_SERVER_DIR}/policy.sh"
+	run mcp_tools_policy_file_has_legacy_hook "${MCPBASH_SERVER_DIR}/policy.sh"
+	assert_success
 }

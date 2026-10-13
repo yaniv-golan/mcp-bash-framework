@@ -51,13 +51,9 @@ mcp_require json mcp_json_icons_to_data_uris
 mcp_require uri mcp_uri_file_uri_from_path
 mcp_require resource_content mcp_resource_content_object_from_file
 
-# Provide defaults if policy helpers were not sourced (older bootstraps).
-if ! declare -F mcp_tools_policy_check >/dev/null 2>&1; then
-	mcp_tools_policy_check() { return 0; }
-fi
-if ! declare -F mcp_tools_policy_init >/dev/null 2>&1; then
-	mcp_tools_policy_init() { return 0; }
-fi
+# The tool policy lives in lib/tools_policy.sh; without it every call is
+# refused (fail closed), never allowed.
+mcp_require tools_policy mcp_tools_policy_enforce
 
 mcp_tools_scan_root() {
 	mcp_registry_resolve_scan_root "${MCPBASH_TOOLS_DIR}"
@@ -1962,11 +1958,19 @@ mcp_tools_call() {
 		return 1
 	fi
 
-	# Initialize and enforce project policy (server.d/policy.sh can override).
+	# The built-in policy, then the project's restrict-only hook.
 	mcp_tools_policy_init
 	_MCP_TOOLS_POLICY_REFUSAL=""
 	_MCP_TOOLS_POLICY_DENIED=false
-	if ! mcp_tools_policy_check "${name}" "${metadata}" "${args_json}"; then
+	if ! mcp_tools_policy_enforce "${name}" "${metadata}" "${args_json}"; then
+		if [ "${MCP_TOOLS_POLICY_LEGACY_HOOK:-false}" = "true" ]; then
+			_mcp_tools_load_tool_error_sdk
+			# shellcheck disable=SC2016  # Backticks are literal text.
+			_MCP_TOOLS_RESULT="$(mcp_tool_error_result migration_required "${_MCP_TOOLS_ERROR_MESSAGE}" \
+				--hint "Run \`mcp-bash migrate\` in the project (\`--write\` renames the hook when it is safe)." \
+				--data '{"removed":"mcp_tools_policy_check"}')"
+			return 0
+		fi
 		if [ "${_MCP_TOOLS_ERROR_CODE:-0}" -eq 0 ]; then
 			mcp_tools_error -32602 "Tool '${name}' blocked by policy"
 		fi

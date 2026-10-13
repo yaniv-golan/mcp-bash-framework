@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2034  # Used by test runner for reporting.
-TEST_DESC="Tool policy hook enforces server.d/policy.sh before execution."
+TEST_DESC="The project policy hook (mcp_tools_policy_project) restricts calls; the 1.x hook fails closed."
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -43,52 +43,32 @@ cat <<'POLICY' >"${POLICY_ROOT}/server.d/policy.sh"
 #!/usr/bin/env bash
 set -euo pipefail
 
-mcp_tools_policy_check() {
-	local tool_name="$1"
-	local metadata_json="$2"
+# 2.0 hook: $1 tool name, $2 call arguments (JSON). Runs after the built-in
+# checks; non-zero denies, and stdout is the reason.
+mcp_tools_policy_project() {
+	local tool_name="$1" args_json="$2"
 	if [ "${POLICY_READ_ONLY:-0}" = "1" ] && [ "${tool_name}" = "hello" ]; then
-		mcp_tools_error -32602 "Tool '${tool_name}' disabled by policy"
+		printf "Tool '%s' disabled by policy" "${tool_name}"
 		return 1
 	fi
-	# Capability gate example with data payload
-	if [ "${POLICY_REQUIRE_AUTH:-0}" = "1" ] && [ "${tool_name}" = "hello" ]; then
-		mcp_tools_error -32600 "Capability required" '{"reason":"auth"}'
+	case "${args_json}" in
+	*danger*)
+		printf 'Arguments refused by policy'
 		return 1
-	fi
-	# Metadata-driven denial: block tools whose timeout exceeds 10s
-	if [ "${POLICY_MAX_TIMEOUT:-0}" != "0" ]; then
-		local timeout
-		timeout="$(mcp_json_extract_optional "${metadata_json}" -r '.timeoutSecs // 0' 0)"
-		# Guard against empty/non-numeric values (fallback to 0)
-		case "${timeout}" in ''|*[!0-9]*) timeout=0 ;; esac
-		if [ "${timeout}" -gt "${POLICY_MAX_TIMEOUT}" ]; then
-			mcp_tools_error -32602 "Tool '${tool_name}' exceeds policy timeout" "{\"timeout\":${timeout}}"
-			return 1
-		fi
-	fi
+		;;
+	esac
 	return 0
 }
 POLICY
 
-# Allow path (read-only off)
-cat <<'REQ' >"${POLICY_ROOT}/requests-allow.ndjson"
-{"jsonrpc":"2.0","id":"init-allow","method":"initialize","params":{}}
-{"jsonrpc":"2.0","method":"notifications/initialized"}
-{"jsonrpc":"2.0","id":"call-allow","method":"tools/call","params":{"name":"hello","arguments":{}}}
-REQ
-test_run_mcp "${POLICY_ROOT}" "${POLICY_ROOT}/requests-allow.ndjson" "${POLICY_ROOT}/responses-allow.ndjson"
-allow_resp="$(grep '"id":"call-allow"' "${POLICY_ROOT}/responses-allow.ndjson" | head -n1)"
-message="$(echo "${allow_resp}" | jq -r '.result.structuredContent.message // empty')"
-test_assert_eq "hi" "${message}"
+req() {
+	printf '%s\n' '{"jsonrpc":"2.0","id":"init","method":"initialize","params":{}}' '{"jsonrpc":"2.0","method":"notifications/initialized"}'
+	local args='{}'
+	args="${1:-$args}"
+	printf '{"jsonrpc":"2.0","id":"call","method":"tools/call","params":{"name":"hello","arguments":%s}}\n' "${args}"
+}
+call() { grep '"id":"call"' "$1" | head -n1; }
 
-# Deny path (read-only on)
-cat <<'REQ' >"${POLICY_ROOT}/requests-deny.ndjson"
-{"jsonrpc":"2.0","id":"init-deny","method":"initialize","params":{}}
-{"jsonrpc":"2.0","method":"notifications/initialized"}
-{"jsonrpc":"2.0","id":"call-deny","method":"tools/call","params":{"name":"hello","arguments":{}}}
-REQ
-POLICY_READ_ONLY=1 test_run_mcp "${POLICY_ROOT}" "${POLICY_ROOT}/requests-deny.ndjson" "${POLICY_ROOT}/responses-deny.ndjson"
-deny_resp="$(grep '"id":"call-deny"' "${POLICY_ROOT}/responses-deny.ndjson" | head -n1)"
 # Policy denials are tool results with isError (type policy_denied), so clients
 # show the reason; they are not JSON-RPC errors.
 assert_policy_denied() {
@@ -102,52 +82,52 @@ assert_policy_denied() {
 		test_fail "${label}: expected message '${want_msg}', got: ${text}"
 	fi
 }
-assert_policy_denied "${deny_resp}" "disabled by policy" "read-only denial"
 
-# Capability/auth gate with data payload
-cat <<'REQ' >"${POLICY_ROOT}/requests-auth.ndjson"
-{"jsonrpc":"2.0","id":"init-auth","method":"initialize","params":{}}
-{"jsonrpc":"2.0","method":"notifications/initialized"}
-{"jsonrpc":"2.0","id":"call-auth","method":"tools/call","params":{"name":"hello","arguments":{}}}
-REQ
-POLICY_REQUIRE_AUTH=1 POLICY_MAX_TIMEOUT=0 POLICY_READ_ONLY=0 \
-	test_run_mcp "${POLICY_ROOT}" "${POLICY_ROOT}/requests-auth.ndjson" "${POLICY_ROOT}/responses-auth.ndjson"
-auth_resp="$(grep '"id":"call-auth"' "${POLICY_ROOT}/responses-auth.ndjson" | head -n1)"
-# The policy's own code (-32600) has no place in a tool result; its message
-# and data still arrive.
-assert_policy_denied "${auth_resp}" "Capability required" "auth gate"
-auth_reason="$(echo "${auth_resp}" | jq -r '.result._meta["mcpbash/error"].data.reason // empty')"
-test_assert_eq "auth" "${auth_reason}" "expected the policy's data to propagate"
+printf ' -> the hook allows\n'
+req >"${POLICY_ROOT}/req.ndjson"
+test_run_mcp "${POLICY_ROOT}" "${POLICY_ROOT}/req.ndjson" "${POLICY_ROOT}/allow.ndjson"
+test_assert_eq "hi" "$(call "${POLICY_ROOT}/allow.ndjson" | jq -r '.result.structuredContent.message // empty')"
 
-# Metadata-driven denial (timeout)
-mkdir -p "${POLICY_ROOT}/tools/slow"
-cat <<'META' >"${POLICY_ROOT}/tools/slow/tool.meta.json"
-{
-  "name": "slow",
-  "description": "slow tool",
-  "path": "slow/tool.sh",
-  "timeoutSecs": 20,
-  "arguments": {"type": "object", "properties": {}},
-  "outputSchema": {"type": "object", "properties": {"ok": {"type": "boolean"}}}
-}
-META
-cat <<'SH' >"${POLICY_ROOT}/tools/slow/tool.sh"
+printf ' -> the hook denies by name, with its reason\n'
+POLICY_READ_ONLY=1 test_run_mcp "${POLICY_ROOT}" "${POLICY_ROOT}/req.ndjson" "${POLICY_ROOT}/deny.ndjson"
+assert_policy_denied "$(call "${POLICY_ROOT}/deny.ndjson")" "disabled by policy" "read-only denial"
+
+printf ' -> the hook denies by the call arguments ($2)\n'
+req '{"mode":"danger"}' >"${POLICY_ROOT}/req-args.ndjson"
+test_run_mcp "${POLICY_ROOT}" "${POLICY_ROOT}/req-args.ndjson" "${POLICY_ROOT}/deny-args.ndjson"
+assert_policy_denied "$(call "${POLICY_ROOT}/deny-args.ndjson")" "Arguments refused by policy" "argument denial"
+
+printf ' -> the hook can only restrict: the operator allowlist still applies\n'
+MCPBASH_TOOL_ALLOWLIST="other" test_run_mcp "${POLICY_ROOT}" "${POLICY_ROOT}/req.ndjson" "${POLICY_ROOT}/allowlist.ndjson"
+assert_policy_denied "$(call "${POLICY_ROOT}/allowlist.ndjson")" "not in MCPBASH_TOOL_ALLOWLIST" "allowlist before the hook"
+
+printf ' -> the 1.x hook (mcp_tools_policy_check) fails closed\n'
+cat <<'POLICY' >"${POLICY_ROOT}/server.d/policy.sh"
 #!/usr/bin/env bash
-printf '{"ok":true}'
-SH
-chmod +x "${POLICY_ROOT}/tools/slow/tool.sh"
+mcp_tools_policy_check() {
+	mcp_tools_policy_check_default "$@" || return 1
+	return 0
+}
+POLICY
+test_run_mcp "${POLICY_ROOT}" "${POLICY_ROOT}/req.ndjson" "${POLICY_ROOT}/legacy.ndjson"
+r="$(call "${POLICY_ROOT}/legacy.ndjson" | jq -c '.result')"
+assert_eq '[true,"migration_required","mcp_tools_policy_check"]' "$(printf '%s' "${r}" | jq -c '[.isError, ._meta["mcpbash/error"].type, ._meta["mcpbash/error"].data.removed]')" "legacy hook: ${r}"
+case "$(printf '%s' "${r}" | jq -r '.content[0].text')" in
+*'rename the function to mcp_tools_policy_project'*'read the call arguments from $2'*) ;;
+*) test_fail "legacy hook: the text doesn't say what to change: ${r}" ;;
+esac
+case "$(jq -r 'select(.id=="init") | .result.instructions // ""' "${POLICY_ROOT}/legacy.ndjson")" in
+*"uses the mcp-bash 1.x hook, so every tool call is refused"*) ;;
+*) test_fail "legacy hook: no instructions sentence" ;;
+esac
 
-# Invalidate cache to force re-discovery (slow tool was created after earlier tests cached tools.json)
-test_invalidate_registry_cache "${POLICY_ROOT}"
+printf ' -> migrate --write renames a hook it can prove safe; then calls work\n'
+(cd "${POLICY_ROOT}" && ./bin/mcp-bash migrate --project-root "${POLICY_ROOT}" --write --only 2-policy-replace --force >/dev/null 2>&1) || true
+grep -q '^mcp_tools_policy_project()' "${POLICY_ROOT}/server.d/policy.sh" || test_fail "migrate did not rename the hook: $(cat "${POLICY_ROOT}/server.d/policy.sh")"
+test_run_mcp "${POLICY_ROOT}" "${POLICY_ROOT}/req.ndjson" "${POLICY_ROOT}/migrated.ndjson"
+test_assert_eq "hi" "$(call "${POLICY_ROOT}/migrated.ndjson" | jq -r '.result.structuredContent.message // empty')"
+if jq -r 'select(.id=="init") | .result.instructions // ""' "${POLICY_ROOT}/migrated.ndjson" | grep -q '1.x hook'; then
+	test_fail "migrated: instructions still mention the 1.x hook"
+fi
 
-cat <<'REQ' >"${POLICY_ROOT}/requests-timeout.ndjson"
-{"jsonrpc":"2.0","id":"init-timeout","method":"initialize","params":{}}
-{"jsonrpc":"2.0","method":"notifications/initialized"}
-{"jsonrpc":"2.0","id":"call-timeout","method":"tools/call","params":{"name":"slow","arguments":{}}}
-REQ
-POLICY_MAX_TIMEOUT=10 POLICY_REQUIRE_AUTH=0 POLICY_READ_ONLY=0 \
-	test_run_mcp "${POLICY_ROOT}" "${POLICY_ROOT}/requests-timeout.ndjson" "${POLICY_ROOT}/responses-timeout.ndjson"
-timeout_resp="$(grep '"id":"call-timeout"' "${POLICY_ROOT}/responses-timeout.ndjson" | head -n1)"
-assert_policy_denied "${timeout_resp}" "policy timeout" "timeout policy"
-timeout_data="$(echo "${timeout_resp}" | jq -r '.result._meta["mcpbash/error"].data.timeout // empty')"
-test_assert_eq "20" "${timeout_data}" "expected the policy's data to propagate"
+printf 'Tool policy tests passed.\n'

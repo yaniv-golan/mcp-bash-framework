@@ -125,10 +125,10 @@ work".
   }
   ```
 
-  It runs in a subshell, so keep any state in files. The older way, redefining
-  `mcp_tools_policy_check`, *replaces* the built-in check, allowlist included, unless it
-  starts with `mcp_tools_policy_check_default "$@" || return 1`; `validate` and `doctor`
-  warn when that call is missing.
+  It runs in a subshell, so keep any state in files. The 1.x hook, `mcp_tools_policy_check`, <!-- lint-api-usage: allow -->
+  is refused by mcp-bash 2.0 (every tool call fails until it is renamed; `mcp-bash migrate`
+  shows how). Before 2.0 it *replaced* the built-in check unless it started with
+  `mcp_tools_policy_check_default "$@" || return 1`.
 - **Policy denials and Claude Desktop:** from 1.8.0 a denial is an error result whose text
   the model and user see. Before 1.8.0 it was a JSON-RPC error that Desktop shows only as
   "The connector returned an error or an invalid response"; on those versions, refusals the

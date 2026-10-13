@@ -640,10 +640,10 @@ EOF
 				errors=$((errors + 1))
 				add_finding "project.register_permissions" "error" "${reg_message}" "false" ""
 			done < <(mcp_doctor_register_permission_issues "${project_root}")
-			command -v mcp_tools_policy_hook_bypasses_default >/dev/null 2>&1 || . "${MCPBASH_HOME}/lib/tools_policy.sh"
-			if mcp_tools_policy_hook_bypasses_default "$(mcp_runtime_effective_server_dir "${project_root}")/policy.sh"; then
-				warnings=$((warnings + 1))
-				add_finding "project.policy_hook_replaces_default" "warning" 'policy.sh replaces the default tool policy (deny-by-default allowlist and tool path checks); start mcp_tools_policy_check with: mcp_tools_policy_check_default "$@" || return 1' "false" ""
+			command -v mcp_tools_policy_file_has_legacy_hook >/dev/null 2>&1 || . "${MCPBASH_HOME}/lib/tools_policy.sh"
+			if mcp_tools_policy_file_has_legacy_hook "$(mcp_runtime_effective_server_dir "${project_root}")/policy.sh"; then
+				errors=$((errors + 1))
+				add_finding "project.policy_legacy_hook" "error" 'policy.sh defines mcp_tools_policy_check, the mcp-bash 1.x policy hook: every tool call is refused until it is renamed to mcp_tools_policy_project (run mcp-bash migrate)' "false" ""
 			fi
 
 			# Tool/provider env policy, as seen from this shell. Names and states
@@ -1779,10 +1779,10 @@ EOF
 			printf '  ✗ %s (every tools/resources/prompts list fails until fixed)\n' "${reg_message}"
 			errors=$((errors + 1))
 		done < <(mcp_doctor_register_permission_issues "${detected_root}")
-		command -v mcp_tools_policy_hook_bypasses_default >/dev/null 2>&1 || . "${MCPBASH_HOME}/lib/tools_policy.sh"
-		if mcp_tools_policy_hook_bypasses_default "$(mcp_runtime_effective_server_dir "${detected_root}")/policy.sh"; then
-			printf '  ⚠ %s\n' 'policy.sh replaces the default tool policy (deny-by-default allowlist and tool path checks); start mcp_tools_policy_check with: mcp_tools_policy_check_default "$@" || return 1'
-			warnings=$((warnings + 1))
+		command -v mcp_tools_policy_file_has_legacy_hook >/dev/null 2>&1 || . "${MCPBASH_HOME}/lib/tools_policy.sh"
+		if mcp_tools_policy_file_has_legacy_hook "$(mcp_runtime_effective_server_dir "${detected_root}")/policy.sh"; then
+			printf '  ✗ %s\n' 'policy.sh defines mcp_tools_policy_check, the mcp-bash 1.x policy hook: every tool call is refused until it is renamed to mcp_tools_policy_project (run mcp-bash migrate)'
+			errors=$((errors + 1))
 		fi
 
 		mcp_doctor_print_env_policy "$(mcp_runtime_effective_server_dir "${detected_root}")/server.meta.json" "${gojq_path:-${jq_path}}"

@@ -8,21 +8,32 @@ MIG_SCOPE="server-sh"
 MIG_SUMMARY="policy.sh defines mcp_tools_policy_check; 2.0 calls only mcp_tools_policy_project (after the built-in checks)"
 MIG_FIX='rename to mcp_tools_policy_project; $2 is the call arguments (JSON); print the denial message to stdout and return 1'
 # Auto only when the hook's first statement is the default check (no
-# "declare -F" guard) and it uses neither $2 (its meaning changes: tool
-# metadata -> call arguments) nor the 1.x message globals (the new hook
-# reports through stdout).
+# "declare -F" guard) and the rest uses neither $2 or $3 (1.x: tool metadata
+# and call arguments; the new hook gets the arguments as $2, so a renamed body
+# reading $3 would see nothing and could allow what it used to deny), nor
+# "$@"/$*, nor the 1.x message globals (the new hook reports through stdout).
+# Any other definition, a one-line one included, is reported for a manual
+# change.
 mig_detect() {
 	local file="$1"
 	case "${file##*/}" in policy.sh) ;; *) return 0 ;; esac
 	local line
 	line="$(grep -nE '^[[:space:]]*(function[[:space:]]+)?mcp_tools_policy_check[[:space:]]*(\(\))?[[:space:]]*\{?[[:space:]]*$' "${file}" | head -n 1 | cut -d: -f1)"
-	[ -n "${line}" ] || return 0
-	local body first kind=manual
+	if [ -z "${line}" ]; then
+		# Defined some other way (on one line, say): never rewritten.
+		line="$(grep -nE '^[[:space:]]*(function[[:space:]]+)?mcp_tools_policy_check[[:space:]]*([(]|[{]|$)' "${file}" | head -n 1 | cut -d: -f1)"
+		[ -n "${line}" ] || return 0
+		printf '%s\t%s\t%s\n' "${line}" manual "mcp_tools_policy_check (not a plain multi-line definition)"
+		return 0
+	fi
+	local body first rest kind=manual
 	body="$(awk -v n="${line}" 'NR > n { print } NR > n && /^}/ { exit }' "${file}")"
 	first="$(printf '%s\n' "${body}" | grep -vE '^[[:space:]]*(#.*)?$' | head -n 1)"
 	case "${first}" in
 	*'mcp_tools_policy_check_default "$@" || return 1'*)
-		if ! printf '%s\n' "${body}" | grep -qE '[$][{]?2|_MCP_TOOLS_ERROR_|mcp_tools_error'; then
+		# The body after that first statement.
+		rest="$(printf '%s\n' "${body}" | awk -v f="${first}" 'done { print; next } $0 == f { done = 1 }')"
+		if ! printf '%s\n' "${rest}" | grep -qE '[$][{]?[23*@]|_MCP_TOOLS_ERROR_|mcp_tools_error'; then
 			kind=auto
 		fi
 		;;

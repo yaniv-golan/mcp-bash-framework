@@ -65,7 +65,8 @@ mcp-bash keeps the attack surface small: every tool is a subprocess with a contr
 >
 > **Operator responsibilities:**
 > - Review `policy.sh` contents before deployment (treat as privileged code)
-> - Prefer the restrict-only hook `mcp_tools_policy_project`, which runs after the default deny-by-default allowlist and tool path checks and can only narrow them. Defining `mcp_tools_policy_check` instead **replaces** those checks; start it with `mcp_tools_policy_check_default "$@" || return 1`; `mcp-bash validate`/`doctor` warn when it doesn't.
+> - The only project hook is the restrict-only `mcp_tools_policy_project`, which runs after the built-in deny-by-default allowlist and tool path checks and can only narrow them. The 1.x hook `mcp_tools_policy_check`, which replaced those checks, fails closed in 2.0: a `policy.sh` that still defines it gets every tool call refused (skipping it would drop the project's own restrictions). <!-- lint-api-usage: allow -->
+> - This is a guard against accidentally widening access, **not a sandbox against a hostile project**: `policy.sh` (like `register.sh` when enabled, providers and completion scripts) is trusted shell code sourced into the server before any allowlist check, and can redefine anything. Deny-by-default controls which tools a client can call; it does not make an untrusted project safe to run.
 > - Policy denials (allowlist or project rule) are returned as a tool result with `isError: true` and type `policy_denied`, carrying the denial message; a rejected tool path stays a JSON-RPC error. The project hook runs in a subshell, so its output can't reach the protocol stream.
 > - Set restrictive permissions: `chmod 600 server.d/policy.sh`
 > - Do not deploy in directories writable by untrusted users
