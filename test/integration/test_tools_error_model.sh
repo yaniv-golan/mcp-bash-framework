@@ -52,6 +52,9 @@ add_tool stdoutcodeok 'echo "{\"code\":-32001,\"message\":\"custom\"}"'
 add_tool payloadexit 'echo "{\"message\":\"a commit message\"}"; echo real-error >&2; exit 1'
 # A tool that prints its own error result and exits non-zero.
 add_tool ownresult 'printf "%s\n" "{\"content\":[{\"type\":\"text\",\"text\":\"own\"}],\"isError\":true}"; exit 2'
+# The same with structuredContent that doesn't match the tool's outputSchema:
+# it is an error result anyway, so its own text is kept.
+add_tool ownresultschema 'printf "%s\n" "{\"content\":[{\"type\":\"text\",\"text\":\"own schema\"}],\"isError\":false,\"structuredContent\":{\"x\":1}}"; exit 2' '{"type":"object","required":["greeting"],"properties":{"greeting":{"type":"string"}}}'
 # mcp_fail forms.
 add_tool failtyped 'mcp_fail --type not_found "nope"'
 add_tool failone 'mcp_fail "one arg"'
@@ -145,6 +148,10 @@ assert_eq "1" "$(resp failtyped | jq -r '.result._meta.exitCode')" "failtyped: _
 r="$(resp ownresult)"
 printf '%s' "${r}" | jq -e '(has("error") | not) and .result.isError == true and .result.content[0].text == "own"' >/dev/null \
 	|| test_fail "ownresult: the tool's own error result was not used: ${r}"
+
+r="$(resp ownresultschema)"
+printf '%s' "${r}" | jq -e '(has("error") | not) and .result.isError == true and .result.content[0].text == "own schema"' >/dev/null \
+	|| test_fail "ownresultschema: the tool's own result was replaced: ${r}"
 
 # A 1.x error object with exit 0 is plain output, unchanged.
 r="$(resp stdoutcodeok)"

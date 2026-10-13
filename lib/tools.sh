@@ -2377,9 +2377,14 @@ mcp_tools_call() {
 	fi
 
 	# 0: valid (or nothing to check); 2: an output_schema error result is in
-	# _MCP_TOOLS_RESULT; 1: the check couldn't run (protocol error).
+	# _MCP_TOOLS_RESULT; 1: the check couldn't run (protocol error). Only
+	# checked after a zero exit: a non-zero exit reaching this point is a
+	# tool's own CallToolResult, which becomes an error result, and the
+	# outputSchema doesn't apply to those.
 	local schema_status=0
-	mcp_tools_validate_output_schema "${stdout_content}" "${output_schema}" "${has_json_tool}" "${name}" "${exit_code}" "${stderr_tail}" "${trace_line}" "${trace_available}" || schema_status=$?
+	if [ "${exit_code}" -eq 0 ]; then
+		mcp_tools_validate_output_schema "${stdout_content}" "${output_schema}" "${has_json_tool}" "${name}" "${exit_code}" "${stderr_tail}" "${trace_line}" "${trace_available}" || schema_status=$?
+	fi
 	if [ "${schema_status}" -ne 0 ]; then
 		cleanup_tool_temp_files
 		[ "${schema_status}" -eq 2 ] && return 0
