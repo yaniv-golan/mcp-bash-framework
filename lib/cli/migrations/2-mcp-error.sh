@@ -20,13 +20,23 @@ mig_detect() {
 	local word='[^[:space:];&|<>()"'\'']+'
 	local alone="^[[:space:]]*exit([[:space:]]+${word})?[[:space:]]*(;;?[[:space:]]*|;[[:space:]]*(fi|done|esac|\\})[[:space:]]*)?(#.*)?\$"
 	local same=";[[:space:]]*exit([[:space:]]+${word})?[[:space:]]*(;[[:space:]]*\\}?|;;)?[[:space:]]*(#.*)?\$"
+	local fndef='[(][[:space:]]*[)][[:space:]]*[{]|^[[:space:]]*function[[:space:]]'
+	local rest only_args='^[^;&|]*' sep='[;&|]'
 	mig_grep_word mcp_error "${file}" | while IFS=$'\t' read -r line kind text; do
-		if [[ ${text} =~ ${same} ]]; then
+		# The call and what follows it on its line, quoted strings removed:
+		# nothing may run between mcp_error and the exit.
+		rest="$(printf '%s\n' "${text#*mcp_error}" | sed -E "s/'[^']*'//g; s/\"([^\"\\\\]|\\\\.)*\"//g")"
+		if [[ ${text} =~ ${fndef} ]]; then
+			# A one-line function: the exit after it isn't what runs after a call.
+			printf '%s\tmanual\t%s (inside a one-line function: callers go on after it today)\n' "${line}" "${text}"
+			continue
+		fi
+		if [[ ${rest} =~ ${only_args}${same} ]]; then
 			printf '%s\tauto\t%s\n' "${line}" "${text}"
 			continue
 		fi
 		next="$(mig_next_statement "${file}" "${line}")"
-		if [[ ${next} =~ ${alone} ]]; then
+		if [[ ! ${rest} =~ ${sep} ]] && [[ ${next} =~ ${alone} ]]; then
 			printf '%s\tauto\t%s\n' "${line}" "${text}"
 		else
 			printf '%s\tmanual\t%s (no unconditional exit after it: code below still runs today)\n' "${line}" "${text}"

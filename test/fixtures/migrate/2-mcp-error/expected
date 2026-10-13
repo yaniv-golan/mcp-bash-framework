@@ -10,3 +10,7 @@ tools/b/tool.sh:12:auto
 tools/b/tool.sh:14:auto
 tools/b/tool.sh:16:manual
 tools/b/tool.sh:18:manual
+tools/b/tool.sh:20:manual
+tools/b/tool.sh:21:manual
+tools/b/tool.sh:23:manual
+tools/b/tool.sh:25:manual

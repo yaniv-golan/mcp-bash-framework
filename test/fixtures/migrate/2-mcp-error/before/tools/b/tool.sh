@@ -17,3 +17,10 @@ mcp_error g "exit or not"
 exit 0 || true
 mcp_error h "quoted; exit 0"
 echo next
+mcp_error i "cleanup between"; cleanup; exit 0
+f() { mcp_error j "one-line function"; }
+exit 0
+mcp_error k "background" &
+exit 0
+mcp_error l "pipe" | tee x
+exit 0
