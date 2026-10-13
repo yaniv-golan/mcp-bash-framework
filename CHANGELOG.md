@@ -24,6 +24,13 @@ Changes for 2.0.0.
 ### Added
 - **`mcp_fail` without `--type`**: `mcp_fail MESSAGE [--hint TEXT] [--data JSON]` ends the tool with an error result of type `tool_failed`; `mcp_fail -- MESSAGE` takes the message literally (a number, or text starting with `--`). Arguments after the message other than `--hint` and `--data` are ignored, with a note on stderr.
 
+## [1.9.3] - 2026-10-13
+
+### Fixed
+- **Tool log messages never arrived with live progress on**: with `MCPBASH_ENABLE_LIVE_PROGRESS=true`, the server flushed a tool's log stream from the wrong file name (`log.<key>.ndjson` instead of `logs.<key>.ndjson`), so `mcp_log` notifications from tools never reached the client. Fixing that exposed a race: the background flusher and the worker's final flush could both send the same progress or log line. Each stream's flush now holds a lock, and sends exactly the bytes it measured and only complete lines (a line the tool appended while the flush ran, or a line still being written, waits for the next flush), so every line is sent once.
+- **`mcp_client_supports_ui` was always false inside tools**: the SDK reads `MCPBASH_CLIENT_SUPPORTS_UI` or a file in the server's state directory, but the server passed neither to tools. So `mcp_result_with_ui` always sent its text fallback, even to a client that declared the MCP Apps extension (`io.modelcontextprotocol/ui`). The server now sets `MCPBASH_CLIENT_SUPPORTS_UI` (`1` or `0`) for each tool call.
+- **A tool's stderr with bytes that aren't valid UTF-8 was cut short on macOS**: in a UTF-8 locale, BSD `tr` stops at the first byte that isn't valid UTF-8, so `_meta.stderr`, the error message of a failed tool and `error.data.stderrTail` ended there, and the server logged "tr: Illegal byte sequence". Those `tr` calls now run in the C locale; the bytes reach the client as U+FFFD.
+
 ## [1.9.2] - 2026-10-13
 
 ### Behaviour changes to check before upgrading
