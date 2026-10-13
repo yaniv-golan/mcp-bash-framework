@@ -202,3 +202,43 @@ mcp_modern_server_capabilities() {
 			then {extensions: {"io.modelcontextprotocol/ui": {mimeTypes: $ui}}} else {} end)
 	'
 }
+
+# Give a response to a modern request the shape 2026-07-28 requires: every
+# result gets resultType "complete" and serverInfo in _meta (merged with the
+# _meta it has); the lists and resources/read get caching hints. On errors,
+# -32002 (resource not found) becomes -32602, and the legacy server codes
+# (-32000..-32019, such as -32003 shutting down) become -32603: 2026-07-28
+# defines its own codes from -32020 up. The response goes to jq on stdin
+# (a tool result can be large).
+# Usage: mcp_modern_decorate_response METHOD RESPONSE_JSON
+mcp_modern_decorate_response() {
+	local method="$1" response="$2"
+	local cache="none" ttl=0
+	case "${method}" in
+	tools/list | prompts/list | resources/list | resources/templates/list) cache="list" ;;
+	resources/read) cache="read" ;;
+	esac
+	if [ "${cache}" != "none" ]; then
+		ttl="$(mcp_modern_cache_ttl_ms "${cache}")"
+	fi
+	local decorated
+	if decorated="$(printf '%s' "${response}" | "${MCPBASH_JSON_TOOL_BIN}" -c \
+		--argjson info "$(mcp_spec_build_server_info)" \
+		--arg cache "${cache}" \
+		--argjson ttl "${ttl}" \
+		--arg scope "$(mcp_modern_cache_scope)" '
+		if (.result | type) == "object" then
+			.result |= (
+				.resultType = (.resultType // "complete")
+				| ._meta = ((._meta // {}) + {"io.modelcontextprotocol/serverInfo": $info})
+				| if $cache != "none" then .ttlMs = $ttl | .cacheScope = $scope else . end
+			)
+		elif (.error.code | type) == "number" then
+			.error.code |= (if . == -32002 then -32602 elif . <= -32000 and . >= -32019 then -32603 else . end)
+		else . end
+	' 2>/dev/null)" && [ -n "${decorated}" ]; then
+		printf '%s' "${decorated}"
+	else
+		printf '%s' "${response}"
+	fi
+}

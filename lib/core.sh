@@ -1419,6 +1419,9 @@ mcp_core_worker_entry() {
 	fi
 
 	if [ -n "${response}" ]; then
+		if [ "${MCPBASH_REQUEST_ERA:-legacy}" = "modern" ]; then
+			response="$(mcp_modern_decorate_response "${method}" "${response}")"
+		fi
 		response="$(mcp_core_guard_response_size "${id_json}" "${response}" "${method}")"
 		mcp_core_worker_emit "${key}" "${response}"
 	fi

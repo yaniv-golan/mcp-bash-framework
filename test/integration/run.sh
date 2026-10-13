@@ -96,6 +96,7 @@ TESTS=(
 	"test_tool_ui_capability.sh"
 	"test_modern_core.sh"
 	"test_modern_discover.sh"
+	"test_modern_results.sh"
 	"test_tools_refusals.sh"
 	"test_tools_schema.sh"
 	"test_prompts.sh"
