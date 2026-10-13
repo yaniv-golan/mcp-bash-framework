@@ -313,3 +313,15 @@ run_tool_cli_add_tool() {
 	run "${MCPBASH_HOME}/bin/mcp-bash" run-tool ok.text
 	assert_success
 }
+
+@test "run_tool_cli: a resource outside the roots adds no block (no log line, no roots list)" {
+	mkdir -p "${PROJECT_ROOT}/tools/res" "${BATS_TEST_TMPDIR}/outside"
+	printf 'secret\n' >"${BATS_TEST_TMPDIR}/outside/f.txt"
+	printf '{"name":"test.res","description":"r","inputSchema":{"type":"object"}}\n' >"${PROJECT_ROOT}/tools/res/tool.meta.json"
+	printf '#!/usr/bin/env bash\nsource "${MCP_SDK}/tool-sdk.sh"\nmcp_result_text "done" --resource "%s"\n' "${BATS_TEST_TMPDIR}/outside/f.txt" >"${PROJECT_ROOT}/tools/res/tool.sh"
+	chmod +x "${PROJECT_ROOT}/tools/res/tool.sh"
+	run "${MCPBASH_HOME}/bin/mcp-bash" run-tool test.res --roots "${PROJECT_ROOT}" --allow-self 2>/dev/null
+	assert_success
+	assert_equal "$(printf '%s' "${output}" | jq -c '[.content[].type]')" '["text"]'
+	refute_output --partial 'notifications/message'
+}

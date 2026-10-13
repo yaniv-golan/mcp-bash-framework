@@ -494,7 +494,9 @@ mcp_tools_collect_embedded_resources() {
 		content_obj="$(mcp_tools_embed_resource_from_path "${path}" "${mime}" "${uri}" || true)"
 		if [ -n "${content_obj}" ]; then
 			content_obj="$(
-				printf '%s' "${content_obj}" | "${MCPBASH_JSON_TOOL_BIN}" -c '{type:"resource",resource:.}' 2>/dev/null || true
+				# Only a resource object (it has a uri): outside the server,
+				# e.g. in run-tool, a log notification lands on the same stdout.
+				printf '%s' "${content_obj}" | "${MCPBASH_JSON_TOOL_BIN}" -c 'select(type == "object" and has("uri") and (has("jsonrpc") | not)) | {type:"resource",resource:.}' 2>/dev/null || true
 			)"
 			if [ -n "${content_obj}" ]; then
 				contents+=("${content_obj}")
