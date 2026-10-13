@@ -1832,19 +1832,33 @@ _mcp_core_flush_stream_unlocked() {
 		last_offset="$(cat "${offset_file}")"
 	fi
 	local size
-	size="$(wc -c <"${stream}" 2>/dev/null || echo 0)"
+	size="$(wc -c <"${stream}" 2>/dev/null | tr -d ' ')"
+	case "${size}" in '' | *[!0-9]*) size=0 ;; esac
+	case "${last_offset}" in '' | *[!0-9]*) last_offset=0 ;; esac
 	if [ "${size}" -lt "${last_offset}" ]; then
 		last_offset=0
 	fi
 	if [ "${size}" -eq "${last_offset}" ]; then
 		return 0
 	fi
-	# Continue emitting from the last offset so progress/log lines survive worker
-	# restarts without replaying already-sent messages.
+	# The tool may still be appending, so read exactly the bytes measured
+	# (reading on to the end of the file would send lines past ${size} and
+	# then send them again on the next flush), and send only complete lines:
+	# an incomplete last line is sent once it is complete.
 	# Git Bash/coreutils `tail -c +N` has been observed to be flaky in CI; use dd
 	# for a more portable byte-offset reader.
-	dd if="${stream}" bs=1 skip="${last_offset}" 2>/dev/null \
-		| while IFS= read -r line || [ -n "${line}" ]; do
+	local chunk
+	chunk="$(mktemp "${MCPBASH_STATE_DIR}/flush.${kind}.${key}.XXXXXX" 2>/dev/null)" || return 0
+	dd if="${stream}" of="${chunk}" bs=1 skip="${last_offset}" count=$((size - last_offset)) 2>/dev/null || true
+	local complete_lines complete_bytes
+	complete_lines="$(LC_ALL=C tr -cd '\n' <"${chunk}" | wc -c | tr -d ' ')"
+	if [ "${complete_lines:-0}" -eq 0 ] 2>/dev/null; then
+		rm -f "${chunk}"
+		return 0
+	fi
+	complete_bytes="$(head -n "${complete_lines}" "${chunk}" | wc -c | tr -d ' ')"
+	head -n "${complete_lines}" "${chunk}" \
+		| while IFS= read -r line; do
 			[ -z "${line}" ] && continue
 			if [ "${kind}" = "log" ]; then
 				local level
@@ -1857,7 +1871,8 @@ _mcp_core_flush_stream_unlocked() {
 				rpc_send_line "${line}"
 			fi
 		done
-	echo "${size}" >"${offset_file}"
+	rm -f "${chunk}"
+	echo "$((last_offset + complete_bytes))" >"${offset_file}"
 }
 
 mcp_core_flush_worker_streams_once() {

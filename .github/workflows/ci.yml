@@ -349,6 +349,8 @@ jobs:
             test_exit_stops_tools.sh
             test_zombie_server_helpers.sh
             test_resource_read_timeout.sh
+            test_live_progress_logs.sh
+            test_tools_stderr_invalid_utf8.sh
         run: |
           set -euo pipefail
           unset MCPBASH_CI_MODE
