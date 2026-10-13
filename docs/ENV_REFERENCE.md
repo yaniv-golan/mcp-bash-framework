@@ -10,7 +10,7 @@ Authoritative list of supported environment variables. Defaults shown are the sh
 | `MCPBASH_TOOLS_DIR` / `MCPBASH_RESOURCES_DIR` / `MCPBASH_PROMPTS_DIR` / `MCPBASH_SERVER_DIR` | Derived from `MCPBASH_PROJECT_ROOT` | Override content and server hook locations. `doctor`, `run-tool` and `validate` honour `MCPBASH_SERVER_DIR` (output labels stay relative to the project); `bundle` does not (it always packages `server.d/`). |
 | `MCPBASH_PROVIDERS_DIR` | `${MCPBASH_PROJECT_ROOT}/providers` | Directory for project-level resource providers. Scripts here are checked before framework providers. Unlike other content directories, not auto-created. |
 | `MCPBASH_HOME` | (install dir of `bin/mcp-bash`) | Framework install location. Override to run framework code from another checkout (development). |
-| `MCPBASH_MODERN_PROTOCOL` | `false` | `true` serves MCP 2026-07-28 (modern, stateless) requests next to the legacy `initialize` session, and answers `server/discover`. Off by default in 2.0 while roots, elicitation and `subscriptions/listen` are missing on that path: a client that goes modern (Claude Code does when `server/discover` succeeds) gets no client roots (only `MCPBASH_ROOTS`, `config/roots.json` or the project root), no elicitation and no list-change notifications. Needs jq/gojq. See [ARCHITECTURE.md](ARCHITECTURE.md#modern-requests-mcp-2026-07-28). |
+| `MCPBASH_MODERN_PROTOCOL` | `false` | `true` serves MCP 2026-07-28 (modern, stateless) requests next to the legacy `initialize` session, and answers `server/discover`. Off by default in 2.0 while roots, elicitation and `subscriptions/listen` are missing on that path: a client that goes modern (Claude Code does when `server/discover` succeeds) gets no client roots (only `MCPBASH_ROOTS`, `config/roots.json` or the project root), no elicitation and no list-change notifications. Needs jq/gojq. With the switch on, the server sends no log notification before a legacy client's `initialize` (a modern-only process has no session for unsolicited messages). See [ARCHITECTURE.md](ARCHITECTURE.md#modern-requests-mcp-2026-07-28). |
 | `MCPBASH_MODERN_LIST_TTL_MS` | `5000` (`0` when `MCPBASH_LOG_LEVEL=debug`) | `ttlMs` caching hint on `server/discover` and the list results sent to modern clients. |
 | `MCPBASH_MODERN_READ_TTL_MS` | `0` | `ttlMs` caching hint on `resources/read` results sent to modern clients. |
 | `MCPBASH_MODERN_CACHE_SCOPE` | `private` | `cacheScope` caching hint (`private` or `public`) on those results. The lists depend on the operator's allowlist and environment, so keep `private` unless every client may share them. |
@@ -124,6 +124,12 @@ Operators may set these; the defaults suit most setups. The server refuses to st
 ## Internal Runtime State (do not override)
 
 Examples: `MCPBASH_STDOUT_LOCK_NAME`, `MCPBASH_INITIALIZED`, `MCPBASH_ROOTS_*` (not to be confused with the user-facing `MCPBASH_ROOTS`), `MCPBASH_CLIENT_SUPPORTS_*`, `MCPBASH_PROGRESS_FLUSHER_PID`, `MCPBASH_RESOURCE_POLL_PID`, `MCPBASH_NEXT_OUTGOING_ID`, `MCPBASH_HANDLER_OUTPUT`. These are set by the runtime to coordinate sourced scripts and are not user-facing.
+
+Tools can read two of them, and should not set them:
+- `MCPBASH_PROTOCOL_ERA`: `modern` for a 2026-07-28 request, unset otherwise. `mcp_result_json` reads it.
+- `MCPBASH_CLIENT_SUPPORTS_UI`: `1` when the client supports MCP Apps (`mcp_client_supports_ui`).
+
+The server clears both at startup, so values in its own environment (for example in an mcp-bash started by a tool) are ignored.
 
 ## Test/Scaffold/Installer Helpers
 
