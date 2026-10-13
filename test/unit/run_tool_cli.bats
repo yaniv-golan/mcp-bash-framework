@@ -262,8 +262,10 @@ EOF
 }
 
 @test "run_tool_cli: timeout override permits slow tool" {
-	# Without override, tool should timeout (returns isError:true, exit 0)
-	timeout_output="$("${MCPBASH_HOME}/bin/mcp-bash" run-tool test.slow)"
+	# Without override, tool should timeout (an isError result, so exit 1)
+	run "${MCPBASH_HOME}/bin/mcp-bash" run-tool test.slow
+	assert_failure 1
+	timeout_output="${output}"
 	timeout_is_error="$(printf '%s\n' "${timeout_output}" | jq -r '.isError')"
 	assert_equal "true" "${timeout_is_error}"
 	# Verify it's a timeout error
@@ -274,4 +276,40 @@ EOF
 	slow_override_output="$("${MCPBASH_HOME}/bin/mcp-bash" run-tool test.slow --timeout 8)"
 	slow_message="$(printf '%s\n' "${slow_override_output}" | jq -r 'select(.name=="test.slow") | .structuredContent.message')"
 	assert_equal "done" "${slow_message}"
+}
+
+# run_tool_cli_add_tool NAME BODY: a tool that runs BODY with the SDK loaded.
+run_tool_cli_add_tool() {
+	mkdir -p "${PROJECT_ROOT}/tools/$1"
+	printf '{"name":"%s","description":"t","inputSchema":{"type":"object"}}\n' "$1" >"${PROJECT_ROOT}/tools/$1/tool.meta.json"
+	# shellcheck disable=SC2016  # Literal for the generated tool script
+	printf '#!/usr/bin/env bash\nset -euo pipefail\nsource "${MCP_SDK}/tool-sdk.sh"\n%s\n' "$2" >"${PROJECT_ROOT}/tools/$1/tool.sh"
+	chmod +x "${PROJECT_ROOT}/tools/$1/tool.sh"
+}
+
+@test "run_tool_cli: exits 1 for every isError result, 0 otherwise" {
+	run_tool_cli_add_tool err.exit 'echo plain; exit 3'
+	run_tool_cli_add_tool err.typed 'mcp_fail --type not_found "nope"'
+	run_tool_cli_add_tool err.message 'mcp_fail "one arg"'
+	run_tool_cli_add_tool err.legacy 'mcp_error not_found "legacy"; exit 0'
+	run_tool_cli_add_tool err.stderr 'echo "to stderr" >&2; exit 3'
+	run_tool_cli_add_tool err.stdoutcode 'echo "{\"code\":-32001,\"message\":\"custom\"}"; exit 1'
+	run_tool_cli_add_tool err.numeric 'mcp_fail -32602 "bad"'
+	run_tool_cli_add_tool err.invalid 'mcp_fail_invalid_args "bad"'
+	run_tool_cli_add_tool err.result 'mcp_result_error "{\"type\":\"oops\",\"message\":\"m\"}"'
+	run_tool_cli_add_tool ok.text 'mcp_result_text "fine"'
+	local t
+	for t in err.exit err.typed err.message err.legacy err.stderr err.stdoutcode err.numeric err.invalid err.result; do
+		run "${MCPBASH_HOME}/bin/mcp-bash" run-tool "${t}"
+		[ "${status}" -eq 1 ] || {
+			printf '%s: expected exit 1, got %s: %s\n' "${t}" "${status}" "${output}" >&2
+			return 1
+		}
+		printf '%s\n' "${output}" | jq -e 'select(.isError == true)' >/dev/null || {
+			printf '%s: no isError result in output: %s\n' "${t}" "${output}" >&2
+			return 1
+		}
+	done
+	run "${MCPBASH_HOME}/bin/mcp-bash" run-tool ok.text
+	assert_success
 }

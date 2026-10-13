@@ -61,7 +61,7 @@ The SDK handles writing/reading these files, timeouts, and cancellation. Tools s
 
 ### Using the helpers under `set -e`
 
-The helpers always print the `{"action": ...}` JSON, but they **exit non-zero** when no answer came back: the client can't elicit, the request timed out, or the tool call was cancelled. A real answer from the user (accept, decline or cancel) exits 0. Under `set -euo pipefail`, a plain `resp="$(mcp_elicit_confirm ...)"` therefore aborts the tool before it can look at `.action`, and the client gets a protocol error instead of your fallback. Add `|| true` and branch on `.action`:
+The helpers always print the `{"action": ...}` JSON, but they **exit non-zero** when no answer came back: the client can't elicit, the request timed out, or the tool call was cancelled. A real answer from the user (accept, decline or cancel) exits 0. Under `set -euo pipefail`, a plain `resp="$(mcp_elicit_confirm ...)"` therefore aborts the tool before it can look at `.action`, and the client gets a `tool_failed` error result (a protocol error before 2.0) instead of your fallback. Add `|| true` and branch on `.action`:
 
 ```bash
 resp="$(mcp_elicit_confirm "Delete 40 files?")" || true

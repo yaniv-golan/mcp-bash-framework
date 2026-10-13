@@ -81,7 +81,7 @@ check_case() {
 	done
 }
 
-@test "args iserror: mcp_fail_invalid_args itself still sends JSON-RPC -32602 in 1.x" {
+@test "args iserror: mcp_fail_invalid_args gives an invalid_args error result in 2.0" {
 	cat >"${PROJ}/tools/proj-args/tool.sh" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -89,14 +89,14 @@ source "${MCP_SDK:?}/tool-sdk.sh"
 mcp_fail_invalid_args "explicit legacy call"
 SH
 	resp="$(call_case any)"
-	assert_equal "$(printf '%s' "${resp}" | jq -r '.error.code')" "-32602"
+	assert_equal "$(printf '%s' "${resp}" | jq -c '[has("error"), .result.isError, .result._meta["mcpbash/error"].type, .result.content[0].text]')" '[false,true,"invalid_args","explicit legacy call"]'
 }
 
-@test "args iserror: SDK loaded without tool-error.sh falls back to the 1.x JSON-RPC error" {
+@test "args iserror: SDK loaded without tool-error.sh falls back to a bare error result" {
 	d="${BATS_TEST_TMPDIR}/sdk_alone"
 	mkdir -p "${d}"
 	cp "${MCPBASH_HOME}/sdk/tool-sdk.sh" "${d}/"
 	run bash -c '. "$1/tool-sdk.sh" 2>/dev/null; mcp_args_require ".missing"' _ "${d}"
 	assert_failure
-	assert_equal "$(printf '%s\n' "${output}" | head -n 1 | jq -r '.code')" "-32602"
+	assert_equal "$(printf '%s\n' "${output}" | head -n 1 | jq -c '[.isError, (.code // null)]')" '[true,null]'
 }

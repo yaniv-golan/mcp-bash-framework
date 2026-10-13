@@ -71,7 +71,9 @@ mcp_result_json "$(mcp_json_obj query "${query}" name "${name}")"
   `mcp_result_text TEXT`.
 - **Errors the model should see and react to:** `mcp_fail --type TYPE "message" --hint "what
   to do"` (types such as `invalid_args`, `not_found`, `permission`, `unavailable`). It returns
-  an error result the model reads and **ends the tool**.
+  an error result the model reads and **ends the tool**. From mcp-bash 2.0 `--type` is optional
+  (type `tool_failed`), and any other failure, a non-zero exit included, also reaches the model
+  as an error result with the stderr tail as its text; `run-tool` exits 1 for every error result.
 - **The 1.x helpers don't end the tool.** If you maintain code that uses `mcp_result_success`, <!-- lint-api-usage: allow -->
   `mcp_result_error` or `mcp_error`, follow them with `exit 0` in an early-return branch, or the <!-- lint-api-usage: allow -->
   tool keeps going and prints a second result (or does the work it just refused).

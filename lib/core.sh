@@ -1642,8 +1642,9 @@ mcp_core_emit_shutting_down() {
 # -32700 parse error, -32600 invalid request, -32601 method not found,
 # -32602 invalid params, -32603 internal error.
 # We also use the server-reserved range (-32000..-32099) for MCP-specific states:
-# -32000 not initialized, -32001 cancelled, -32003 shutting down,
-# -32005 exit before shutdown. Timeouts use -32603 (internal error) by policy.
+# -32000 not initialized, -32003 shutting down, -32005 exit before shutdown.
+# A request that times out gets -32603. A cancelled request gets no response
+# (lib/io.sh drops it), and a tool's own failures are error results, not codes.
 mcp_core_build_error_response() {
 	local id_json="$1"
 	local code="$2"

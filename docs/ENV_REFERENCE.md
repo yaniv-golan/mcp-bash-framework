@@ -23,7 +23,9 @@ Authoritative list of supported environment variables. Defaults shown are the sh
 | `MCPBASH_LOCK_REAP_GUARD_STALE_SECS` | `5` | Seconds after which a lock-cleanup guard left by a process that died is cleared. |
 | `MCPBASH_MAX_TEXT_BYTES` | `102400` | Max bytes for `content[].text` in `mcp_result_json` before the text is replaced by a short summary (the data stays in `structuredContent`; 100KB default ensures LLMs see full data). |
 | `MCPBASH_MAX_TOOL_OUTPUT_SIZE` | `10485760` | Tool stdout limit (bytes). |
-| `MCPBASH_MAX_TOOL_STDERR_SIZE` | `$MCPBASH_MAX_TOOL_OUTPUT_SIZE` | Tool stderr limit (bytes). |
+| `MCPBASH_MAX_TOOL_STDERR_SIZE` | `$MCPBASH_MAX_TOOL_OUTPUT_SIZE` | Tool stderr limit (bytes). Over either limit, the call returns an `output_too_large` error result. |
+| `MCPBASH_TOOL_STDERR_CAPTURE` | `true` | Attach the tool's stderr tail to its result (`_meta.stderr`). For a tool that exits non-zero the tail is also the error text the model reads, so set `false` for tools that may print secrets to stderr. |
+| `MCPBASH_TOOL_STDERR_TAIL_LIMIT` | `4096` | Bytes of stderr kept for `_meta.stderr`; also the cap on a failed tool's error text. |
 | `MCPBASH_MAX_RESOURCE_BYTES` | `$MCPBASH_MAX_TOOL_OUTPUT_SIZE` | Resource payload limit (bytes). `file://` reads stop at this size. A value that is not a plain byte count (such as `1M` or `-1`) means 10 MiB. |
 | `MCPBASH_MAX_UI_RESOURCE_BYTES` | `1048576` | Max size of a `ui://` resource (bytes). A value that is not a plain byte count (such as `1M`) means the default. |
 | `MCPBASH_MAX_PROGRESS_PER_MIN` | `100` | Progress events per request per minute. |

@@ -693,8 +693,10 @@ mcp_tools_policy_denied_result() {
 # Emit error JSON to stdout for propagation through command substitution.
 # Usage: _mcp_tools_emit_error <code> <message> [data]
 # The data argument should be valid JSON (object, string, null, etc.)
-# Codes are JSON-RPC 2.0 values; we also emit the reserved server range for
-# tool-specific states (-32001 cancelled, -32603 timed out).
+# Codes are JSON-RPC 2.0 values. Used only for framework faults and for
+# refusals before the tool runs; anything the tool does after it starts is an
+# error result (_mcp_tools_emit_error_result). -32001 marks a cancelled call,
+# whose response lib/io.sh drops.
 _mcp_tools_emit_error() {
 	local err_code="$1"
 	local err_message="$2"
@@ -717,31 +719,32 @@ _mcp_tools_emit_error() {
 	fi
 }
 
-# Emit a timeout as a tool error result (isError: true), not a protocol error,
-# so the model sees it and can adjust. Same shape as every other tool error
-# (sdk/tool-error.sh): no structuredContent, details in _meta["mcpbash/error"]
-# with type "timeout", plus _meta.exitCode and, when captured, _meta.stderr.
-# Works without jq.
-# Usage: _mcp_tools_emit_timeout_result <message> <hint> <data_json> <stderr_tail> <exit_code>
-_mcp_tools_emit_timeout_result() {
-	local message="$1"
-	local hint="$2"
-	local data="$3"
-	local stderr_tail="$4"
-	local exit_code="$5"
+# Emit a tool error result (isError: true), not a protocol error, so the model
+# sees why the call failed and can adjust. Same shape as every other tool
+# error (sdk/tool-error.sh): no structuredContent, details in
+# _meta["mcpbash/error"], plus _meta.exitCode and, when captured, _meta.stderr.
+# DATA is JSON or empty. Works without jq.
+# Usage: _mcp_tools_emit_error_result <type> <message> <hint> <data_json> <stderr_tail> <exit_code>
+_mcp_tools_emit_error_result() {
+	local type="$1"
+	local message="$2"
+	local hint="$3"
+	local data="$4"
+	local stderr_tail="$5"
+	local exit_code="$6"
 
 	if ! declare -F mcp_tool_error_result >/dev/null 2>&1; then
 		# shellcheck source=../sdk/tool-error.sh disable=SC1091
 		. "${MCPBASH_HOME}/sdk/tool-error.sh"
 	fi
-	[[ "${exit_code}" =~ ^[0-9]+$ ]] || exit_code=124
+	[[ "${exit_code}" =~ ^-?[0-9]+$ ]] || exit_code=1
+	[ "${data}" = "null" ] && data=""
 
+	local args=()
+	[ -n "${hint}" ] && args+=(--hint "${hint}")
+	[ -n "${data}" ] && args+=(--data "${data}")
 	local result
-	if [ -n "${hint}" ]; then
-		result="$(mcp_tool_error_result timeout "${message}" --hint "${hint}" --data "${data}")"
-	else
-		result="$(mcp_tool_error_result timeout "${message}" --data "${data}")"
-	fi
+	result="$(mcp_tool_error_result "${type}" "${message}" ${args[@]+"${args[@]}"})"
 
 	# Add exitCode and stderr next to "mcpbash/error": drop the closing "}}"
 	# of _meta and the result, and close them again.
@@ -750,6 +753,105 @@ _mcp_tools_emit_timeout_result() {
 		extra="${extra},\"stderr\":$(__mcp_tool_error_json_string "${stderr_tail}")"
 	fi
 	_MCP_TOOLS_RESULT="${result%\}\}}${extra}}}"
+}
+
+# Load sdk/tool-error.sh (the error result builder) if it isn't loaded yet.
+_mcp_tools_load_tool_error_sdk() {
+	if ! declare -F mcp_tool_error_result >/dev/null 2>&1; then
+		# shellcheck source=../sdk/tool-error.sh disable=SC1091
+		. "${MCPBASH_HOME}/sdk/tool-error.sh"
+	fi
+}
+
+# Turn a side-channel entry that is not an error result (a 1.x
+# {"code","message","data"} object, or text) into a tool_failed error result
+# (invalid_args for -32602). The code itself is never sent. The message is
+# capped like any error text, and data over 64 KiB is left out.
+# Usage: _mcp_tools_side_channel_error_result <file> <exit_code> <stderr_file>
+_mcp_tools_side_channel_error_result() {
+	local file="$1" exit_code="${2:-1}" stderr_file="${3:-}"
+	local limit="${MCPBASH_TOOL_STDERR_TAIL_LIMIT:-4096}"
+	case "${limit}" in
+	'' | *[!0-9]*) limit=4096 ;;
+	esac
+	local raw type="tool_failed" message="" data="" stderr_tail=""
+	raw="$(cat "${file}" 2>/dev/null || true)"
+	if [ "${MCPBASH_JSON_TOOL:-none}" != "none" ]; then
+		local parsed
+		parsed="$(printf '%s' "${raw}" | "${MCPBASH_JSON_TOOL_BIN}" -c 'select(type == "object" and (.message | type) == "string") | {code: (.code // null), message, data: (.data // null)}' 2>/dev/null || true)"
+		if [ -n "${parsed}" ]; then
+			message="$(printf '%s' "${parsed}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.message' | head -c "${limit}")"
+			if [ "$(printf '%s' "${parsed}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.code')" = "-32602" ]; then
+				type="invalid_args"
+			fi
+			data="$(printf '%s' "${parsed}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.data // empty')"
+			if [ "${#data}" -gt 65536 ]; then
+				data=""
+			fi
+		fi
+	fi
+	if [ -z "${message}" ]; then
+		message="$(printf '%s' "${raw}" | head -c "${limit}")"
+	fi
+	message="$(printf '%s' "${message}" | LC_ALL=C tr -d '\000-\010\013\014\016-\037')"
+	[ -n "${message}" ] || message="Tool failed"
+	if [ -n "${stderr_file}" ] && mcp_tools_stderr_capture_enabled && [ -s "${stderr_file}" ]; then
+		stderr_tail="$(mcp_tools_stderr_tail "${stderr_file}" "${limit}")"
+	fi
+	_mcp_tools_emit_error_result "${type}" "${message}" "" "${data}" "${stderr_tail}" "${exit_code}"
+}
+
+# True when the tool's stdout is itself a CallToolResult (an object with a
+# content array and isError).
+mcp_tools_stdout_is_call_tool_result() {
+	local file="$1" has_json="$2"
+	[ "${has_json}" = "true" ] && [ -s "${file}" ] || return 1
+	"${MCPBASH_JSON_TOOL_BIN}" -e 'type == "object" and (.content | type) == "array" and has("isError")' "${file}" >/dev/null 2>&1
+}
+
+# The text of a failed tool's error result, in order: the message of a 1.x
+# error object on stdout (a single {"code": N, "message": "..."} object);
+# the stderr tail; the end of stdout. Capped at LIMIT bytes before anything
+# else looks at it, control characters other than tab and newline removed,
+# trailing whitespace trimmed. Prints nothing when none of them has text.
+# Usage: mcp_tools_failure_message <stdout_file> <stderr_tail> <has_json> <limit>
+mcp_tools_failure_message() {
+	local file="$1" stderr_tail="$2" has_json="$3" limit="${4:-4096}"
+	local text=""
+	if [ "${has_json}" = "true" ] && [ -s "${file}" ]; then
+		text="$("${MCPBASH_JSON_TOOL_BIN}" -r -s '
+			if length == 1 and (.[0] | type) == "object" and (.[0].code | type) == "number" and (.[0].message | type) == "string"
+			then .[0].message else empty end
+		' "${file}" 2>/dev/null | head -c "${limit}" || true)"
+	fi
+	case "${text}" in
+	*[![:space:]]*) ;;
+	*) text="$(printf '%s' "${stderr_tail}" | head -c "${limit}")" ;;
+	esac
+	case "${text}" in
+	*[![:space:]]*) ;;
+	*)
+		text=""
+		if [ -s "${file}" ]; then
+			text="$(tail -c "${limit}" "${file}" 2>/dev/null || true)"
+		fi
+		;;
+	esac
+	case "${text}" in
+	*[![:space:]]*) ;;
+	*) return 0 ;;
+	esac
+	text="$(printf '%s' "${text}" | LC_ALL=C tr -d '\000-\010\013\014\015\016-\037')"
+	text="${text%"${text##*[![:space:]]}"}"
+	printf '%s' "${text}"
+}
+
+# A timeout is a tool error result with type "timeout".
+# Usage: _mcp_tools_emit_timeout_result <message> <hint> <data_json> <stderr_tail> <exit_code>
+_mcp_tools_emit_timeout_result() {
+	local exit_code="$5"
+	[[ "${exit_code}" =~ ^[0-9]+$ ]] || exit_code=124
+	_mcp_tools_emit_error_result timeout "$1" "$2" "$3" "$4" "${exit_code}"
 }
 
 # Format timeout error message based on MCPBASH_TIMEOUT_REASON
@@ -839,17 +941,15 @@ mcp_tools_validate_output_schema() {
 	# Parse the tool output as JSON
 	local structured_json=""
 	if ! structured_json="$("${MCPBASH_JSON_TOOL_BIN}" -c '.' "${stdout_file}" 2>/dev/null)"; then
-		local data_json
-		data_json="$(mcp_tools_output_schema_error_data "${tool_name}" "${exit_code}" "${stderr_tail}" "${trace_line}" "${trace_available}")"
-		_mcp_tools_emit_error -32603 "Tool output is not valid JSON for declared outputSchema" "${data_json}"
-		return 1
+		_mcp_tools_emit_error_result output_schema "Tool output is not valid JSON for declared outputSchema" "" \
+			"$(mcp_tools_output_schema_error_data "${tool_name}" "${exit_code}" "${stderr_tail}" "${trace_line}" "${trace_available}")" "${stderr_tail}" "${exit_code}"
+		return 2
 	fi
 
 	if [ -z "${structured_json}" ]; then
-		local data_json
-		data_json="$(mcp_tools_output_schema_error_data "${tool_name}" "${exit_code}" "${stderr_tail}" "${trace_line}" "${trace_available}")"
-		_mcp_tools_emit_error -32603 "Tool output is empty for declared outputSchema" "${data_json}"
-		return 1
+		_mcp_tools_emit_error_result output_schema "Tool output is empty for declared outputSchema" "" \
+			"$(mcp_tools_output_schema_error_data "${tool_name}" "${exit_code}" "${stderr_tail}" "${trace_line}" "${trace_available}")" "${stderr_tail}" "${exit_code}"
+		return 2
 	fi
 
 	# An error result (a CallToolResult with isError: true) carries no structured
@@ -875,13 +975,16 @@ mcp_tools_validate_output_schema() {
 			# Use raw output directly
 			$raw
 		end) as $data |
-		(
+		if ($s.type // "object") != "object" then true
+		# Any other JSON value (array, string, number, null) is not the object
+		# the schema describes. Checked first: has() and .[$k] fail on them.
+		elif ($data | type) != "object" then false
+		else
 			# Check required fields exist
 			(($s.required // []) | all(. as $k | $data | has($k)))
-		) as $required_ok |
-		(
+			and
 			# Check types match for present fields
-			(($s.properties // {}) | keys) |
+			((($s.properties // {}) | keys) |
 			all(. as $k |
 				($data[$k] // null) as $v |
 				(($s.properties // {})[$k].type // "") as $t |
@@ -894,18 +997,16 @@ mcp_tools_validate_output_schema() {
 					elif $t=="array" then ($v|type)=="array"
 					elif $t=="object" then ($v|type)=="object"
 					else true end)
-				end)
-		) as $types_ok |
-		if ($s.type // "object") != "object" then true
-		elif $required_ok and $types_ok then true
-		else false
+				end))
 		end
 	' 2>/dev/null)" && validation_status=0 || validation_status=$?
 
+	# The validator itself failed to run: a framework fault, not the tool's.
 	if [ "${validation_status}" -ne 0 ]; then
+		mcp_logging_error "${MCP_TOOLS_LOGGER}" "Tool ${tool_name}: outputSchema check failed to run (jq exit ${validation_status})" || true
 		local data_json
 		data_json="$(mcp_tools_output_schema_error_data "${tool_name}" "${exit_code}" "${stderr_tail}" "${trace_line}" "${trace_available}")"
-		_mcp_tools_emit_error -32603 "Tool output does not satisfy outputSchema" "${data_json}"
+		_mcp_tools_emit_error -32603 "Unable to check tool output against outputSchema" "${data_json}"
 		return 1
 	fi
 
@@ -914,10 +1015,9 @@ mcp_tools_validate_output_schema() {
 		return 0
 	fi
 
-	local data_json
-	data_json="$(mcp_tools_output_schema_error_data "${tool_name}" "${exit_code}" "${stderr_tail}" "${trace_line}" "${trace_available}")"
-	_mcp_tools_emit_error -32603 "Tool output does not satisfy outputSchema" "${data_json}"
-	return 1
+	_mcp_tools_emit_error_result output_schema "Tool output does not satisfy outputSchema" "" \
+		"$(mcp_tools_output_schema_error_data "${tool_name}" "${exit_code}" "${stderr_tail}" "${trace_line}" "${trace_available}")" "${stderr_tail}" "${exit_code}"
+	return 2
 }
 
 mcp_tools_apply_manual_json() {
@@ -1419,7 +1519,9 @@ mcp_tools_stderr_tail() {
 	local limit="${2:-4096}"
 	[ -n "${file}" ] || return 0
 	[ -f "${file}" ] || return 0
-	tail -c "${limit}" "${file}" 2>/dev/null | tr -d '\0'
+	# LC_ALL=C: in a UTF-8 locale BSD tr stops at the first byte that isn't
+	# valid UTF-8 ("Illegal byte sequence") and the rest of the tail is lost.
+	tail -c "${limit}" "${file}" 2>/dev/null | LC_ALL=C tr -d '\0'
 }
 
 mcp_tools_trace_enabled() {
@@ -2100,6 +2202,8 @@ mcp_tools_call() {
 	# written by the SDK when it ends a tool from inside $(...)) is the tool's
 	# result: hand it to the normal result path, as if the tool had printed it
 	# and exited 0. It replaces whatever the tool printed before failing.
+	# _meta.exitCode still reports the tool's real exit status.
+	local meta_exit_code="${exit_code}"
 	if [ -n "${tool_error_file}" ] && [ -s "${tool_error_file}" ]; then
 		local side_result
 		side_result="$(cat "${tool_error_file}" 2>/dev/null || true)"
@@ -2112,33 +2216,12 @@ mcp_tools_call() {
 		esac
 	fi
 
-	# Prefer explicit tool-authored errors as early as possible.
+	# Anything else in the side channel (a 1.x {code, message} error object,
+	# or plain text) is an error result too. A tool's code is never sent.
 	if [ -n "${tool_error_file}" ] && [ -s "${tool_error_file}" ]; then
-		local tool_error_raw parsed_tool_error
-		tool_error_raw="$(cat "${tool_error_file}" 2>/dev/null || true)"
-		if [ "${MCPBASH_JSON_TOOL:-none}" != "none" ]; then
-			parsed_tool_error="$(
-				printf '%s' "${tool_error_raw}" | "${MCPBASH_JSON_TOOL_BIN}" -c '
-					select(
-						(.code | type) == "number"
-						and (.code | floor) == (.code | tonumber)
-						and (.message | type) == "string"
-					)
-					| {code: (.code | tonumber), message: .message, data: (.data // null)}
-				' 2>/dev/null || true
-			)"
-		fi
-		if [ -n "${parsed_tool_error}" ]; then
-			local te_code te_message te_data
-			te_code="$(printf '%s' "${parsed_tool_error}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.code')"
-			te_message="$(printf '%s' "${parsed_tool_error}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.message')"
-			te_data="$(printf '%s' "${parsed_tool_error}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.data')"
-			_mcp_tools_emit_error "${te_code}" "${te_message}" "${te_data}"
-		else
-			_mcp_tools_emit_error -32603 "Tool failed" "$(printf '%s' "${tool_error_raw}" | "${MCPBASH_JSON_TOOL_BIN}" -Rs '.' 2>/dev/null || printf '"%s"' "${tool_error_raw//\"/\\\"}")"
-		fi
+		_mcp_tools_side_channel_error_result "${tool_error_file}" "${exit_code}" "${stderr_file}"
 		cleanup_tool_temp_files
-		return 1
+		return 0
 	fi
 
 	# NOTE: errexit toggling removed - code below uses explicit error checks and || true patterns
@@ -2150,9 +2233,9 @@ mcp_tools_call() {
 	stdout_size="$(wc -c <"${stdout_file}" | tr -d ' ')"
 	if [ "${stdout_size}" -gt "${limit}" ]; then
 		mcp_logging_error "${MCP_TOOLS_LOGGER}" "Tool ${name} output ${stdout_size} bytes exceeds limit ${limit}" || true
-		_mcp_tools_emit_error -32603 "Tool output exceeded ${limit} bytes" "null"
+		_mcp_tools_emit_error_result output_too_large "Tool output exceeded ${limit} bytes" "" "{\"limitBytes\":${limit},\"bytes\":${stdout_size}}" "" "${exit_code}"
 		cleanup_tool_temp_files
-		return 1
+		return 0
 	fi
 
 	local stdout_content
@@ -2169,9 +2252,9 @@ mcp_tools_call() {
 	stderr_size="$(wc -c <"${stderr_file}" | tr -d ' ')"
 	if [ "${stderr_size}" -gt "${stderr_limit}" ]; then
 		mcp_logging_error "${MCP_TOOLS_LOGGER}" "Tool ${name} stderr ${stderr_size} bytes exceeds limit ${stderr_limit}" || true
-		_mcp_tools_emit_error -32603 "Tool stderr exceeded ${stderr_limit} bytes" "null"
+		_mcp_tools_emit_error_result output_too_large "Tool stderr exceeded ${stderr_limit} bytes" "" "{\"limitBytes\":${stderr_limit},\"bytes\":${stderr_size}}" "" "${exit_code}"
 		cleanup_tool_temp_files
-		return 1
+		return 0
 	fi
 	stderr_content="${stderr_file}"
 	stdout_content="${stdout_file}"
@@ -2215,7 +2298,7 @@ mcp_tools_call() {
 	fi
 	local trace_line=""
 	if [ "${trace_enabled}" = "true" ] && [ -n "${trace_file}" ] && [ -f "${trace_file}" ]; then
-		trace_line="$(tail -n 1 "${trace_file}" 2>/dev/null | head -c 512 | tr -d '\0')"
+		trace_line="$(tail -n 1 "${trace_file}" 2>/dev/null | head -c 512 | LC_ALL=C tr -d '\0')"
 	fi
 	local trace_available="false"
 	if [[ "${trace_enabled}" = "true" && "${trace_size}" -gt 0 ]]; then
@@ -2279,125 +2362,39 @@ mcp_tools_call() {
 		return 0 # Changed from return 1 - flows to success path in handler with isError: true
 	fi
 
-	local tool_error_raw=""
-	if [ -n "${tool_error_file}" ] && [ -e "${tool_error_file}" ]; then
-		tool_error_raw="$(cat "${tool_error_file}" 2>/dev/null || true)"
+	# A non-zero exit is an error result (isError: true), never a JSON-RPC
+	# error: the model reads why the tool failed. A tool that printed its own
+	# CallToolResult keeps it; the result path below marks it isError.
+	if [ "${exit_code}" -ne 0 ] && ! mcp_tools_stdout_is_call_tool_result "${stdout_content}" "${has_json_tool}"; then
+		local fail_message fail_data
+		fail_message="$(mcp_tools_failure_message "${stdout_content}" "${stderr_tail}" "${has_json_tool}" "${stderr_tail_limit}")"
+		[ -n "${fail_message}" ] || fail_message="Tool failed with exit code ${exit_code}"
+		_mcp_tools_load_tool_error_sdk
+		fail_data="{\"exitCode\":${exit_code}"
+		if [ -n "${trace_line}" ]; then
+			fail_data="${fail_data},\"traceLine\":$(__mcp_tool_error_json_string "${trace_line}")"
+		fi
+		fail_data="${fail_data}}"
+		local fail_summary="${fail_message%%$'\n'*}"
+		mcp_tools_emit_github_annotation "${name}" "${fail_summary}" "${trace_line}"
+		mcp_tools_append_failure_summary "${name}" "${exit_code}" "${fail_summary}" "${stderr_tail}" "${trace_line}" "${arg_count}" "${arg_bytes}" "${meta_count}" "${MCP_ROOTS_COUNT:-0}" "false"
+		_mcp_tools_emit_error_result tool_failed "${fail_message}" "" "${fail_data}" "${stderr_tail}" "${exit_code}"
+		cleanup_tool_temp_files
+		return 0
 	fi
 
-	if [ -n "${tool_error_raw}" ]; then
-		mcp_logging_debug "${MCP_TOOLS_LOGGER}" "Tool ${name} emitted structured error ${tool_error_raw}" || true
-		if [ "${MCPBASH_JSON_TOOL:-none}" != "none" ]; then
-			local parsed
-			parsed="$(
-				printf '%s' "${tool_error_raw}" | "${MCPBASH_JSON_TOOL_BIN}" -c '
-					select(
-						(.code | type) == "number"
-						and (.code | floor) == (.code | tonumber)
-						and (.message | type) == "string"
-					)
-					| {code: (.code | tonumber), message: .message, data: (.data // null)}
-				' 2>/dev/null || true
-			)"
-			if [ -n "${parsed}" ]; then
-				local tool_err_code tool_err_message tool_err_data
-				tool_err_code="$(printf '%s' "${parsed}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.code')"
-				tool_err_message="$(printf '%s' "${parsed}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.message')"
-				tool_err_data="$(printf '%s' "${parsed}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.data')"
-				_mcp_tools_emit_error "${tool_err_code}" "${tool_err_message}" "${tool_err_data}"
-				cleanup_tool_temp_files
-				return 1
-			fi
-		fi
-		_mcp_tools_emit_error -32603 "Tool failed" "$(printf '%s' "${tool_error_raw}" | "${MCPBASH_JSON_TOOL_BIN}" -Rs '.' 2>/dev/null || printf '"%s"' "${tool_error_raw//\"/\\\"}")"
-		cleanup_tool_temp_files
-		return 1
+	# 0: valid (or nothing to check); 2: an output_schema error result is in
+	# _MCP_TOOLS_RESULT; 1: the check couldn't run (protocol error). Only
+	# checked after a zero exit: a non-zero exit reaching this point is a
+	# tool's own CallToolResult, which becomes an error result, and the
+	# outputSchema doesn't apply to those.
+	local schema_status=0
+	if [ "${exit_code}" -eq 0 ]; then
+		mcp_tools_validate_output_schema "${stdout_content}" "${output_schema}" "${has_json_tool}" "${name}" "${exit_code}" "${stderr_tail}" "${trace_line}" "${trace_available}" || schema_status=$?
 	fi
-
-	if [ "${exit_code}" -ne 0 ]; then
-		local message_from_stderr data_json="" stdout_error_json="" stdout_raw=""
-		if [ -s "${stdout_content}" ]; then
-			stdout_raw="$(cat "${stdout_content}")"
-			if [ "${MCPBASH_JSON_TOOL:-none}" != "none" ]; then
-				stdout_error_json="$(
-					printf '%s' "${stdout_raw}" | "${MCPBASH_JSON_TOOL_BIN}" -c '
-						select(
-							(.code | type) == "number"
-							and (.code | floor) == (.code | tonumber)
-							and (.message | type) == "string"
-						)
-						| {code: (.code | tonumber), message: .message, data: (.data // null)}
-					' 2>/dev/null || true
-				)"
-			fi
-			if [ -n "${stdout_error_json}" ]; then
-				local err_code err_message err_data
-				err_code="$(printf '%s' "${stdout_error_json}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.code')"
-				err_message="$(printf '%s' "${stdout_error_json}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.message')"
-				err_data="$(printf '%s' "${stdout_error_json}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.data')"
-				_mcp_tools_emit_error "${err_code}" "${err_message}" "${err_data}"
-				cleanup_tool_temp_files
-				return 1
-			fi
-			if [ "${MCPBASH_JSON_TOOL:-none}" != "none" ]; then
-				local err_code_simple err_message_simple err_data_simple
-				err_code_simple="$(printf '%s' "${stdout_raw}" | "${MCPBASH_JSON_TOOL_BIN}" -r '(.code // "")' 2>/dev/null || true)"
-				err_message_simple="$(printf '%s' "${stdout_raw}" | "${MCPBASH_JSON_TOOL_BIN}" -r '(.message // "")' 2>/dev/null || true)"
-				err_data_simple="$(printf '%s' "${stdout_raw}" | "${MCPBASH_JSON_TOOL_BIN}" -c '(.data // null)' 2>/dev/null || true)"
-				if [ -n "${err_code_simple}" ] && [ -n "${err_message_simple}" ]; then
-					_mcp_tools_emit_error "${err_code_simple}" "${err_message_simple}" "${err_data_simple:-null}"
-					cleanup_tool_temp_files
-					return 1
-				fi
-			fi
-			local err_code_guess err_message_guess
-			err_code_guess="$(printf '%s' "${stdout_raw}" | sed -n 's/.*\"code\"[[:space:]]*:[[:space:]]*\\([-0-9]*\\).*/\\1/p' | head -n 1)"
-			err_message_guess="$(printf '%s' "${stdout_raw}" | sed -n 's/.*\"message\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p' | head -n 1)"
-			if [ -n "${err_code_guess}" ] && [ -n "${err_message_guess}" ]; then
-				local data_escaped
-				data_escaped="$(printf '%s' "${stdout_raw}" | "${MCPBASH_JSON_TOOL_BIN}" -Rs '.' 2>/dev/null || printf '"%s"' "${stdout_raw//\"/\\\"}")"
-				_mcp_tools_emit_error "${err_code_guess}" "${err_message_guess}" "${data_escaped}"
-				cleanup_tool_temp_files
-				return 1
-			fi
-			if [ -n "${stdout_raw}" ]; then
-				local data_escaped
-				data_escaped="$(printf '%s' "${stdout_raw}" | "${MCPBASH_JSON_TOOL_BIN}" -Rs '.' 2>/dev/null || printf '"%s"' "${stdout_raw//\"/\\\"}")"
-				_mcp_tools_emit_error -32603 "Tool failed" "${data_escaped}"
-				cleanup_tool_temp_files
-				return 1
-			fi
-		fi
-
-		message_from_stderr="$(printf '%s' "${stderr_tail}" | head -n 1 | tr -d '\r')"
-		if [ -z "${message_from_stderr}" ]; then
-			message_from_stderr="Tool failed"
-		fi
-		data_json="null"
-		if [ "${MCPBASH_JSON_TOOL:-none}" != "none" ]; then
-			data_json="$(
-				"${MCPBASH_JSON_TOOL_BIN}" -n \
-					--argjson code "${exit_code}" \
-					--arg stderr "${stderr_tail}" \
-					--arg traceLine "${trace_line}" \
-					'
-					{
-						exitCode: $code,
-						_meta: ({exitCode: $code} + (if ($stderr|length) > 0 then {stderr: $stderr} else {} end))
-					}
-					| if ($stderr|length) > 0 then .stderrTail = $stderr else . end
-					| if ($traceLine|length) > 0 then .traceLine = $traceLine else . end
-					'
-			)"
-		fi
-		mcp_tools_emit_github_annotation "${name}" "${message_from_stderr}" "${trace_line}"
-		mcp_tools_append_failure_summary "${name}" "${exit_code}" "${message_from_stderr}" "${stderr_tail}" "${trace_line}" "${arg_count}" "${arg_bytes}" "${meta_count}" "${MCP_ROOTS_COUNT:-0}" "false"
-		_mcp_tools_emit_error -32603 "${message_from_stderr}" "${data_json}"
+	if [ "${schema_status}" -ne 0 ]; then
 		cleanup_tool_temp_files
-		return 1
-	fi
-
-	if ! mcp_tools_validate_output_schema "${stdout_content}" "${output_schema}" "${has_json_tool}" "${name}" "${exit_code}" "${stderr_tail}" "${trace_line}" "${trace_available}"; then
-		cleanup_tool_temp_files
+		[ "${schema_status}" -eq 2 ] && return 0
 		return 1
 	fi
 
@@ -2408,6 +2405,7 @@ mcp_tools_call() {
 			--rawfile stdout "${stdout_content}" \
 			--arg stderr "${stderr_tail}" \
 			--argjson exit_code "${exit_code}" \
+			--argjson meta_exit_code "${meta_exit_code}" \
 			--arg has_json "${has_json_tool}" \
 			--arg has_schema "$([ "${output_schema}" != "null" ] && [ -n "${output_schema}" ] && printf true || printf false)" \
 			'
@@ -2416,7 +2414,7 @@ mcp_tools_call() {
 			content: [],
 			isError: false,
 			_meta: {
-				exitCode: $exit_code
+				exitCode: $meta_exit_code
 			}
 		} as $base |
 
@@ -2430,7 +2428,7 @@ mcp_tools_call() {
 					# Merge existing _meta with framework metadata (preserving ui field, etc.)
 					$json
 					| .name = $name
-					| ._meta = ((._meta // {}) + {exitCode: $exit_code} + (if ($stderr | length > 0) then {stderr: $stderr} else {} end))
+					| ._meta = ((._meta // {}) + {exitCode: $meta_exit_code} + (if ($stderr | length > 0) then {stderr: $stderr} else {} end))
 					| if $exit_code != 0 then .isError = true else . end
 				else
 					# Normal JSON output - wrap in CallToolResult

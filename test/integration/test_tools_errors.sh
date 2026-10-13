@@ -76,17 +76,20 @@ fi
 if jq -e 'select(.id=="fail") | .error._mcpToolError' "${WORKSPACE}/responses.ndjson" >/dev/null 2>&1; then
 	:
 fi
-fail_code="$(echo "${fail_resp}" | jq -r '.error.code')"
-fail_stderr="$(echo "${fail_resp}" | jq -r '.error.data._meta.stderr // empty')"
-test_assert_eq "${fail_code}" "-32603"
+# 2.0: a non-zero exit is a tool_failed error result, not a JSON-RPC error.
+fail_is_error="$(echo "${fail_resp}" | jq -r '.result.isError')"
+test_assert_eq "${fail_is_error}" "true"
+test_assert_eq "$(echo "${fail_resp}" | jq -r '.result._meta["mcpbash/error"].type')" "tool_failed"
+fail_stderr="$(echo "${fail_resp}" | jq -r '.result._meta.stderr // empty')"
 if [ -z "${fail_stderr}" ] || [[ "${fail_stderr}" != *"nope"* ]]; then
 	test_fail "stderr not propagated from fail.tool"
 fi
-fail_exit_code="$(echo "${fail_resp}" | jq -r '.error.data.exitCode // empty')"
+fail_exit_code="$(echo "${fail_resp}" | jq -r '.result._meta.exitCode // empty')"
 test_assert_eq "${fail_exit_code}" "7"
-fail_stderr_tail="$(echo "${fail_resp}" | jq -r '.error.data.stderrTail // empty')"
-if [ -z "${fail_stderr_tail}" ] || [[ "${fail_stderr_tail}" != *"nope"* ]]; then
-	test_fail "stderrTail missing or incorrect for fail.tool"
+test_assert_eq "$(echo "${fail_resp}" | jq -r '.result._meta["mcpbash/error"].data.exitCode // empty')" "7"
+fail_text="$(echo "${fail_resp}" | jq -r '.result.content[0].text // empty')"
+if [[ "${fail_text}" != *"nope"* ]]; then
+	test_fail "error text should be the stderr tail for fail.tool: ${fail_text}"
 fi
 
 slow_resp="$(jq -c 'select(.id=="slow")' "${RESPONSES}")"

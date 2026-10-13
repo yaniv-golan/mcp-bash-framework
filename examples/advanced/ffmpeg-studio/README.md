@@ -43,11 +43,11 @@ This example demonstrates the MCP pattern for error handling:
 
 | Scenario | Error Type | Why |
 |----------|------------|-----|
-| Missing arguments | Protocol Error (`-32602`) | Request structure issue |
+| Missing arguments | Tool Execution Error (`isError: true`, type `invalid_args`) | LLM can call again with the argument |
 | File not found | Tool Execution Error (`isError: true`) | LLM can choose another file |
 | Invalid preset | Tool Execution Error (`isError: true`) | LLM can choose a valid preset |
 | Overwrite declined | Tool Execution Error (`isError: true`) | LLM can choose different output |
-| ffmpeg/ffprobe failure | Protocol Error (`-32603`) | Server-side process failure |
+| ffmpeg/ffprobe failure | Tool Execution Error (`isError: true`, type `tool_failed`; a `-32603` protocol error before mcp-bash 2.0) | The tool exited non-zero; the text is ffmpeg's stderr |
 
 Tool Execution Errors include actionable hints:
 ```json

@@ -89,16 +89,14 @@ SH
 	expect_error_result "$(call "${SHIM}:")" not_found $'No such ticket\n\nHint: list tickets first'
 }
 
-@test "fail --type: SDK loaded without tool-error.sh falls back to a JSON-RPC error" {
+@test "fail --type: SDK loaded without tool-error.sh falls back to a bare error result" {
 	d="${BATS_TEST_TMPDIR}/sdk_alone"
 	mkdir -p "${d}"
 	cp "${MCPBASH_HOME}/sdk/tool-sdk.sh" "${d}/"
 	run bash -c '. "$1/tool-sdk.sh" 2>/dev/null; mcp_fail --type invalid_args "bad"; echo AFTER' _ "${d}"
 	assert_failure
 	refute_output --partial AFTER
-	assert_equal "$(printf '%s\n' "${output}" | head -n 1 | jq -r '.code')" "-32602"
-	run bash -c '. "$1/tool-sdk.sh" 2>/dev/null; mcp_fail --type not_found "gone"' _ "${d}"
-	assert_equal "$(printf '%s\n' "${output}" | head -n 1 | jq -r '.code')" "-32603"
+	assert_equal "$(printf '%s\n' "${output}" | head -n 1 | jq -c '[.isError, .content[0].text, (.code // null)]')" '[true,"bad",null]'
 }
 
 @test "fail --type: mcp_tool_error_result still only prints (does not end the tool)" {

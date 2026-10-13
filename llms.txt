@@ -60,7 +60,7 @@ mcp_result_json "$(printf '%s' "$result" | jq -c '.')"
 
 `mcp_fail --type` returns an error result the model can read (`isError: true`) and ends the tool. `mcp_result_json` sends the JSON as `structuredContent` as is (no `{success, result}` wrapper), so an `outputSchema` describes the data itself.
 
-Migrating an existing project: `mcp_result_success`, `mcp_result_error`, `mcp_error`, `mcp_fail CODE MSG` and `mcp_emit_*` still work in 1.x but are removed in 2.0; `mcp-bash migrate` lists them and `--write` rewrites the safe cases. <!-- lint-api-usage: allow -->
+Migrating an existing project: `mcp_result_success`, `mcp_result_error`, `mcp_error`, `mcp_fail CODE MSG` and `mcp_emit_*` are removed in 2.0; `mcp-bash migrate` lists them and `--write` rewrites the safe cases. In 2.0 every tool failure, a non-zero exit included, is an error result the model can read. <!-- lint-api-usage: allow -->
 
 ## Docs
 
