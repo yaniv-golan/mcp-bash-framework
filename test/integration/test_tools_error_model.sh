@@ -59,6 +59,10 @@ add_tool failnumeric 'n=42; mcp_fail "${n}"'
 add_tool failinvalid 'mcp_fail -32602 "bad arg"'
 add_tool fail404 'mcp_fail 404 "gone"'
 add_tool faildash 'mcp_fail -- "--type"'
+# Bytes that aren't valid UTF-8 don't cut the text short (BSD tr stops at
+# the first one in a UTF-8 locale).
+add_tool badutf8err 'printf "bad \\377\\376 utf ok\\n" >&2; exit 4'
+add_tool badutf8out 'printf "out \\377\\376 bytes ok\\n"; exit 4'
 # Output limits and outputSchema.
 add_tool bigout 'head -c 4000 /dev/zero | tr "\0" "x"; echo'
 add_tool schemamismatch 'mcp_result_json "$(mcp_json_obj other hi)"' '{"type":"object","required":["greeting"],"properties":{"greeting":{"type":"string"}}}'
@@ -81,7 +85,15 @@ REQ="${TEST_TMPDIR}/requests.ndjson"
 } >"${REQ}"
 
 OUT="${TEST_TMPDIR}/responses.ndjson"
-MCPBASH_TOOL_ALLOWLIST='*' MCPBASH_MAX_TOOL_OUTPUT_SIZE=1000 test_run_mcp "${WS}" "${REQ}" "${OUT}"
+# A UTF-8 locale where one exists (the badutf8 rows need it to mean anything).
+utf8_locale=""
+for l in C.UTF-8 en_US.UTF-8; do
+	if LC_ALL="${l}" locale 2>/dev/null | grep -qi 'utf-\?8'; then
+		utf8_locale="${l}"
+		break
+	fi
+done
+LC_ALL="${utf8_locale:-${LC_ALL:-}}" MCPBASH_TOOL_ALLOWLIST='*' MCPBASH_MAX_TOOL_OUTPUT_SIZE=1000 test_run_mcp "${WS}" "${REQ}" "${OUT}"
 assert_json_lines "${OUT}"
 
 resp() { jq -c --arg id "$1" 'select(.id == $id)' "${OUT}"; }
@@ -114,6 +126,8 @@ check_error failnumeric tool_failed "42"
 check_error failinvalid invalid_args "bad arg"
 check_error fail404 tool_failed "gone"
 check_error faildash tool_failed "--type"
+check_error badutf8err tool_failed "utf ok"
+check_error badutf8out tool_failed "bytes ok"
 check_error bigout output_too_large "1000"
 check_error schemamismatch output_schema "outputSchema"
 check_error schemanotjson output_schema "outputSchema"

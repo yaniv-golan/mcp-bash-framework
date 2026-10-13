@@ -781,7 +781,7 @@ _mcp_tools_side_channel_error_result() {
 		fi
 	fi
 	if [ -z "${message}" ]; then
-		message="$(printf '%s' "${raw}" | head -c 4096 | tr -d '\000-\010\013\014\016-\037')"
+		message="$(printf '%s' "${raw}" | head -c 4096 | LC_ALL=C tr -d '\000-\010\013\014\016-\037')"
 	fi
 	[ -n "${message}" ] || message="Tool failed"
 	_mcp_tools_emit_error_result "${type}" "${message}" "" "${data}" "" "${exit_code}"
@@ -814,7 +814,7 @@ mcp_tools_failure_message() {
 		text="$(tail -c "${limit}" "${file}" 2>/dev/null || true)"
 	fi
 	[ -n "${text//[[:space:]]/}" ] || return 0
-	text="$(printf '%s' "${text}" | head -c "${limit}" | tr -d '\000-\010\013\014\015\016-\037')"
+	text="$(printf '%s' "${text}" | head -c "${limit}" | LC_ALL=C tr -d '\000-\010\013\014\015\016-\037')"
 	text="${text%"${text##*[![:space:]]}"}"
 	printf '%s' "${text}"
 }
@@ -1492,7 +1492,9 @@ mcp_tools_stderr_tail() {
 	local limit="${2:-4096}"
 	[ -n "${file}" ] || return 0
 	[ -f "${file}" ] || return 0
-	tail -c "${limit}" "${file}" 2>/dev/null | tr -d '\0'
+	# LC_ALL=C: in a UTF-8 locale BSD tr stops at the first byte that isn't
+	# valid UTF-8 ("Illegal byte sequence") and the rest of the tail is lost.
+	tail -c "${limit}" "${file}" 2>/dev/null | LC_ALL=C tr -d '\0'
 }
 
 mcp_tools_trace_enabled() {
@@ -2269,7 +2271,7 @@ mcp_tools_call() {
 	fi
 	local trace_line=""
 	if [ "${trace_enabled}" = "true" ] && [ -n "${trace_file}" ] && [ -f "${trace_file}" ]; then
-		trace_line="$(tail -n 1 "${trace_file}" 2>/dev/null | head -c 512 | tr -d '\0')"
+		trace_line="$(tail -n 1 "${trace_file}" 2>/dev/null | head -c 512 | LC_ALL=C tr -d '\0')"
 	fi
 	local trace_available="false"
 	if [[ "${trace_enabled}" = "true" && "${trace_size}" -gt 0 ]]; then
