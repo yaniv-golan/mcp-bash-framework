@@ -17,8 +17,8 @@ name="$(mcp_args_get '.name' --default 'World')"
 # Commands that emit non-JSON output should send it to stderr to keep stdout clean:
 # git commit -m "msg" >&2   # example for git; avoid 2>&1 when stdout carries JSON
 # Embed a file in the tool result (type:"resource"):
-# mcp_result_text_with_resource '{"status":"done"}' --path /path/to/file --mime text/plain
-# Multiple files: --path /file1 --mime text/plain --path /file2 --mime image/png
+# mcp_result_json '{"status":"done"}' --resource /path/to/file --mime text/plain
+# Multiple files: --resource /file1 --mime text/plain --resource /file2 --mime image/png
 # Load configuration (precedence: env > file > example > defaults):
 # mcp_config_load --env MY_TOOL_CONFIG --file ./config.json --defaults '{"timeout":30}'
 # timeout=$(mcp_config_get '.timeout' --default 30)

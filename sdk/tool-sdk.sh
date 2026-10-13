@@ -1209,15 +1209,80 @@ mcp_byte_length() {
 #
 # Output: CallToolResult JSON to stdout
 # Returns: 0 always (MCP tool errors are expressed via isError, not exit codes)
-# mcp_result_text TEXT
+# mcp_result_text TEXT [--resource PATH [--mime TYPE] [--uri URI]]...
 # Frozen (mcp-bash 1.8+, unchanged in 2.0). A successful result with one text
 # block and no structured content. Prints the result; does not end the tool.
+# --resource (2.0, repeatable) embeds a file as a resource content block
+# (checked against the roots by the server); --mime and --uri apply to the
+# --resource before them. Without --mime the server detects the type.
 mcp_result_text() {
-	printf '{"content":[{"type":"text","text":%s}],"isError":false}' "$(__mcp_sdk_json_escape "${1-}")"
+	local text="${1-}"
+	shift 2>/dev/null || true
+	local -a res=()
+	while [ $# -gt 0 ]; do
+		case "$1" in
+		--resource)
+			res+=("${2-}" "" "")
+			shift 2 2>/dev/null || shift $#
+			;;
+		--mime | --uri)
+			__mcp_sdk_resource_option res "$1" "${2-}"
+			shift 2 2>/dev/null || shift $#
+			;;
+		*) shift ;;
+		esac
+	done
+	[ "${#res[@]}" -eq 0 ] || __mcp_sdk_write_resources "${res[@]}"
+	printf '{"content":[{"type":"text","text":%s}],"isError":false}' "$(__mcp_sdk_json_escape "${text}")"
 }
 
-# mcp_result_json JSON [--max-text-bytes N]
-# Frozen (mcp-bash 1.8+, unchanged in 2.0). A successful result whose
+# --mime or --uri for the last --resource in the caller's array NAME
+# (path, mime, uri triplets). Ignored before any --resource.
+__mcp_sdk_resource_option() {
+	local name="$1" opt="$2" value="$3" n
+	eval "n=\${#${name}[@]}"
+	[ "${n}" -ge 3 ] || return 0
+	case "${opt}" in
+	--mime) eval "${name}[$((n - 2))]=\${value}" ;;
+	--uri) eval "${name}[$((n - 1))]=\${value}" ;;
+	esac
+}
+
+# Embedded resources for the result helpers' --resource PATH [--mime TYPE]
+# [--uri URI] (repeatable): written to MCP_TOOL_RESOURCES_FILE as one JSON
+# array, which the framework turns into resource content blocks after
+# checking each file against the roots. Arguments are path, mime, uri
+# triplets (mime and uri may be empty). An unreadable file is skipped with a
+# warning. Overwrites the file.
+__mcp_sdk_write_resources() {
+	if [ -z "${MCP_TOOL_RESOURCES_FILE:-}" ]; then
+		mcp_log_warn "sdk" "--resource: MCP_TOOL_RESOURCES_FILE not set, resources will not be embedded"
+		return 0
+	fi
+	local json_array="[" sep="" path mime uri uri_json mime_json
+	while [ $# -ge 3 ]; do
+		path="$1"
+		mime="$2"
+		uri="$3"
+		shift 3
+		if [ -z "${path}" ] || [ ! -f "${path}" ] || [ ! -r "${path}" ]; then
+			mcp_log_warn "sdk" "--resource: not a readable file, skipping path=${path}"
+			continue
+		fi
+		uri_json="null"
+		[ -n "${uri}" ] && uri_json="$(__mcp_sdk_json_escape "${uri}")"
+		mime_json="null"
+		[ -n "${mime}" ] && mime_json="$(__mcp_sdk_json_escape "${mime}")"
+		json_array+="${sep}{\"path\":$(__mcp_sdk_json_escape "${path}"),\"mimeType\":${mime_json},\"uri\":${uri_json}}"
+		sep=","
+	done
+	json_array+="]"
+	printf '%s' "${json_array}" >"${MCP_TOOL_RESOURCES_FILE}"
+}
+
+# mcp_result_json JSON [--max-text-bytes N] [--resource PATH [--mime TYPE] [--uri URI]]...
+# Frozen (mcp-bash 1.8+, unchanged in 2.0; --resource added in 2.0, as for
+# mcp_result_text). A successful result whose
 # structuredContent is exactly JSON (no {success, result} envelope); the text
 # block is the serialized JSON. When the text would exceed N bytes (default
 # MCPBASH_MAX_TEXT_BYTES, else 102400) it is replaced by a short summary,
@@ -1230,15 +1295,25 @@ mcp_result_json() {
 	local data="${1-}"
 	shift 2>/dev/null || true
 	local max_raw=""
+	local -a res=()
 	while [ $# -gt 0 ]; do
 		case "$1" in
 		--max-text-bytes)
 			max_raw="${2-}"
 			shift 2 2>/dev/null || shift $#
 			;;
+		--resource)
+			res+=("${2-}" "" "")
+			shift 2 2>/dev/null || shift $#
+			;;
+		--mime | --uri)
+			__mcp_sdk_resource_option res "$1" "${2-}"
+			shift 2 2>/dev/null || shift $#
+			;;
 		*) shift ;;
 		esac
 	done
+	[ "${#res[@]}" -eq 0 ] || __mcp_sdk_write_resources "${res[@]}"
 	local max_text_bytes
 	max_text_bytes=$(__mcp_sdk_uint_or_default "${max_raw}" "${MCPBASH_MAX_TEXT_BYTES:-102400}")
 	# Set per request by the server in 2.0; 1.x always serves legacy-era requests.
