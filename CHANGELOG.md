@@ -5,6 +5,12 @@ All notable changes to mcp-bash-framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **The server stopped at startup in CI mode when `TMPDIR` was unset**: with `MCPBASH_CI_MODE=true` outside GitHub Actions (no `RUNNER_TEMP` or `GITHUB_WORKSPACE`), for example in a Docker container, bash 4 and later stopped with "TMPDIR: unbound variable", because the temp-root default was a malformed expansion. It now uses `TMPDIR` without its trailing slash, or `/tmp`. Bash 3.2 was not stopped but got an empty root, which a later fallback replaced.
+- **`mcp-bash run-tool` put a log line in the result for a resource outside the roots**: the warning that names the skipped path and the allowed roots was written to the same stdout as the resource, and became a `{"type":"resource"}` block holding the log notification. Only resource objects are embedded now. Over stdio the server was not affected.
+
 ## [1.9.3] - 2026-10-13
 
 ### Fixed

@@ -275,3 +275,19 @@ EOF
 	slow_message="$(printf '%s\n' "${slow_override_output}" | jq -r 'select(.name=="test.slow") | .structuredContent.message')"
 	assert_equal "done" "${slow_message}"
 }
+
+@test "run_tool_cli: a resource outside the roots adds no block (no log line, no roots list)" {
+	# run-tool writes the "outside allowed roots" warning to the same stdout
+	# as the tool's resources; it used to be embedded as a resource block.
+	mkdir -p "${PROJECT_ROOT}/tools/res" "${BATS_TEST_TMPDIR}/outside"
+	printf 'secret\n' >"${BATS_TEST_TMPDIR}/outside/f.txt"
+	printf '{"name":"test.res","description":"r","inputSchema":{"type":"object"}}\n' >"${PROJECT_ROOT}/tools/res/tool.meta.json"
+	# shellcheck disable=SC2016  # Literal for the generated tool script
+	printf '#!/usr/bin/env bash\nsource "${MCP_SDK}/tool-sdk.sh"\nmcp_result_text_with_resource "done" --path "%s"\n' "${BATS_TEST_TMPDIR}/outside/f.txt" >"${PROJECT_ROOT}/tools/res/tool.sh"
+	chmod +x "${PROJECT_ROOT}/tools/res/tool.sh"
+	run "${MCPBASH_HOME}/bin/mcp-bash" run-tool test.res --roots "${PROJECT_ROOT}" --allow-self 2>/dev/null
+	assert_success
+	run jq -c '[.content[].type]' <<<"$(printf '%s\n' "${output}" | jq -c 'select(.content)' | tail -n 1)"
+	assert_output '["text"]'
+	refute_output --partial 'notifications/message'
+}

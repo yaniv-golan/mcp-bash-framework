@@ -352,7 +352,10 @@ mcp_runtime_init_paths() {
 			elif [ -n "${GITHUB_WORKSPACE:-}" ]; then
 				MCPBASH_TMP_ROOT="$(mcp_runtime_posix_path "${GITHUB_WORKSPACE%/}")/.mcpbash-tmp"
 			else
-				MCPBASH_TMP_ROOT="$(mcp_runtime_posix_path "${TMPDIR%/:-/tmp}")"
+				# TMPDIR without its trailing slash, or /tmp.
+				local ci_tmp="${TMPDIR:-/tmp}"
+				ci_tmp="${ci_tmp%/}"
+				MCPBASH_TMP_ROOT="$(mcp_runtime_posix_path "${ci_tmp}")"
 			fi
 		fi
 		if [ -z "${MCPBASH_KEEP_LOGS:-}" ]; then
