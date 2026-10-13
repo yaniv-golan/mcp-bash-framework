@@ -37,7 +37,7 @@ EOF
 set -euo pipefail
 source "${MCP_SDK}/tool-sdk.sh"
 value="$(mcp_args_require '.value')"
-mcp_emit_json "$(mcp_json_obj message "${value}")"
+mcp_result_json "$(mcp_json_obj message "${value}")"
 EOF
 	chmod +x "${PROJECT_ROOT}/tools/echo/tool.sh"
 
@@ -54,7 +54,7 @@ EOF
 set -euo pipefail
 source "\${MCP_SDK}/tool-sdk.sh"
 touch "${side_effect_file}"
-mcp_emit_json "\$(mcp_json_obj message \"ran\")"
+mcp_result_json "\$(mcp_json_obj message \"ran\")"
 EOF
 	chmod +x "${PROJECT_ROOT}/tools/sideeffect/tool.sh"
 
@@ -71,7 +71,7 @@ EOF
 set -euo pipefail
 source "${MCP_SDK}/tool-sdk.sh"
 sleep 5
-mcp_emit_json "$(mcp_json_obj message "done")"
+mcp_result_json "$(mcp_json_obj message "done")"
 EOF
 	chmod +x "${PROJECT_ROOT}/tools/slow/tool.sh"
 }
@@ -138,7 +138,7 @@ EOF
 #!/usr/bin/env bash
 set -euo pipefail
 source "${MCP_SDK}/tool-sdk.sh"
-mcp_emit_json "$(mcp_json_obj message "added")"
+mcp_result_json "$(mcp_json_obj message "added")"
 EOF
 	chmod +x "${PROJECT_ROOT}/tools/added/tool.sh"
 
@@ -170,23 +170,23 @@ EOF
 @test "run_tool_cli: an error result has no structuredContent when the tool declares an outputSchema" {
 	# Clients that validate structuredContent against outputSchema on error
 	# results too (the TypeScript SDK client, used by Claude Desktop) reject
-	# the {success:false, error} envelope that mcp_error and mcp_result_error
-	# emit. With an outputSchema it is dropped and its error moves to
-	# _meta["mcpbash/error"].
+	# a {success:false, error} envelope (what 1.x's mcp_error and
+	# mcp_result_error sent; some tools build it themselves). With an
+	# outputSchema it is dropped and its error moves to _meta["mcpbash/error"].
 	mkdir -p "${PROJECT_ROOT}/tools/oops" "${PROJECT_ROOT}/tools/oops-plain"
 	cat >"${PROJECT_ROOT}/tools/oops/tool.meta.json" <<'EOF'
-{"name": "test.oops", "description": "Fails with mcp_error", "inputSchema": {"type": "object"},
+{"name": "test.oops", "description": "Fails with a hand-built envelope", "inputSchema": {"type": "object"},
  "outputSchema": {"type": "object", "required": ["message"], "properties": {"message": {"type": "string"}}}}
 EOF
 	cat >"${PROJECT_ROOT}/tools/oops/tool.sh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 source "${MCP_SDK}/tool-sdk.sh"
-mcp_error not_found "No such item" --hint "List the items first" --data '{"id":7}'
+printf '%s\n' '{"content":[{"type":"text","text":"No such item"}],"structuredContent":{"success":false,"error":{"type":"not_found","message":"No such item","hint":"List the items first","data":{"id":7}}},"isError":true}'
 EOF
 	# Same failure without an outputSchema: unchanged (envelope kept).
 	cat >"${PROJECT_ROOT}/tools/oops-plain/tool.meta.json" <<'EOF'
-{"name": "test.oops-plain", "description": "Fails with mcp_error", "inputSchema": {"type": "object"}}
+{"name": "test.oops-plain", "description": "Fails with a hand-built envelope", "inputSchema": {"type": "object"}}
 EOF
 	cp "${PROJECT_ROOT}/tools/oops/tool.sh" "${PROJECT_ROOT}/tools/oops-plain/tool.sh"
 	chmod +x "${PROJECT_ROOT}/tools/oops/tool.sh" "${PROJECT_ROOT}/tools/oops-plain/tool.sh"
@@ -220,7 +220,7 @@ EOF
 #!/usr/bin/env bash
 set -euo pipefail
 source "${MCP_SDK}/tool-sdk.sh"
-mcp_emit_json "$(mcp_json_obj message "added")"
+mcp_result_json "$(mcp_json_obj message "added")"
 EOF
 	chmod +x "${PROJECT_ROOT}/tools/added/tool.sh"
 
@@ -312,4 +312,16 @@ run_tool_cli_add_tool() {
 	done
 	run "${MCPBASH_HOME}/bin/mcp-bash" run-tool ok.text
 	assert_success
+}
+
+@test "run_tool_cli: a resource outside the roots adds no block (no log line, no roots list)" {
+	mkdir -p "${PROJECT_ROOT}/tools/res" "${BATS_TEST_TMPDIR}/outside"
+	printf 'secret\n' >"${BATS_TEST_TMPDIR}/outside/f.txt"
+	printf '{"name":"test.res","description":"r","inputSchema":{"type":"object"}}\n' >"${PROJECT_ROOT}/tools/res/tool.meta.json"
+	printf '#!/usr/bin/env bash\nsource "${MCP_SDK}/tool-sdk.sh"\nmcp_result_text "done" --resource "%s"\n' "${BATS_TEST_TMPDIR}/outside/f.txt" >"${PROJECT_ROOT}/tools/res/tool.sh"
+	chmod +x "${PROJECT_ROOT}/tools/res/tool.sh"
+	run "${MCPBASH_HOME}/bin/mcp-bash" run-tool test.res --roots "${PROJECT_ROOT}" --allow-self 2>/dev/null
+	assert_success
+	assert_equal "$(printf '%s' "${output}" | jq -c '[.content[].type]')" '["text"]'
+	refute_output --partial 'notifications/message'
 }

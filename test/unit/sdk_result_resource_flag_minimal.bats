@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Unit layer: SDK mcp_result_text_with_resource helper in minimal mode (no jq).
+# Unit layer: --resource on mcp_result_json in minimal mode (no jq).
 
 load '../../node_modules/bats-support/load'
 load '../../node_modules/bats-assert/load'
@@ -51,11 +51,11 @@ jq_get() {
 # Test 1: Works in minimal mode
 # ============================================================================
 
-@test "sdk_result_text_with_resource_minimal: produces valid JSON" {
+@test "sdk_result_resource_flag_minimal: produces valid JSON" {
 	local test_file="${TEST_TMPDIR}/test.txt"
 	printf 'content' > "${test_file}"
 
-	result=$(mcp_result_text_with_resource '{"done":true}' --path "${test_file}" --mime "text/plain")
+	result=$(mcp_result_json '{"done":true}' --resource "${test_file}" --mime "text/plain")
 
 	# Must be valid JSON (critical assertion)
 	printf '%s' "$result" | "${JQ_BIN}" -e '.' >/dev/null 2>&1
@@ -66,11 +66,11 @@ jq_get() {
 # Test 2: Resource spec written even in minimal mode
 # ============================================================================
 
-@test "sdk_result_text_with_resource_minimal: resource spec written" {
+@test "sdk_result_resource_flag_minimal: resource spec written" {
 	local test_file="${TEST_TMPDIR}/test.txt"
 	printf 'content' > "${test_file}"
 
-	result=$(mcp_result_text_with_resource '{"done":true}' --path "${test_file}" --mime "text/plain")
+	result=$(mcp_result_json '{"done":true}' --resource "${test_file}" --mime "text/plain")
 
 	# Resource file should have content
 	[[ -s "${MCP_TOOL_RESOURCES_FILE}" ]]
@@ -88,11 +88,11 @@ jq_get() {
 # Test 3: Returns exit code 0
 # ============================================================================
 
-@test "sdk_result_text_with_resource_minimal: returns exit code 0" {
+@test "sdk_result_resource_flag_minimal: returns exit code 0" {
 	local test_file="${TEST_TMPDIR}/test.txt"
 	printf 'content' > "${test_file}"
 
-	mcp_result_text_with_resource '{"done":true}' --path "${test_file}" --mime "text/plain"
+	mcp_result_json '{"done":true}' --resource "${test_file}" --mime "text/plain"
 	rc=$?
 	assert_equal "0" "$rc"
 }
@@ -101,12 +101,12 @@ jq_get() {
 # Test 4: MIME fallback in minimal mode
 # ============================================================================
 
-@test "sdk_result_text_with_resource_minimal: no --mime leaves mimeType null" {
+@test "sdk_result_resource_flag_minimal: no --mime leaves mimeType null" {
 	local test_file="${TEST_TMPDIR}/test.bin"
 	printf '\x00\x01\x02' > "${test_file}"
 
 	# The SDK no longer guesses: the server detects the type when it embeds.
-	result=$(mcp_result_text_with_resource '{"done":true}' --path "${test_file}")
+	result=$(mcp_result_json '{"done":true}' --resource "${test_file}")
 	jq_check "$result" '.isError == false'
 
 	local res_content
@@ -114,11 +114,11 @@ jq_get() {
 	jq_check "$res_content" '.[0] | has("mimeType") and .mimeType == null'
 }
 
-@test "sdk_result_text_with_resource_minimal: --mime is written as given" {
+@test "sdk_result_resource_flag_minimal: --mime is written as given" {
 	local test_file="${TEST_TMPDIR}/test.md"
 	printf '# hi\n' > "${test_file}"
 
-	result=$(mcp_result_text_with_resource '{"done":true}' --path "${test_file}" --mime "text/markdown")
+	result=$(mcp_result_json '{"done":true}' --resource "${test_file}" --mime "text/markdown")
 	jq_check "$result" '.isError == false'
 
 	local res_content

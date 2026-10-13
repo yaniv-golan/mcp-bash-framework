@@ -28,7 +28,7 @@ EOF
 #!/usr/bin/env bash
 set -euo pipefail
 source "${MCP_SDK}/tool-sdk.sh"
-mcp_emit_json "$(mcp_json_obj message "MCPBASH_TEST_FROM_SERVER_ENV=${MCPBASH_TEST_FROM_SERVER_ENV:-not-set} MCPBASH_CUSTOM_VAR=${MCPBASH_CUSTOM_VAR:-not-set} MCPBASH_OVERRIDE_VAR=${MCPBASH_OVERRIDE_VAR:-not-set} POLICY_VAR=${POLICY_VAR:-blocked}")"
+mcp_result_json "$(mcp_json_obj message "MCPBASH_TEST_FROM_SERVER_ENV=${MCPBASH_TEST_FROM_SERVER_ENV:-not-set} MCPBASH_CUSTOM_VAR=${MCPBASH_CUSTOM_VAR:-not-set} MCPBASH_OVERRIDE_VAR=${MCPBASH_OVERRIDE_VAR:-not-set} POLICY_VAR=${POLICY_VAR:-blocked}")"
 EOF
 	chmod +x "${PROJECT_ROOT}/tools/echo-env/tool.sh"
 }
@@ -148,7 +148,7 @@ EOF
 #!/usr/bin/env bash
 set -euo pipefail
 source "${MCP_SDK}/tool-sdk.sh"
-mcp_emit_json "$(mcp_json_obj message "POLICY_VAR=${POLICY_VAR:-blocked}")"
+mcp_result_json "$(mcp_json_obj message "POLICY_VAR=${POLICY_VAR:-blocked}")"
 EOF
 	chmod +x "${PROJECT_ROOT}/tools/echo-env/tool.sh"
 

@@ -7,3 +7,7 @@ echo cleanup
 mcp_error not_found "multi" \
 	--hint "line two"
 exit 0
+helper() {
+	mcp_error invalid_args "bad"
+	return 1
+}

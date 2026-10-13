@@ -72,6 +72,36 @@ REQ="${TEST_TMPDIR}/mixed.ndjson"
 MCPBASH_MODERN_PROTOCOL=true test_run_mcp "${WS}" "${REQ}" "${TEST_TMPDIR}/mixed.out"
 assert_eq "complete" "$(resp "${TEST_TMPDIR}/mixed.out" 1 | jq -r '.result.resultType')" "discover after a legacy initialize"
 
+# --- The removed-API note: from the last startup scan's findings file -------
+# A copy of the project no server has run in, so no background scan from an
+# earlier session can rewrite the file the test writes; a fresh scan attempt
+# keeps this start from scanning. Four real unmigrated tools, so the file is
+# what a scan would write.
+NWS="${TEST_TMPDIR}/note-ws"
+cp -R "${WS}" "${NWS}"
+rm -rf "${NWS}/.registry"
+for t in a b c d; do
+	mkdir -p "${NWS}/tools/old-${t}"
+	printf '{"name":"old-%s","description":"t","inputSchema":{"type":"object"}}\n' "${t}" >"${NWS}/tools/old-${t}/tool.meta.json"
+	printf '#!/usr/bin/env bash\nmcp_error not_found x\nexit 0\n' >"${NWS}/tools/old-${t}/tool.sh"
+	chmod +x "${NWS}/tools/old-${t}/tool.sh"
+done
+mkdir -p "${NWS}/.registry/scan"
+printf '%s\n' tools/old-a/tool.sh tools/old-b/tool.sh tools/old-c/tool.sh tools/old-d/tool.sh >"${NWS}/.registry/scan/removed-api.findings"
+: >"${NWS}/.registry/scan/removed-api.attempt"
+REQ="${TEST_TMPDIR}/note.ndjson"
+discover 1 >"${REQ}"
+MCPBASH_MODERN_PROTOCOL=true MCPBASH_DEPRECATION_NOTICE=true test_run_mcp "${NWS}" "${REQ}" "${TEST_TMPDIR}/note.out"
+note="$(resp "${TEST_TMPDIR}/note.out" 1 | jq -r '.result.instructions')"
+assert_eq "Use the hello tool." "$(printf '%s\n' "${note}" | head -n 1)" "project instructions first"
+printf '%s' "${note}" | grep -q 'helpers removed in 2\.0 (in tools/old-a/tool.sh tools/old-b/tool.sh tools/old-c/tool.sh and 1 more): tools that use them return an error until they are migrated (`mcp-bash migrate` lists the changes)\.' || test_fail "removed-API note missing: ${note}"
+
+# A static registry (bundles) never rescans, so the file can't be trusted:
+# no note.
+MCPBASH_MODERN_PROTOCOL=true MCPBASH_STATIC_REGISTRY=1 test_run_mcp "${NWS}" "${REQ}" "${TEST_TMPDIR}/note-static.out"
+note="$(resp "${TEST_TMPDIR}/note-static.out" 1 | jq -r '.result.instructions')"
+assert_eq "Use the hello tool." "$(printf '%s' "${note}" | tr -d '\n')" "static registry: no removed-API note"
+
 # --- Large instructions (over Linux's 128 KiB argument and macOS's ~1 MiB limit)
 {
 	printf 'Use the hello tool.\n'

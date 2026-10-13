@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Unit layer: SDK mcp_result_text_with_resource convenience helper function.
+# Unit layer: embedding files with --resource on mcp_result_json (2.0; it replaced mcp_result_text_with_resource).
 
 load '../../node_modules/bats-support/load'
 load '../../node_modules/bats-assert/load'
@@ -51,11 +51,11 @@ jq_check() {
 # Test 1: Basic text without resources
 # ============================================================================
 
-@test "sdk_result_text_with_resource: basic text without resources" {
+@test "sdk_result_resource_flag: basic text without resources" {
 	: > "${MCP_TOOL_RESOURCES_FILE}"
-	result=$(mcp_result_text_with_resource '{"status":"done"}')
+	result=$(mcp_result_json '{"status":"done"}')
 	jq_check "$result" '.isError == false'
-	jq_check "$result" '.structuredContent.success == true'
+	jq_check "$result" '.isError == false'
 	# Resources file should be empty (no resources)
 	[[ ! -s "${MCP_TOOL_RESOURCES_FILE}" ]]
 }
@@ -64,11 +64,11 @@ jq_check() {
 # Test 2: Text with single resource
 # ============================================================================
 
-@test "sdk_result_text_with_resource: text with single resource" {
+@test "sdk_result_resource_flag: text with single resource" {
 	local test_file="${TEST_TMPDIR}/test.txt"
 	printf 'Hello World' > "${test_file}"
 
-	result=$(mcp_result_text_with_resource '{"message":"done"}' --path "${test_file}" --mime "text/plain")
+	result=$(mcp_result_json '{"message":"done"}' --resource "${test_file}" --mime "text/plain")
 	jq_check "$result" '.isError == false'
 
 	# Check resources file contains JSON array with the resource
@@ -82,11 +82,11 @@ jq_check() {
 # Test 3: Text with explicit MIME
 # ============================================================================
 
-@test "sdk_result_text_with_resource: explicit MIME type preserved" {
+@test "sdk_result_resource_flag: explicit MIME type preserved" {
 	local test_file="${TEST_TMPDIR}/data.bin"
 	printf '\x00\x01\x02' > "${test_file}"
 
-	result=$(mcp_result_text_with_resource '{"done":true}' --path "${test_file}" --mime "application/custom")
+	result=$(mcp_result_json '{"done":true}' --resource "${test_file}" --mime "application/custom")
 
 	local res_content
 	res_content=$(cat "${MCP_TOOL_RESOURCES_FILE}")
@@ -99,11 +99,11 @@ jq_check() {
 # Test 4: Text with custom URI
 # ============================================================================
 
-@test "sdk_result_text_with_resource: custom URI preserved" {
+@test "sdk_result_resource_flag: custom URI preserved" {
 	local test_file="${TEST_TMPDIR}/report.txt"
 	printf 'Report content' > "${test_file}"
 
-	result=$(mcp_result_text_with_resource '{"done":true}' --path "${test_file}" --mime "text/plain" --uri "custom://my-report")
+	result=$(mcp_result_json '{"done":true}' --resource "${test_file}" --mime "text/plain" --uri "custom://my-report")
 
 	local res_content
 	res_content=$(cat "${MCP_TOOL_RESOURCES_FILE}")
@@ -116,15 +116,15 @@ jq_check() {
 # Test 5: Multiple resources
 # ============================================================================
 
-@test "sdk_result_text_with_resource: multiple resources" {
+@test "sdk_result_resource_flag: multiple resources" {
 	local file1="${TEST_TMPDIR}/one.txt"
 	local file2="${TEST_TMPDIR}/two.txt"
 	printf 'File 1' > "${file1}"
 	printf 'File 2' > "${file2}"
 
-	result=$(mcp_result_text_with_resource '{"count":2}' \
-		--path "${file1}" --mime "text/plain" \
-		--path "${file2}" --mime "text/plain")
+	result=$(mcp_result_json '{"count":2}' \
+		--resource "${file1}" --mime "text/plain" \
+		--resource "${file2}" --mime "text/plain")
 
 	local res_content
 	res_content=$(cat "${MCP_TOOL_RESOURCES_FILE}")
@@ -137,11 +137,11 @@ jq_check() {
 # Test 6: no --mime leaves detection to the server
 # ============================================================================
 
-@test "sdk_result_text_with_resource: no --mime leaves mimeType null for server detection" {
+@test "sdk_result_resource_flag: no --mime leaves mimeType null for server detection" {
 	local test_file="${TEST_TMPDIR}/test.json"
 	printf '{"a":1}' > "${test_file}"
 
-	result=$(mcp_result_text_with_resource '{"done":true}' --path "${test_file}")
+	result=$(mcp_result_json '{"done":true}' --resource "${test_file}")
 
 	local res_content
 	res_content=$(cat "${MCP_TOOL_RESOURCES_FILE}")
@@ -154,7 +154,7 @@ jq_check() {
 # Test 7: Missing MCP_TOOL_RESOURCES_FILE logs warning
 # ============================================================================
 
-@test "sdk_result_text_with_resource: missing MCP_TOOL_RESOURCES_FILE logs warning" {
+@test "sdk_result_resource_flag: missing MCP_TOOL_RESOURCES_FILE logs warning" {
 	local test_file="${TEST_TMPDIR}/test.txt"
 	printf 'content' > "${test_file}"
 
@@ -166,7 +166,7 @@ jq_check() {
 	# Unset the resources file
 	unset MCP_TOOL_RESOURCES_FILE
 
-	result=$(mcp_result_text_with_resource '{"done":true}' --path "${test_file}" --mime "text/plain")
+	result=$(mcp_result_json '{"done":true}' --resource "${test_file}" --mime "text/plain")
 
 	# Should still succeed
 	jq_check "$result" '.isError == false'
@@ -181,7 +181,7 @@ jq_check() {
 # Test 8: Non-readable file skipped with warning
 # ============================================================================
 
-@test "sdk_result_text_with_resource: non-readable file skipped" {
+@test "sdk_result_resource_flag: non-readable file skipped" {
 	local test_file="${TEST_TMPDIR}/missing.txt"
 	# File doesn't exist
 
@@ -190,7 +190,7 @@ jq_check() {
 	MCP_LOG_STREAM="$log_file"
 	export MCP_LOG_STREAM
 
-	result=$(mcp_result_text_with_resource '{"done":true}' --path "${test_file}" --mime "text/plain")
+	result=$(mcp_result_json '{"done":true}' --resource "${test_file}" --mime "text/plain")
 
 	# Should still succeed
 	jq_check "$result" '.isError == false'
@@ -212,13 +212,13 @@ jq_check() {
 # Test 9: Directory path skipped
 # ============================================================================
 
-@test "sdk_result_text_with_resource: directory path skipped" {
+@test "sdk_result_resource_flag: directory path skipped" {
 	local log_file
 	log_file=$(mktemp)
 	MCP_LOG_STREAM="$log_file"
 	export MCP_LOG_STREAM
 
-	result=$(mcp_result_text_with_resource '{"done":true}' --path "${TEST_TMPDIR}" --mime "text/plain")
+	result=$(mcp_result_json '{"done":true}' --resource "${TEST_TMPDIR}" --mime "text/plain")
 
 	# Should still succeed
 	jq_check "$result" '.isError == false'
@@ -237,8 +237,8 @@ jq_check() {
 # Test 10: Empty data argument
 # ============================================================================
 
-@test "sdk_result_text_with_resource: empty data produces error response" {
-	result=$(mcp_result_text_with_resource "")
+@test "sdk_result_resource_flag: empty data produces error response" {
+	result=$(mcp_result_json "")
 	# mcp_result_success rejects empty input
 	jq_check "$result" '.isError == true'
 }
@@ -247,27 +247,27 @@ jq_check() {
 # Test 11: JSON object data
 # ============================================================================
 
-@test "sdk_result_text_with_resource: JSON object data passed correctly" {
-	result=$(mcp_result_text_with_resource '{"key":"value","num":42}')
-	jq_check "$result" '.structuredContent.result.key == "value"'
-	jq_check "$result" '.structuredContent.result.num == 42'
+@test "sdk_result_resource_flag: JSON object data passed correctly" {
+	result=$(mcp_result_json '{"key":"value","num":42}')
+	jq_check "$result" '.structuredContent.key == "value"'
+	jq_check "$result" '.structuredContent.num == 42'
 }
 
 # ============================================================================
 # Test 12: Always returns 0
 # ============================================================================
 
-@test "sdk_result_text_with_resource: always returns exit code 0" {
+@test "sdk_result_resource_flag: always returns exit code 0" {
 	local test_file="${TEST_TMPDIR}/test.txt"
 	printf 'content' > "${test_file}"
 
-	mcp_result_text_with_resource '{"done":true}' --path "${test_file}" --mime "text/plain"
+	mcp_result_json '{"done":true}' --resource "${test_file}" --mime "text/plain"
 	rc=$?
 	assert_equal "0" "$rc"
 }
 
-@test "sdk_result_text_with_resource: returns 0 even with missing file" {
-	mcp_result_text_with_resource '{"done":true}' --path "/nonexistent/path.txt" --mime "text/plain"
+@test "sdk_result_resource_flag: returns 0 even with missing file" {
+	mcp_result_json '{"done":true}' --resource "/nonexistent/path.txt" --mime "text/plain"
 	rc=$?
 	assert_equal "0" "$rc"
 }
@@ -276,7 +276,7 @@ jq_check() {
 # Test 13: Unknown flags logged
 # ============================================================================
 
-@test "sdk_result_text_with_resource: unknown flags logged and ignored" {
+@test "sdk_result_resource_flag: unknown flags ignored" {
 	local test_file="${TEST_TMPDIR}/test.txt"
 	printf 'content' > "${test_file}"
 
@@ -285,26 +285,24 @@ jq_check() {
 	MCP_LOG_STREAM="$log_file"
 	export MCP_LOG_STREAM
 
-	result=$(mcp_result_text_with_resource '{"done":true}' --path "${test_file}" --mime "text/plain" --unknown "value")
+	result=$(mcp_result_json '{"done":true}' --resource "${test_file}" --mime "text/plain" --unknown "value")
 
-	# Should still succeed
+	# Should still succeed and embed the file (mcp_result_json ignores
+	# options it doesn't know)
 	jq_check "$result" '.isError == false'
-
-	# Should log debug about unknown flag
-	log_content=$(cat "$log_file")
 	rm -f "$log_file"
-	[[ "$log_content" == *'unknown flag ignored'* ]]
+	[[ "$(cat "${MCP_TOOL_RESOURCES_FILE}")" == *test.txt* ]]
 }
 
 # ============================================================================
 # Test 14: Path with tab character
 # ============================================================================
 
-@test "sdk_result_text_with_resource: path with tab character handled" {
+@test "sdk_result_resource_flag: path with tab character handled" {
 	local test_file="${TEST_TMPDIR}/file	with	tabs.txt"
 	printf 'content' > "${test_file}"
 
-	result=$(mcp_result_text_with_resource '{"done":true}' --path "${test_file}" --mime "text/plain")
+	result=$(mcp_result_json '{"done":true}' --resource "${test_file}" --mime "text/plain")
 	jq_check "$result" '.isError == false'
 
 	# Verify the path was JSON-escaped correctly
@@ -318,11 +316,11 @@ jq_check() {
 # Test 15: Path with pipe character
 # ============================================================================
 
-@test "sdk_result_text_with_resource: path with pipe character handled" {
+@test "sdk_result_resource_flag: path with pipe character handled" {
 	local test_file="${TEST_TMPDIR}/file|with|pipes.txt"
 	printf 'content' > "${test_file}"
 
-	result=$(mcp_result_text_with_resource '{"done":true}' --path "${test_file}" --mime "text/plain")
+	result=$(mcp_result_json '{"done":true}' --resource "${test_file}" --mime "text/plain")
 	jq_check "$result" '.isError == false'
 
 	# Verify the path was preserved correctly
@@ -337,13 +335,13 @@ jq_check() {
 # Test 16: Symlink to file followed
 # ============================================================================
 
-@test "sdk_result_text_with_resource: symlink to file followed" {
+@test "sdk_result_resource_flag: symlink to file followed" {
 	local target="${TEST_TMPDIR}/target.txt"
 	local link="${TEST_TMPDIR}/link.txt"
 	printf 'target content' > "${target}"
 	ln -s "${target}" "${link}"
 
-	result=$(mcp_result_text_with_resource '{"done":true}' --path "${link}" --mime "text/plain")
+	result=$(mcp_result_json '{"done":true}' --resource "${link}" --mime "text/plain")
 	jq_check "$result" '.isError == false'
 
 	local res_content
@@ -357,13 +355,13 @@ jq_check() {
 # Test 17: Symlink to directory skipped
 # ============================================================================
 
-@test "sdk_result_text_with_resource: symlink to directory skipped" {
+@test "sdk_result_resource_flag: symlink to directory skipped" {
 	local dir="${TEST_TMPDIR}/subdir"
 	local link="${TEST_TMPDIR}/dirlink"
 	mkdir -p "${dir}"
 	ln -s "${dir}" "${link}"
 
-	result=$(mcp_result_text_with_resource '{"done":true}' --path "${link}" --mime "text/plain")
+	result=$(mcp_result_json '{"done":true}' --resource "${link}" --mime "text/plain")
 	jq_check "$result" '.isError == false'
 
 	local res_content
@@ -377,11 +375,11 @@ jq_check() {
 # Test 18: binary file without --mime
 # ============================================================================
 
-@test "sdk_result_text_with_resource: binary file without --mime is left to the server" {
+@test "sdk_result_resource_flag: binary file without --mime is left to the server" {
 	local test_file="${TEST_TMPDIR}/test.bin"
 	printf '\x00\x01\x02' > "${test_file}"
 
-	result=$(mcp_result_text_with_resource '{"done":true}' --path "${test_file}")
+	result=$(mcp_result_json '{"done":true}' --resource "${test_file}")
 	jq_check "$result" '.isError == false'
 
 	# No SDK-side guess: the server detects the type when it embeds the file
@@ -394,12 +392,12 @@ jq_check() {
 # Test 19: --mime at end without value
 # ============================================================================
 
-@test "sdk_result_text_with_resource: --mime at end without value leaves detection to the server" {
+@test "sdk_result_resource_flag: --mime at end without value leaves detection to the server" {
 	local test_file="${TEST_TMPDIR}/test.txt"
 	printf 'content' > "${test_file}"
 
 	# --mime with missing value at end is the same as no --mime
-	result=$(mcp_result_text_with_resource '{"done":true}' --path "${test_file}" --mime)
+	result=$(mcp_result_json '{"done":true}' --resource "${test_file}" --mime)
 	jq_check "$result" '.isError == false'
 
 	local res_content
@@ -408,16 +406,16 @@ jq_check() {
 }
 
 # ============================================================================
-# Test 20: --path "" (empty value) skipped
+# Test 20: --resource "" (empty value) skipped
 # ============================================================================
 
-@test "sdk_result_text_with_resource: empty path value skipped with debug log" {
+@test "sdk_result_resource_flag: empty path value skipped with debug log" {
 	local log_file
 	log_file=$(mktemp)
 	MCP_LOG_STREAM="$log_file"
 	export MCP_LOG_STREAM
 
-	result=$(mcp_result_text_with_resource '{"done":true}' --path "" --mime "text/plain")
+	result=$(mcp_result_json '{"done":true}' --resource "" --mime "text/plain")
 	jq_check "$result" '.isError == false'
 
 	# Empty path is added to array but skipped in loop, resulting in empty JSON array
@@ -425,17 +423,17 @@ jq_check() {
 	res_content=$(cat "${MCP_TOOL_RESOURCES_FILE}")
 	[[ "$res_content" == "[]" ]]
 
-	# Should log debug about empty path
+	# Should log that it skipped the path
 	log_content=$(cat "$log_file")
 	rm -f "$log_file"
-	[[ "$log_content" == *'empty path'* ]]
+	[[ "$log_content" == *'skipping'* ]]
 }
 
 # ============================================================================
 # Test 21: Broken symlink skipped
 # ============================================================================
 
-@test "sdk_result_text_with_resource: broken symlink skipped" {
+@test "sdk_result_resource_flag: broken symlink skipped" {
 	local link="${TEST_TMPDIR}/broken_link"
 	ln -s "/nonexistent/target" "${link}"
 
@@ -444,7 +442,7 @@ jq_check() {
 	MCP_LOG_STREAM="$log_file"
 	export MCP_LOG_STREAM
 
-	result=$(mcp_result_text_with_resource '{"done":true}' --path "${link}" --mime "text/plain")
+	result=$(mcp_result_json '{"done":true}' --resource "${link}" --mime "text/plain")
 	jq_check "$result" '.isError == false'
 
 	local res_content
@@ -460,15 +458,15 @@ jq_check() {
 # Test 22: Output is valid JSON array
 # ============================================================================
 
-@test "sdk_result_text_with_resource: output is valid JSON array" {
+@test "sdk_result_resource_flag: output is valid JSON array" {
 	local file1="${TEST_TMPDIR}/one.txt"
 	local file2="${TEST_TMPDIR}/two.txt"
 	printf 'content 1' > "${file1}"
 	printf 'content 2' > "${file2}"
 
-	result=$(mcp_result_text_with_resource '{"done":true}' \
-		--path "${file1}" --mime "text/plain" --uri "uri://one" \
-		--path "${file2}" --mime "text/html" --uri "uri://two")
+	result=$(mcp_result_json '{"done":true}' \
+		--resource "${file1}" --mime "text/plain" --uri "uri://one" \
+		--resource "${file2}" --mime "text/html" --uri "uri://two")
 
 	local res_content
 	res_content=$(cat "${MCP_TOOL_RESOURCES_FILE}")
@@ -485,9 +483,9 @@ jq_check() {
 # Test 23: Device file path skipped
 # ============================================================================
 
-@test "sdk_result_text_with_resource: device file skipped" {
+@test "sdk_result_resource_flag: device file skipped" {
 	# /dev/null is a device, not a regular file
-	result=$(mcp_result_text_with_resource '{"done":true}' --path "/dev/null" --mime "text/plain")
+	result=$(mcp_result_json '{"done":true}' --resource "/dev/null" --mime "text/plain")
 	jq_check "$result" '.isError == false'
 
 	local res_content
@@ -501,17 +499,17 @@ jq_check() {
 # Test 24: Two helper calls - second replaces first
 # ============================================================================
 
-@test "sdk_result_text_with_resource: second call replaces first" {
+@test "sdk_result_resource_flag: second call replaces first" {
 	local file1="${TEST_TMPDIR}/first.txt"
 	local file2="${TEST_TMPDIR}/second.txt"
 	printf 'first' > "${file1}"
 	printf 'second' > "${file2}"
 
 	# First call
-	mcp_result_text_with_resource '{"call":1}' --path "${file1}" --mime "text/plain" >/dev/null
+	mcp_result_json '{"call":1}' --resource "${file1}" --mime "text/plain" >/dev/null
 
 	# Second call should overwrite
-	mcp_result_text_with_resource '{"call":2}' --path "${file2}" --mime "text/html" >/dev/null
+	mcp_result_json '{"call":2}' --resource "${file2}" --mime "text/html" >/dev/null
 
 	local res_content
 	res_content=$(cat "${MCP_TOOL_RESOURCES_FILE}")
@@ -531,7 +529,7 @@ jq_check() {
 # Test 25: Direct TSV write then helper - helper overwrites
 # ============================================================================
 
-@test "sdk_result_text_with_resource: helper overwrites direct TSV write" {
+@test "sdk_result_resource_flag: helper overwrites direct TSV write" {
 	local test_file="${TEST_TMPDIR}/test.txt"
 	printf 'content' > "${test_file}"
 
@@ -539,7 +537,7 @@ jq_check() {
 	printf '%s\ttext/plain\n' "${test_file}" > "${MCP_TOOL_RESOURCES_FILE}"
 
 	# Helper should overwrite
-	mcp_result_text_with_resource '{"done":true}' --path "${test_file}" --mime "application/json" >/dev/null
+	mcp_result_json '{"done":true}' --resource "${test_file}" --mime "application/json" >/dev/null
 
 	local res_content
 	res_content=$(cat "${MCP_TOOL_RESOURCES_FILE}")

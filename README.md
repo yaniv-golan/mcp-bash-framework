@@ -526,17 +526,16 @@ See [**Project Structure Guide**](docs/PROJECT-STRUCTURE.md) for detailed layout
 
 Tools can attach files directly to the MCP response as `type:"resource"` content parts; binary files are auto-base64-encoded into the `blob` field, text stays in `text`.
 
-Use `mcp_result_text_with_resource` to embed files with your tool result:
+Add `--resource PATH [--mime TYPE] [--uri URI]` (repeatable) to `mcp_result_json` or `mcp_result_text` to embed files with your tool result:
 
 ```bash
 payload_path="${MCPBASH_PROJECT_ROOT}/resources/report.txt"
 printf 'Report content' >"${payload_path}"
-mcp_result_text_with_resource \
-  "$(mcp_json_obj message "See embedded report")" \
-  --path "${payload_path}" --mime text/plain
+mcp_result_json "$(mcp_json_obj message "See embedded report")" \
+  --resource "${payload_path}" --mime text/plain
 ```
 
-This helper stays as is in 1.x and changes in 2.0; `mcp-bash migrate` will show the replacement once it is final. See the dedicated example at `examples/06-embedded-resources/` and [BEST-PRACTICES.md](docs/BEST-PRACTICES.md#embedding-resources-in-tool-responses) for full documentation.
+Before 2.0 this was `mcp_result_text_with_resource ... --path`; `mcp-bash migrate --write` rewrites it. See the dedicated example at `examples/06-embedded-resources/` and [BEST-PRACTICES.md](docs/BEST-PRACTICES.md#embedding-resources-in-tool-responses) for full documentation. <!-- lint-api-usage: allow -->
 
 ## Diagnostics & Validation
 

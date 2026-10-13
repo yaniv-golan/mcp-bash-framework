@@ -176,3 +176,24 @@ SH
 		return 1
 	}
 }
+
+@test "migrate: --write moves mcp_result_text_with_resource, mcp_result_with_ui and the envelope schema" {
+	mkdir -p "${PROJ}/tools/proj-r"
+	cat >"${PROJ}/tools/proj-r/tool.meta.json" <<'JSON'
+{"name": "proj-r", "description": "r", "inputSchema": {"type": "object"},
+ "outputSchema": {"type": "object", "required": ["success", "result"], "properties": {"success": {"type": "boolean"},
+  "result": {"type": "object", "description": "Result data (present when success=true)", "properties": {"m": {"type": "string"}}}}}}
+JSON
+	cat >"${PROJ}/tools/proj-r/tool.sh" <<'SH'
+#!/usr/bin/env bash
+source "${MCP_SDK:?}/tool-sdk.sh"
+mcp_result_with_ui "" "Ready" '{"n":1}'
+mcp_result_text_with_resource '{"m":"x"}' \
+	--path /etc/hosts --mime text/plain
+SH
+	run mcp-bash migrate --project-root "${PROJ}" --write --only 2-ui-resource-uri,2-text-with-resource,2-envelope-schema
+	grep -q "^mcp_result_ui \"Ready\" '{\"n\":1}'$" "${PROJ}/tools/proj-r/tool.sh" || { cat "${PROJ}/tools/proj-r/tool.sh" >&2; return 1; }
+	grep -q "^mcp_result_json '{\"m\":\"x\"}' \\\\$" "${PROJ}/tools/proj-r/tool.sh" || { cat "${PROJ}/tools/proj-r/tool.sh" >&2; return 1; }
+	grep -q '^	--resource /etc/hosts --mime text/plain$' "${PROJ}/tools/proj-r/tool.sh" || { cat "${PROJ}/tools/proj-r/tool.sh" >&2; return 1; }
+	assert_equal "$(jq -c '[.outputSchema.type, (.outputSchema | has("description")), (.outputSchema.properties | keys)]' "${PROJ}/tools/proj-r/tool.meta.json")" '["object",false,["m"]]'
+}

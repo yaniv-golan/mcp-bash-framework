@@ -26,7 +26,7 @@ EOF
 #!/usr/bin/env bash
 set -euo pipefail
 source "${MCP_SDK}/tool-sdk.sh"
-mcp_emit_json "$(mcp_json_obj ok true)"
+mcp_result_json "$(mcp_json_obj ok true)"
 EOF
 	chmod +x "${PROJECT_ROOT}/tools/hello/tool.sh"
 }

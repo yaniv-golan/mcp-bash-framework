@@ -16,7 +16,7 @@ Key points:
 - **CLI `run-tool`**: Direct tool invocation with roots, dry-run, timeout override, verbose stderr, `--print-env`; covered by unit and example smoke tests.
 - **Scaffolded smoke scripts**: Each scaffolded tool ships with `tools/<name>/smoke.sh` to validate stdout JSON quickly; update the sample args in the script if you change `tool.meta.json`.
 - **Test harnesses**: `test_run_mcp` (NDJSON batch, preferred) and `test/common/session.sh` (interactive sequential calls; skips notifications, overwrites EXIT traps, no timeout).
-- **Embedded resources**: Use `mcp_result_text_with_resource '{"msg":"done"}' --path /tmp/file.txt --mime text/plain` to add `type:"resource"` content; binary files auto-encode to `blob`, text uses `text`.
+- **Embedded resources**: Add `--resource PATH [--mime TYPE] [--uri URI]` (repeatable) to `mcp_result_json` or `mcp_result_text`, e.g. `mcp_result_json '{"msg":"done"}' --resource /tmp/file.txt --mime text/plain`, to add `type:"resource"` content; binary files auto-encode to `blob`, text uses `text`.
 
 ## Quick Start for AI Agents Building MCP Servers
 
@@ -93,7 +93,7 @@ Migrating an existing project: `mcp_result_success`, `mcp_result_error`, `mcp_er
 
 ## SDK & Scaffolding
 
-- [Tool SDK](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/sdk/tool-sdk.sh): Shared helpers for argument parsing (`mcp_args_get`), results (`mcp_result_json`, `mcp_result_text`), JSON construction (`mcp_json_escape`, `mcp_json_obj`, `mcp_json_arr`), progress (`mcp_progress`, `mcp_run_with_progress`), cancellation (`mcp_is_cancelled`), logging (`mcp_log_info`, `mcp_log_warn`), configuration loading (`mcp_config_load`, `mcp_config_get`), error handling (`mcp_fail --type TYPE MESSAGE` with `--hint` and `--data` flags for errors the model can read; it ends the tool), secure downloads (`mcp_download_safe`, `mcp_download_safe_or_fail` for SSRF-safe HTTPS fetching with retries), and embedded resources (`mcp_result_text_with_resource`).
+- [Tool SDK](https://github.com/yaniv-golan/mcp-bash-framework/blob/main/sdk/tool-sdk.sh): Shared helpers for argument parsing (`mcp_args_get`), results (`mcp_result_json`, `mcp_result_text`), JSON construction (`mcp_json_escape`, `mcp_json_obj`, `mcp_json_arr`), progress (`mcp_progress`, `mcp_run_with_progress`), cancellation (`mcp_is_cancelled`), logging (`mcp_log_info`, `mcp_log_warn`), configuration loading (`mcp_config_load`, `mcp_config_get`), error handling (`mcp_fail --type TYPE MESSAGE` with `--hint` and `--data` flags for errors the model can read; it ends the tool), secure downloads (`mcp_download_safe`, `mcp_download_safe_or_fail` for SSRF-safe HTTPS fetching with retries), and embedded resources (`--resource` on the result helpers).
 - [Scaffold Templates](https://github.com/yaniv-golan/mcp-bash-framework/tree/main/scaffold): Templates for generating compliant tools, resources, and prompts via `mcp-bash scaffold <type> <name>`; create a full server skeleton via `mcp-bash new <name>`.
 
 ## Configuration & Operations

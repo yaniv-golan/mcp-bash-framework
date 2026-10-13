@@ -216,6 +216,32 @@ mcp_cli_migrate() {
 		fi
 	fi
 
+	# A running or restarted server reuses its tools cache while it is younger
+	# than the TTL, and would keep checking results against the tool metadata
+	# migrate just rewrote. Invalidate it, and the startup scan's record, when
+	# anything changed. Only those: the other registry files don't depend on
+	# what migrate rewrites. A file the project tracks in git is expired (its
+	# mtime set far in the past) rather than deleted, so the migration commit
+	# shows no deletion.
+	local cache_cleared="false"
+	if [ "${write}" = "true" ] && [ "${applied}" -gt 0 ]; then
+		local registry_dir="${MCPBASH_REGISTRY_DIR:-${project_root}/.registry}" cache_file target
+		for cache_file in tools.json scan/removed-api.findings scan/removed-api.scan scan/removed-api.attempt; do
+			target="${registry_dir}/${cache_file}"
+			[ -e "${target}" ] || continue
+			if [ "${in_git:-false}" = "true" ] && git -C "${project_root}" ls-files --error-unmatch -- "${target}" >/dev/null 2>&1; then
+				# A tracked findings file is emptied: its old entries would
+				# otherwise still feed the note until the next scan.
+				case "${cache_file}" in
+				*.findings) : >"${target}" && cache_cleared="true" ;;
+				*) touch -t 197001020000 "${target}" && cache_cleared="true" ;;
+				esac
+			else
+				rm -f "${target}" && cache_cleared="true"
+			fi
+		done
+	fi
+
 	local auto=0 manual=0
 	manual="$(printf '%s\n' "${findings}" | awk -F'\t' '$2 == "manual"' | wc -l | tr -d ' ')"
 	# The marker is only set once nothing else is pending, so while manual
@@ -237,11 +263,14 @@ mcp_cli_migrate() {
 				"$(mcp_json_quote_text "${f_summary}")" "$(mcp_json_quote_text "${f_fix}")" \
 				"$(mcp_json_quote_text "${f_text}")")"
 		done <<<"${findings}"
-		printf '{"projectRoot":%s,"written":%s,"applied":%s,"vendoredRuntimeTooOld":%s,"pending":{"auto":%s,"manual":%s},"findings":[%s]}\n' \
-			"$(mcp_json_quote_text "${project_root}")" "${write}" "${applied}" "${vendor_too_old}" "${auto}" "${manual}" "${items}"
+		printf '{"projectRoot":%s,"written":%s,"applied":%s,"registryCacheCleared":%s,"vendoredRuntimeTooOld":%s,"pending":{"auto":%s,"manual":%s},"findings":[%s]}\n' \
+			"$(mcp_json_quote_text "${project_root}")" "${write}" "${applied}" "${cache_cleared}" "${vendor_too_old}" "${auto}" "${manual}" "${items}"
 	else
 		if [ "${write}" = "true" ]; then
 			printf 'Applied %d automatic fix(es).\n' "${applied}"
+			if [ "${cache_cleared}" = "true" ]; then
+				printf 'Invalidated the tools cache; the server rebuilds it on its next start. Restart running servers to pick up the changes.\n'
+			fi
 		fi
 		if [ -n "${findings}" ]; then
 			local f_summary f_fix f_text

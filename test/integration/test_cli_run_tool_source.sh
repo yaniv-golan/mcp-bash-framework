@@ -39,7 +39,7 @@ EOF
 cat >"${PROJECT}/tools/echo-env/tool.sh" <<'EOF'
 #!/usr/bin/env bash
 source "${MCP_SDK}/tool-sdk.sh"
-mcp_emit_json "$(mcp_json_obj message "MCPBASH_INTEGRATION_TEST_VAR=${MCPBASH_INTEGRATION_TEST_VAR:-not-set} POLICY_TEST_VAR=${POLICY_TEST_VAR:-blocked}")"
+mcp_result_json "$(mcp_json_obj message "MCPBASH_INTEGRATION_TEST_VAR=${MCPBASH_INTEGRATION_TEST_VAR:-not-set} POLICY_TEST_VAR=${POLICY_TEST_VAR:-blocked}")"
 EOF
 chmod +x "${PROJECT}/tools/echo-env/tool.sh"
 

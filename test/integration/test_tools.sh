@@ -361,7 +361,7 @@ cat <<'SH' >"${FAIL_ROOT}/tools/fail/tool.sh"
 #!/usr/bin/env bash
 set -euo pipefail
 source "${MCP_SDK}/tool-sdk.sh"
-mcp_fail_invalid_args "bad input" '{"hint":"fix it"}'
+mcp_fail --type invalid_args "bad input" --data '{"hint":"fix it"}'
 SH
 chmod +x "${FAIL_ROOT}/tools/fail/tool.sh"
 

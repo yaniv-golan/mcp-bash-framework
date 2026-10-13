@@ -57,6 +57,12 @@ cat >"${PROJECT}/mcpb.conf" <<'CONF'
 MCPB_STATIC=true
 CONF
 
+# Startup-scan state left by a local run: per-machine, never shipped.
+mkdir -p "${PROJECT}/.registry/scan"
+printf 'tools/old/tool.sh\n' >"${PROJECT}/.registry/scan/removed-api.findings"
+printf '2026-01-01\n' >"${PROJECT}/.registry/scan/deprecation-notice.stamp"
+printf '2026-01-01\n' >"${PROJECT}/.registry/deprecation-notice.stamp"
+
 echo "Creating bundle with MCPB_STATIC=true..."
 
 # Build the bundle
@@ -80,6 +86,13 @@ if [ ! -d "${EXTRACT}/server/.registry" ]; then
 	exit 1
 fi
 echo "  [OK] .registry directory included"
+for f in scan deprecation-notice.stamp; do
+	if [ -e "${EXTRACT}/server/.registry/${f}" ]; then
+		echo "FAIL: .registry/${f} shipped in the bundle"
+		exit 1
+	fi
+done
+echo "  [OK] startup-scan state not shipped"
 
 # Test 3: tools.json cache exists with format_version
 if [ ! -f "${EXTRACT}/server/.registry/tools.json" ]; then

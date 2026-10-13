@@ -494,7 +494,9 @@ mcp_tools_collect_embedded_resources() {
 		content_obj="$(mcp_tools_embed_resource_from_path "${path}" "${mime}" "${uri}" || true)"
 		if [ -n "${content_obj}" ]; then
 			content_obj="$(
-				printf '%s' "${content_obj}" | "${MCPBASH_JSON_TOOL_BIN}" -c '{type:"resource",resource:.}' 2>/dev/null || true
+				# Only a resource object (it has a uri): outside the server,
+				# e.g. in run-tool, a log notification lands on the same stdout.
+				printf '%s' "${content_obj}" | "${MCPBASH_JSON_TOOL_BIN}" -c 'select(type == "object" and has("uri") and (has("jsonrpc") | not)) | {type:"resource",resource:.}' 2>/dev/null || true
 			)"
 			if [ -n "${content_obj}" ]; then
 				contents+=("${content_obj}")
@@ -799,6 +801,229 @@ _mcp_tools_side_channel_error_result() {
 		stderr_tail="$(mcp_tools_stderr_tail "${stderr_file}" "${limit}")"
 	fi
 	_mcp_tools_emit_error_result "${type}" "${message}" "" "${data}" "${stderr_tail}" "${exit_code}"
+}
+
+# SDK helpers removed in mcp-bash 2.0 (see `mcp-bash migrate`). A tool that
+# still calls one gets a migration_required error result instead of running
+# (mcp_tools_removed_api_use), and a "command not found" for one gets a hint
+# (mcp_tools_removed_api_hint).
+MCP_TOOLS_REMOVED_SDK_NAMES="mcp_error mcp_result_error mcp_fail_invalid_args mcp_result_success mcp_emit_text mcp_emit_json mcp_result_text_with_resource mcp_result_with_ui mcp_result_with_ui_data"
+
+# Print the first removed SDK helper the tool's own script calls, or nothing.
+# Usage: mcp_tools_removed_api_use TOOL_PATH
+mcp_tools_removed_api_use() {
+	mcp_tools_removed_api_check "$1"
+	[ -z "${MCP_TOOLS_REMOVED_API_HIT}" ] || printf '%s\n' "${MCP_TOOLS_REMOVED_API_HIT}"
+}
+
+# Set MCP_TOOLS_REMOVED_API_HIT to the first removed SDK helper the tool's
+# own script calls, or to "". Only the entry script is read, and only when
+# it is a shell script: other tools in the same directory, helpers it sources
+# and non-shell tools are never blocked (a removed helper they call fails
+# with "command not found", and mcp_tools_removed_api_hint names it). Only
+# calls in command position count; strings, comments, heredoc bodies,
+# arguments, assignments and a function of the same name defined in the
+# script don't. The result is cached in the state dir together with the
+# script's content, and reused while the content is the same: a repeat call
+# starts no process (the script is read with the read builtin), and a script
+# changed in any way, an older mtime included, is checked again.
+# Usage: mcp_tools_removed_api_check TOOL_PATH
+mcp_tools_removed_api_check() {
+	local path="$1" first="" cache="" cached_path="" cached_hit="" content="" cached_content=""
+	MCP_TOOLS_REMOVED_API_HIT=""
+	[ -n "${MCP_TOOLS_REMOVED_SDK_NAMES}" ] && [ -f "${path}" ] && [ -r "${path}" ] || return 0
+	case "${path}" in
+	*.sh | *.bash) ;;
+	*)
+		IFS= read -r first <"${path}" 2>/dev/null || true
+		case "${first}" in
+		'#!'*[/[:space:]]bash | '#!'*[/[:space:]]bash[[:space:]]* | '#!'*[/[:space:]]sh | '#!'*[/[:space:]]sh[[:space:]]*) ;;
+		*) return 0 ;;
+		esac
+		;;
+	esac
+	if [ -n "${MCPBASH_STATE_DIR:-}" ] && [ -d "${MCPBASH_STATE_DIR}" ]; then
+		local key="${path//[^A-Za-z0-9.-]/-}"
+		cache="${MCPBASH_STATE_DIR}/removed-api.${key}"
+		IFS= read -r -d '' content <"${path}" 2>/dev/null || true
+		if [ -f "${cache}" ]; then
+			{
+				IFS= read -r cached_path
+				IFS= read -r cached_hit
+				IFS= read -r -d '' cached_content || true
+			} <"${cache}" 2>/dev/null || true
+			if [ "${cached_path}" = "${path}" ] && [ "${cached_content}" = "${content}" ]; then
+				MCP_TOOLS_REMOVED_API_HIT="${cached_hit}"
+				return 0
+			fi
+		fi
+	fi
+	MCP_TOOLS_REMOVED_API_HIT="$(awk -v names="${MCP_TOOLS_REMOVED_SDK_NAMES}" "${MCP_TOOLS_REMOVED_API_AWK}" "${path}" 2>/dev/null)" || MCP_TOOLS_REMOVED_API_HIT=""
+	[ -z "${cache}" ] || printf '%s\n%s\n%s' "${path}" "${MCP_TOOLS_REMOVED_API_HIT}" "${content}" >"${cache}" 2>/dev/null || true
+}
+
+# The awk program for mcp_tools_removed_api_check: a small shell tokenizer.
+# shellcheck disable=SC2016  # An awk program, not shell.
+MCP_TOOLS_REMOVED_API_AWK='
+	# Prints the first removed helper called in command position, unless the
+	# file defines a function of that name. A small shell tokenizer: quotes,
+	# $(...), backticks, $((...)), comments, heredoc bodies and redirections
+	# are tracked, so strings, comments and arguments never count.
+	function endword() {
+		# Words in a case pattern or an array literal are never commands.
+		if (word != "" && (pat || inarr)) {
+			if (pat && word == "esac" && casedepth > 0) { casedepth--; pat = 0; cmdpos = 0 }
+			word = ""
+			return
+		}
+		if (word == "esac" && casedepth > 0) { casedepth--; cmdpos = 0; word = ""; return }
+		if (word == "in" && casehdr) { casehdr = 0; casedepth++; pat = 1; word = ""; return }
+		if (word != "" && cmdpos && word == "case") { casehdr = 1; cmdpos = 0; word = ""; return }
+		if (word != "" && cmdpos) {
+			if (word ~ /^[A-Za-z_][A-Za-z0-9_]*(\[[^]]*\])?\+?=/) {
+				# An assignment prefix: the command comes next.
+			} else if (word in kw) {
+				# then, do, if, !, {, ...: a command comes next.
+			} else {
+				if (word in want && !(word in seen)) { seen[word] = 1; hits[++nhits] = word }
+				cmdpos = 0
+			}
+		}
+		if (redir && word != "") { redir = 0 }
+		word = ""
+	}
+	function push(closer) { sp++; st_state[sp] = state; st_close[sp] = closer; st_word[sp] = word; st_cmd[sp] = cmdpos; st_arr[sp] = inarr; inarr = 0 }
+	function pop() { state = st_state[sp]; word = st_word[sp] "x"; cmdpos = st_cmd[sp]; inarr = st_arr[sp]; sp-- }
+	BEGIN {
+		n = split(names, list, " ")
+		for (i = 1; i <= n; i++) {
+			want[list[i]] = 1
+			defre1[i] = "^[[:space:]]*(function[[:space:]]+)?" list[i] "[[:space:]]*[(][[:space:]]*[)]"
+			defre2[i] = "^[[:space:]]*function[[:space:]]+" list[i] "([[:space:]]|[{]|$)"
+		}
+		split("then do else elif if while until ! { } time", k, " ")
+		for (i in k) kw[k[i]] = 1
+		state = "N"; sp = 0; cmdpos = 1; word = ""; redir = 0; inhd = ""; cont = 0
+		pat = 0; casehdr = 0; casedepth = 0; inarr = 0
+	}
+	{
+		line = $0
+		if (inhd != "") {
+			t = line
+			if (hdtab) sub(/^\t+/, "", t)
+			if (t == inhd) inhd = ""
+			next
+		}
+		if (state == "N" && !cont) {
+			for (i = 1; i <= n; i++) if (line ~ defre1[i] || line ~ defre2[i]) defined[list[i]] = 1
+			cmdpos = 1
+		}
+		cont = 0; pend = ""
+		L = length(line)
+		for (i = 1; i <= L; i++) {
+			c = substr(line, i, 1)
+			if (state == "S") { if (c == "\047") { state = "N"; word = word "x" } ; continue }
+			if (state == "C") {
+				# $'...': a backslash escapes the next character, \047 included.
+				if (c == "\\") { i++; continue }
+				if (c == "\047") { state = "N"; word = word "x" }
+				continue
+			}
+			if (state == "D") {
+				if (c == "\\") { i++; continue }
+				if (c == "\"") { pop(); continue }
+				if (c == "$" && substr(line, i + 1, 1) == "(" && substr(line, i + 2, 1) != "(") { push(")"); state = "N"; word = ""; cmdpos = 1; i++; continue }
+				if (c == "`") { push("`"); state = "N"; word = ""; cmdpos = 1; continue }
+				continue
+			}
+			if (state == "A") {
+				if (c == "(") adepth++
+				else if (c == ")") { if (adepth > 0) adepth--; else { pop(); i++ } }
+				continue
+			}
+			# Normal state.
+			if (c == " " || c == "\t") { endword(); continue }
+			if (c == "#" && word == "") break
+			if (c == "\\") { if (i == L) cont = 1; else word = word "x"; i++; continue }
+			if (c == "\047") { state = "S"; continue }
+			if (c == "$" && substr(line, i + 1, 1) == "\047") { state = "C"; i++; continue }
+			if (c == "\"") { push("\""); state = "D"; continue }
+			if (c == "$" && substr(line, i + 1, 2) == "((") { push("))"); state = "A"; adepth = 0; i += 2; continue }
+			if (c == "$" && substr(line, i + 1, 1) == "(") { push(")"); word = ""; cmdpos = 1; i++; continue }
+			if (c == "`") {
+				if (sp > 0 && st_close[sp] == "`") { endword(); pop() }
+				else { push("`"); word = ""; cmdpos = 1 }
+				continue
+			}
+			if (c == "(") {
+				if (pat) continue
+				if (word == "" && cmdpos && substr(line, i + 1, 1) == "(") { push("))"); state = "A"; adepth = 0; i++; continue }
+				if (word ~ /=$/) { push(")"); inarr = 1; word = ""; continue }
+				endword(); push(")"); word = ""; cmdpos = 1; continue
+			}
+			if (c == ")") {
+				if (pat) { word = ""; pat = 0; cmdpos = 1; continue }
+				endword()
+				if (sp > 0 && st_close[sp] == ")") pop()
+				else cmdpos = 1
+				continue
+			}
+			if (c == ";" && casedepth > 0 && (substr(line, i + 1, 1) == ";" || substr(line, i + 1, 1) == "&")) {
+				# ;; ;& ;;& end a case arm: a pattern comes next.
+				endword(); pat = 1
+				while (substr(line, i + 1, 1) == ";" || substr(line, i + 1, 1) == "&") i++
+				continue
+			}
+			if (pat && c == "|") { word = ""; continue }
+			if (c == ";" || c == "|" || (c == "&" && substr(line, i - 1, 1) != ">" && substr(line, i - 1, 1) != "<")) { endword(); cmdpos = 1; continue }
+			if (c == "<" && substr(line, i + 1, 2) == "<<") { endword(); redir = 1; i += 2; continue }
+			if (c == "<" || c == ">") {
+				if (c == "<" && substr(line, i + 1, 1) == "<" && substr(line, i + 2, 1) != "<") {
+					endword()
+					j = i + 2
+					hdtab = 0
+					if (substr(line, j, 1) == "-") { hdtab = 1; j++ }
+					while (substr(line, j, 1) == " " || substr(line, j, 1) == "\t") j++
+					d = ""
+					while (j <= L) {
+						e = substr(line, j, 1)
+						if (e == " " || e == "\t" || e == ";" || e == "|" || e == "&" || e == "<" || e == ">" || e == "(" || e == ")") break
+						if (e != "\047" && e != "\"" && e != "\\") d = d e
+						j++
+					}
+					if (d != "") pend = d
+					i = j - 1
+					continue
+				}
+				endword(); redir = 1; continue
+			}
+			if (word == "" && redir) { word = "x" }
+			word = word c
+		}
+		if (state == "N" && !cont) {
+			endword()
+			if (pend != "") inhd = pend
+		}
+	}
+	END {
+		for (h = 1; h <= nhits; h++) if (!(hits[h] in defined)) { print hits[h]; exit }
+	}
+'
+
+# The hint for a failed tool whose stderr says a removed SDK helper wasn't
+# found (a call the check above didn't see, e.g. in a shared script outside
+# the tool's directory). Prints nothing otherwise.
+# Usage: mcp_tools_removed_api_hint STDERR_TAIL
+mcp_tools_removed_api_hint() {
+	local stderr_tail="$1" name
+	for name in ${MCP_TOOLS_REMOVED_SDK_NAMES}; do
+		case "${stderr_tail}" in
+		*"${name}: command not found"*)
+			printf '`%s` was removed in mcp-bash 2.0; run `mcp-bash migrate` in the project' "${name}"
+			return 0
+			;;
+		esac
+	done
 }
 
 # True when the tool's stdout is itself a CallToolResult (an object with a
@@ -1789,6 +2014,20 @@ mcp_tools_call() {
 		# Fallback: invoke via shell if not marked executable but looks runnable
 		tool_runner=(bash "${absolute_path}")
 	fi
+	# A tool that still calls an SDK helper removed in 2.0 doesn't run: it would
+	# fail part-way (or, without set -e, carry on as if the helper had worked).
+	local removed_api
+	mcp_tools_removed_api_check "${absolute_path}"
+	removed_api="${MCP_TOOLS_REMOVED_API_HIT}"
+	if [ -n "${removed_api}" ]; then
+		# Like a policy denial, the tool didn't run: no exit code or stderr.
+		_mcp_tools_load_tool_error_sdk
+		_MCP_TOOLS_RESULT="$(mcp_tool_error_result migration_required \
+			"Tool '${name}' uses \`${removed_api}\`, which was removed in mcp-bash 2.0." \
+			--hint "Run \`mcp-bash migrate\` in the project (\`--write\` applies the safe rewrites)." \
+			--data "{\"removed\":\"${removed_api}\"}")"
+		return 0
+	fi
 	local safe_name
 	safe_name="$(printf '%s' "${name}" | tr -c 'A-Za-z0-9._-' '_')"
 	local trace_enabled="false"
@@ -2386,7 +2625,7 @@ mcp_tools_call() {
 		local fail_summary="${fail_message%%$'\n'*}"
 		mcp_tools_emit_github_annotation "${name}" "${fail_summary}" "${trace_line}"
 		mcp_tools_append_failure_summary "${name}" "${exit_code}" "${fail_summary}" "${stderr_tail}" "${trace_line}" "${arg_count}" "${arg_bytes}" "${meta_count}" "${MCP_ROOTS_COUNT:-0}" "false"
-		_mcp_tools_emit_error_result tool_failed "${fail_message}" "" "${fail_data}" "${stderr_tail}" "${exit_code}"
+		_mcp_tools_emit_error_result tool_failed "${fail_message}" "$(mcp_tools_removed_api_hint "${stderr_tail}")" "${fail_data}" "${stderr_tail}" "${exit_code}"
 		cleanup_tool_temp_files
 		return 0
 	fi
@@ -2463,9 +2702,10 @@ mcp_tools_call() {
 
 		# An error result with an outputSchema carries no structuredContent:
 		# clients that check it against the schema on errors too (the
-		# TypeScript SDK client) would reject it. The {success:false, error}
-		# envelope from mcp_error/mcp_result_error moves to
-		# _meta["mcpbash/error"], the shape of every other tool error.
+		# TypeScript SDK client) would reject it. A {success:false, error}
+		# envelope (from the 1.x mcp_error/mcp_result_error, or one a tool builds
+		# itself) moves to _meta["mcpbash/error"], the shape of every other
+		# tool error.
 		if $has_schema == "true" and .isError == true and has("structuredContent") then
 			(.structuredContent.error // null) as $e |
 			if ($e | type) == "object" and ((._meta // {}) | has("mcpbash/error") | not) then

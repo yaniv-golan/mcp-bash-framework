@@ -718,35 +718,6 @@ mcp_fail() {
 	__mcp_sdk_end_with_error tool_failed "${fail_message}" "$@"
 }
 
-mcp_fail_invalid_args() {
-	if [ -n "${2:-}" ]; then
-		__mcp_sdk_end_with_error invalid_args "${1:-Invalid params}" --data "$2"
-	fi
-	__mcp_sdk_end_with_error invalid_args "${1:-Invalid params}"
-}
-
-mcp_emit_text() {
-	local text="$1"
-	printf '%s' "${text}"
-}
-
-mcp_emit_json() {
-	local json="$1"
-	if [ "${MCPBASH_MODE:-full}" != "minimal" ] && [ -n "${MCPBASH_JSON_TOOL_BIN:-}" ]; then
-		case "${MCPBASH_JSON_TOOL}" in
-		gojq | jq)
-			local compact_json
-			compact_json="$(printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.' 2>/dev/null || true)"
-			if [ -n "${compact_json}" ]; then
-				printf '%s' "${compact_json}"
-				return 0
-			fi
-			;;
-		esac
-	fi
-	printf '%s' "${json}"
-}
-
 # Roots helpers ---------------------------------------------------------------
 
 mcp_roots_list() {
@@ -1200,24 +1171,84 @@ mcp_byte_length() {
 	printf '%s' "$1" | wc -c | tr -d ' '
 }
 
-# mcp_result_success <json_data> [max_text_bytes]
-# Emit MCP CallToolResult with success envelope
-#
-# Arguments:
-#   json_data       - Valid JSON data to return
-#   max_text_bytes  - Max size for content[].text (default: MCPBASH_MAX_TEXT_BYTES or 102400)
-#
-# Output: CallToolResult JSON to stdout
-# Returns: 0 always (MCP tool errors are expressed via isError, not exit codes)
-# mcp_result_text TEXT
+# mcp_result_text TEXT [--resource PATH [--mime TYPE] [--uri URI]]...
 # Frozen (mcp-bash 1.8+, unchanged in 2.0). A successful result with one text
 # block and no structured content. Prints the result; does not end the tool.
+# --resource (2.0, repeatable) embeds a file as a resource content block
+# (checked against the roots by the server); --mime and --uri apply to the
+# --resource before them. Without --mime the server detects the type.
 mcp_result_text() {
-	printf '{"content":[{"type":"text","text":%s}],"isError":false}' "$(__mcp_sdk_json_escape "${1-}")"
+	local text="${1-}"
+	shift 2>/dev/null || true
+	local -a res=()
+	while [ $# -gt 0 ]; do
+		case "$1" in
+		--resource)
+			res+=("${2-}" "" "")
+			shift 2 2>/dev/null || shift $#
+			;;
+		--mime | --uri)
+			__mcp_sdk_resource_option res "$1" "${2-}"
+			shift 2 2>/dev/null || shift $#
+			;;
+		-*)
+			__mcp_sdk_warn "mcp_result_text: unknown option ignored: $1"
+			shift
+			;;
+		*) shift ;;
+		esac
+	done
+	[ "${#res[@]}" -eq 0 ] || __mcp_sdk_write_resources "${res[@]}"
+	printf '{"content":[{"type":"text","text":%s}],"isError":false}' "$(__mcp_sdk_json_escape "${text}")"
 }
 
-# mcp_result_json JSON [--max-text-bytes N]
-# Frozen (mcp-bash 1.8+, unchanged in 2.0). A successful result whose
+# --mime or --uri for the last --resource in the caller's array NAME
+# (path, mime, uri triplets). Ignored before any --resource.
+__mcp_sdk_resource_option() {
+	local name="$1" opt="$2" value="$3" n
+	eval "n=\${#${name}[@]}"
+	[ "${n}" -ge 3 ] || return 0
+	case "${opt}" in
+	--mime) eval "${name}[$((n - 2))]=\${value}" ;;
+	--uri) eval "${name}[$((n - 1))]=\${value}" ;;
+	esac
+}
+
+# Embedded resources for the result helpers' --resource PATH [--mime TYPE]
+# [--uri URI] (repeatable): written to MCP_TOOL_RESOURCES_FILE as one JSON
+# array, which the framework turns into resource content blocks after
+# checking each file against the roots. Arguments are path, mime, uri
+# triplets (mime and uri may be empty). An unreadable file is skipped with a
+# warning. Overwrites the file.
+__mcp_sdk_write_resources() {
+	if [ -z "${MCP_TOOL_RESOURCES_FILE:-}" ]; then
+		mcp_log_warn "sdk" "--resource: MCP_TOOL_RESOURCES_FILE not set, resources will not be embedded"
+		return 0
+	fi
+	local json_array="[" sep="" path mime uri uri_json mime_json
+	while [ $# -ge 3 ]; do
+		path="$1"
+		mime="$2"
+		uri="$3"
+		shift 3
+		if [ -z "${path}" ] || [ ! -f "${path}" ] || [ ! -r "${path}" ]; then
+			mcp_log_warn "sdk" "--resource: not a readable file, skipping path=${path}"
+			continue
+		fi
+		uri_json="null"
+		[ -n "${uri}" ] && uri_json="$(__mcp_sdk_json_escape "${uri}")"
+		mime_json="null"
+		[ -n "${mime}" ] && mime_json="$(__mcp_sdk_json_escape "${mime}")"
+		json_array+="${sep}{\"path\":$(__mcp_sdk_json_escape "${path}"),\"mimeType\":${mime_json},\"uri\":${uri_json}}"
+		sep=","
+	done
+	json_array+="]"
+	printf '%s' "${json_array}" >"${MCP_TOOL_RESOURCES_FILE}"
+}
+
+# mcp_result_json JSON [--max-text-bytes N] [--resource PATH [--mime TYPE] [--uri URI]]...
+# Frozen (mcp-bash 1.8+, unchanged in 2.0; --resource added in 2.0, as for
+# mcp_result_text). A successful result whose
 # structuredContent is exactly JSON (no {success, result} envelope); the text
 # block is the serialized JSON. When the text would exceed N bytes (default
 # MCPBASH_MAX_TEXT_BYTES, else 102400) it is replaced by a short summary,
@@ -1230,11 +1261,24 @@ mcp_result_json() {
 	local data="${1-}"
 	shift 2>/dev/null || true
 	local max_raw=""
+	local -a res=()
 	while [ $# -gt 0 ]; do
 		case "$1" in
 		--max-text-bytes)
 			max_raw="${2-}"
 			shift 2 2>/dev/null || shift $#
+			;;
+		--resource)
+			res+=("${2-}" "" "")
+			shift 2 2>/dev/null || shift $#
+			;;
+		--mime | --uri)
+			__mcp_sdk_resource_option res "$1" "${2-}"
+			shift 2 2>/dev/null || shift $#
+			;;
+		-*)
+			__mcp_sdk_warn "mcp_result_json: unknown option ignored: $1"
+			shift
 			;;
 		*) shift ;;
 		esac
@@ -1267,6 +1311,8 @@ mcp_result_json() {
 					{content: [{type: "text", text: $t}], isError: false}
 				end
 			end' 2>/dev/null)" && [ -n "${out}" ]; then
+			# Resources only with a successful result, never an error.
+			[ "${#res[@]}" -eq 0 ] || __mcp_sdk_write_resources "${res[@]}"
 			printf '%s' "${out}"
 		else
 			mcp_tool_error_result internal "mcp_result_json: argument is not a single JSON value"
@@ -1278,6 +1324,7 @@ mcp_result_json() {
 	local trimmed="${data#"${data%%[![:space:]]*}"}"
 	case "${trimmed}" in
 	"{"*)
+		[ "${#res[@]}" -eq 0 ] || __mcp_sdk_write_resources "${res[@]}"
 		printf '{"content":[{"type":"text","text":%s}],"structuredContent":%s,"isError":false}' \
 			"$(__mcp_sdk_json_escape "${data}")" "${data}"
 		;;
@@ -1285,364 +1332,11 @@ mcp_result_json() {
 		mcp_tool_error_result internal "mcp_result_json: argument is not a single JSON value"
 		;;
 	*)
+		[ "${#res[@]}" -eq 0 ] || __mcp_sdk_write_resources "${res[@]}"
 		printf '{"content":[{"type":"text","text":%s}],"isError":false}' "$(__mcp_sdk_json_escape "${data}")"
 		;;
 	esac
 	return 0
-}
-
-mcp_result_success() {
-	local data="$1"
-	# Sanitize max_text_bytes to avoid set -e hazards from non-numeric input
-	# Default: 100KB (102400) - large enough for typical LLM responses to avoid
-	# unhelpful summaries like "Success: object with 3 keys"
-	local max_text_bytes
-	max_text_bytes=$(__mcp_sdk_uint_or_default "${2:-}" "${MCPBASH_MAX_TEXT_BYTES:-102400}")
-
-	# Guard: reject empty input
-	if [ -z "$data" ]; then
-		mcp_result_error '{"type":"internal_error","message":"Empty data passed to mcp_result_success"}'
-		return 0 # Always return 0 after emitting CallToolResult
-	fi
-
-	if [ "${MCPBASH_MODE:-full}" != "minimal" ] && [ -n "${MCPBASH_JSON_TOOL_BIN:-}" ]; then
-		# Full mode: validate, wrap, and emit in a single jq pipeline
-		# - Use -s (slurp) to enforce single JSON value (reject streams like "1 2")
-		# - Use tojson on parsed value for content[].text (avoids argv pressure entirely)
-		# - Stream everything via stdin (no --arg with large payloads)
-		# NOTE: Do NOT use -n with -s; -n means "don't read input" which breaks slurp
-		printf '%s' "$data" | "${MCPBASH_JSON_TOOL_BIN}" -c -s --argjson max "$max_text_bytes" '
-            # Validate single value
-            if length != 1 then
-                {
-                    content: [{type: "text", text: "Error: input must be single JSON value"}],
-                    structuredContent: {success: false, error: {type: "internal_error", message: "Input contained multiple JSON values", count: length}},
-                    isError: true
-                }
-            else
-                .[0] as $data |
-                {success: true, result: $data} as $envelope |
-                ($envelope | tojson) as $text |
-                # Use utf8bytelength for accurate byte counting (length counts codepoints)
-                if ($text | utf8bytelength) <= $max then
-                    # Small: full envelope in text
-                    {
-                        content: [{type: "text", text: $text}],
-                        structuredContent: $envelope,
-                        isError: false
-                    }
-                else
-                    # Large: summary in text
-                    (
-                        if ($data | type) == "array" then "Success: array with \($data | length) items"
-                        elif ($data | type) == "object" then "Success: object with \($data | keys | length) keys"
-                        else "Success: \($data | tostring | .[0:100])"
-                        end
-                    ) as $summary |
-                    {
-                        content: [{type: "text", text: $summary}],
-                        structuredContent: $envelope,
-                        isError: false
-                    }
-                end
-            end
-        ' 2>/dev/null || {
-			# jq failed (invalid JSON)
-			mcp_result_error '{"type":"internal_error","message":"Invalid JSON passed to mcp_result_success"}'
-		}
-	else
-		# Minimal mode: wrap blindly (can't validate or parse)
-		local envelope
-		envelope="{\"success\":true,\"result\":${data}}"
-
-		# Byte-accurate size check
-		local size
-		size=$(printf '%s' "$envelope" | wc -c | tr -d ' ')
-
-		if [ "$size" -le "$max_text_bytes" ]; then
-			# Small: full JSON in text
-			# __mcp_sdk_json_escape returns a QUOTED string like "foo", use directly
-			local escaped_text
-			escaped_text=$(__mcp_sdk_json_escape "$envelope")
-			printf '{"content":[{"type":"text","text":%s}],"structuredContent":%s,"isError":false}\n' \
-				"$escaped_text" "$envelope"
-		else
-			# Large: generic summary (no jq to introspect type)
-			printf '{"content":[{"type":"text","text":"Success: response too large for text content"}],"structuredContent":%s,"isError":false}\n' \
-				"$envelope"
-		fi
-	fi
-	return 0
-}
-
-# mcp_result_error <error_json>
-# Emit MCP CallToolResult with error envelope
-#
-# Arguments:
-#   error_json - Error object with 'type' and 'message' fields
-#
-# Output: CallToolResult JSON to stdout
-# Returns: 0 always (MCP tool errors are expressed via isError, not exit codes)
-mcp_result_error() {
-	local error_json="$1"
-
-	# Guard: handle empty input
-	if [ -z "$error_json" ]; then
-		error_json='{"type":"internal_error","message":"Unknown error (empty error object)"}'
-	fi
-
-	# Extract message for text content (with fallback)
-	local message
-	if [ "${MCPBASH_MODE:-full}" != "minimal" ] && [ -n "${MCPBASH_JSON_TOOL_BIN:-}" ]; then
-		# Validate and normalize error_json:
-		# 1. Must be valid JSON (single value, not a stream)
-		# 2. Must be an object with type/message fields
-		# If not, wrap appropriately to guarantee well-formed error structure
-		error_json=$(printf '%s' "$error_json" | "${MCPBASH_JSON_TOOL_BIN}" -c -s '
-            if length != 1 then
-                {type:"internal_error", message:"Error payload must be single JSON value", raw:("multiple values: \(length)")}
-            elif .[0] | type != "object" then
-                {type:"internal_error", message:"Error payload must be an object", raw:(.[0] | tostring)}
-            else
-                .[0] + {type:(.[0].type // "internal_error"), message:(.[0].message // "Unknown error")}
-            end
-        ' 2>/dev/null) || {
-			# jq failed entirely (invalid JSON) - wrap raw string
-			local escaped_raw
-			escaped_raw=$(printf '%s' "$1" | "${MCPBASH_JSON_TOOL_BIN}" -Rs '.')
-			error_json=$(printf '{"type":"internal_error","message":"Invalid error JSON passed to mcp_result_error","raw":%s}' "$escaped_raw")
-		}
-
-		# Stream everything via stdin to avoid argv pressure (even for large error messages)
-		# Use tostring to ensure content[].text is always a string (even if .message is non-string)
-		printf '%s' "$error_json" | "${MCPBASH_JSON_TOOL_BIN}" -c '
-            . as $err |
-            (($err.message // "Unknown error") | tostring) as $msg |
-            {
-                content: [{type: "text", text: $msg}],
-                structuredContent: {success: false, error: $err},
-                isError: true
-            }
-        '
-	else
-		# Minimal mode: MUST produce valid JSON even if error_json is invalid
-		# Do NOT embed raw error_json; always wrap safely to guarantee valid output
-		message=$(printf '%s' "$error_json" | sed -n 's/.*"message"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
-		message="${message:-Unknown error}"
-		# __mcp_sdk_json_escape returns quoted string, use directly
-		local escaped_message escaped_raw
-		escaped_message=$(__mcp_sdk_json_escape "$message")
-		escaped_raw=$(__mcp_sdk_json_escape "$error_json")
-		# Wrap error_json as escaped string to guarantee valid JSON output
-		printf '{"content":[{"type":"text","text":%s}],"structuredContent":{"success":false,"error":{"type":"internal_error","message":%s,"raw":%s}},"isError":true}\n' \
-			"$escaped_message" "$escaped_message" "$escaped_raw"
-	fi
-	return 0
-}
-
-# mcp_error - Convenience wrapper for tool execution errors
-# Usage: mcp_error <type> <message> [--hint <hint>] [--data <json>]
-# Always returns 0. Errors expressed via isError flag in response.
-#
-# Note: --data must be valid JSON. In minimal mode, invalid JSON will corrupt output.
-# Caller is responsible for ensuring --data contains valid JSON.
-# Note: Flags (--hint, --data) must include a value. Missing values cause undefined behavior.
-mcp_error() {
-	local error_type="${1:-internal_error}"
-	local message="${2:-Unknown error}"
-	# Guard: shift 2 fails if <2 args; fallback shifts remaining
-	shift 2 || shift $#
-
-	local hint=""
-	local data=""
-
-	# Parse optional flags
-	while [[ $# -gt 0 ]]; do
-		case "$1" in
-		--hint)
-			hint="$2"
-			shift 2
-			;;
-		--data)
-			data="$2"
-			shift 2
-			;;
-		*)
-			# Silently ignore unknown flags for forward compatibility
-			shift
-			;;
-		esac
-	done
-
-	# Build error JSON
-	local error_json
-	if [ "${MCPBASH_MODE:-full}" != "minimal" ] && [ -n "${MCPBASH_JSON_TOOL_BIN:-}" ]; then
-		# Full mode: use jq for proper JSON construction
-		# Validate --data if provided (--argjson fails with non-zero exit on invalid JSON)
-		local data_json="null"
-		if [[ -n "$data" ]]; then
-			if data_json=$(printf '%s' "$data" | "${MCPBASH_JSON_TOOL_BIN}" -c '.' 2>/dev/null); then
-				: # valid JSON, data_json now holds normalized form
-			else
-				# Invalid JSON - wrap raw value for debugging
-				data_json=$(printf '%s' "$data" | "${MCPBASH_JSON_TOOL_BIN}" -c -R -s '{"_invalid_json": .}')
-			fi
-		fi
-		# Message and data go on stdin: either can outgrow one argument.
-		error_json=$({
-			printf '%s' "$message" | "${MCPBASH_JSON_TOOL_BIN}" -R -s '.'
-			printf '\n%s' "$data_json"
-		} | "${MCPBASH_JSON_TOOL_BIN}" -c -s \
-			--arg type "$error_type" \
-			--arg hint "$hint" \
-			'.[0] as $message | .[1] as $data
-       | {type: $type, message: $message} +
-       (if $hint != "" then {hint: $hint} else {} end) +
-       (if $data != null then {data: $data} else {} end)')
-	else
-		# Minimal mode: manual JSON construction
-		# __mcp_sdk_json_escape returns quoted strings like "value"
-		local escaped_type escaped_message escaped_hint
-		escaped_type=$(__mcp_sdk_json_escape "$error_type")
-		escaped_message=$(__mcp_sdk_json_escape "$message")
-		error_json="{\"type\":${escaped_type},\"message\":${escaped_message}"
-		if [[ -n "$hint" ]]; then
-			escaped_hint=$(__mcp_sdk_json_escape "$hint")
-			error_json="${error_json},\"hint\":${escaped_hint}"
-		fi
-		if [[ -n "$data" ]]; then
-			# In minimal mode, trust data is valid JSON - caller responsibility
-			error_json="${error_json},\"data\":${data}"
-		fi
-		error_json="${error_json}}"
-	fi
-
-	# Log all errors at debug level for observability
-	mcp_log_debug "mcp_error" "type=${error_type}: ${message}"
-
-	# Log at warn level if hint provided (actionable error)
-	if [[ -n "$hint" ]]; then
-		mcp_log_warn "mcp_error" "type=${error_type} hint: ${message}"
-	fi
-
-	# Delegate to existing helper
-	mcp_result_error "$error_json"
-}
-
-# mcp_result_text_with_resource <text_or_json> [--path <file>] [--mime <type>] [--uri <uri>]
-# Combine text output with optional embedded resources in a single call.
-#
-# Arguments:
-#   $1       - Text content or JSON object (passed to mcp_result_success)
-#   --path   - File path to embed as resource (repeatable)
-#   --mime   - MIME type for preceding --path, reported as given. If omitted,
-#              the server detects it. Detection always decides text vs blob.
-#   --uri    - Custom URI for preceding --path (auto-generate if omitted)
-#
-# Output: CallToolResult JSON to stdout
-# Returns: 0 always (errors are logged, not thrown)
-#
-# Resources are written to MCP_TOOL_RESOURCES_FILE as a single JSON array.
-# WARNING: This helper OVERWRITES MCP_TOOL_RESOURCES_FILE (does not append).
-mcp_result_text_with_resource() {
-	local data="${1:-}"
-	shift || true
-
-	# Parse flags using parallel arrays (avoids delimiter issues with | in paths/URIs)
-	local -a res_paths=() res_mimes=() res_uris=()
-	local current_path="" current_mime="" current_uri=""
-
-	local have_pending_path=false
-
-	while [[ $# -gt 0 ]]; do
-		case "$1" in
-		--path)
-			# Save pending resource if any (even empty paths, to emit debug log in loop)
-			if [[ "$have_pending_path" == true ]]; then
-				res_paths+=("$current_path")
-				res_mimes+=("$current_mime")
-				res_uris+=("$current_uri")
-			fi
-			current_path="${2:-}"
-			current_mime=""
-			current_uri=""
-			have_pending_path=true
-			shift 2 || shift $#
-			;;
-		--mime)
-			current_mime="${2:-}"
-			shift 2 || shift $#
-			;;
-		--uri)
-			current_uri="${2:-}"
-			shift 2 || shift $#
-			;;
-		*)
-			# Log warning for unknown flags (helps catch typos)
-			mcp_log_debug "sdk" "mcp_result_text_with_resource: unknown flag ignored: $1"
-			shift
-			;;
-		esac
-	done
-
-	# Don't forget last pending path (even empty, to emit debug log in loop)
-	if [[ "$have_pending_path" == true ]]; then
-		res_paths+=("$current_path")
-		res_mimes+=("$current_mime")
-		res_uris+=("$current_uri")
-	fi
-
-	# Write resources to MCP_TOOL_RESOURCES_FILE as single JSON array
-	# CRITICAL: Framework expects a single JSON document, NOT JSONL (one object per line)
-	if [[ ${#res_paths[@]} -gt 0 ]]; then
-		if [[ -z "${MCP_TOOL_RESOURCES_FILE:-}" ]]; then
-			mcp_log_warn "sdk" "mcp_result_text_with_resource: MCP_TOOL_RESOURCES_FILE not set, resources will not be embedded"
-		else
-			# Build JSON array in memory, then write once
-			local json_array="["
-			local sep=""
-			local i path mime uri uri_json mime_json
-
-			for ((i = 0; i < ${#res_paths[@]}; i++)); do
-				path="${res_paths[$i]:-}"
-				mime="${res_mimes[$i]:-}"
-				uri="${res_uris[$i]:-}"
-
-				# Skip empty paths (e.g., from --path "")
-				if [[ -z "$path" ]]; then
-					mcp_log_debug "sdk" "mcp_result_text_with_resource: empty path, skipping"
-					continue
-				fi
-
-				# Validate: must be regular file AND readable (not directory, not broken symlink)
-				if [[ ! -f "$path" ]] || [[ ! -r "$path" ]]; then
-					mcp_log_warn "sdk" "mcp_result_text_with_resource: not a readable file, skipping path=${path}"
-					continue
-				fi
-
-				# Build JSON object for this resource. Without --mime, mimeType
-				# stays null and the server detects it; with --mime, the value
-				# is declared and becomes the reported label.
-				uri_json="null"
-				[[ -n "$uri" ]] && uri_json="$(__mcp_sdk_json_escape "$uri")"
-				mime_json="null"
-				[[ -n "$mime" ]] && mime_json="$(__mcp_sdk_json_escape "$mime")"
-
-				json_array+="${sep}{\"path\":$(__mcp_sdk_json_escape "$path"),\"mimeType\":${mime_json},\"uri\":${uri_json}}"
-				sep=","
-			done
-
-			json_array+="]"
-
-			# OVERWRITE (not append) - ensures consistent format
-			# If tool mixes direct TSV writes + helper, the helper wins
-			# This avoids format mixing (TSV then JSON) which breaks parsing
-			printf '%s' "$json_array" >"${MCP_TOOL_RESOURCES_FILE}"
-		fi
-	fi
-
-	# Delegate to mcp_result_success
-	mcp_result_success "$data"
 }
 
 # ============================================================================

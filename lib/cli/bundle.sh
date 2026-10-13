@@ -911,6 +911,14 @@ mcp_bundle_copy_project() {
 			printf '  \342\234\223 Included %s custom director%s\n' "${custom_count}" "$([ "${custom_count}" -eq 1 ] && echo "y" || echo "ies")"
 		fi
 	fi
+	# Per-machine state of the startup scan, never shipped: the findings
+	# describe the developer's copy, and a bundle (static registry) never
+	# rescans to refresh them.
+	if [ -d "${staging_server}/.registry" ]; then
+		rm -rf "${staging_server}/.registry/scan"
+		# Written there by 1.8-1.9.
+		rm -f "${staging_server}/.registry/deprecation-notice.stamp"
+	fi
 
 	# Copy VERSION file if present
 	if [ -f "${project_root}/VERSION" ]; then

@@ -150,56 +150,166 @@ mcp_core_bootstrap_state() {
 	mcp_core_start_deprecation_notice
 }
 
-# Once a day, tell the operator on stderr when the project uses APIs that
-# change in mcp-bash 2.0. Best effort: the scan runs in the background, never
-# touches stdout, and any failure is silent. Skipped when the rule engine isn't
-# installed (vendored runtimes), for bundles (static registry, whose users
-# can't act on it), in minimal mode, and with MCPBASH_DEPRECATION_NOTICE=false.
+# Migrate rules about SDK helpers removed in 2.0 (their findings feed the
+# instructions note; lib/tools.sh blocks the tools that use them).
+MCP_CORE_REMOVED_API_RULES="2-mcp-error 2-result-error 2-fail-invalid-args 2-result-success 2-emit-helpers 2-text-with-resource 2-ui-resource-uri"
+
+# True when the startup scan can run: not for bundles (static registry),
+# minimal mode or a vendored runtime without the rule engine, and only with
+# a project and a writable registry dir. The instructions note relies on the
+# same test: a findings file the scan can't refresh is never trusted.
+mcp_core_startup_scan_possible() {
+	[ "${MCPBASH_STATIC_REGISTRY:-0}" = "1" ] && return 1
+	mcp_runtime_is_minimal_mode && return 1
+	[ -f "${MCPBASH_HOME}/lib/migrate_rules.sh" ] || return 1
+	[ -n "${MCPBASH_PROJECT_ROOT:-}" ] && [ -d "${MCPBASH_PROJECT_ROOT}" ] || return 1
+	[ -n "${MCPBASH_REGISTRY_DIR:-}" ] && [ -d "${MCPBASH_REGISTRY_DIR}" ] && [ -w "${MCPBASH_REGISTRY_DIR}" ] || return 1
+}
+
+# Set by mcp_core_start_deprecation_notice, once per start: 1 when the scan
+# can run, so the instructions note may trust the findings file.
+MCP_CORE_REMOVED_API_NOTE_ON=0
+
+# The instructions sent by initialize and server/discover, into
+# MCP_CORE_INSTRUCTIONS: the project's server.instructions.md, then a sentence
+# when the last startup scan found removed SDK helpers in the project. Reads
+# the findings file only, never scans; no process is started unless the file
+# has entries.
+mcp_core_build_instructions() {
+	MCP_CORE_INSTRUCTIONS="${MCPBASH_SERVER_INSTRUCTIONS:-}"
+	local findings="${MCPBASH_REGISTRY_DIR:-}/scan/removed-api.findings"
+	[ "${MCP_CORE_REMOVED_API_NOTE_ON}" = 1 ] && [ -s "${findings}" ] || return 0
+	local files="" n=0 line note
+	while IFS= read -r line; do
+		[ -n "${line}" ] || continue
+		n=$((n + 1))
+		[ "${n}" -le 3 ] && files="${files:+${files} }${line}"
+	done <"${findings}"
+	[ "${n}" -gt 0 ] || return 0
+	[ "${n}" -gt 3 ] && files="${files} and $((n - 3)) more"
+	# shellcheck disable=SC2016  # Backticks are literal text.
+	note="Some of this server's scripts call mcp-bash helpers removed in 2.0 (in ${files}): tools that use them return an error until they are migrated (\`mcp-bash migrate\` lists the changes)."
+	MCP_CORE_INSTRUCTIONS="${MCP_CORE_INSTRUCTIONS:+${MCP_CORE_INSTRUCTIONS}$'\n\n'}${note}"
+}
+
+# The startup scan, in the background, never on the request path:
+# - removed-api.findings lists the project files that
+#   call an SDK helper removed in 2.0 (the rules in
+#   MCP_CORE_REMOVED_API_RULES), for the instructions note;
+# - once a day it runs every rule instead and prints one line to stderr with
+#   the number of uses of APIs that change in 2.0 (the stamp holds the date).
+# A new framework version always rescans. Otherwise a scan is started at
+# most once an hour per project (removed-api.attempt is
+# touched as it starts, so a scan cut short by a server that exits doesn't
+# start again on every launch), and only when the rules (lib/core.sh, the
+# rule engine and the rule files) or a file under the project changed since
+# the last completed one (removed-api.scan, whose mtime is the time that scan
+# started). Where find compares whole seconds (BusyBox), an edit in the same
+# second as a scan start waits for the next change; so do files replaced
+# with an older mtime (cp -p) and tools or server dirs outside the project.
 mcp_core_start_deprecation_notice() {
+	MCP_CORE_REMOVED_API_NOTE_ON=0
+	# MCPBASH_DEPRECATION_NOTICE=false turns the scan off, and with it the
+	# stderr line and the instructions note (a findings file nothing
+	# refreshes isn't trusted). Tools calling removed helpers still get
+	# migration_required per call.
 	case "${MCPBASH_DEPRECATION_NOTICE:-true}" in
 	false | 0 | no | off) return 0 ;;
 	esac
-	[ "${MCPBASH_STATIC_REGISTRY:-0}" = "1" ] && return 0
-	mcp_runtime_is_minimal_mode && return 0
-	[ -f "${MCPBASH_HOME}/lib/migrate_rules.sh" ] || return 0
-	local project_root="${MCPBASH_PROJECT_ROOT:-}"
-	local registry_dir="${MCPBASH_REGISTRY_DIR:-}"
-	[ -n "${project_root}" ] && [ -d "${project_root}" ] || return 0
-	[ -n "${registry_dir}" ] && [ -d "${registry_dir}" ] && [ -w "${registry_dir}" ] || return 0
-
-	# The stamp holds the date of the last scan. Claim today's slot before
-	# scanning so servers started together report once, and a clean project
-	# is scanned at most once a day.
-	local stamp="${registry_dir}/deprecation-notice.stamp"
-	local today last=""
-	today="$(date +%Y-%m-%d 2>/dev/null)" || return 0
-	[ -n "${today}" ] || return 0
-	if [ -f "${stamp}" ]; then
-		last="$(head -n 1 "${stamp}" 2>/dev/null || true)"
-	fi
-	[ "${last}" = "${today}" ] && return 0
-	printf '%s\n' "${today}" >"${stamp}" 2>/dev/null || return 0
+	mcp_core_startup_scan_possible || return 0
+	MCP_CORE_REMOVED_API_NOTE_ON=1
+	local project_root="${MCPBASH_PROJECT_ROOT}"
+	local registry_dir="${MCPBASH_REGISTRY_DIR}"
+	# The scan's files live in .registry/scan, which ignores itself in git
+	# (projects that commit .registry don't see them as untracked).
+	local scan_dir="${registry_dir}/scan"
+	local stamp="${scan_dir}/deprecation-notice.stamp"
+	local findings="${scan_dir}/removed-api.findings"
+	local scan_meta="${scan_dir}/removed-api.scan"
+	local attempt="${scan_dir}/removed-api.attempt"
 
 	(
 		set +e
+		if [ ! -f "${scan_dir}/.gitignore" ]; then
+			mkdir -p "${scan_dir}" 2>/dev/null && printf '*\n' >"${scan_dir}/.gitignore" 2>/dev/null || exit 0
+		fi
+		announce=0
+		today="$(date +%Y-%m-%d 2>/dev/null)" || today=""
+		last=""
+		[ -f "${stamp}" ] && IFS= read -r last <"${stamp}" 2>/dev/null
+		if [ -n "${today}" ] && [ "${last}" != "${today}" ] && printf '%s\n' "${today}" >"${stamp}" 2>/dev/null; then
+			announce=1
+		fi
+		# The record names the framework version that wrote it: an upgrade
+		# always rescans, whatever file times it installed.
+		version=""
+		recorded=""
+		[ -f "${MCPBASH_HOME}/VERSION" ] && IFS= read -r version <"${MCPBASH_HOME}/VERSION" 2>/dev/null
+		[ -f "${scan_meta}" ] && IFS= read -r recorded <"${scan_meta}" 2>/dev/null
+		if [ "${announce}" = 0 ] && [ "${recorded}" = "${version}" ]; then
+			# A scan started within the hour, finished or not: nothing to do.
+			[ -f "${attempt}" ] && [ -n "$(find "${attempt}" -mmin -60 2>/dev/null)" ] && exit 0
+			if [ -f "${scan_meta}" ] && [ -f "${findings}" ]; then
+				changed=0
+				for f in "${MCPBASH_HOME}/lib/core.sh" "${MCPBASH_HOME}/lib/migrate_rules.sh" "${MCPBASH_HOME}"/lib/cli/migrations/*.sh; do
+					if [ "${f}" -nt "${scan_meta}" ]; then
+						changed=1
+						break
+					fi
+				done
+				if [ "${changed}" = 0 ] && [ -z "$(find "${project_root}" \( -name .git -o -name .registry -o -name node_modules -o -name .mcp-bash \) -prune -o -newer "${scan_meta}" -print 2>/dev/null | head -n 1)" ]; then
+					exit 0
+				fi
+			fi
+		fi
+		: >"${attempt}" 2>/dev/null
+		started="$(mktemp "${scan_meta}.XXXXXX" 2>/dev/null)" || started=""
 		# shellcheck source=lib/migrate_rules.sh disable=SC1091
 		. "${MCPBASH_HOME}/lib/migrate_rules.sh" || exit 0
 		# One rule at a time, stopping as soon as the server is gone ($$ is the
 		# server's PID even in this subshell): background helpers must not
-		# outlive a server that was killed.
+		# outlive a server that was killed. Only the removed-helper rules,
+		# unless the stderr line is due.
 		count=0
+		removed_tmp="$(mktemp "${findings}.XXXXXX" 2>/dev/null)" || removed_tmp=""
 		while IFS= read -r rule; do
-			mcp_core_server_alive || exit 0
+			if ! mcp_core_server_alive; then
+				rm -f "${removed_tmp}" "${started}"
+				exit 0
+			fi
 			id="${rule##*/}"
 			id="${id%.sh}"
-			n="$(mcp_migrate_detect "${project_root}" --validate --only "${id}" 2>/dev/null | grep -c . 2>/dev/null)"
+			removed=0
+			case " ${MCP_CORE_REMOVED_API_RULES} " in *" ${id} "*) removed=1 ;; esac
+			[ "${removed}" = 1 ] || [ "${announce}" = 1 ] || continue
+			out="$(mcp_migrate_detect "${project_root}" --validate --only "${id}" 2>/dev/null)"
+			[ -n "${out}" ] || continue
+			n="$(printf '%s\n' "${out}" | grep -c .)"
 			case "${n}" in '' | *[!0-9]*) n=0 ;; esac
 			count=$((count + n))
+			if [ "${removed}" = 1 ] && [ -n "${removed_tmp}" ]; then
+				printf '%s\n' "${out}" | awk -F'\t' '{ print $3 }' >>"${removed_tmp}"
+			fi
 		done <<EOF_RULES
 $(mcp_migrate_rule_files 2>/dev/null)
 EOF_RULES
-		mcp_core_server_alive || exit 0
-		[ "${count}" -gt 0 ] || exit 0
+		if ! mcp_core_server_alive; then
+			rm -f "${removed_tmp}" "${started}"
+			exit 0
+		fi
+		if [ -n "${removed_tmp}" ]; then
+			LC_ALL=C sort -u "${removed_tmp}" >"${removed_tmp}.sorted" 2>/dev/null && mv -f "${removed_tmp}.sorted" "${findings}" 2>/dev/null
+			rm -f "${removed_tmp}" "${removed_tmp}.sorted"
+		fi
+		if [ -n "${started}" ]; then
+			# The record holds the framework version; its mtime is the time this
+			# scan started.
+			printf '%s\n' "${version}" >"${started}.new" 2>/dev/null \
+				&& touch -r "${started}" "${started}.new" 2>/dev/null \
+				&& mv -f "${started}.new" "${scan_meta}" 2>/dev/null
+			rm -f "${started}" "${started}.new"
+		fi
+		[ "${announce}" = 1 ] && [ "${count}" -gt 0 ] || exit 0
 		noun="uses"
 		[ "${count}" -eq 1 ] && noun="use"
 		# shellcheck disable=SC2016  # Backticks are literal text.

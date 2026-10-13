@@ -96,12 +96,16 @@ mcp_spec_build_initialize_response() {
 	local server_info
 	server_info="$(mcp_spec_build_server_info)"
 
-	local instructions_field=""
-	if [ "${protocol}" != "2024-11-05" ] && [ -n "${MCPBASH_SERVER_INSTRUCTIONS:-}" ]; then
+	local instructions_field="" instructions="${MCPBASH_SERVER_INSTRUCTIONS:-}"
+	if command -v mcp_core_build_instructions >/dev/null 2>&1; then
+		mcp_core_build_instructions
+		instructions="${MCP_CORE_INSTRUCTIONS}"
+	fi
+	if [ "${protocol}" != "2024-11-05" ] && [ -n "${instructions}" ]; then
 		local instructions_json
 		# Uses jq when present: the pure-bash quoter walks one character at a
 		# time and takes minutes on a long instructions file.
-		instructions_json="$(mcp_json_escape_string "${MCPBASH_SERVER_INSTRUCTIONS}")"
+		instructions_json="$(mcp_json_escape_string "${instructions}")"
 		instructions_field="$(printf ',"instructions":%s' "${instructions_json}")"
 	fi
 

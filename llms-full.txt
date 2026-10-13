@@ -18,7 +18,7 @@ Pure Bash MCP server framework. Bash≥3.2 + jq/gojq. Stdio transport only.
   4) Add tools/resources/prompts via `mcp-bash scaffold tool|prompt|resource <name>`, then `mcp-bash validate` before wiring to clients.
 - Validation & config:
   - Validate project: `bin/mcp-bash validate [--project-root DIR] [--fix] [--json] [--explain-defaults] [--strict] [--deprecations-as-errors]` (deprecations, uses of APIs that change in 2.0, are counted separately and don't fail validation unless `--deprecations-as-errors`).
-  - Find (and fix) uses of APIs removed in 2.0: `bin/mcp-bash migrate [--project-root DIR] [--write [--force]] [--only ID,..] [--skip ID,..] [--json]`, `--list`, `--explain ID`. Check only by default; `--write` applies the safe rewrites (refuses a dirty git tree without `--force`) and records `"mcpBash": {"apiVersion": 2}` in `server.meta.json` once nothing else is pending. A vendored runtime that predates `mcp_result_json` needs `mcp-bash vendor --upgrade` first. Exit status: 0 nothing pending, 1 automatic fixes pending, 2 manual work pending, 3 usage error.
+  - Find (and fix) uses of APIs removed in 2.0: `bin/mcp-bash migrate [--project-root DIR] [--write [--force]] [--only ID,..] [--skip ID,..] [--json]`, `--list`, `--explain ID`. Check only by default; `--write` applies the safe rewrites (refuses a dirty git tree without `--force`) and records `"mcpBash": {"apiVersion": 2}` in `server.meta.json` once nothing else is pending; when it changed a file it invalidates the tools cache in `.registry` (expiring a git-tracked copy instead of deleting it), so the next start reads the new metadata. A vendored runtime that predates `mcp_result_json` needs `mcp-bash vendor --upgrade` first. Exit status: 0 nothing pending, 1 automatic fixes pending, 2 manual work pending, 3 usage error.
   - Generate MCP client config snippets / JSON descriptor: `bin/mcp-bash config [--project-root DIR] [--show|--json|--client NAME|--wrapper]` (`--show` prints labeled snippets for all clients; use `--client` to filter).
   - Environment diagnostics: `bin/mcp-bash doctor [--json]` (local operator use; exposes paths and env).
   - Registry cache: `bin/mcp-bash registry status [--project-root DIR]`.
@@ -76,16 +76,17 @@ mcp_result_json "$(printf '%s' "$result" | jq -c '.')"
 
 ## EMBEDDED RESOURCES (type:"resource")
 
-- **Preferred**: Use `mcp_result_text_with_resource` helper:
+- **Preferred**: Add `--resource` to `mcp_result_json` or `mcp_result_text` (since 2.0):
   ```bash
-  mcp_result_text_with_resource '{"status":"done"}' --path /tmp/file.txt --mime text/plain
-  # Multiple: --path /file1 --mime text/plain --path /file2 --mime image/png
+  mcp_result_json '{"status":"done"}' --resource /tmp/file.txt --mime text/plain
+  # Multiple: --resource /file1 --mime text/plain --resource /file2 --mime image/png
   ```
 - **Manual**: Write to `MCP_TOOL_RESOURCES_FILE` (TSV `path<TAB>mime<TAB>uri` or JSON array).
 - The framework appends `{type:"resource", resource:{uri,mimeType,text|blob}}` to `result.content`.
 - Binary files are auto-base64-encoded to `blob`; text stays in `text`.
 - Paths must be readable and inside allowed roots; invalid entries are skipped (debug logs will note skips).
-- This helper has no 2.0-stable replacement yet; keep it as is; it changes in 2.0 and `mcp-bash migrate` will flag it.
+- `--mime` and `--uri` apply to the `--resource` before them. A file that isn't readable is skipped with a warning on stderr.
+- The 1.x `mcp_result_text_with_resource ... --path` is removed in 2.0; `mcp-bash migrate --write` rewrites it. <!-- lint-api-usage: allow -->
 
 ## TOOL STRUCTURE
 
@@ -145,9 +146,9 @@ mcp_result_json "$(printf '%s' "$result" | jq -c '.')"
 - Errors:
   - `mcp_fail --type TYPE "msg" [--hint TEXT] [--data JSON]` → ends the tool (inside `$(...)` it ends the substitution and the framework still delivers the result; the tool itself stops there only under `set -e`, otherwise write `x="$(…)" || exit 1`) with an `isError: true` result the model can read: the text is the message plus `\n\nHint: …`; details go in `_meta["mcpbash/error"]` (`{type, message, hint, data}`; no `structuredContent`). Types: `invalid_args`, `not_found`, `permission`, `policy_denied`, `timeout`, `unavailable`, `internal` (other strings are accepted). Without `--type` (`mcp_fail "msg" …`, since 2.0) the type is `tool_failed`; `mcp_fail -- "msg"` takes the message literally.
   - `mcp_tool_error_result TYPE "msg" [--hint TEXT] [--data JSON]` → prints the same result without ending the tool (advanced).
-  - 1.x helpers `mcp_result_success`, `mcp_result_error`, `mcp_error`, `mcp_fail_invalid_args`, `mcp_emit_text`/`mcp_emit_json` are removed in 2.0; `mcp-bash migrate` rewrites them. The numeric `mcp_fail CODE MSG` is removed too: in 2.0 it ends the tool with MSG as an error result (no code sent) and notes the removal on stderr. <!-- lint-api-usage: allow -->
+  - 1.x helpers `mcp_result_success`, `mcp_result_error`, `mcp_error`, `mcp_fail_invalid_args`, `mcp_emit_text`/`mcp_emit_json`, `mcp_result_text_with_resource`, `mcp_result_with_ui`/`mcp_result_with_ui_data` are removed in 2.0; `mcp-bash migrate` lists them and `--write` rewrites the safe cases. A tool whose own script still calls one doesn't run: the call returns an error result of type `migration_required` (`data.removed` names the helper), and the server's instructions name the affected files from the second start on. The numeric `mcp_fail CODE MSG` is removed too: in 2.0 it ends the tool with MSG as an error result (no code sent) and notes the removal on stderr. <!-- lint-api-usage: allow -->
   - Every tool failure is an error result in 2.0, never a JSON-RPC error: a non-zero exit (type `tool_failed`; text = a stdout `{"code","message"}` object's message, else the stderr tail, else the end of stdout), output over the size limits (`output_too_large`), output that isn't JSON or doesn't match `outputSchema` (`output_schema`). `_meta.exitCode` is the real exit status. `mcp-bash run-tool` exits 1 for every error result. <!-- lint-api-usage: allow -->
-  - For a tool that declares an `outputSchema`, the server drops `structuredContent` from its error results (e.g. the `mcp_error`/`mcp_result_error` envelope) and moves the envelope's `error` to `_meta["mcpbash/error"]` (since 1.9.2): the TypeScript SDK client checks `structuredContent` against the schema even on errors. <!-- lint-api-usage: allow -->
+  - For a tool that declares an `outputSchema`, the server drops `structuredContent` from its error results (e.g. a hand-built `{success: false, error}` envelope) and moves the envelope's `error` to `_meta["mcpbash/error"]` (since 1.9.2): the TypeScript SDK client checks `structuredContent` against the schema even on errors. <!-- lint-api-usage: allow -->
 - Progress & cancellation:
   - `mcp_progress <0-100> "msg" [total]` → progress notifications.
   - `mcp_run_with_progress --pattern REGEX [--extract json|match1|ratio] [--stderr-file FILE] -- cmd args` → forward subprocess progress to MCP (see BEST-PRACTICES.md §4.9).
@@ -333,7 +334,7 @@ mcp_result_json "$(printf '%s' "$result" | jq -c '.')"
   - Debug mode: `bin/mcp-bash debug` (enables payload logging and preserved state; see `docs/DEBUGGING.md`).
   - Registry refresh: `bin/mcp-bash registry refresh [--project-root DIR] [--no-notify] [--quiet] [--filter SUBPATH]`.
   - Validate project: `bin/mcp-bash validate [--project-root DIR] [--fix] [--json] [--explain-defaults] [--strict] [--deprecations-as-errors]` (deprecations, uses of APIs that change in 2.0, are counted separately and don't fail validation unless `--deprecations-as-errors`).
-  - Find (and fix) uses of APIs removed in 2.0: `bin/mcp-bash migrate [--project-root DIR] [--write [--force]] [--only ID,..] [--skip ID,..] [--json]`, `--list`, `--explain ID`. Check only by default; `--write` applies the safe rewrites (refuses a dirty git tree without `--force`) and records `"mcpBash": {"apiVersion": 2}` in `server.meta.json` once nothing else is pending. A vendored runtime that predates `mcp_result_json` needs `mcp-bash vendor --upgrade` first. Exit status: 0 nothing pending, 1 automatic fixes pending, 2 manual work pending, 3 usage error.
+  - Find (and fix) uses of APIs removed in 2.0: `bin/mcp-bash migrate [--project-root DIR] [--write [--force]] [--only ID,..] [--skip ID,..] [--json]`, `--list`, `--explain ID`. Check only by default; `--write` applies the safe rewrites (refuses a dirty git tree without `--force`) and records `"mcpBash": {"apiVersion": 2}` in `server.meta.json` once nothing else is pending; when it changed a file it invalidates the tools cache in `.registry` (expiring a git-tracked copy instead of deleting it), so the next start reads the new metadata. A vendored runtime that predates `mcp_result_json` needs `mcp-bash vendor --upgrade` first. Exit status: 0 nothing pending, 1 automatic fixes pending, 2 manual work pending, 3 usage error.
   - Generate MCP client config snippets / JSON descriptor: `bin/mcp-bash config [--project-root DIR] [--show|--json|--client NAME|--wrapper]`.
   - Diagnose environment: `bin/mcp-bash doctor [--json]` (local diagnostic; reveals paths/env).
   - Registry status: `bin/mcp-bash registry status [--project-root DIR]` (hash/mtime/counts).

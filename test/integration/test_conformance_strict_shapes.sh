@@ -368,6 +368,11 @@ printf '%s' "${prompts_list}" | jq -e '
 ' >/dev/null || test_fail "prompts/list shape mismatch"
 assert_optional_next_cursor_string "${prompts_list}"
 
+# The register.json tool runs and its result matches its outputSchema.
+tool_call="$(jq -c 'select(.id=="tcall") | .result' "${MANUAL_ROOT}/responses.ndjson")"
+printf '%s' "${tool_call}" | jq -e '.isError == false and (.structuredContent.message | type) == "string"' >/dev/null \
+	|| test_fail "manual.progress call failed: ${tool_call}"
+
 # resources/read must resolve by uri and honor custom provider
 assert_ndjson_shape "${MANUAL_ROOT}/responses.ndjson" '.id=="rread"' \
 	'(.result.contents | type) == "array" and

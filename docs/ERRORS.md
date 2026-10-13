@@ -103,6 +103,7 @@ mcp_fail -- "${message}"
 | `tool_failed` | The tool failed: `mcp_fail` without `--type`, or a non-zero exit (set by the server) |
 | `output_too_large` | The tool's stdout or stderr went over `MCPBASH_MAX_TOOL_OUTPUT_SIZE` / `MCPBASH_MAX_TOOL_STDERR_SIZE` (set by the server) |
 | `output_schema` | The tool's output is not valid JSON, is empty, or doesn't match its `outputSchema` (set by the server) |
+| `migration_required` | The tool calls an SDK helper removed in 2.0, so it didn't run; `data.removed` names the helper and the hint says to run `mcp-bash migrate` (set by the server) |
 
 Other type strings are accepted (for example `cli_error` or `network_error`); prefer the documented ones so clients can rely on them.
 
@@ -133,11 +134,12 @@ mcp_result_text "Deleted 3 files"
 Unlike `mcp_fail --type`, these helpers **do not end the tool**: in an early-return branch, follow them with `exit 0`. With `mcp_result_json` the tool's `outputSchema` describes the JSON itself (there is no `{success, result}` wrapper). See [BEST-PRACTICES.md §4.8](BEST-PRACTICES.md#48-building-calltoolresult-responses) for full documentation.
 
 The 1.x helpers `mcp_result_success`, `mcp_result_error`, `mcp_error` and `mcp_fail_invalid_args` are removed in 2.0; `mcp-bash migrate` lists them and rewrites the ones it can. <!-- lint-api-usage: allow -->
-`mcp_result_success`/`mcp_result_error` wrap data in a `{success, result}`/`{success, error}` envelope, and `mcp_error` and `mcp_result_*` do not end the tool. <!-- lint-api-usage: allow -->
+`mcp_result_success`/`mcp_result_error` wrapped data in a `{success, result}`/`{success, error}` envelope, and `mcp_error` and `mcp_result_*` did not end the tool. <!-- lint-api-usage: allow -->
+A tool whose own script still calls a removed helper (as a command, not in a string or comment) doesn't run: each call returns an error result of type `migration_required` (`data.removed` names the helper; the hint says to run `mcp-bash migrate`). From the second start on, the server's `instructions` also name the affected files. A removed helper called from another script the tool sources fails with "command not found"; the `tool_failed` result's hint then names it. If the tool still ends successfully (no `set -e`), the result is a normal success and carries no hint: the "command not found" line is only in the tool's stderr.
 
 The numeric form `mcp_fail CODE MESSAGE [DATA]` (an integer, then a second argument) was a JSON-RPC protocol error in 1.x, which the model never saw. 2.0 removes it: the tool still ends with `MESSAGE` as an error result (type `invalid_args` for `-32602`, `tool_failed` otherwise), the code is not sent, and the tool's stderr says the form was removed. Run `mcp-bash migrate` to rewrite it. <!-- lint-api-usage: allow -->
 
-When a tool that declares an `outputSchema` returns an error result with `structuredContent` (as `mcp_error` and `mcp_result_error` do), the server drops `structuredContent` and moves its `error` object to `_meta["mcpbash/error"]` (`type`, `message`, `hint`, and `data` or the error's other fields), since 1.9.2. Clients that check `structuredContent` against the schema on error results too, such as the TypeScript SDK client used by Claude Desktop, rejected the envelope. Tools without an `outputSchema` are unchanged. <!-- lint-api-usage: allow -->
+When a tool that declares an `outputSchema` returns an error result with `structuredContent` (such as a hand-built `{success: false, error}` envelope, or the 1.x `mcp_error` and `mcp_result_error`), the server drops `structuredContent` and moves its `error` object to `_meta["mcpbash/error"]` (`type`, `message`, `hint`, and `data` or the error's other fields), since 1.9.2. Clients that check `structuredContent` against the schema on error results too, such as the TypeScript SDK client used by Claude Desktop, rejected the envelope. Tools without an `outputSchema` are unchanged. <!-- lint-api-usage: allow -->
 
 For validation that happens early in a tool (before doing real work), prefer returning `isError: true` so the LLM learns from the feedback.
 

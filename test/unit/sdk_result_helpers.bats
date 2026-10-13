@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Unit layer: SDK CallToolResult helper functions (mcp_result_success, mcp_result_error, mcp_json_truncate).
+# Unit layer: SDK CallToolResult helper functions (mcp_result_json, mcp_json_truncate).
 
 load '../../node_modules/bats-support/load'
 load '../../node_modules/bats-assert/load'
@@ -32,172 +32,77 @@ jq_check() {
 }
 
 # ============================================================================
-# mcp_result_success tests
+# mcp_result_json tests (mcp_result_success was removed in 2.0; these cover
+# the same inputs)
 # ============================================================================
 
-@test "sdk_result_helpers: mcp_result_success wraps simple value" {
-	result=$(mcp_result_success '{"foo": "bar"}')
-	jq_check "$result" '.structuredContent.success == true'
-	jq_check "$result" '.structuredContent.result.foo == "bar"'
+@test "sdk_result_helpers: mcp_result_json sends the data as structuredContent" {
+	result=$(mcp_result_json '{"foo": "bar"}')
+	jq_check "$result" '.structuredContent.foo == "bar"'
 	jq_check "$result" '.isError == false'
 }
 
-@test "sdk_result_helpers: mcp_result_success always wraps data including objects with result field" {
-	result=$(mcp_result_success '{"result": "pass", "score": 95}')
-	jq_check "$result" '.structuredContent.result.result == "pass"'
-	jq_check "$result" '.structuredContent.result.score == 95'
-	jq_check "$result" '.structuredContent.success == true'
+@test "sdk_result_helpers: mcp_result_json keeps a result field as data" {
+	result=$(mcp_result_json '{"result": "pass", "score": 95}')
+	jq_check "$result" '.structuredContent.result == "pass"'
+	jq_check "$result" '.structuredContent.score == 95'
 }
 
-@test "sdk_result_helpers: mcp_result_success summarizes large responses" {
-	large=$(${MCPBASH_JSON_TOOL_BIN} -n '[range(1000)] | map({id: ., data: ([range(100) | "x"] | add)})')
-	result=$(mcp_result_success "$large" 100)
+@test "sdk_result_helpers: mcp_result_json summarizes large responses" {
+	large=$(${MCPBASH_JSON_TOOL_BIN} -n '{items: ([range(1000)] | map({id: ., data: ([range(100) | "x"] | add)}))}')
+	result=$(mcp_result_json "$large" --max-text-bytes 100)
 	text=$(jq_get "$result" '.content[0].text')
-	[[ "$text" == Success:* ]]
-	[[ "$text" == *array* ]]
+	[[ "$text" == *"object with 1 keys"* ]]
+	jq_check "$result" '.structuredContent.items | length == 1000'
 }
 
-@test "sdk_result_helpers: mcp_result_success content.text is NOT double-encoded" {
-	result=$(mcp_result_success '{"foo": "bar"}')
+@test "sdk_result_helpers: mcp_result_json content.text is NOT double-encoded" {
+	result=$(mcp_result_json '{"foo": "bar"}')
 	text=$(jq_get "$result" '.content[0].text')
-	# If double-encoded, parsing would fail or give wrong result
-	parsed_success=$(printf '%s' "$text" | "${MCPBASH_JSON_TOOL_BIN}" -r '.success')
-	assert_equal "true" "$parsed_success"
+	assert_equal "bar" "$(printf '%s' "$text" | "${MCPBASH_JSON_TOOL_BIN}" -r '.foo')"
 }
 
-@test "sdk_result_helpers: mcp_result_success handles special characters" {
-	result=$(mcp_result_success '{"msg": "line1\nline2", "quote": "he said \"hi\""}')
+@test "sdk_result_helpers: mcp_result_json handles special characters" {
+	result=$(mcp_result_json '{"msg": "line1\nline2", "quote": "he said \"hi\""}')
 	jq_check "$result" '.isError == false'
+	jq_check "$result" '.structuredContent.quote == "he said \"hi\""'
 }
 
-@test "sdk_result_helpers: mcp_result_success handles empty array" {
-	result=$(mcp_result_success '[]')
-	jq_check "$result" '.structuredContent.success == true'
-	jq_check "$result" '.structuredContent.result == []'
+@test "sdk_result_helpers: mcp_result_json handles deeply nested objects and unicode" {
+	result=$(mcp_result_json '{"a":{"b":{"c":{"d":1}}},"emoji":"🎉","val":null}')
+	assert_equal "1" "$(jq_get "$result" '.structuredContent.a.b.c.d')"
+	assert_equal "🎉" "$(jq_get "$result" '.structuredContent.emoji')"
+	jq_check "$result" '.structuredContent.val == null'
 }
 
-@test "sdk_result_helpers: mcp_result_success handles deeply nested objects" {
-	result=$(mcp_result_success '{"a":{"b":{"c":{"d":1}}}}')
-	val=$(jq_get "$result" '.structuredContent.result.a.b.c.d')
-	assert_equal "1" "$val"
+@test "sdk_result_helpers: mcp_result_json sends a non-object as text only (legacy era)" {
+	for v in '[]' 'false' 'null' '42'; do
+		result=$(mcp_result_json "$v")
+		jq_check "$result" '.isError == false and (has("structuredContent") | not)' || fail "value ${v}: ${result}"
+		assert_equal "$v" "$(jq_get "$result" '.content[0].text')"
+	done
 }
 
-@test "sdk_result_helpers: mcp_result_success handles unicode" {
-	result=$(mcp_result_success '{"emoji":"🎉","chinese":"中文"}')
-	emoji=$(jq_get "$result" '.structuredContent.result.emoji')
-	assert_equal "🎉" "$emoji"
+@test "sdk_result_helpers: mcp_result_json rejects empty, invalid or several values, returning 0" {
+	for v in '' 'invalid json' '1 2 3'; do
+		result=$(mcp_result_json "$v")
+		rc=$?
+		assert_equal "0" "$rc"
+		jq_check "$result" '.isError == true' || fail "value '${v}': ${result}"
+	done
 }
 
-@test "sdk_result_helpers: mcp_result_success handles null values" {
-	result=$(mcp_result_success '{"val":null}')
-	jq_check "$result" '.structuredContent.result.val == null'
-}
-
-@test "sdk_result_helpers: mcp_result_success rejects empty input but returns 0" {
-	result=$(mcp_result_success '')
-	rc=$?
-	assert_equal "0" "$rc"
-	jq_check "$result" '.isError == true'
-}
-
-@test "sdk_result_helpers: mcp_result_success handles JSON false value" {
-	result=$(mcp_result_success 'false')
-	jq_check "$result" '.structuredContent.success == true'
-	jq_check "$result" '.structuredContent.result == false'
+@test "sdk_result_helpers: mcp_result_json passes large data on stdin" {
+	large=$(${MCPBASH_JSON_TOOL_BIN} -n '{items: ([range(1000)] | map({id: ., data: ([range(100) | "x"] | add)}))}')
+	result=$(mcp_result_json "$large")
 	jq_check "$result" '.isError == false'
+	jq_check "$result" '.structuredContent.items | length == 1000'
 }
 
-@test "sdk_result_helpers: mcp_result_success handles JSON null value" {
-	result=$(mcp_result_success 'null')
-	jq_check "$result" '.structuredContent.success == true'
-	jq_check "$result" '.structuredContent.result == null'
+@test "sdk_result_helpers: mcp_result_json handles a non-numeric --max-text-bytes" {
+	result=$(mcp_result_json '{"key":"value"}' --max-text-bytes "not-a-number")
 	jq_check "$result" '.isError == false'
-}
-
-@test "sdk_result_helpers: mcp_result_success rejects multiple JSON values" {
-	result=$(mcp_result_success '1 2 3')
-	jq_check "$result" '.isError == true'
-	msg=$(jq_get "$result" '.structuredContent.error.message')
-	[[ "$msg" == *multiple* ]]
-}
-
-@test "sdk_result_helpers: mcp_result_success always returns 0 even on validation error" {
-	result=$(mcp_result_success 'invalid json')
-	rc=$?
-	assert_equal "0" "$rc"
-	jq_check "$result" '.isError == true'
-}
-
-@test "sdk_result_helpers: mcp_result_success uses tojson for argv safety" {
-	large=$(${MCPBASH_JSON_TOOL_BIN} -n '[range(1000)] | map({id: ., data: ([range(100) | "x"] | add)})')
-	result=$(mcp_result_success "$large")
-	jq_check "$result" '.isError == false'
-	jq_check "$result" '.structuredContent.success == true'
-}
-
-@test "sdk_result_helpers: mcp_result_success handles non-numeric max_text_bytes" {
-	result=$(mcp_result_success '{"key":"value"}' "not-a-number")
-	jq_check "$result" '.isError == false'
-	jq_check "$result" '.structuredContent.success == true'
-}
-
-@test "sdk_result_helpers: mcp_result_success truncates correctly at emoji boundary" {
-	result=$(mcp_result_success '{"emoji":"🎉🎉🎉"}' 50)
-	jq_check "$result" '.isError == false'
-	text=$(jq_get "$result" '.content[0].text')
-	[ -n "$text" ]
-}
-
-# ============================================================================
-# mcp_result_error tests
-# ============================================================================
-
-@test "sdk_result_helpers: mcp_result_error sets isError true" {
-	result=$(mcp_result_error '{"type": "not_found", "message": "User not found"}')
-	jq_check "$result" '.isError == true'
-	text=$(jq_get "$result" '.content[0].text')
-	assert_equal "User not found" "$text"
-}
-
-@test "sdk_result_helpers: mcp_result_error handles empty input gracefully" {
-	result=$(mcp_result_error '')
-	jq_check "$result" '.isError == true'
-	# Must be valid JSON
-	printf '%s' "$result" | "${MCPBASH_JSON_TOOL_BIN}" -e '.' >/dev/null 2>&1
-}
-
-@test "sdk_result_helpers: mcp_result_error handles invalid JSON input" {
-	result=$(mcp_result_error 'this is not json')
-	jq_check "$result" '.isError == true'
-	raw=$(jq_get "$result" '.structuredContent.error.raw')
-	assert_equal "this is not json" "$raw"
-}
-
-@test "sdk_result_helpers: mcp_result_error always returns 0" {
-	result=$(mcp_result_error '{"type":"test","message":"test"}')
-	rc=$?
-	assert_equal "0" "$rc"
-}
-
-@test "sdk_result_helpers: mcp_result_error handles valid non-object JSON" {
-	result=$(mcp_result_error '"just a string"')
-	jq_check "$result" '.isError == true'
-	msg=$(jq_get "$result" '.structuredContent.error.message')
-	[[ "$msg" == *object* ]]
-}
-
-@test "sdk_result_helpers: mcp_result_error handles array input" {
-	result=$(mcp_result_error '[]')
-	jq_check "$result" '.isError == true'
-	msg=$(jq_get "$result" '.structuredContent.error.message')
-	[[ "$msg" == *object* ]]
-}
-
-@test "sdk_result_helpers: mcp_result_error with non-string message uses tostring" {
-	result=$(mcp_result_error '{"type":"test","message":42}')
-	jq_check "$result" '.isError == true'
-	text=$(jq_get "$result" '.content[0].text')
-	assert_equal "42" "$text"
+	jq_check "$result" '.structuredContent.key == "value"'
 }
 
 # ============================================================================

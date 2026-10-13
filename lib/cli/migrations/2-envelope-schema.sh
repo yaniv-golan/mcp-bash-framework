@@ -29,7 +29,10 @@ mig_apply() {
 	[ -n "${bin}" ] || bin="$(command -v jq 2>/dev/null || true)"
 	[ -n "${bin}" ] || return 1
 	tmp="$(mktemp "${file}.mig.XXXXXX")" || return 1
-	if "${bin}" '.outputSchema = .outputSchema.properties.result' "${file}" >"${tmp}" 2>/dev/null; then
+	# The envelope's result description ("present when success=true") makes
+	# no sense once it is the whole schema: drop one that mentions success.
+	if "${bin}" '.outputSchema = (.outputSchema.properties.result
+		| if ((.description // "") | test("success"; "i")) then del(.description) else . end)' "${file}" >"${tmp}" 2>/dev/null; then
 		cat "${tmp}" >"${file}"
 	fi
 	rm -f "${tmp}"

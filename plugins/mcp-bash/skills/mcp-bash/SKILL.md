@@ -44,9 +44,10 @@ guessing — it is short and current:
 ### Writing a tool
 
 Use the result and error helpers that mcp-bash 2.0 keeps (`mcp_result_json`,
-`mcp_result_text`, `mcp_fail --type`; available from 1.8.0). On an older framework, upgrade,
-or use `mcp_result_success` / `mcp_error`, which still work in 1.x but are removed in 2.0 <!-- lint-api-usage: allow -->
-(`mcp-bash validate` lists them and `mcp-bash migrate` rewrites them).
+`mcp_result_text`, `mcp_fail --type`; available from 1.8.0). On an older framework, upgrade.
+The 1.x helpers (`mcp_result_success`, `mcp_error`, ...) are removed in 2.0: a tool that still <!-- lint-api-usage: allow -->
+calls one returns a `migration_required` error result instead of running. `mcp-bash migrate`
+lists them and `--write` rewrites the safe cases.
 
 ```bash
 #!/usr/bin/env bash
@@ -74,7 +75,7 @@ mcp_result_json "$(mcp_json_obj query "${query}" name "${name}")"
   an error result the model reads and **ends the tool**. From mcp-bash 2.0 `--type` is optional
   (type `tool_failed`), and any other failure, a non-zero exit included, also reaches the model
   as an error result with the stderr tail as its text; `run-tool` exits 1 for every error result.
-- **The 1.x helpers don't end the tool.** If you maintain code that uses `mcp_result_success`, <!-- lint-api-usage: allow -->
+- **On 1.x, the old helpers don't end the tool.** If you maintain code that uses `mcp_result_success`, <!-- lint-api-usage: allow -->
   `mcp_result_error` or `mcp_error`, follow them with `exit 0` in an early-return branch, or the <!-- lint-api-usage: allow -->
   tool keeps going and prints a second result (or does the work it just refused).
 - Long work: `mcp_progress <pct> "msg"`, and check `mcp_is_cancelled` in loops.

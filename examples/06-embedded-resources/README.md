@@ -2,7 +2,7 @@
 
 **What you'll learn**
 - Attach file content to a tool result via `type:"resource"` content
-- Use `mcp_result_text_with_resource` helper for clean resource embedding
+- Embed files with `--resource PATH [--mime TYPE]` on `mcp_result_json` or `mcp_result_text`
 - Binary files are auto-base64-encoded (`blob`); text stays in `text`
 
 **Prereqs**

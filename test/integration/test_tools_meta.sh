@@ -54,7 +54,7 @@ source "${MCP_SDK}/tool-sdk.sh"
 
 # Get the raw _meta JSON and emit it as the tool result
 meta_raw="$(mcp_meta_raw)"
-mcp_emit_text "meta=${meta_raw}"
+mcp_result_text "meta=${meta_raw}"
 SH
 chmod +x "${META_ROOT}/tools/echo-meta/tool.sh"
 
@@ -123,7 +123,7 @@ source "${MCP_SDK}/tool-sdk.sh"
 # Use mcp_meta_get to extract specific values
 app_name="$(mcp_meta_get '.appName // "default"')"
 limit="$(mcp_meta_get '.limit // 5')"
-mcp_emit_text "app=${app_name},limit=${limit}"
+mcp_result_text "app=${app_name},limit=${limit}"
 SH
 chmod +x "${META_ROOT}/tools/echo-meta/tool.sh"
 

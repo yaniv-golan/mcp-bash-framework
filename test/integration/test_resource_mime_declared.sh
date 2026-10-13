@@ -178,10 +178,10 @@ set -euo pipefail
 # shellcheck disable=SC1091
 source "${MCP_SDK:?}/tool-sdk.sh"
 dir="${MCPBASH_PROJECT_ROOT}/resources"
-mcp_result_text_with_resource "$(mcp_json_obj message ok)" \
-	--path "${dir}/data.json" \
-	--path "${dir}/notes.md" --mime text/markdown \
-	--path "${dir}/doc.pdf" --mime text/plain
+mcp_result_json "$(mcp_json_obj message ok)" \
+	--resource "${dir}/data.json" \
+	--resource "${dir}/notes.md" --mime text/markdown \
+	--resource "${dir}/doc.pdf" --mime text/plain
 SH
 chmod +x "${TOOL_ROOT}/tools/embed/tool.sh"
 

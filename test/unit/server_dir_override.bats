@@ -23,7 +23,7 @@ setup() {
 #!/usr/bin/env bash
 set -euo pipefail
 source "${MCP_SDK}/tool-sdk.sh"
-mcp_emit_json "$(mcp_json_obj message "FROM=${MCPBASH_TEST_FROM_SERVER_ENV:-not-set}")"
+mcp_result_json "$(mcp_json_obj message "FROM=${MCPBASH_TEST_FROM_SERVER_ENV:-not-set}")"
 EOF
 	chmod +x "${PROJECT_ROOT}/tools/echo-env/tool.sh"
 }

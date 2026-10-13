@@ -351,6 +351,8 @@ jobs:
             test_resource_read_timeout.sh
             test_tools_errors.sh
             test_tools_error_model.sh
+            test_removed_api.sh
+            test_migrate_registry_cache.sh
             test_result_helpers.sh
             test_tools_policy_denied.sh
             test_modern_core.sh
