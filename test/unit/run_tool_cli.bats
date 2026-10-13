@@ -115,8 +115,11 @@ EOF
 
 @test "run_tool_cli: happy path returns structured content" {
 	echo_output="$("${MCPBASH_HOME}/bin/mcp-bash" run-tool test.echo --args '{"value":"ok"}')"
-	echo_message="$(printf '%s\n' "${echo_output}" | jq -r 'select(.name=="test.echo") | .structuredContent.message')"
+	echo_message="$(printf '%s\n' "${echo_output}" | jq -r 'select(has("content")) | .structuredContent.message')"
 	assert_equal "ok" "${echo_message}"
+	# No top-level "name" (not in the MCP schema; removed in 2.0).
+	run jq -e 'select(has("content")) | has("name") | not' <<<"${echo_output}"
+	assert_success
 }
 
 @test "run_tool_cli: tool not found surfaces error" {
@@ -193,7 +196,7 @@ EOF
 
 	run "${MCPBASH_HOME}/bin/mcp-bash" run-tool test.oops
 	local result
-	result="$(printf '%s\n' "${output}" | jq -c 'select(.name == "test.oops")')"
+	result="$(printf '%s\n' "${output}" | jq -c 'select(has("content"))')"
 	[ -n "${result}" ] || fail "no result: ${output}"
 	run jq -e '.isError == true and (has("structuredContent") | not)' <<<"${result}"
 	assert_success
@@ -203,7 +206,7 @@ EOF
 	assert_output --partial "No such item"
 
 	run "${MCPBASH_HOME}/bin/mcp-bash" run-tool test.oops-plain
-	result="$(printf '%s\n' "${output}" | jq -c 'select(.name == "test.oops-plain")')"
+	result="$(printf '%s\n' "${output}" | jq -c 'select(has("content"))')"
 	run jq -e '.isError == true and .structuredContent.success == false and .structuredContent.error.type == "not_found"' <<<"${result}"
 	assert_success
 }
@@ -274,7 +277,7 @@ EOF
 
 	# With override, tool should complete successfully
 	slow_override_output="$("${MCPBASH_HOME}/bin/mcp-bash" run-tool test.slow --timeout 8)"
-	slow_message="$(printf '%s\n' "${slow_override_output}" | jq -r 'select(.name=="test.slow") | .structuredContent.message')"
+	slow_message="$(printf '%s\n' "${slow_override_output}" | jq -r 'select(has("content")) | .structuredContent.message')"
 	assert_equal "done" "${slow_message}"
 }
 

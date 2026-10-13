@@ -87,6 +87,8 @@ printf ' -> the hook allows\n'
 req >"${POLICY_ROOT}/req.ndjson"
 test_run_mcp "${POLICY_ROOT}" "${POLICY_ROOT}/req.ndjson" "${POLICY_ROOT}/allow.ndjson"
 test_assert_eq "hi" "$(call "${POLICY_ROOT}/allow.ndjson" | jq -r '.result.structuredContent.message // empty')"
+# No top-level "name" on a tool result (not in the MCP schema; gone in 2.0).
+call "${POLICY_ROOT}/allow.ndjson" | jq -e '.result | has("name") | not' >/dev/null || test_fail "tool result still has a top-level name"
 
 printf ' -> the hook denies by name, with its reason\n'
 POLICY_READ_ONLY=1 test_run_mcp "${POLICY_ROOT}" "${POLICY_ROOT}/req.ndjson" "${POLICY_ROOT}/deny.ndjson"

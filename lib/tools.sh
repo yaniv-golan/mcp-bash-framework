@@ -2690,7 +2690,6 @@ mcp_tools_call() {
 	local result_json
 	result_json="$(
 		"${MCPBASH_JSON_TOOL_BIN}" -n -c \
-			--arg name "${name}" \
 			--rawfile stdout "${stdout_content}" \
 			--arg stderr "${stderr_tail}" \
 			--argjson exit_code "${exit_code}" \
@@ -2699,7 +2698,6 @@ mcp_tools_call() {
 			--arg has_schema "$([ "${output_schema}" != "null" ] && [ -n "${output_schema}" ] && printf true || printf false)" \
 			'
 		{
-			name: $name,
 			content: [],
 			isError: false,
 			_meta: {
@@ -2716,7 +2714,6 @@ mcp_tools_call() {
 					# Tool already emitted CallToolResult - use it directly with metadata
 					# Merge existing _meta with framework metadata (preserving ui field, etc.)
 					$json
-					| .name = $name
 					| ._meta = ((._meta // {}) + {exitCode: $meta_exit_code} + (if ($stderr | length > 0) then {stderr: $stderr} else {} end))
 					| if $exit_code != 0 then .isError = true else . end
 				else
