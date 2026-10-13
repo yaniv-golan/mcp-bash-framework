@@ -359,6 +359,7 @@ jobs:
             test_modern_logging.sh
             test_live_progress_logs.sh
             test_tool_ui_capability.sh
+            test_tools_stderr_invalid_utf8.sh
         run: |
           set -euo pipefail
           unset MCPBASH_CI_MODE

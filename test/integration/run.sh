@@ -91,6 +91,7 @@ TESTS=(
 	"test_ui_meta_env.sh"
 	"test_env_mcp_names.sh"
 	"test_tools_errors.sh"
+	"test_tools_stderr_invalid_utf8.sh"
 	"test_registry_stale_cache_startup.sh"
 	"test_tools_error_model.sh"
 	"test_tool_ui_capability.sh"
