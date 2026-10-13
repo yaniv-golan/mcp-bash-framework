@@ -145,12 +145,12 @@ tools/a/tool.meta.json:3:manual
 tools/a/tool.sh:2:manual"
 }
 
-@test "migrate sets: a tool using mcp_result_text_with_resource keeps its envelope schema" {
+@test "migrate sets: a tool using mcp_result_text_with_resource migrates with its envelope schema" {
 	root="${BATS_TEST_TMPDIR}/p"
 	envelope_tool "${root}" a no
 	printf '%s\n' 'mcp_result_text_with_resource "{}" --path /etc/hosts --mime text/plain' >>"${root}/tools/a/tool.sh"
 	run resolved "${root}"
-	assert_output "tools/a/tool.meta.json:3:manual
-tools/a/tool.sh:2:manual
-tools/a/tool.sh:3:manual"
+	assert_output "tools/a/tool.meta.json:3:auto
+tools/a/tool.sh:2:auto
+tools/a/tool.sh:3:auto"
 }
