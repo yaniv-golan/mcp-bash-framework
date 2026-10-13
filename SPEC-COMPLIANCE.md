@@ -18,6 +18,11 @@ This table shows when features were introduced in the MCP specification and when
 | Server Info (name, version, title) | 2024-11-05 | 0.1.0 | ✅ Full | Required fields in initialize response |
 | Server Info (description, websiteUrl, icons) | 2024-11-05 | 0.2.0 | ✅ Full | Optional fields via server.meta.json |
 | Initialize Instructions (`result.instructions`) | 2025-03-26 | 1.1.2 | ✅ Full | Optional text loaded from `server.d/server.instructions.md` (omitted for 2024-11-05) |
+| Stateless requests (per-request `_meta`, no `initialize`) | 2026-07-28 | 2.0.0 | 🧪 Opt-in | `MCPBASH_MODERN_PROTOCOL=true`; served next to legacy sessions in one process. Validated against the official 2026-07-28 schema |
+| `server/discover` | 2026-07-28 | 2.0.0 | 🧪 Opt-in | Static answer; no `listChanged`/`subscribe` advertised yet. Off: `-32601`, so probing clients fall back to `initialize` |
+| Caching hints (`ttlMs`, `cacheScope`) | 2026-07-28 | 2.0.0 | 🧪 Opt-in | On discover, the lists and `resources/read`; see `MCPBASH_MODERN_*` in ENV_REFERENCE |
+| Multi round-trip requests (`input_required`) | 2026-07-28 | ❌ Not yet | ❌ Not yet | Until then, modern requests get no elicitation and no client roots |
+| `subscriptions/listen` | 2026-07-28 | ❌ Not yet | ❌ Not yet | Modern clients get no list-change or resource-update notifications |
 | **Transport** | | | | |
 | Stdio Transport | 2024-11-05 | 0.1.0 | ✅ Full | Standard input/output |
 | HTTP/SSE Transport | 2024-11-05 | ❌ Not supported | ❌ Not supported | Stdio-only design; see REMOTE.md for proxy options |
