@@ -159,12 +159,24 @@ mcp_core_bootstrap_state() {
 # instructions note; lib/tools.sh blocks the tools that use them).
 MCP_CORE_REMOVED_API_RULES="2-mcp-error 2-result-error 2-fail-invalid-args 2-result-success 2-emit-helpers 2-text-with-resource 2-ui-resource-uri"
 
+# True when the startup scan can run: not for bundles (static registry),
+# minimal mode or a vendored runtime without the rule engine, and only with
+# a project and a writable registry dir. The instructions note relies on the
+# same test: a findings file the scan can't refresh is never trusted.
+mcp_core_startup_scan_possible() {
+	[ "${MCPBASH_STATIC_REGISTRY:-0}" = "1" ] && return 1
+	mcp_runtime_is_minimal_mode && return 1
+	[ -f "${MCPBASH_HOME}/lib/migrate_rules.sh" ] || return 1
+	[ -n "${MCPBASH_PROJECT_ROOT:-}" ] && [ -d "${MCPBASH_PROJECT_ROOT}" ] || return 1
+	[ -n "${MCPBASH_REGISTRY_DIR:-}" ] && [ -d "${MCPBASH_REGISTRY_DIR}" ] && [ -w "${MCPBASH_REGISTRY_DIR}" ] || return 1
+}
+
 # One sentence for the instructions when the last startup scan found
 # removed SDK helpers in the project; prints nothing otherwise. Reads the
 # findings file only: never scans (server/discover must stay fast).
 mcp_core_removed_api_note() {
 	local findings="${MCPBASH_REGISTRY_DIR:-}/removed-api.findings"
-	[ -n "${MCPBASH_REGISTRY_DIR:-}" ] && [ -s "${findings}" ] || return 0
+	mcp_core_startup_scan_possible && [ -s "${findings}" ] || return 0
 	local files n
 	n="$(grep -c . "${findings}" 2>/dev/null)" || n=0
 	files="$(head -n 3 "${findings}" 2>/dev/null | tr '\n' ' ')"
@@ -196,13 +208,9 @@ mcp_core_start_deprecation_notice() {
 	case "${MCPBASH_DEPRECATION_NOTICE:-true}" in
 	false | 0 | no | off) quiet=1 ;;
 	esac
-	[ "${MCPBASH_STATIC_REGISTRY:-0}" = "1" ] && return 0
-	mcp_runtime_is_minimal_mode && return 0
-	[ -f "${MCPBASH_HOME}/lib/migrate_rules.sh" ] || return 0
-	local project_root="${MCPBASH_PROJECT_ROOT:-}"
-	local registry_dir="${MCPBASH_REGISTRY_DIR:-}"
-	[ -n "${project_root}" ] && [ -d "${project_root}" ] || return 0
-	[ -n "${registry_dir}" ] && [ -d "${registry_dir}" ] && [ -w "${registry_dir}" ] || return 0
+	mcp_core_startup_scan_possible || return 0
+	local project_root="${MCPBASH_PROJECT_ROOT}"
+	local registry_dir="${MCPBASH_REGISTRY_DIR}"
 
 	# Every start scans in the background. The findings of the rules for SDK
 	# helpers removed in 2.0 go to removed-api.findings in the registry dir
