@@ -353,6 +353,7 @@ jobs:
             test_tools_error_model.sh
             test_result_helpers.sh
             test_tools_policy_denied.sh
+            test_modern_core.sh
         run: |
           set -euo pipefail
           unset MCPBASH_CI_MODE

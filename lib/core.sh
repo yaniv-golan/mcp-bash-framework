@@ -1068,6 +1068,17 @@ mcp_core_dispatch_object() {
 		mcp_logging_debug "mcp.core" "Dispatch method=${method} id=${id_json}"
 	fi
 
+	# A modern (2026-07-28) request is served on its own terms: no initialize
+	# gate, and never in the main process (see mcp_core_dispatch_modern).
+	mcp_modern_classify "${json_line}"
+	if [ "${MCPBASH_REQUEST_ERA}" = "modern" ]; then
+		mcp_core_dispatch_modern "${json_line}" "${method}" "${id_json}" "${is_notification}"
+		MCPBASH_REQUEST_ERA="legacy"
+		# shellcheck disable=SC2034  # Read by lib/modern.sh
+		MCPBASH_REQUEST_META=""
+		return
+	fi
+
 	if [ "${MCPBASH_INITIALIZED}" != true ] && ! mcp_core_method_allowed_preinit "${method}"; then
 		if [ "${is_notification}" != "true" ]; then
 			# A method the server doesn't have is "not found" whatever the
@@ -1115,6 +1126,37 @@ mcp_core_dispatch_object() {
 	else
 		mcp_core_execute_handler "${handler}" "${method}" "${json_line}" "${id_json}"
 	fi
+}
+
+# Serve one modern request. Stateless: it needs no initialize, and it never
+# runs in the main process, which holds the legacy session's state; a worker
+# gets a fork, where the request's own capabilities replace that state
+# (mcp_modern_apply_worker_context).
+mcp_core_dispatch_modern() {
+	local json_line="$1"
+	local method="$2"
+	local id_json="$3"
+	local is_notification="$4"
+	local refusal
+
+	refusal="$(mcp_modern_refusal "${method}" "${id_json}")"
+	if [ -n "${refusal}" ]; then
+		[ "${is_notification}" = "true" ] || rpc_send_line "${refusal}"
+		return 0
+	fi
+	if [ "${is_notification}" = "true" ]; then
+		return 0
+	fi
+	# Legacy codes such as -32003 don't exist on this path.
+	if [ "${MCPBASH_SHUTDOWN_PENDING}" = true ]; then
+		rpc_send_line "$(mcp_core_build_error_response "${id_json}" -32603 "Server shutting down" "")"
+		return 0
+	fi
+	if ! mcp_core_resolve_handler "${method}"; then
+		mcp_core_emit_method_not_found "${id_json}"
+		return 0
+	fi
+	mcp_core_spawn_worker "${MCPBASH_RESOLVED_HANDLER}" "${method}" "${json_line}" "${id_json}"
 }
 
 mcp_core_resolve_handler() {
@@ -1244,6 +1286,9 @@ mcp_core_spawn_worker() {
 		export MCP_LOG_STREAM="${log_stream}"
 		export MCP_PROGRESS_TOKEN="${progress_token}"
 		export MCP_CANCEL_FILE="${cancel_file}"
+		if [ "${MCPBASH_REQUEST_ERA:-legacy}" = "modern" ]; then
+			mcp_modern_apply_worker_context
+		fi
 		if [ -n "${timeout}" ]; then
 			local timeout_status=0
 			with_timeout "${timeout}" -- mcp_core_worker_entry "${handler}" "${method}" "${json_line}" "${id_json}" "${key}" "${stderr_file}" || timeout_status=$?
@@ -1473,7 +1518,9 @@ mcp_core_handle_cancel_notification() {
 	local json_line="$1"
 	local cancel_id
 
-	if [ "${MCPBASH_INITIALIZED}" = "false" ]; then
+	# Modern (2026-07-28) requests need no initialize, so neither does
+	# cancelling them.
+	if [ "${MCPBASH_INITIALIZED}" = "false" ] && ! mcp_modern_enabled; then
 		return 0
 	fi
 
