@@ -77,6 +77,10 @@ run() {
 				if [ -n "${WAIT_FILE:-}" ] && [ -f "${WAIT_FILE}" ]; then
 					break
 				fi
+				# WAIT_GONE=FILE:TEXT: also stop once FILE no longer contains TEXT.
+				if [ -n "${WAIT_GONE:-}" ] && ! grep -qF "${WAIT_GONE#*:}" "${WAIT_GONE%%:*}" 2>/dev/null; then
+					break
+				fi
 				sleep 0.1
 				i=$((i + 1))
 			done
@@ -121,6 +125,23 @@ test_assert_eq "$(notice_count second)" "0"
 if ! instructions second | grep -q "${NOTE_RE}.*tools/hello/tool.sh.*mcp-bash migrate"; then
 	test_fail "second start: instructions lack the note: $(instructions second)"
 fi
+
+printf ' -> nothing changed: the scan is skipped\n'
+F="${TEST_TMPDIR}/old/proj/.registry/removed-api.findings"
+[ -f "${TEST_TMPDIR}/old/proj/.registry/removed-api.scan" ] || test_fail "no scan record after a scan"
+# A line no scan would write survives a start that skips the scan.
+printf '%s\n' tools/fake/tool.sh >>"${F}"
+run old skipped
+grep -q '^tools/fake/tool.sh$' "${F}" || test_fail "an unchanged project was scanned again: $(cat "${F}")"
+
+printf ' -> a changed file: scanned again\n'
+sleep 1 # find -newer compares whole seconds on some systems
+printf '%s\n' '# edited' >>"${TEST_TMPDIR}/old/proj/tools/hello/tool.sh"
+WAIT_GONE="${F}:tools/fake/tool.sh" run old rescanned
+if grep -q '^tools/fake/tool.sh$' "${F}"; then
+	test_fail "a changed project was not scanned again"
+fi
+test_assert_eq "$(cat "${F}")" "tools/hello/tool.sh"
 
 printf ' -> server.instructions.md comes first, then the note\n'
 printf '%s\n' 'Project instructions.' >"${TEST_TMPDIR}/old/proj/server.d/server.instructions.md"

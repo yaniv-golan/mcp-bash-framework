@@ -222,7 +222,7 @@ mcp_cli_migrate() {
 	local cache_cleared="false"
 	if [ "${write}" = "true" ] && [ "${applied}" -gt 0 ]; then
 		local registry_dir="${MCPBASH_REGISTRY_DIR:-${project_root}/.registry}" cache_file
-		for cache_file in tools.json resources.json resource-templates.json prompts.json ui-resources.json removed-api.findings; do
+		for cache_file in tools.json resources.json resource-templates.json prompts.json ui-resources.json removed-api.findings removed-api.scan; do
 			if [ -e "${registry_dir}/${cache_file}" ]; then
 				rm -f "${registry_dir}/${cache_file}" && cache_cleared="true"
 			fi

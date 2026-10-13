@@ -212,14 +212,21 @@ mcp_core_start_deprecation_notice() {
 	local project_root="${MCPBASH_PROJECT_ROOT}"
 	local registry_dir="${MCPBASH_REGISTRY_DIR}"
 
-	# Every start scans in the background. The findings of the rules for SDK
+	# Every start checks in the background. The findings of the rules for SDK
 	# helpers removed in 2.0 go to removed-api.findings in the registry dir
 	# (one file per line), which initialize and server/discover turn into a
 	# sentence in the instructions once it exists (mcp_core_removed_api_note).
+	# The scan is skipped when nothing in the project is newer than the last
+	# one and the rules are unchanged: removed-api.scan holds a checksum of
+	# the rules and the total count, with the time the scan started as its
+	# mtime (so a file edited during a scan is newer). Where find compares
+	# whole seconds (BusyBox), an edit in the same second as a scan start is
+	# missed until the next change.
 	# The stderr notice, about every rule, is printed at most once a day: the
 	# stamp holds the date it was last printed.
 	local stamp="${registry_dir}/deprecation-notice.stamp"
 	local findings="${registry_dir}/removed-api.findings"
+	local scan_meta="${registry_dir}/removed-api.scan"
 	local today last="" announce=0
 	today="$(date +%Y-%m-%d 2>/dev/null)" || today=""
 	if [ "${quiet}" = 0 ] && [ -n "${today}" ]; then
@@ -233,6 +240,23 @@ mcp_core_start_deprecation_notice() {
 
 	(
 		set +e
+		announce_count() {
+			[ "${announce}" = 1 ] && [ "${count}" -gt 0 ] || return 0
+			local noun="uses"
+			[ "${count}" -eq 1 ] && noun="use"
+			# shellcheck disable=SC2016  # Backticks are literal text.
+			printf 'mcp-bash: %s %s of APIs that change in mcp-bash 2.0; run `mcp-bash validate` for details\n' "${count}" "${noun}" >&2
+		}
+		key="$(cat "${MCPBASH_HOME}/lib/migrate_rules.sh" "${MCPBASH_HOME}"/lib/cli/migrations/*.sh 2>/dev/null | cksum)"
+		if [ -f "${scan_meta}" ] && [ -f "${findings}" ] \
+			&& [ "$(head -n 1 "${scan_meta}" 2>/dev/null)" = "${key}" ] \
+			&& [ -z "$(find "${project_root}" \( -name .git -o -name .registry -o -name node_modules -o -name .mcp-bash \) -prune -o -newer "${scan_meta}" -print 2>/dev/null | head -n 1)" ]; then
+			count="$(sed -n 2p "${scan_meta}" 2>/dev/null)"
+			case "${count}" in '' | *[!0-9]*) count=0 ;; esac
+			announce_count
+			exit 0
+		fi
+		started="$(mktemp "${scan_meta}.XXXXXX" 2>/dev/null)" || started=""
 		# shellcheck source=lib/migrate_rules.sh disable=SC1091
 		. "${MCPBASH_HOME}/lib/migrate_rules.sh" || exit 0
 		# One rule at a time, stopping as soon as the server is gone ($$ is the
@@ -256,17 +280,21 @@ mcp_core_start_deprecation_notice() {
 		done <<EOF_RULES
 $(mcp_migrate_rule_files 2>/dev/null)
 EOF_RULES
-		mcp_core_server_alive || exit 0
+		if ! mcp_core_server_alive; then
+			rm -f "${removed_tmp}" "${started}"
+			exit 0
+		fi
 		if [ -n "${removed_tmp}" ]; then
 			LC_ALL=C sort -u "${removed_tmp}" >"${removed_tmp}.sorted" 2>/dev/null && mv -f "${removed_tmp}.sorted" "${findings}" 2>/dev/null
 			rm -f "${removed_tmp}" "${removed_tmp}.sorted"
 		fi
-		[ "${announce}" = 1 ] || exit 0
-		[ "${count}" -gt 0 ] || exit 0
-		noun="uses"
-		[ "${count}" -eq 1 ] && noun="use"
-		# shellcheck disable=SC2016  # Backticks are literal text.
-		printf 'mcp-bash: %s %s of APIs that change in mcp-bash 2.0; run `mcp-bash validate` for details\n' "${count}" "${noun}" >&2
+		if [ -n "${started}" ]; then
+			printf '%s\n%s\n' "${key}" "${count}" >"${started}.new" 2>/dev/null \
+				&& touch -r "${started}" "${started}.new" 2>/dev/null \
+				&& mv -f "${started}.new" "${scan_meta}" 2>/dev/null
+			rm -f "${started}" "${started}.new"
+		fi
+		announce_count
 	) </dev/null >/dev/null &
 	# Not a worker: keep it out of `jobs -p`, so shutdown doesn't wait for it.
 	disown "$!" 2>/dev/null || true
