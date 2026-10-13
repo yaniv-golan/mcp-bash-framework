@@ -75,7 +75,9 @@ add_tool badutf8err 'printf "bad \\377\\376 utf ok\\n" >&2; exit 4'
 add_tool badutf8out 'printf "out \\377\\376 bytes ok\\n"; exit 4'
 # Output limits and outputSchema.
 add_tool bigout 'head -c 4000 /dev/zero | tr "\0" "x"; echo'
+add_tool bigerr 'head -c 4000 /dev/zero | tr "\0" "x" >&2; echo ok'
 add_tool schemamismatch 'mcp_result_json "$(mcp_json_obj other hi)"' '{"type":"object","required":["greeting"],"properties":{"greeting":{"type":"string"}}}'
+add_tool schemaempty 'true' '{"type":"object","required":["greeting"],"properties":{"greeting":{"type":"string"}}}'
 add_tool schemanotjson 'echo "not json"' '{"type":"object","required":["greeting"],"properties":{"greeting":{"type":"string"}}}'
 # Valid JSON that isn't an object, for an object schema, is a mismatch too.
 add_tool schemaarray "echo '[1,2]'" '{"type":"object","required":["greeting"],"properties":{"greeting":{"type":"string"}}}'
@@ -141,6 +143,7 @@ check_error faildash tool_failed "--type"
 check_error badutf8err tool_failed "utf ok"
 check_error badutf8out tool_failed "bytes ok"
 check_error bigout output_too_large "1000"
+check_error bigerr output_too_large "stderr"
 check_error sidevendored invalid_args "vendored"
 case "$(resp sidevendored | jq -r '.result._meta.stderr // empty')" in
 *warn-line*) ;;
@@ -153,6 +156,7 @@ r="$(resp sidebig)"
 printf '%s' "${r}" | jq -e '.result._meta["mcpbash/error"] | has("data") | not' >/dev/null || test_fail "sidebig: oversized data kept"
 check_error schemamismatch output_schema "outputSchema"
 check_error schemanotjson output_schema "outputSchema"
+check_error schemaempty output_schema "outputSchema"
 check_error schemaarray output_schema "outputSchema"
 check_error schemastring output_schema "outputSchema"
 check_error schemanumber output_schema "outputSchema"

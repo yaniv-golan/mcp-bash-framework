@@ -292,9 +292,14 @@ run_tool_cli_add_tool() {
 	run_tool_cli_add_tool err.typed 'mcp_fail --type not_found "nope"'
 	run_tool_cli_add_tool err.message 'mcp_fail "one arg"'
 	run_tool_cli_add_tool err.legacy 'mcp_error not_found "legacy"; exit 0'
+	run_tool_cli_add_tool err.stderr 'echo "to stderr" >&2; exit 3'
+	run_tool_cli_add_tool err.stdoutcode 'echo "{\"code\":-32001,\"message\":\"custom\"}"; exit 1'
+	run_tool_cli_add_tool err.numeric 'mcp_fail -32602 "bad"'
+	run_tool_cli_add_tool err.invalid 'mcp_fail_invalid_args "bad"'
+	run_tool_cli_add_tool err.result 'mcp_result_error "{\"type\":\"oops\",\"message\":\"m\"}"'
 	run_tool_cli_add_tool ok.text 'mcp_result_text "fine"'
 	local t
-	for t in err.exit err.typed err.message err.legacy; do
+	for t in err.exit err.typed err.message err.legacy err.stderr err.stdoutcode err.numeric err.invalid err.result; do
 		run "${MCPBASH_HOME}/bin/mcp-bash" run-tool "${t}"
 		[ "${status}" -eq 1 ] || {
 			printf '%s: expected exit 1, got %s: %s\n' "${t}" "${status}" "${output}" >&2
