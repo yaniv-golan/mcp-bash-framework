@@ -22,8 +22,10 @@ printf '%s\n' '{"name": "error-model"}' >"${WS}/server.d/server.meta.json"
 
 # add_tool NAME BODY [OUTPUT_SCHEMA_JSON]: a tool whose script is BODY, run
 # under set -euo pipefail with the SDK loaded.
+ids=""
 add_tool() {
 	local name="$1" body="$2" schema="${3:-}"
+	ids="${ids} ${name}"
 	mkdir -p "${WS}/tools/${name}"
 	if [ -n "${schema}" ]; then
 		printf '{"name":"%s","description":"t","inputSchema":{"type":"object"},"outputSchema":%s}\n' "${name}" "${schema}" >"${WS}/tools/${name}/tool.meta.json"
@@ -61,8 +63,14 @@ add_tool faildash 'mcp_fail -- "--type"'
 add_tool bigout 'head -c 4000 /dev/zero | tr "\0" "x"; echo'
 add_tool schemamismatch 'mcp_result_json "$(mcp_json_obj other hi)"' '{"type":"object","required":["greeting"],"properties":{"greeting":{"type":"string"}}}'
 add_tool schemanotjson 'echo "not json"' '{"type":"object","required":["greeting"],"properties":{"greeting":{"type":"string"}}}'
+# Valid JSON that isn't an object, for an object schema, is a mismatch too.
+add_tool schemaarray "echo '[1,2]'" '{"type":"object","required":["greeting"],"properties":{"greeting":{"type":"string"}}}'
+add_tool schemastring "echo '\"hi\"'" '{"type":"object","required":["greeting"],"properties":{"greeting":{"type":"string"}}}'
+add_tool schemanumber 'echo 42' '{"type":"object","properties":{"greeting":{"type":"string"}}}'
+add_tool schemactrarray 'echo "{\"content\":[],\"isError\":false,\"structuredContent\":[1]}"' '{"type":"object","required":["greeting"],"properties":{"greeting":{"type":"string"}}}'
+# A schema the check can't evaluate is the framework's fault: -32603.
+add_tool schemabroken 'mcp_result_json "$(mcp_json_obj greeting hi)"' '{"type":"object","required":"greeting"}'
 
-ids="plainexit stderrexit stdoutcode stdoutcodeok payloadexit ownresult failtyped failone failnumeric failinvalid fail404 faildash bigout schemamismatch schemanotjson"
 REQ="${TEST_TMPDIR}/requests.ndjson"
 {
 	printf '%s\n' '{"jsonrpc":"2.0","id":"init","method":"initialize","params":{}}'
@@ -109,6 +117,11 @@ check_error faildash tool_failed "--type"
 check_error bigout output_too_large "1000"
 check_error schemamismatch output_schema "outputSchema"
 check_error schemanotjson output_schema "outputSchema"
+check_error schemaarray output_schema "outputSchema"
+check_error schemastring output_schema "outputSchema"
+check_error schemanumber output_schema "outputSchema"
+check_error schemactrarray output_schema "outputSchema"
+assert_eq "-32603" "$(resp schemabroken | jq -r '.error.code // empty')" "schemabroken: a check that can't run stays a JSON-RPC error"
 
 # Exit codes are the tool's real ones.
 assert_eq "3" "$(resp plainexit | jq -r '.result._meta.exitCode')" "plainexit: _meta.exitCode"

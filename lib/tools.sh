@@ -948,13 +948,16 @@ mcp_tools_validate_output_schema() {
 			# Use raw output directly
 			$raw
 		end) as $data |
-		(
+		if ($s.type // "object") != "object" then true
+		# Any other JSON value (array, string, number, null) is not the object
+		# the schema describes. Checked first: has() and .[$k] fail on them.
+		elif ($data | type) != "object" then false
+		else
 			# Check required fields exist
 			(($s.required // []) | all(. as $k | $data | has($k)))
-		) as $required_ok |
-		(
+			and
 			# Check types match for present fields
-			(($s.properties // {}) | keys) |
+			((($s.properties // {}) | keys) |
 			all(. as $k |
 				($data[$k] // null) as $v |
 				(($s.properties // {})[$k].type // "") as $t |
@@ -967,11 +970,7 @@ mcp_tools_validate_output_schema() {
 					elif $t=="array" then ($v|type)=="array"
 					elif $t=="object" then ($v|type)=="object"
 					else true end)
-				end)
-		) as $types_ok |
-		if ($s.type // "object") != "object" then true
-		elif $required_ok and $types_ok then true
-		else false
+				end))
 		end
 	' 2>/dev/null)" && validation_status=0 || validation_status=$?
 
