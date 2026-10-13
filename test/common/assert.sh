@@ -37,9 +37,11 @@ test_fail() {
 assert_eq() {
 	local expected="$1"
 	local actual="$2"
-	local message="${3:-expected ${expected}, got ${actual}}"
 	if [ "${expected}" != "${actual}" ]; then
-		test_fail "${message}"
+		if [ -n "${3:-}" ]; then
+			test_fail "${3}: expected ${expected}, got ${actual}"
+		fi
+		test_fail "expected ${expected}, got ${actual}"
 	fi
 }
 

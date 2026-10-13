@@ -353,7 +353,12 @@ jobs:
             test_tools_error_model.sh
             test_result_helpers.sh
             test_tools_policy_denied.sh
+            test_modern_core.sh
+            test_modern_discover.sh
+            test_modern_results.sh
+            test_modern_logging.sh
             test_live_progress_logs.sh
+            test_tool_ui_capability.sh
             test_tools_stderr_invalid_utf8.sh
         run: |
           set -euo pipefail

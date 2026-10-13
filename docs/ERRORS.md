@@ -175,7 +175,8 @@ Example `resources/read` error payload:
 | `-32602` | Invalid params (non-string `protocolVersion`, invalid cursor/log level, missing/invalid remote token) | `handlers/lifecycle.sh`, `handlers/completion.sh`, `handlers/logging.sh`, `lib/auth.sh`, registry cursors |
 | `-32603` | Internal errors (empty handler response, registry size/parse failures, provider failures, a request that timed out: `<method> timed out after Ns`, an `outputSchema` check that could not run) | `lib/core.sh`, `lib/tools.sh`, `lib/resources.sh`, `lib/prompts.sh` |
 | `-32000` | Server not initialized (a request for a method the server implements, other than `ping`, before `initialize` completes; an unknown method such as `server/discover` gets `-32601` instead) | `lib/core.sh` |
-| `-32002` | Resource not found (`resources/read`) | `lib/resources.sh` |
+| `-32002` | Resource not found (`resources/read`); `-32602` for a modern (2026-07-28) request | `lib/resources.sh` |
+| `-32022` | Unsupported protocol version in a modern request's `_meta` (`data.supported`, `data.requested`); only with `MCPBASH_MODERN_PROTOCOL=true` | `lib/modern.sh` |
 | `-32003` | Server shutting down (rejecting new work) | `lib/core.sh` |
 | `-32005` | `exit` called before `shutdown` was requested | `handlers/lifecycle.sh` |
 

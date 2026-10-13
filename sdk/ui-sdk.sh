@@ -26,6 +26,12 @@ mcp_client_supports_ui() {
 		return 0
 	fi
 
+	# A modern (2026-07-28) request carries its own capabilities: the flag
+	# above is all there is. The state file belongs to the legacy session.
+	if [ "${MCPBASH_PROTOCOL_ERA:-legacy}" = "modern" ]; then
+		return 1
+	fi
+
 	# Check state file (subprocess/tool context)
 	local flag_path="${MCPBASH_STATE_DIR:-}/extensions.ui.support"
 	if [ -f "${flag_path}" ]; then

@@ -72,7 +72,10 @@ mcp_elicitation_init() {
 	mcp_elicitation_write_modes_flag "${MCPBASH_CLIENT_ELICIT_FORM}" "${MCPBASH_CLIENT_ELICIT_URL}"
 }
 
+# A modern (2026-07-28) request never elicits (lib/modern.sh); the state
+# files below belong to the legacy session.
 mcp_elicitation_is_supported() {
+	[ "${MCPBASH_PROTOCOL_ERA:-legacy}" != "modern" ] || return 1
 	if [ "${MCPBASH_CLIENT_SUPPORTS_ELICITATION}" = "1" ]; then
 		return 0
 	fi
@@ -82,6 +85,7 @@ mcp_elicitation_is_supported() {
 }
 
 mcp_elicitation_form_supported() {
+	[ "${MCPBASH_PROTOCOL_ERA:-legacy}" != "modern" ] || return 1
 	if [ "${MCPBASH_CLIENT_ELICIT_FORM}" = "1" ]; then
 		return 0
 	fi
@@ -91,6 +95,7 @@ mcp_elicitation_form_supported() {
 }
 
 mcp_elicitation_url_supported() {
+	[ "${MCPBASH_PROTOCOL_ERA:-legacy}" != "modern" ] || return 1
 	if [ "${MCPBASH_CLIENT_ELICIT_URL}" = "1" ]; then
 		return 0
 	fi

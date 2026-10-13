@@ -83,6 +83,9 @@ mcp_client_supports_ui() {
 	if [ "${MCPBASH_CLIENT_SUPPORTS_UI}" = "1" ]; then
 		return 0
 	fi
+	# A modern (2026-07-28) request carries its own capabilities; the state
+	# file belongs to the legacy session.
+	[ "${MCPBASH_PROTOCOL_ERA:-legacy}" != "modern" ] || return 1
 	# Check state file for subprocess context
 	local flag
 	flag="$(cat "$(mcp_extensions_ui_support_flag_path 2>/dev/null)" 2>/dev/null || true)"

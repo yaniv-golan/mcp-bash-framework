@@ -83,6 +83,13 @@ mcp_logging_emit() {
 	if ! mcp_logging_is_enabled "${level}"; then
 		return 0
 	fi
+	# With modern requests on, a log notification needs a session to go to:
+	# a legacy session that has sent initialize, or a modern request that
+	# asked for logs (its worker runs at the request's level).
+	if [ "${MCPBASH_PROTOCOL_ERA:-legacy}" != "modern" ] && [ "${MCPBASH_INITIALIZE_HANDSHAKE_DONE:-false}" != "true" ] \
+		&& declare -F mcp_modern_enabled >/dev/null 2>&1 && mcp_modern_enabled; then
+		return 0
+	fi
 	if [ "${MCPBASH_LOG_TIMESTAMP:-false}" = "true" ]; then
 		local ts=""
 		ts="$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || printf '')"

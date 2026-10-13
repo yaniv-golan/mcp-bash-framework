@@ -34,7 +34,10 @@ fi
 test_create_tmpdir
 
 # Revisions the server negotiates (lib/spec.sh); each needs a vendored schema.
-VERSIONS="2024-11-05 2025-03-26 2025-06-18 2025-11-25"
+# 2026-07-28 is a stateless session (no initialize; every request carries
+# _meta), served with MCPBASH_MODERN_PROTOCOL=true.
+VERSIONS="2024-11-05 2025-03-26 2025-06-18 2025-11-25 2026-07-28"
+MODERN_VERSION="2026-07-28"
 
 # --- Fixture project: tools, resources, a template, prompts, completions ---
 WORKSPACE="${TEST_TMPDIR}/project"
@@ -128,6 +131,10 @@ JSON
 # Request ids are "<method>#<n>", so each response says which method it answers.
 write_requests() {
 	local version="$1" file="$2" greeting_uri="file://${WORKSPACE}/resources/greeting.txt"
+	if [ "${version}" = "${MODERN_VERSION}" ]; then
+		write_modern_requests "${file}" "${greeting_uri}"
+		return
+	fi
 	{
 		printf '%s\n' '{"jsonrpc":"2.0","id":"initialize#1","method":"initialize","params":{"protocolVersion":"'"${version}"'","capabilities":{"roots":{"listChanged":true}},"clientInfo":{"name":"conformance","version":"1.0.0"}}}'
 		printf '%s\n' '{"jsonrpc":"2.0","method":"notifications/initialized"}'
@@ -154,10 +161,57 @@ write_requests() {
 	} >"${file}"
 }
 
+# The same session for 2026-07-28: no initialize, and every request carries
+# the protocol version and client capabilities in _meta. ping,
+# logging/setLevel and resources/(un)subscribe were removed, so they get
+# "Method not found"; the progress call asks for log notifications.
+write_modern_requests() {
+	local file="$1" greeting_uri="$2"
+	local meta='"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}'
+	local meta_log='"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{},"io.modelcontextprotocol/logLevel":"info","progressToken":"p1"}'
+	{
+		printf '%s\n' '{"jsonrpc":"2.0","id":"server/discover#1","method":"server/discover","params":{'"${meta}"'}}'
+		printf '%s\n' '{"jsonrpc":"2.0","id":"ping#2","method":"ping","params":{'"${meta}"'}}'
+		printf '%s\n' '{"jsonrpc":"2.0","id":"logging/setLevel#3","method":"logging/setLevel","params":{"level":"info",'"${meta}"'}}'
+		printf '%s\n' '{"jsonrpc":"2.0","id":"tools/list#4","method":"tools/list","params":{'"${meta}"'}}'
+		printf '%s\n' '{"jsonrpc":"2.0","id":"tools/call#5","method":"tools/call","params":{"name":"conf.echo","arguments":{"value":"hi"},'"${meta}"'}}'
+		printf '%s\n' '{"jsonrpc":"2.0","id":"tools/call#6","method":"tools/call","params":{"name":"conf.text","arguments":{},'"${meta}"'}}'
+		printf '%s\n' '{"jsonrpc":"2.0","id":"tools/call#7","method":"tools/call","params":{"name":"conf.fail","arguments":{},'"${meta}"'}}'
+		printf '%s\n' '{"jsonrpc":"2.0","id":"tools/call#8","method":"tools/call","params":{"name":"conf.progress","arguments":{},'"${meta_log}"'}}'
+		printf '%s\n' '{"jsonrpc":"2.0","id":"tools/call#9","method":"tools/call","params":{"name":"conf.crash","arguments":{},'"${meta}"'}}'
+		printf '%s\n' '{"jsonrpc":"2.0","id":"tools/call#10","method":"tools/call","params":{"name":"conf.missing","arguments":{},'"${meta}"'}}'
+		printf '%s\n' '{"jsonrpc":"2.0","id":"resources/list#11","method":"resources/list","params":{'"${meta}"'}}'
+		printf '%s\n' '{"jsonrpc":"2.0","id":"resources/templates/list#12","method":"resources/templates/list","params":{'"${meta}"'}}'
+		printf '%s\n' '{"jsonrpc":"2.0","id":"resources/read#13","method":"resources/read","params":{"uri":"'"${greeting_uri}"'",'"${meta}"'}}'
+		printf '%s\n' '{"jsonrpc":"2.0","id":"resources/read#14","method":"resources/read","params":{"uri":"file:///nonexistent/conformance.txt",'"${meta}"'}}'
+		printf '%s\n' '{"jsonrpc":"2.0","id":"resources/subscribe#15","method":"resources/subscribe","params":{"uri":"'"${greeting_uri}"'",'"${meta}"'}}'
+		printf '%s\n' '{"jsonrpc":"2.0","id":"prompts/list#17","method":"prompts/list","params":{'"${meta}"'}}'
+		printf '%s\n' '{"jsonrpc":"2.0","id":"prompts/get#18","method":"prompts/get","params":{"name":"conf.greeting","arguments":{"name":"Ada"},'"${meta}"'}}'
+		printf '%s\n' '{"jsonrpc":"2.0","id":"completion/complete#19","method":"completion/complete","params":{"ref":{"type":"ref/prompt","name":"conf.greeting"},"argument":{"name":"name","value":"a"},'"${meta}"'}}'
+		printf '%s\n' '{"jsonrpc":"2.0","id":"no/such/method#20","method":"no/such/method","params":{'"${meta}"'}}'
+		printf '%s\n' '{"jsonrpc":"2.0","id":"tools/list#21","method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2099-01-01","io.modelcontextprotocol/clientCapabilities":{}}}}'
+		printf '%s\n' '{"jsonrpc":"2.0","id":"tools/list#22","method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":5,"io.modelcontextprotocol/clientCapabilities":{}}}}'
+		printf '%s\n' 'this is not json'
+	} >"${file}"
+}
+
+# 2026-07-28 names a type for each error code; check those too.
+modern_error_def_for() {
+	case "$1" in
+	-32022) printf 'UnsupportedProtocolVersionError' ;;
+	-32601) printf 'MethodNotFoundError' ;;
+	-32602) printf 'InvalidParamsError' ;;
+	-32603) printf 'InternalError' ;;
+	-32700) printf 'ParseError' ;;
+	*) return 1 ;;
+	esac
+}
+
 # Result type for each method, as named in the schemas.
 result_def_for() {
 	case "$1" in
 	initialize) printf 'InitializeResult' ;;
+	server/discover) printf 'DiscoverResult' ;;
 	tools/list) printf 'ListToolsResult' ;;
 	tools/call) printf 'CallToolResult' ;;
 	resources/list) printf 'ListResourcesResult' ;;
@@ -195,13 +249,26 @@ for version in ${VERSIONS}; do
 	run_dir="${TEST_TMPDIR}/${version}"
 	mkdir -p "${run_dir}/instances"
 	write_requests "${version}" "${run_dir}/requests.ndjson"
-	test_run_mcp "${WORKSPACE}" "${run_dir}/requests.ndjson" "${run_dir}/responses.ndjson" || true
+	required_defs="${REQUIRED_DEFS}"
+	if [ "${version}" = "${MODERN_VERSION}" ]; then
+		MCPBASH_MODERN_PROTOCOL=true test_run_mcp "${WORKSPACE}" "${run_dir}/requests.ndjson" "${run_dir}/responses.ndjson" || true
+		# No initialize, and no EmptyResult (ping and friends were removed).
+		required_defs="DiscoverResult ListToolsResult CallToolResult ListResourcesResult ListResourceTemplatesResult ReadResourceResult ListPromptsResult GetPromptResult CompleteResult ServerNotification UnsupportedProtocolVersionError MethodNotFoundError"
+		for removed in ping#2 logging/setLevel#3 resources/subscribe#15; do
+			if ! jq -e --arg id "${removed}" 'select(.id == $id) | .error.code == -32601' "${run_dir}/responses.ndjson" >/dev/null; then
+				printf '%s: %s should get -32601\n' "${version}" "${removed}" >&2
+				failures=$((failures + 1))
+			fi
+		done
+	else
+		test_run_mcp "${WORKSPACE}" "${run_dir}/requests.ndjson" "${run_dir}/responses.ndjson" || true
 
-	negotiated="$(jq -r 'select(.id == "initialize#1") | .result.protocolVersion // empty' "${run_dir}/responses.ndjson")"
-	if [ "${negotiated}" != "${version}" ]; then
-		printf '%s: negotiated %s\n' "${version}" "${negotiated:-nothing}" >&2
-		failures=$((failures + 1))
-		continue
+		negotiated="$(jq -r 'select(.id == "initialize#1") | .result.protocolVersion // empty' "${run_dir}/responses.ndjson")"
+		if [ "${negotiated}" != "${version}" ]; then
+			printf '%s: negotiated %s\n' "${version}" "${negotiated:-nothing}" >&2
+			failures=$((failures + 1))
+			continue
+		fi
 	fi
 
 	# Sort every line into instance files: <def>/<n>.json.
@@ -228,6 +295,18 @@ for version in ${VERSIONS}; do
 			mkdir -p "${run_dir}/instances/ServerNotification"
 			printf '%s\n' "${line}" >"${run_dir}/instances/ServerNotification/${n}.json"
 			;;
+		error)
+			if [ "${version}" = "${MODERN_VERSION}" ] && def="$(modern_error_def_for "$(printf '%s' "${line}" | jq -r '.error.code')")"; then
+				mkdir -p "${run_dir}/instances/${def}"
+				# UnsupportedProtocolVersionError describes the whole response; the
+				# other error types describe the error object.
+				if [ "${def}" = "UnsupportedProtocolVersionError" ]; then
+					printf '%s\n' "${line}" >"${run_dir}/instances/${def}/${n}.json"
+				else
+					printf '%s' "${line}" | jq -c '.error' >"${run_dir}/instances/${def}/${n}.json"
+				fi
+			fi
+			;;
 		result)
 			id="$(printf '%s' "${line}" | jq -r '.id | tostring')"
 			if ! def="$(result_def_for "${id%#*}")"; then
@@ -241,7 +320,7 @@ for version in ${VERSIONS}; do
 		esac
 	done <"${run_dir}/responses.ndjson"
 
-	for def in ${REQUIRED_DEFS}; do
+	for def in ${required_defs}; do
 		if [ ! -d "${run_dir}/instances/${def}" ]; then
 			printf '%s: no %s in the session output\n' "${version}" "${def}" >&2
 			failures=$((failures + 1))

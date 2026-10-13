@@ -23,6 +23,8 @@ Changes for 2.0.0.
 
 ### Added
 - **`mcp_fail` without `--type`**: `mcp_fail MESSAGE [--hint TEXT] [--data JSON]` ends the tool with an error result of type `tool_failed`; `mcp_fail -- MESSAGE` takes the message literally (a number, or text starting with `--`). Arguments after the message other than `--hint` and `--data` are ignored, with a note on stderr.
+- **MCP 2026-07-28, opt-in (`MCPBASH_MODERN_PROTOCOL=true`)**: the server serves stateless 2026-07-28 requests (protocol version and client capabilities in each request's `_meta`, no `initialize`) next to the legacy `initialize` session, in the same process, and answers `server/discover`. Results carry `resultType`, `_meta["io.modelcontextprotocol/serverInfo"]` and, on discover, the lists and `resources/read`, the caching hints `ttlMs`/`cacheScope` (`MCPBASH_MODERN_LIST_TTL_MS`, `MCPBASH_MODERN_READ_TTL_MS`, `MCPBASH_MODERN_CACHE_SCOPE`). A modern request gets `-32022` for an unsupported version, `-32601` for methods 2026-07-28 removed (`ping`, `logging/setLevel`, `resources/subscribe`, ...), `-32602` for a missing resource, and log notifications only when it sets `_meta["io.modelcontextprotocol/logLevel"]`. A tool can return any JSON value with `mcp_result_json` to a modern request. **Off by default**: on this path the server can't yet ask the client for roots or elicitation, or send list-change notifications, so a client that goes modern (Claude Code does when `server/discover` succeeds) would get less than from the legacy session. With the switch off, `server/discover` stays "Method not found" and nothing changes.
+
 
 ## [1.9.3] - 2026-10-13
 

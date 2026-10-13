@@ -94,6 +94,7 @@ mcp_core_require_handlers() {
 	. "${MCPBASH_HOME}/handlers/prompts.sh"
 	. "${MCPBASH_HOME}/handlers/completion.sh"
 	. "${MCPBASH_HOME}/handlers/roots.sh"
+	. "${MCPBASH_HOME}/handlers/discover.sh"
 }
 
 mcp_core_bootstrap_state() {
@@ -1068,6 +1069,22 @@ mcp_core_dispatch_object() {
 		mcp_logging_debug "mcp.core" "Dispatch method=${method} id=${id_json}"
 	fi
 
+	# A modern (2026-07-28) request is served on its own terms: no initialize
+	# gate, and never in the main process (see mcp_core_dispatch_modern).
+	# initialize selects legacy semantics whatever _meta it carries. Only
+	# requests are modern: a notification has no result to shape, and one
+	# such as notifications/initialized belongs to the legacy session.
+	if [ "${method}" != "initialize" ] && [ "${is_notification}" != "true" ]; then
+		mcp_modern_classify "${json_line}"
+	fi
+	if [ "${MCPBASH_REQUEST_ERA}" = "modern" ]; then
+		mcp_core_dispatch_modern "${json_line}" "${method}" "${id_json}" "${is_notification}"
+		MCPBASH_REQUEST_ERA="legacy"
+		# shellcheck disable=SC2034  # Read by lib/modern.sh
+		MCPBASH_REQUEST_META=""
+		return
+	fi
+
 	if [ "${MCPBASH_INITIALIZED}" != true ] && ! mcp_core_method_allowed_preinit "${method}"; then
 		if [ "${is_notification}" != "true" ]; then
 			# A method the server doesn't have is "not found" whatever the
@@ -1117,6 +1134,42 @@ mcp_core_dispatch_object() {
 	fi
 }
 
+# Serve one modern request. Stateless: it needs no initialize, and it never
+# runs in the main process, which holds the legacy session's state; a worker
+# gets a fork, where the request's own capabilities replace that state
+# (mcp_modern_apply_worker_context).
+mcp_core_dispatch_modern() {
+	local json_line="$1"
+	local method="$2"
+	local id_json="$3"
+	local is_notification="$4"
+	local refusal
+
+	refusal="$(mcp_modern_refusal "${method}" "${id_json}")"
+	if [ -n "${refusal}" ]; then
+		[ "${is_notification}" = "true" ] || rpc_send_line "${refusal}"
+		return 0
+	fi
+	if [ "${is_notification}" = "true" ]; then
+		return 0
+	fi
+	# Legacy codes such as -32003 don't exist on this path.
+	if [ "${MCPBASH_SHUTDOWN_PENDING}" = true ]; then
+		rpc_send_line "$(mcp_core_build_error_response "${id_json}" -32603 "Server shutting down" "")"
+		return 0
+	fi
+	if ! mcp_core_resolve_handler "${method}"; then
+		mcp_core_emit_method_not_found "${id_json}"
+		return 0
+	fi
+	# server/discover reads only static data, so it is answered at once.
+	if [ "${method}" = "server/discover" ]; then
+		mcp_core_execute_handler "${MCPBASH_RESOLVED_HANDLER}" "${method}" "${json_line}" "${id_json}"
+		return 0
+	fi
+	mcp_core_spawn_worker "${MCPBASH_RESOLVED_HANDLER}" "${method}" "${json_line}" "${id_json}"
+}
+
 mcp_core_resolve_handler() {
 	local method="$1"
 	MCPBASH_RESOLVED_HANDLER=""
@@ -1156,6 +1209,11 @@ mcp_core_resolve_handler() {
 		;;
 	roots/* | notifications/roots/*)
 		MCPBASH_RESOLVED_HANDLER="mcp_handle_roots"
+		;;
+	server/discover)
+		# Unknown ("Method not found") unless modern requests are switched on.
+		mcp_modern_enabled || return 1
+		MCPBASH_RESOLVED_HANDLER="mcp_handle_discover"
 		;;
 	*)
 		return 1
@@ -1228,6 +1286,9 @@ mcp_core_spawn_worker() {
 	local cancel_file
 	cancel_file="$(mcp_ids_state_path "cancelled" "${key}")"
 	rm -f "${cancel_file}"
+	# A modern request's log level for the live flusher; a worker killed
+	# before its cleanup must not leave one for a later request with this id.
+	[ -z "${key}" ] || rm -f "${MCPBASH_STATE_DIR}/loglevel.${key}"
 	local progress_token
 	progress_token="$(mcp_json_extract_progress_token "${json_line}")"
 	local handled_file=""
@@ -1244,6 +1305,9 @@ mcp_core_spawn_worker() {
 		export MCP_LOG_STREAM="${log_stream}"
 		export MCP_PROGRESS_TOKEN="${progress_token}"
 		export MCP_CANCEL_FILE="${cancel_file}"
+		if [ "${MCPBASH_REQUEST_ERA:-legacy}" = "modern" ]; then
+			mcp_modern_apply_worker_context "${key}"
+		fi
 		if [ -n "${timeout}" ]; then
 			local timeout_status=0
 			with_timeout "${timeout}" -- mcp_core_worker_entry "${handler}" "${method}" "${json_line}" "${id_json}" "${key}" "${stderr_file}" || timeout_status=$?
@@ -1362,7 +1426,16 @@ mcp_core_worker_entry() {
 		fi
 	fi
 
+	# A modern (2026-07-28) request's progress and log notifications go out
+	# before its result: progress MUST stop once the request completes.
+	if [ "${MCPBASH_REQUEST_ERA:-legacy}" = "modern" ]; then
+		mcp_core_worker_deliver_streams "${key}" "${progress_stream}" "${log_stream}"
+	fi
+
 	if [ -n "${response}" ]; then
+		if [ "${MCPBASH_REQUEST_ERA:-legacy}" = "modern" ]; then
+			response="$(mcp_modern_decorate_response "${method}" "${response}")"
+		fi
 		response="$(mcp_core_guard_response_size "${id_json}" "${response}" "${method}")"
 		mcp_core_worker_emit "${key}" "${response}"
 	fi
@@ -1373,13 +1446,22 @@ mcp_core_worker_entry() {
 		: >"${MCPBASH_STATE_DIR}/handled.${key}" 2>/dev/null || true
 	fi
 
-	# Progress/log delivery:
-	# - When live progress is disabled, emit all buffered progress/log lines here.
-	# - When live progress is enabled, a background flusher streams lines while the
-	#   worker runs, but Git Bash/CI scheduling can cause the worker to exit and
-	#   delete its stream files before the flusher observes the final writes.
-	#   Do a final best-effort flush before cleanup so at least one progress event
-	#   is emitted when tools report progress (avoids flaky CI on Windows).
+	if [ "${MCPBASH_REQUEST_ERA:-legacy}" != "modern" ]; then
+		mcp_core_worker_deliver_streams "${key}" "${progress_stream}" "${log_stream}"
+	fi
+}
+
+# Progress/log delivery for one worker:
+# - When live progress is disabled, emit all buffered progress/log lines here.
+# - When live progress is enabled, a background flusher streams lines while the
+#   worker runs, but Git Bash/CI scheduling can cause the worker to exit and
+#   delete its stream files before the flusher observes the final writes.
+#   Do a final best-effort flush before cleanup so at least one progress event
+#   is emitted when tools report progress (avoids flaky CI on Windows).
+mcp_core_worker_deliver_streams() {
+	local key="$1"
+	local progress_stream="$2"
+	local log_stream="$3"
 	if [ "${MCPBASH_ENABLE_LIVE_PROGRESS:-false}" = "true" ] && [ -n "${key}" ]; then
 		mcp_core_flush_stream "${key}" "progress" || true
 		mcp_core_flush_stream "${key}" "log" || true
@@ -1423,6 +1505,7 @@ mcp_core_worker_cleanup() {
 		rm -f "${MCPBASH_STATE_DIR}/rate.log.${key}.log"
 		rm -f "${MCPBASH_STATE_DIR}/progress.${key}.ndjson.offset"
 		rm -f "${MCPBASH_STATE_DIR}/logs.${key}.ndjson.offset"
+		rm -f "${MCPBASH_STATE_DIR}/loglevel.${key}"
 	fi
 
 	if [ -n "${stderr_file}" ] && [ -f "${stderr_file}" ]; then
@@ -1473,7 +1556,9 @@ mcp_core_handle_cancel_notification() {
 	local json_line="$1"
 	local cancel_id
 
-	if [ "${MCPBASH_INITIALIZED}" = "false" ]; then
+	# Modern (2026-07-28) requests need no initialize, so neither does
+	# cancelling them.
+	if [ "${MCPBASH_INITIALIZED}" = "false" ] && ! mcp_modern_enabled; then
 		return 0
 	fi
 
@@ -1596,6 +1681,11 @@ mcp_core_method_allowed_preinit() {
 	case "$1" in
 	initialize | notifications/initialized | notifications/cancelled | ping | shutdown | exit)
 		return 0
+		;;
+	server/discover)
+		# Probed before initialize; answered -32602 without the modern _meta.
+		mcp_modern_enabled
+		return
 		;;
 	*)
 		return 1
@@ -1842,6 +1932,11 @@ _mcp_core_flush_stream_unlocked() {
 	local kind="$2"
 	local stream
 	stream="$(_mcp_core_stream_path "${key}" "${kind}")"
+	local request_level=""
+	# A modern request's own log level (lib/modern.sh), when it set one.
+	if [ "${kind}" = "log" ] && [ -f "${MCPBASH_STATE_DIR}/loglevel.${key}" ]; then
+		request_level="$(cat "${MCPBASH_STATE_DIR}/loglevel.${key}" 2>/dev/null || true)"
+	fi
 	local offset_file="${stream}.offset"
 	[ -f "${stream}" ] || return 0
 	local last_offset=0
@@ -1880,7 +1975,11 @@ _mcp_core_flush_stream_unlocked() {
 			if [ "${kind}" = "log" ]; then
 				local level
 				level="$(mcp_core_extract_log_level "${line}")"
-				if ! mcp_logging_is_enabled "${level}"; then
+				if [ -n "${request_level}" ]; then
+					if [ "$(mcp_logging_level_rank "${level}")" -lt "$(mcp_logging_level_rank "${request_level}")" ]; then
+						continue
+					fi
+				elif ! mcp_logging_is_enabled "${level}"; then
 					continue
 				fi
 			fi

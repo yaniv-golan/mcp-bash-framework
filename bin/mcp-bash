@@ -122,6 +122,9 @@ EOF
 # Server metadata (name, version, title, etc.) is loaded from server.d/server.meta.json
 # with smart defaults derived from the project structure. See mcp_runtime_load_server_meta().
 MCPBASH_PROTOCOL_VERSION="2025-11-25"
+# Set by the server per request (lib/modern.sh), never taken from the
+# environment: an mcp-bash started by a tool would inherit the tool's values.
+unset MCPBASH_PROTOCOL_ERA MCPBASH_CLIENT_SUPPORTS_UI
 MCPBASH_NEGOTIATED_PROTOCOL_VERSION="${MCPBASH_PROTOCOL_VERSION}"
 
 require_bash_runtime() {
@@ -148,7 +151,7 @@ initialize_runtime_paths() {
 	# Allow MCPBASH_HOME override for development (use installed binary with dev code)
 	MCPBASH_HOME="${MCPBASH_HOME:-$(cd "${script_dir}/.." && pwd)}"
 
-	local required_libs="require runtime meta_env json hash ids lock io paginate logging auth uri policy tools_policy registry spec tools resources prompts completion timeout rpc core validate"
+	local required_libs="require runtime meta_env json hash ids lock io paginate logging auth uri policy tools_policy registry spec modern tools resources prompts completion timeout rpc core validate"
 	local lib
 
 	for lib in ${required_libs}; do
@@ -190,6 +193,8 @@ initialize_runtime_paths() {
 	. "${MCPBASH_HOME}/lib/registry.sh"
 	# shellcheck disable=SC1090
 	. "${MCPBASH_HOME}/lib/spec.sh"
+	# shellcheck disable=SC1090
+	. "${MCPBASH_HOME}/lib/modern.sh"
 	# shellcheck disable=SC1090
 	. "${MCPBASH_HOME}/lib/tools.sh"
 	# shellcheck disable=SC1090
