@@ -51,6 +51,17 @@ printf '%s\n' 'reply_error() {' '	mcp_result_error "{\"type\":\"x\",\"message\":
 # shellcheck disable=SC2016
 add_tool shared 'source "${MCPBASH_PROJECT_ROOT}/lib/common.sh"
 reply_error'
+# A helper script in the tool's own directory: only the entry script is
+# checked, so this one runs and gets the hint too.
+# shellcheck disable=SC2016
+add_tool withlib 'source "$(dirname "$0")/helpers.lib"
+helper'
+printf '%s\n' 'helper() {' '	mcp_emit_text "old"' '}' >"${WS}/tools/withlib/helpers.lib"
+# Two tools in one directory: the clean one isn't blocked by its neighbour.
+mkdir -p "${WS}/tools/grp"
+printf '%s\n' '#!/usr/bin/env bash' 'source "${MCP_SDK}/tool-sdk.sh"' 'mcp_result_text "ok"' >"${WS}/tools/grp/flat_ok.sh"
+printf '%s\n' '#!/usr/bin/env bash' 'source "${MCP_SDK}/tool-sdk.sh"' 'mcp_error not_found x' 'exit 0' >"${WS}/tools/grp/flat_bad.sh"
+chmod +x "${WS}/tools/grp/flat_ok.sh" "${WS}/tools/grp/flat_bad.sh"
 # A comment that names a removed helper is not a use.
 add_tool commented '# 1.x used mcp_error here
 mcp_result_text "fine"'
@@ -65,6 +76,9 @@ session() {
 		call unmigratedresult
 		call shared
 		call commented
+		call withlib
+		call flat_ok
+		call flat_bad
 	} >"${req}"
 	(cd "${FW}" && MCPBASH_PROJECT_ROOT="${WS}" MCPBASH_TOOL_ALLOWLIST='*' ./bin/mcp-bash <"${req}" >"${out}" 2>"${out}.stderr")
 	assert_json_lines "${out}"
@@ -87,6 +101,14 @@ case "$(printf '%s' "${r}" | jq -r '._meta["mcpbash/error"].hint // empty')" in
 *) test_fail "shared script: no removed-helper hint: ${r}" ;;
 esac
 assert_eq "fine" "$(resp "${OUT}" commented | jq -r '.content[0].text')" "a comment naming a removed helper"
+r="$(resp "${OUT}" withlib)"
+assert_eq "tool_failed" "$(printf '%s' "${r}" | jq -r '._meta["mcpbash/error"].type')" "helper in the tool dir: ${r}"
+case "$(printf '%s' "${r}" | jq -r '._meta["mcpbash/error"].hint // empty')" in
+*'`mcp_emit_text` was removed in mcp-bash 2.0'*) ;;
+*) test_fail "helper in the tool dir: no removed-helper hint: ${r}" ;;
+esac
+assert_eq "ok" "$(resp "${OUT}" flat_ok | jq -r '.content[0].text')" "a clean tool next to an unmigrated one"
+assert_eq "migration_required" "$(resp "${OUT}" flat_bad | jq -r '._meta["mcpbash/error"].type')" "the unmigrated neighbour"
 
 # migrate --write rewrites the unmigrated tool; it then runs.
 (cd "${FW}" && ./bin/mcp-bash migrate --project-root "${WS}" --write >"${TEST_TMPDIR}/migrate.out" 2>&1) || true

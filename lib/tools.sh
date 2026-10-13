@@ -807,27 +807,148 @@ _mcp_tools_side_channel_error_result() {
 # (mcp_tools_removed_api_hint).
 MCP_TOOLS_REMOVED_SDK_NAMES="mcp_error mcp_result_error mcp_fail_invalid_args mcp_result_success mcp_emit_text mcp_emit_json mcp_result_text_with_resource mcp_result_with_ui mcp_result_with_ui_data"
 
-# Print the first removed SDK helper called by the tool at PATH, or nothing.
-# Scans the tool's own script and every *.sh in its directory, skipping
-# comment lines. One find and one awk per call, with no cache, so a tool
-# fixed in place (mcp-bash migrate --write) runs on its next call.
+# Print the first removed SDK helper the tool's own script calls, or nothing.
+# Only the entry script is read, and only when it is a shell script: other
+# tools in the same directory, helpers it sources and non-shell tools are
+# never blocked (a removed helper they call fails with "command not found",
+# and mcp_tools_removed_api_hint names it). Only calls in command position
+# count; strings, comments, heredoc bodies, arguments, assignments and a
+# function of the same name defined in the script don't. One awk per call,
+# with no cache, so a tool fixed in place runs on its next call.
 # Usage: mcp_tools_removed_api_use TOOL_PATH
 mcp_tools_removed_api_use() {
-	local path="$1"
-	[ -n "${MCP_TOOLS_REMOVED_SDK_NAMES}" ] || return 0
-	# One find and one awk: on bash 3.2 each extra process costs several ms.
-	find "${path%/*}" -type f \( -name '*.sh' -o -path "${path}" \) -exec awk -v names="${MCP_TOOLS_REMOVED_SDK_NAMES}" '
-		BEGIN {
-			n = split(names, list, " ")
-			for (i = 1; i <= n; i++) re[i] = "(^|[^A-Za-z0-9_])" list[i] "([^A-Za-z0-9_]|$)"
-		}
-		/^[[:space:]]*#/ { next }
-		{
-			for (i = 1; i <= n; i++) {
-				if ($0 ~ re[i]) { print list[i]; exit }
-			}
-		}' {} + 2>/dev/null | head -n 1
+	local path="$1" first=""
+	[ -n "${MCP_TOOLS_REMOVED_SDK_NAMES}" ] && [ -f "${path}" ] && [ -r "${path}" ] || return 0
+	case "${path}" in
+	*.sh | *.bash) ;;
+	*)
+		IFS= read -r first <"${path}" 2>/dev/null || true
+		case "${first}" in
+		'#!'*[/[:space:]]bash | '#!'*[/[:space:]]bash[[:space:]]* | '#!'*[/[:space:]]sh | '#!'*[/[:space:]]sh[[:space:]]*) ;;
+		*) return 0 ;;
+		esac
+		;;
+	esac
+	awk -v names="${MCP_TOOLS_REMOVED_SDK_NAMES}" "${MCP_TOOLS_REMOVED_API_AWK}" "${path}" 2>/dev/null || true
 }
+
+# The awk program for mcp_tools_removed_api_use: a small shell tokenizer.
+# shellcheck disable=SC2016  # An awk program, not shell.
+MCP_TOOLS_REMOVED_API_AWK='
+	# Prints the first removed helper called in command position, unless the
+	# file defines a function of that name. A small shell tokenizer: quotes,
+	# $(...), backticks, $((...)), comments, heredoc bodies and redirections
+	# are tracked, so strings, comments and arguments never count.
+	function endword() {
+		if (word != "" && cmdpos) {
+			if (word ~ /^[A-Za-z_][A-Za-z0-9_]*(\[[^]]*\])?\+?=/) {
+				# An assignment prefix: the command comes next.
+			} else if (word in kw) {
+				# then, do, if, !, {, ...: a command comes next.
+			} else {
+				if (word in want && !(word in seen)) { seen[word] = 1; hits[++nhits] = word }
+				cmdpos = 0
+			}
+		}
+		if (redir && word != "") { redir = 0 }
+		word = ""
+	}
+	function push(closer) { sp++; st_state[sp] = state; st_close[sp] = closer; st_word[sp] = word; st_cmd[sp] = cmdpos }
+	function pop() { state = st_state[sp]; word = st_word[sp] "x"; cmdpos = st_cmd[sp]; sp-- }
+	BEGIN {
+		n = split(names, list, " ")
+		for (i = 1; i <= n; i++) {
+			want[list[i]] = 1
+			defre1[i] = "^[[:space:]]*(function[[:space:]]+)?" list[i] "[[:space:]]*[(][[:space:]]*[)]"
+			defre2[i] = "^[[:space:]]*function[[:space:]]+" list[i] "([[:space:]]|[{]|$)"
+		}
+		split("then do else elif if while until ! { } time", k, " ")
+		for (i in k) kw[k[i]] = 1
+		state = "N"; sp = 0; cmdpos = 1; word = ""; redir = 0; inhd = ""; cont = 0
+	}
+	{
+		line = $0
+		if (inhd != "") {
+			t = line
+			if (hdtab) sub(/^\t+/, "", t)
+			if (t == inhd) inhd = ""
+			next
+		}
+		if (state == "N" && !cont) {
+			for (i = 1; i <= n; i++) if (line ~ defre1[i] || line ~ defre2[i]) defined[list[i]] = 1
+			cmdpos = 1
+		}
+		cont = 0; pend = ""
+		L = length(line)
+		for (i = 1; i <= L; i++) {
+			c = substr(line, i, 1)
+			if (state == "S") { if (c == "\047") { state = "N"; word = word "x" } ; continue }
+			if (state == "D") {
+				if (c == "\\") { i++; continue }
+				if (c == "\"") { pop(); continue }
+				if (c == "$" && substr(line, i + 1, 1) == "(" && substr(line, i + 2, 1) != "(") { push(")"); state = "N"; word = ""; cmdpos = 1; i++; continue }
+				if (c == "`") { push("`"); state = "N"; word = ""; cmdpos = 1; continue }
+				continue
+			}
+			if (state == "A") {
+				if (c == "(") adepth++
+				else if (c == ")") { if (adepth > 0) adepth--; else { pop(); i++ } }
+				continue
+			}
+			# Normal state.
+			if (c == " " || c == "\t") { endword(); continue }
+			if (c == "#" && word == "") break
+			if (c == "\\") { if (i == L) cont = 1; else word = word "x"; i++; continue }
+			if (c == "\047") { state = "S"; continue }
+			if (c == "\"") { push("\""); state = "D"; continue }
+			if (c == "$" && substr(line, i + 1, 2) == "((") { push("))"); state = "A"; adepth = 0; i += 2; continue }
+			if (c == "$" && substr(line, i + 1, 1) == "(") { push(")"); word = ""; cmdpos = 1; i++; continue }
+			if (c == "`") {
+				if (sp > 0 && st_close[sp] == "`") { endword(); pop() }
+				else { push("`"); word = ""; cmdpos = 1 }
+				continue
+			}
+			if (c == "(") { endword(); push(")"); word = ""; cmdpos = 1; continue }
+			if (c == ")") {
+				endword()
+				if (sp > 0 && st_close[sp] == ")") pop()
+				else cmdpos = 1
+				continue
+			}
+			if (c == ";" || c == "|" || (c == "&" && substr(line, i - 1, 1) != ">" && substr(line, i - 1, 1) != "<")) { endword(); cmdpos = 1; continue }
+			if (c == "<" && substr(line, i + 1, 2) == "<<") { endword(); redir = 1; i += 2; continue }
+			if (c == "<" || c == ">") {
+				if (c == "<" && substr(line, i + 1, 1) == "<" && substr(line, i + 2, 1) != "<") {
+					endword()
+					j = i + 2
+					hdtab = 0
+					if (substr(line, j, 1) == "-") { hdtab = 1; j++ }
+					while (substr(line, j, 1) == " " || substr(line, j, 1) == "\t") j++
+					d = ""
+					while (j <= L) {
+						e = substr(line, j, 1)
+						if (e == " " || e == "\t" || e == ";" || e == "|" || e == "&" || e == "<" || e == ">" || e == "(" || e == ")") break
+						if (e != "\047" && e != "\"" && e != "\\") d = d e
+						j++
+					}
+					if (d != "") pend = d
+					i = j - 1
+					continue
+				}
+				endword(); redir = 1; continue
+			}
+			if (word == "" && redir) { word = "x" }
+			word = word c
+		}
+		if (state == "N" && !cont) {
+			endword()
+			if (pend != "") inhd = pend
+		}
+	}
+	END {
+		for (h = 1; h <= nhits; h++) if (!(hits[h] in defined)) { print hits[h]; exit }
+	}
+'
 
 # The hint for a failed tool whose stderr says a removed SDK helper wasn't
 # found (a call the check above didn't see, e.g. in a shared script outside
