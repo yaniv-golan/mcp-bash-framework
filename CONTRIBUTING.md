@@ -33,8 +33,8 @@ For CI parity (GitHub Actions uses these defaults), set `MCPBASH_CI_MODE=true` w
 Follow this checklist to cut a release:
 
 1. **Bump version & changelog** – run `bash scripts/bump-version.sh X.Y.Z`, update `CHANGELOG.md`, and re-render the README with `bash scripts/render-readme.sh`.
-2. **Merge to `main`** – ensure all changes (code, tests, docs, version bump) are on `main` and CI is green.
-3. **Create and push the tag** – `git tag vX.Y.Z && git push origin vX.Y.Z`. The CI release workflow triggers on version tags.
+2. **Merge to `main`** – ensure all changes (code, tests, docs, version bump) are on `main` and CI is green. A 1.x maintenance release (after 2.0) goes on the `1.x` branch instead.
+3. **Create and push the tag** – `git tag vX.Y.Z && git push origin vX.Y.Z`. The CI release workflow triggers on version tags. It checks the tag with `scripts/check-release-tag.sh`: `VERSION` must match, and a release must be on `main` or `1.x`. A prerelease (`vX.Y.Z-beta.N`, any tag with a `-`) may also be on a `release/*` branch; it is published as a GitHub prerelease and never reaches Homebrew.
 4. **Let CI create the release** – the GitHub Actions workflow creates the GitHub Release, uploads `mcp-bash-vX.Y.Z.tar.gz` and `SHA256SUMS` assets, and populates the release body. **Do not** create the release manually before the workflow runs, or the CI step will fail with `already_exists`.
 5. **Verify** – confirm the release page has both assets and correct release notes: `gh release view vX.Y.Z --json assets,body,url`.
 6. **Bump the Homebrew formula** – the `bump-homebrew.yml` workflow fires on `release: types: [released]`, but GitHub's `GITHUB_TOKEN` security restriction prevents it from triggering when the release is created by another CI workflow. After step 4, manually trigger it:
@@ -48,7 +48,7 @@ Follow this checklist to cut a release:
    gh release download vX.Y.Z --pattern SHA256SUMS --output - | grep '\.tar\.gz'
    # Edit Formula/mcp-bash.rb in the tap repo with the new url + sha256
    ```
-   Verify with `brew upgrade mcp-bash` on a machine that has the tap installed.
+   The workflow opens a PR in `yaniv-golan/homebrew-mcp-bash`: check its sha256 against the release's `SHA256SUMS`, then merge it; `brew` users get nothing until it is merged. A `v1.*` tag updates the `mcp-bash@1` formula once the tap has one; other releases update `mcp-bash`, and prereleases are refused. Verify with `brew upgrade mcp-bash` on a machine that has the tap installed.
 7. **Backfill assets (if CI release step failed)** – if a race or duplicate prevented asset upload, generate the tarball and checksums locally and upload them:
    ```bash
    git archive --format=tar.gz --prefix="mcp-bash-vX.Y.Z/" "vX.Y.Z" -o "mcp-bash-vX.Y.Z.tar.gz"

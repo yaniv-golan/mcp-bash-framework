@@ -13,9 +13,35 @@ jobs:
   bump:
     runs-on: ubuntu-latest
     steps:
+      # Prereleases (a "-" in the tag) never reach Homebrew. A 1.x tag updates
+      # the versioned mcp-bash@1 formula once the tap has one (added when 2.0
+      # ships); every other release updates mcp-bash.
+      - name: Pick the formula
+        id: pick
+        env:
+          TAG: ${{ inputs.tag_name || github.event.release.tag_name }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          case "${TAG}" in
+          *-*)
+            echo "::error::${TAG} is a prerelease; Homebrew only gets releases."
+            exit 1
+            ;;
+          esac
+          formula="mcp-bash"
+          case "${TAG}" in
+          v1.*)
+            if gh api "repos/yaniv-golan/homebrew-mcp-bash/contents/Formula/mcp-bash@1.rb" >/dev/null 2>&1; then
+              formula="mcp-bash@1"
+            fi
+            ;;
+          esac
+          echo "Updating ${formula} to ${TAG}"
+          echo "formula=${formula}" >>"${GITHUB_OUTPUT}"
       - uses: mislav/bump-homebrew-formula-action@v4
         with:
-          formula-name: mcp-bash
+          formula-name: ${{ steps.pick.outputs.formula }}
           homebrew-tap: yaniv-golan/homebrew-mcp-bash
           tag-name: ${{ inputs.tag_name || github.event.release.tag_name }}
           download-url: https://github.com/yaniv-golan/mcp-bash-framework/releases/download/${{ inputs.tag_name || github.event.release.tag_name }}/mcp-bash-${{ inputs.tag_name || github.event.release.tag_name }}.tar.gz
