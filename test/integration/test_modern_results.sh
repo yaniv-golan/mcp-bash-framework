@@ -65,6 +65,10 @@ for id in 1 2 3 4 5 6 8; do
 	printf '%s' "${r}" | jq -e '.result.resultType == "complete"' >/dev/null || test_fail "id ${id}: no resultType: ${r}"
 	assert_eq "modern-results" "$(printf '%s' "${r}" | jq -r '.result._meta["io.modelcontextprotocol/serverInfo"].name')" "id ${id}: serverInfo"
 done
+# tools/list is in name order (a client may cache it; its order mustn't
+# depend on directory listing order).
+assert_eq '["arr","hello"]' "$(resp "${OUT}" 1 | jq -c '[.result.tools[].name]')" "tools/list order"
+
 # Caching hints on the lists and on resources/read only.
 for id in 1 2 3 4; do
 	assert_eq "5000 private" "$(resp "${OUT}" "${id}" | jq -r '"\(.result.ttlMs) \(.result.cacheScope)"')" "id ${id}: list caching hints"
