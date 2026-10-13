@@ -50,3 +50,18 @@ no_ui() {
 	assert_equal "$(jq -r 'has("structuredContent")' <<<"${result}")" "false"
 	assert_equal "$(jq -r '.content[0].text' <<<"${result}")" "Text only"
 }
+
+@test "ui_sdk_results: mcp_result_ui sends the data to a UI client" {
+	MCPBASH_CLIENT_SUPPORTS_UI=1
+	result="$(mcp_result_ui "Dashboard ready" '{"items":42}')"
+	assert_equal "$(jq -c '[.isError, .content[0].text, .structuredContent.items]' <<<"${result}")" '[false,"Dashboard ready",42]'
+}
+
+@test "ui_sdk_results: mcp_result_ui sends text only to other clients, or without data" {
+	no_ui
+	result="$(mcp_result_ui "Dashboard ready" '{"items":42}')"
+	assert_equal "$(jq -c '[.isError, .content[0].text, has("structuredContent")]' <<<"${result}")" '[false,"Dashboard ready",false]'
+	MCPBASH_CLIENT_SUPPORTS_UI=1
+	result="$(mcp_result_ui "Just text")"
+	assert_equal "$(jq -c '[.content[0].text, has("structuredContent")]' <<<"${result}")" '["Just text",false]'
+}

@@ -133,6 +133,31 @@ mcp_result_with_ui_data() {
 		}'
 }
 
+# mcp_result_ui TEXT [DATA]
+# A result for a tool with an MCP Apps UI (declared in tool.meta.json
+# _meta.ui). A client with the UI extension gets TEXT and DATA (JSON) as
+# structuredContent, which the UI receives; any other client gets TEXT only.
+# Replaces mcp_result_with_ui and mcp_result_with_ui_data (2.0), whose first
+# argument, a resource URI, was ignored. Prints the result; does not end the
+# tool.
+mcp_result_ui() {
+	local text="${1-}"
+	local data="${2-}"
+	[ -n "${data}" ] || data="null"
+	if ! mcp_client_supports_ui; then
+		__mcp_ui_text_result "${text}"
+		return 0
+	fi
+	# Text and data go on stdin: either can outgrow one argument.
+	{
+		printf '%s' "${text}" | "${MCPBASH_JSON_TOOL_BIN}" -R -s '.'
+		printf '\n%s' "${data}"
+	} | "${MCPBASH_JSON_TOOL_BIN}" -c -s \
+		'.[0] as $text | .[1] as $data
+		| {content: [{type: "text", text: $text}], isError: false}
+		+ (if $data != null then {structuredContent: $data} else {} end)'
+}
+
 # --- Dynamic UI generation ---
 
 # Generate a simple form UI dynamically
