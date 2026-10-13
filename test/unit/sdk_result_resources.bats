@@ -51,3 +51,10 @@ sdk() {
 	grep -q 'unknown option ignored: --pth' "${BATS_TEST_TMPDIR}/err" || fail "no warning: $(cat "${BATS_TEST_TMPDIR}/err")"
 	[ ! -e "${RES}" ] || fail "resources written for an unknown option"
 }
+
+@test "result resources: invalid JSON data attaches no resource" {
+	run sdk mcp_result_json '{"n":' --resource "${BATS_TEST_TMPDIR}/a.txt"
+	assert_success
+	assert_equal "$(printf '%s' "${output}" | jq -c '[.isError, ._meta["mcpbash/error"].type]')" '[true,"internal"]'
+	[ ! -e "${RES}" ] || fail "resource attached to an error result: $(cat "${RES}")"
+}

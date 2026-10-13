@@ -87,6 +87,20 @@ teardown() {
 	assert_equal "${items}" "5"
 }
 
+@test "sdk: mcp_result_ui gives the same internal error for invalid DATA, UI client or not" {
+	# Tools load ui-sdk.sh through tool-sdk.sh, which brings mcp_tool_error_result.
+	# shellcheck source=sdk/tool-error.sh
+	# shellcheck disable=SC1091
+	. "${MCPBASH_HOME}/sdk/tool-error.sh"
+	local support
+	for support in 0 1; do
+		MCPBASH_CLIENT_SUPPORTS_UI="${support}"
+		rm -f "${MCPBASH_STATE_DIR}/extensions.ui.support" 2>/dev/null || true
+		result="$(mcp_result_ui "Fallback text" '{"items": 5')"
+		assert_equal "$("${MCPBASH_JSON_TOOL_BIN}" -c '[.isError, ._meta["mcpbash/error"].type]' <<< "${result}")" '[true,"internal"]'
+	done
+}
+
 @test "sdk: mcp_result_ui includes text content" {
 	MCPBASH_CLIENT_SUPPORTS_UI=1
 

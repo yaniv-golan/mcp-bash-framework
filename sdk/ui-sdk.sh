@@ -67,6 +67,12 @@ mcp_result_ui() {
 	local text="${1-}"
 	local data="${2-}"
 	[ -n "${data}" ] || data="null"
+	# DATA is checked for every client, so a bad value fails the same way
+	# whether or not this client renders the UI.
+	if [ -n "${MCPBASH_JSON_TOOL_BIN:-}" ] && ! printf '%s' "${data}" | "${MCPBASH_JSON_TOOL_BIN}" -e -s 'length == 1' >/dev/null 2>&1; then
+		mcp_tool_error_result internal "mcp_result_ui: DATA is not a single JSON value"
+		return 0
+	fi
 	if ! mcp_client_supports_ui; then
 		__mcp_ui_text_result "${text}"
 		return 0

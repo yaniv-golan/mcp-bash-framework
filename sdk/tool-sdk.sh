@@ -1283,7 +1283,6 @@ mcp_result_json() {
 		*) shift ;;
 		esac
 	done
-	[ "${#res[@]}" -eq 0 ] || __mcp_sdk_write_resources "${res[@]}"
 	local max_text_bytes
 	max_text_bytes=$(__mcp_sdk_uint_or_default "${max_raw}" "${MCPBASH_MAX_TEXT_BYTES:-102400}")
 	# Set per request by the server in 2.0; 1.x always serves legacy-era requests.
@@ -1312,6 +1311,8 @@ mcp_result_json() {
 					{content: [{type: "text", text: $t}], isError: false}
 				end
 			end' 2>/dev/null)" && [ -n "${out}" ]; then
+			# Resources only with a successful result, never an error.
+			[ "${#res[@]}" -eq 0 ] || __mcp_sdk_write_resources "${res[@]}"
 			printf '%s' "${out}"
 		else
 			mcp_tool_error_result internal "mcp_result_json: argument is not a single JSON value"
@@ -1323,6 +1324,7 @@ mcp_result_json() {
 	local trimmed="${data#"${data%%[![:space:]]*}"}"
 	case "${trimmed}" in
 	"{"*)
+		[ "${#res[@]}" -eq 0 ] || __mcp_sdk_write_resources "${res[@]}"
 		printf '{"content":[{"type":"text","text":%s}],"structuredContent":%s,"isError":false}' \
 			"$(__mcp_sdk_json_escape "${data}")" "${data}"
 		;;
@@ -1330,6 +1332,7 @@ mcp_result_json() {
 		mcp_tool_error_result internal "mcp_result_json: argument is not a single JSON value"
 		;;
 	*)
+		[ "${#res[@]}" -eq 0 ] || __mcp_sdk_write_resources "${res[@]}"
 		printf '{"content":[{"type":"text","text":%s}],"isError":false}' "$(__mcp_sdk_json_escape "${data}")"
 		;;
 	esac
