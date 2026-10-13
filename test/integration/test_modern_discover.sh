@@ -78,6 +78,13 @@ assert_eq "complete" "$(resp "${TEST_TMPDIR}/mixed.out" 1 | jq -r '.result.resul
 	head -c 1200000 /dev/zero | tr '\0' 'x'
 	printf '\n'
 } >"${WS}/server.d/server.instructions.md"
+# A server icon inlined as a data URI makes the server info large too; it is
+# in _meta on every modern result.
+{
+	printf '{"name": "discover-test", "version": "1.2.3", "icons": [{"src": "data:image/png;base64,'
+	head -c 1200000 /dev/zero | tr '\0' 'A'
+	printf '", "mimeType": "image/png"}]}\n'
+} >"${WS}/server.d/server.meta.json"
 REQ="${TEST_TMPDIR}/big.ndjson"
 {
 	discover 1
