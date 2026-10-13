@@ -12,15 +12,9 @@
       },
       "outputSchema": {
         "type": "object",
-        "required": ["success", "result"],
+        "required": ["message"],
         "properties": {
-          "success": { "type": "boolean" },
-          "result": {
-            "type": "object",
-            "properties": {
-              "message": { "type": "string" }
-            }
-          }
+          "message": { "type": "string" }
         }
       }
     }

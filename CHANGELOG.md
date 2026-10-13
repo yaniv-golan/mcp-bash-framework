@@ -37,6 +37,7 @@ Changes for 2.0.0.
 
 ### Fixed
 - **`mcp-bash run-tool` put a log line in the result for a resource outside the roots**: the warning that names the skipped path and the allowed roots was written to the same stdout as the resource, and became a `{"type":"resource"}` block holding the log notification. Only resource objects are embedded now. Over stdio the server was not affected.
+- **`examples/09-registry-overrides` failed its own tool call**: `server.d/register.json` still declared the `{success, result}` envelope as the `outputSchema` of `manual.progress`, whose script uses `mcp_result_json`, so every call got `output_schema`. The schema describes the data now. `mcp-bash migrate` does not read `register.json`; update an envelope schema there by hand.
 
 ## [1.9.3] - 2026-10-13
 
