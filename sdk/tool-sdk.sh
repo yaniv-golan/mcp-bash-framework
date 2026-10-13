@@ -1191,6 +1191,10 @@ mcp_result_text() {
 			__mcp_sdk_resource_option res "$1" "${2-}"
 			shift 2 2>/dev/null || shift $#
 			;;
+		-*)
+			__mcp_sdk_warn "mcp_result_text: unknown option ignored: $1"
+			shift
+			;;
 		*) shift ;;
 		esac
 	done
@@ -1271,6 +1275,10 @@ mcp_result_json() {
 		--mime | --uri)
 			__mcp_sdk_resource_option res "$1" "${2-}"
 			shift 2 2>/dev/null || shift $#
+			;;
+		-*)
+			__mcp_sdk_warn "mcp_result_json: unknown option ignored: $1"
+			shift
 			;;
 		*) shift ;;
 		esac

@@ -42,3 +42,12 @@ sdk() {
 	run sdk mcp_result_text "done"
 	assert_equal "$(cat "${RES}")" "untouched"
 }
+
+@test "result resources: an unknown option is ignored with a warning, not silently" {
+	# A leftover 1.x --path must not vanish without a trace.
+	sdk mcp_result_json '{"n":1}' --path "${BATS_TEST_TMPDIR}/a.txt" 2>"${BATS_TEST_TMPDIR}/err" >/dev/null
+	grep -q 'unknown option ignored: --path' "${BATS_TEST_TMPDIR}/err" || fail "no warning: $(cat "${BATS_TEST_TMPDIR}/err")"
+	sdk mcp_result_text "done" --pth x 2>"${BATS_TEST_TMPDIR}/err" >/dev/null
+	grep -q 'unknown option ignored: --pth' "${BATS_TEST_TMPDIR}/err" || fail "no warning: $(cat "${BATS_TEST_TMPDIR}/err")"
+	[ ! -e "${RES}" ] || fail "resources written for an unknown option"
+}
