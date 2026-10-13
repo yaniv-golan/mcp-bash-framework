@@ -45,7 +45,7 @@ assert_eq "ui-no" "$(session '{}')" "a client without it"
 
 # No client at all (run-tool): a value inherited from the environment, as an
 # mcp-bash started by a tool would get, must not count as client support.
-out="$(cd "${WS}" && MCPBASH_PROJECT_ROOT="${WS}" MCPBASH_TOOL_ALLOWLIST='*' MCPBASH_CLIENT_SUPPORTS_UI=1 ./bin/mcp-bash run-tool uicheck 2>/dev/null || true)"
+out="$(MCPBASH_PROJECT_ROOT="${WS}" MCPBASH_TOOL_ALLOWLIST='*' MCPBASH_CLIENT_SUPPORTS_UI=1 "${WS}/bin/mcp-bash" run-tool uicheck 2>/dev/null || true)"
 assert_eq "ui-no" "$(printf '%s' "${out}" | jq -r '.content[0].text // empty' | tr -d '\n')" "run-tool with an inherited MCPBASH_CLIENT_SUPPORTS_UI=1"
 
 printf 'Tool UI capability checks passed.\n'
