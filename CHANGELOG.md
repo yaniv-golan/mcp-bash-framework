@@ -35,8 +35,13 @@ Changes for 2.0.0.
 - **MCP 2026-07-28, opt-in (`MCPBASH_MODERN_PROTOCOL=true`)**: the server serves stateless 2026-07-28 requests (protocol version and client capabilities in each request's `_meta`, no `initialize`) next to the legacy `initialize` session, in the same process, and answers `server/discover`. Results carry `resultType`, `_meta["io.modelcontextprotocol/serverInfo"]` and, on discover, the lists and `resources/read`, the caching hints `ttlMs`/`cacheScope` (`MCPBASH_MODERN_LIST_TTL_MS`, `MCPBASH_MODERN_READ_TTL_MS`, `MCPBASH_MODERN_CACHE_SCOPE`). A modern request gets `-32022` for an unsupported version, `-32601` for methods 2026-07-28 removed (`ping`, `logging/setLevel`, `resources/subscribe`, ...), `-32602` for a missing resource, and log notifications only when it sets `_meta["io.modelcontextprotocol/logLevel"]`. A tool can return any JSON value with `mcp_result_json` to a modern request. **Off by default**: on this path the server can't yet ask the client for roots or elicitation, or send list-change notifications, so a client that goes modern (Claude Code does when `server/discover` succeeds) would get less than from the legacy session. With the switch off, `server/discover` stays "Method not found" and nothing changes.
 
 ### Fixed
-- **`mcp-bash run-tool` put a log line in the result for a resource outside the roots**: the warning that names the skipped path and the allowed roots was written to the same stdout as the resource, and became a `{"type":"resource"}` block holding the log notification. Only resource objects are embedded now. Over stdio the server was not affected.
 - **`examples/09-registry-overrides` failed its own tool call**: `server.d/register.json` still declared the `{success, result}` envelope as the `outputSchema` of `manual.progress`, whose script uses `mcp_result_json`, so every call got `output_schema`. The schema describes the data now. `mcp-bash migrate` does not read `register.json`; update an envelope schema there by hand.
+
+## [1.9.4] - 2026-10-14
+
+### Fixed
+- **The server stopped at startup in CI mode when `TMPDIR` was unset**: with `MCPBASH_CI_MODE=true` outside GitHub Actions (no `RUNNER_TEMP` or `GITHUB_WORKSPACE`), for example in a Docker container, bash 4 and later stopped with "TMPDIR: unbound variable", because the temp-root default was a malformed expansion. It now uses `TMPDIR` without its trailing slash, or `/tmp`. Bash 3.2 was not stopped but got an empty root, which a later fallback replaced.
+- **`mcp-bash run-tool` put a log line in the result for a resource outside the roots**: the warning that names the skipped path and the allowed roots was written to the same stdout as the resource, and became a `{"type":"resource"}` block holding the log notification. Only resource objects are embedded now. Over stdio the server was not affected.
 
 ## [1.9.3] - 2026-10-13
 
