@@ -1419,7 +1419,9 @@ mcp_tools_stderr_tail() {
 	local limit="${2:-4096}"
 	[ -n "${file}" ] || return 0
 	[ -f "${file}" ] || return 0
-	tail -c "${limit}" "${file}" 2>/dev/null | tr -d '\0'
+	# LC_ALL=C: in a UTF-8 locale BSD tr stops at the first byte that isn't
+	# valid UTF-8 ("Illegal byte sequence") and the rest of the tail is lost.
+	tail -c "${limit}" "${file}" 2>/dev/null | LC_ALL=C tr -d '\0'
 }
 
 mcp_tools_trace_enabled() {
@@ -2215,7 +2217,7 @@ mcp_tools_call() {
 	fi
 	local trace_line=""
 	if [ "${trace_enabled}" = "true" ] && [ -n "${trace_file}" ] && [ -f "${trace_file}" ]; then
-		trace_line="$(tail -n 1 "${trace_file}" 2>/dev/null | head -c 512 | tr -d '\0')"
+		trace_line="$(tail -n 1 "${trace_file}" 2>/dev/null | head -c 512 | LC_ALL=C tr -d '\0')"
 	fi
 	local trace_available="false"
 	if [[ "${trace_enabled}" = "true" && "${trace_size}" -gt 0 ]]; then
@@ -2368,7 +2370,7 @@ mcp_tools_call() {
 			fi
 		fi
 
-		message_from_stderr="$(printf '%s' "${stderr_tail}" | head -n 1 | tr -d '\r')"
+		message_from_stderr="$(printf '%s' "${stderr_tail}" | head -n 1 | LC_ALL=C tr -d '\r')"
 		if [ -z "${message_from_stderr}" ]; then
 			message_from_stderr="Tool failed"
 		fi

@@ -5,6 +5,11 @@ All notable changes to mcp-bash-framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **A tool's stderr with bytes that aren't valid UTF-8 was cut short on macOS**: in a UTF-8 locale, BSD `tr` stops at the first byte that isn't valid UTF-8, so `_meta.stderr`, the error message of a failed tool and `error.data.stderrTail` ended there, and the server logged "tr: Illegal byte sequence". Those `tr` calls now run in the C locale; the bytes reach the client as U+FFFD.
+
 ## [1.9.2] - 2026-10-13
 
 ### Behaviour changes to check before upgrading
