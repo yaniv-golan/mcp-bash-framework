@@ -8,6 +8,7 @@
 set -euo pipefail
 
 mcp_handle_discover() {
+	# shellcheck disable=SC2034  # Handlers are called with (method, payload)
 	local method="$1"
 	local json_payload="$2"
 	local id
