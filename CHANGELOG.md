@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **`mcp_client_supports_ui` was always false inside tools**: the SDK reads `MCPBASH_CLIENT_SUPPORTS_UI` or a file in the server's state directory, but the server passed neither to tools. So `mcp_result_with_ui` always sent its text fallback, even to a client that declared the MCP Apps extension (`io.modelcontextprotocol/ui`). The server now sets `MCPBASH_CLIENT_SUPPORTS_UI` (`1` or `0`) for each tool call.
 - **A tool's stderr with bytes that aren't valid UTF-8 was cut short on macOS**: in a UTF-8 locale, BSD `tr` stops at the first byte that isn't valid UTF-8, so `_meta.stderr`, the error message of a failed tool and `error.data.stderrTail` ended there, and the server logged "tr: Illegal byte sequence". Those `tr` calls now run in the C locale; the bytes reach the client as U+FFFD.
 
 ## [1.9.2] - 2026-10-13

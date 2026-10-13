@@ -93,6 +93,7 @@ TESTS=(
 	"test_tools_errors.sh"
 	"test_tools_stderr_invalid_utf8.sh"
 	"test_registry_stale_cache_startup.sh"
+	"test_tool_ui_capability.sh"
 	"test_tools_refusals.sh"
 	"test_tools_schema.sh"
 	"test_prompts.sh"
