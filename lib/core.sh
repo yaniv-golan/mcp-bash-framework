@@ -198,7 +198,8 @@ mcp_core_build_instructions() {
 #   MCP_CORE_REMOVED_API_RULES), for the instructions note;
 # - once a day it runs every rule instead and prints one line to stderr with
 #   the number of uses of APIs that change in 2.0 (the stamp holds the date).
-# A scan is started at most once an hour per project (removed-api.attempt is
+# A new framework version always rescans. Otherwise a scan is started at
+# most once an hour per project (removed-api.attempt is
 # touched as it starts, so a scan cut short by a server that exits doesn't
 # start again on every launch), and only when the rules (lib/core.sh, the
 # rule engine and the rule files) or a file under the project changed since
@@ -239,7 +240,13 @@ mcp_core_start_deprecation_notice() {
 		if [ -n "${today}" ] && [ "${last}" != "${today}" ] && printf '%s\n' "${today}" >"${stamp}" 2>/dev/null; then
 			announce=1
 		fi
-		if [ "${announce}" = 0 ]; then
+		# The record names the framework version that wrote it: an upgrade
+		# always rescans, whatever file times it installed.
+		version=""
+		recorded=""
+		[ -f "${MCPBASH_HOME}/VERSION" ] && IFS= read -r version <"${MCPBASH_HOME}/VERSION" 2>/dev/null
+		[ -f "${scan_meta}" ] && IFS= read -r recorded <"${scan_meta}" 2>/dev/null
+		if [ "${announce}" = 0 ] && [ "${recorded}" = "${version}" ]; then
 			# A scan started within the hour, finished or not: nothing to do.
 			[ -f "${attempt}" ] && [ -n "$(find "${attempt}" -mmin -60 2>/dev/null)" ] && exit 0
 			if [ -f "${scan_meta}" ] && [ -f "${findings}" ]; then
@@ -295,8 +302,11 @@ EOF_RULES
 			rm -f "${removed_tmp}" "${removed_tmp}.sorted"
 		fi
 		if [ -n "${started}" ]; then
-			# The record's mtime is the time this scan started.
-			touch -r "${started}" "${started}.new" 2>/dev/null && mv -f "${started}.new" "${scan_meta}" 2>/dev/null
+			# The record holds the framework version; its mtime is the time this
+			# scan started.
+			printf '%s\n' "${version}" >"${started}.new" 2>/dev/null \
+				&& touch -r "${started}" "${started}.new" 2>/dev/null \
+				&& mv -f "${started}.new" "${scan_meta}" 2>/dev/null
 			rm -f "${started}" "${started}.new"
 		fi
 		[ "${announce}" = 1 ] && [ "${count}" -gt 0 ] || exit 0

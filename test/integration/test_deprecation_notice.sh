@@ -140,6 +140,17 @@ printf '%s\n' tools/fake/tool.sh >>"${F}"
 run old skipped
 grep -q '^tools/fake/tool.sh$' "${F}" || test_fail "an unchanged project was scanned again: $(cat "${F}")"
 
+printf ' -> another framework version: scanned again at once\n'
+R="${TEST_TMPDIR}/old/proj/.registry/scan/removed-api.scan"
+# What an upgrade that installs older file times looks like: the record
+# names another version, and nothing is newer than it.
+printf '%s\n' 0.0.1 >"${R}.v" && touch -r "${R}" "${R}.v" && mv -f "${R}.v" "${R}"
+WAIT_GONE="${F}:tools/fake/tool.sh" run old upgraded
+if grep -q '^tools/fake/tool.sh$' "${F}"; then
+	test_fail "a new framework version did not rescan"
+fi
+printf '%s\n' tools/fake/tool.sh >>"${F}"
+
 printf ' -> a changed file within the hour of the last scan: not scanned yet\n'
 sleep 1 # find -newer compares whole seconds on some systems
 printf '%s\n' '# edited' >>"${TEST_TMPDIR}/old/proj/tools/hello/tool.sh"
