@@ -711,6 +711,10 @@ mcp_fail() {
 	esac
 	local fail_message="${1:-Tool failed}"
 	shift 2>/dev/null || true
+	case "${1---hint}" in
+	--hint | --data) ;;
+	*) printf 'mcp_fail: arguments after MESSAGE other than --hint and --data are ignored\n' >&2 ;;
+	esac
 	__mcp_sdk_end_with_error tool_failed "${fail_message}" "$@"
 }
 
