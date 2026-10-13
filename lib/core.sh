@@ -1869,7 +1869,11 @@ mcp_core_poll_registries_once() {
 mcp_core_flush_stream() {
 	local key="$1"
 	local kind="$2"
+	# The worker's streams are progress.<key>.ndjson and logs.<key>.ndjson.
 	local stream="${MCPBASH_STATE_DIR}/${kind}.${key}.ndjson"
+	if [ "${kind}" = "log" ]; then
+		stream="${MCPBASH_STATE_DIR}/logs.${key}.ndjson"
+	fi
 	local offset_file="${stream}.offset"
 	[ -f "${stream}" ] || return 0
 	local last_offset=0
