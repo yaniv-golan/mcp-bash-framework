@@ -52,6 +52,6 @@ mig_apply() {
 	local text
 	text="$(mig_line "$1" "$2" | sed -E \
 		-e 's/(^|[^A-Za-z0-9_])mcp_fail -32602 /\1mcp_fail --type invalid_args /' \
-		-e 's/(^|[^A-Za-z0-9_])mcp_fail -32603 /\1mcp_fail --type internal /')"
+		-e 's/(^|[^A-Za-z0-9_])mcp_fail -32603 /\1mcp_fail --type tool_failed /')"
 	mig_replace_line "$1" "$2" "${text}"
 }

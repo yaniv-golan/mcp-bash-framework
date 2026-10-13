@@ -159,3 +159,20 @@ call_tool() {
 	run mcp-bash migrate --project-root "${PROJ}" --write
 	assert_success
 }
+
+@test "migrate: --write maps numeric mcp_fail codes to the types the runtime uses" {
+	mkdir -p "${PROJ}/tools/proj-n"
+	printf '{"name":"proj-n","description":"n","inputSchema":{"type":"object"}}\n' >"${PROJ}/tools/proj-n/tool.meta.json"
+	cat >"${PROJ}/tools/proj-n/tool.sh" <<'SH'
+#!/usr/bin/env bash
+source "${MCP_SDK:?}/tool-sdk.sh"
+[ -n "${A:-}" ] || mcp_fail -32602 "bad"
+mcp_fail -32603 "boom"
+SH
+	run mcp-bash migrate --project-root "${PROJ}" --write
+	grep -q 'mcp_fail --type invalid_args "bad"' "${PROJ}/tools/proj-n/tool.sh"
+	grep -q 'mcp_fail --type tool_failed "boom"' "${PROJ}/tools/proj-n/tool.sh" || {
+		cat "${PROJ}/tools/proj-n/tool.sh" >&2
+		return 1
+	}
+}
