@@ -15,8 +15,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 test_require_command jq
 
 test_create_tmpdir
-WS="${TEST_TMPDIR}/ws"
-test_stage_workspace "${WS}"
+# The framework is staged in FW; the project lives apart from it, as a real
+# one does (migrate scans the whole project).
+FW="${TEST_TMPDIR}/fw"
+test_stage_workspace "${FW}"
+WS="${TEST_TMPDIR}/project"
 mkdir -p "${WS}/server.d" "${WS}/lib"
 printf '%s\n' '{"name": "removed-api"}' >"${WS}/server.d/server.meta.json"
 
@@ -35,6 +38,13 @@ add_tool() {
 # An unmigrated tool: mcp_error, then exit (migrate rewrites this form).
 add_tool unmigrated 'mcp_error not_found "nothing here" --hint "list first"
 exit 0'
+# mcp_result_success with an envelope outputSchema: migrate rewrites both.
+add_tool unmigratedresult 'mcp_result_success "$(mcp_json_obj n 1)"'
+cat >"${WS}/tools/unmigratedresult/tool.meta.json" <<'JSON'
+{"name": "unmigratedresult", "description": "t", "inputSchema": {"type": "object"},
+ "outputSchema": {"type": "object", "required": ["success", "result"], "properties": {"success": {"type": "boolean"},
+  "result": {"type": "object", "properties": {"n": {"type": "string"}}}}}}
+JSON
 # A removed helper in a shared script outside the tool's directory: the
 # per-call check can't see it; the "command not found" gets a hint.
 printf '%s\n' 'reply_error() {' '	mcp_result_error "{\"type\":\"x\",\"message\":\"m\"}"' '}' >"${WS}/lib/common.sh"
@@ -52,10 +62,11 @@ session() {
 		printf '%s\n' '{"jsonrpc":"2.0","id":"init","method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}'
 		printf '%s\n' '{"jsonrpc":"2.0","method":"notifications/initialized"}'
 		call unmigrated
+		call unmigratedresult
 		call shared
 		call commented
 	} >"${req}"
-	MCPBASH_TOOL_ALLOWLIST='*' test_run_mcp "${WS}" "${req}" "${out}"
+	(cd "${FW}" && MCPBASH_PROJECT_ROOT="${WS}" MCPBASH_TOOL_ALLOWLIST='*' ./bin/mcp-bash <"${req}" >"${out}" 2>"${out}.stderr")
 	assert_json_lines "${out}"
 }
 resp() { jq -c --arg id "$2" 'select(.id == $id) | .result' "$1"; }
@@ -68,6 +79,7 @@ case "$(printf '%s' "${r}" | jq -r '.content[0].text')" in
 *"mcp-bash migrate"*) ;;
 *) test_fail "unmigrated tool: no migrate hint: ${r}" ;;
 esac
+assert_eq "mcp_result_success" "$(resp "${OUT}" unmigratedresult | jq -r '._meta["mcpbash/error"].data.removed')" "unmigrated mcp_result_success"
 r="$(resp "${OUT}" shared)"
 assert_eq "tool_failed" "$(printf '%s' "${r}" | jq -r '._meta["mcpbash/error"].type')" "shared script: ${r}"
 case "$(printf '%s' "${r}" | jq -r '._meta["mcpbash/error"].hint // empty')" in
@@ -77,11 +89,13 @@ esac
 assert_eq "fine" "$(resp "${OUT}" commented | jq -r '.content[0].text')" "a comment naming a removed helper"
 
 # migrate --write rewrites the unmigrated tool; it then runs.
-(cd "${WS}" && ./bin/mcp-bash migrate --project-root "${WS}" --write >/dev/null 2>&1) || true
+(cd "${FW}" && ./bin/mcp-bash migrate --project-root "${WS}" --write >"${TEST_TMPDIR}/migrate.out" 2>&1) || true
 grep -q 'mcp_fail --type not_found' "${WS}/tools/unmigrated/tool.sh" || test_fail "migrate --write did not rewrite the tool: $(cat "${WS}/tools/unmigrated/tool.sh")"
 OUT="${TEST_TMPDIR}/after.ndjson"
 session "${OUT}"
 r="$(resp "${OUT}" unmigrated)"
 assert_eq '[true,"not_found","nothing here"]' "$(printf '%s' "${r}" | jq -c '[.isError, ._meta["mcpbash/error"].type, ._meta["mcpbash/error"].message]')" "migrated tool: ${r}"
+r="$(resp "${OUT}" unmigratedresult)"
+assert_eq '[false,"1"]' "$(printf '%s' "${r}" | jq -c '[.isError, .structuredContent.n]')" "migrated mcp_result_success tool: ${r}"
 
 printf 'Removed API checks passed.\n'

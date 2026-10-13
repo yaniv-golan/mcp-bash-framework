@@ -46,12 +46,12 @@ action="$(printf '%s' "${resp}" | jq -r '.action')"
 if [ "${action}" = "accept" ]; then
 	confirmed="$(printf '%s' "${resp}" | jq -r '.content.confirmed')"
 	if [ "${confirmed}" = "true" ]; then
-		mcp_emit_text "confirmed"
+		mcp_result_text "confirmed"
 		exit 0
 	fi
 fi
 
-mcp_emit_text "not-confirmed:${action}"
+mcp_result_text "not-confirmed:${action}"
 exit 0
 SH
 chmod +x "${WORKROOT}/tools/elicitation/tool.sh"

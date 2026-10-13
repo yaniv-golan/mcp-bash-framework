@@ -46,7 +46,7 @@ mcp_client_supports_ui() {
 # --- Result helpers ---
 
 # Plain-text CallToolResult for clients without UI support. The fallback is
-# prose, not JSON, so it must not go through mcp_result_success (which expects
+# prose, not JSON, so it must not go through mcp_result_json (which expects
 # a JSON value and reports anything else as an error).
 __mcp_ui_text_result() {
 	if [ -n "${MCPBASH_JSON_TOOL_BIN:-}" ]; then

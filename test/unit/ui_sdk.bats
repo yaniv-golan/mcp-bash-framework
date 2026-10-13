@@ -36,11 +36,6 @@ setup() {
 	# shellcheck disable=SC1091
 	. "${MCPBASH_HOME}/sdk/ui-sdk.sh"
 
-	# Also need these for mcp_result_success
-	mcp_result_success() {
-		local text="$1"
-		"${MCPBASH_JSON_TOOL_BIN}" -n --arg text "${text}" '{content: [{type: "text", text: $text}], isError: false}'
-	}
 }
 
 teardown() {

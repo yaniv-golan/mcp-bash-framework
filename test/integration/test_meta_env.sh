@@ -30,7 +30,7 @@ JSON
 #!/usr/bin/env bash
 set -euo pipefail
 source "${MCP_SDK}/tool-sdk.sh"
-mcp_emit_json "$(mcp_json_obj secret "${SECRET_X:-absent}")"
+mcp_result_json "$(mcp_json_obj secret "${SECRET_X:-absent}")"
 SH
 	cat >"${ws}/providers/sec.sh" <<'SH'
 #!/usr/bin/env bash

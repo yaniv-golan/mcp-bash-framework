@@ -24,7 +24,7 @@ SH
 #!/usr/bin/env bash
 set -euo pipefail
 source "${MCP_SDK}/tool-sdk.sh"
-mcp_emit_json '{"other":1}'
+mcp_result_json '{"other":1}'
 SH
 	chmod +x "${PROJECT_ROOT}/tools/refuse/tool.sh" "${PROJECT_ROOT}/tools/badok/tool.sh"
 }

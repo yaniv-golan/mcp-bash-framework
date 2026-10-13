@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2034  # Used by test runner for reporting.
-TEST_DESC="SDK CallToolResult helpers (mcp_result_success, mcp_fail --type, mcp_json_truncate)."
+TEST_DESC="SDK CallToolResult helpers (mcp_result_json, mcp_fail --type, mcp_json_truncate)."
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -32,12 +32,12 @@ create_project_root() {
 PROJECT_ROOT="${TEST_TMPDIR}/result_helpers"
 create_project_root "${PROJECT_ROOT}"
 
-# Create a tool that uses mcp_result_success
+# Create a tool that uses mcp_result_json
 mkdir -p "${PROJECT_ROOT}/tools/success-test"
 cat <<'METADATA' >"${PROJECT_ROOT}/tools/success-test/tool.meta.json"
 {
   "name": "success-test",
-  "description": "Test mcp_result_success helper",
+  "description": "Test mcp_result_json",
   "arguments": {
     "type": "object",
     "properties": {
@@ -54,7 +54,7 @@ set -euo pipefail
 source "${MCP_SDK}/tool-sdk.sh"
 
 data=$(mcp_args_require '.data')
-mcp_result_success "$data"
+mcp_result_json "$data"
 TOOL
 chmod +x "${PROJECT_ROOT}/tools/success-test/tool.sh"
 
@@ -115,12 +115,12 @@ max_bytes=$(mcp_args_require '.max_bytes')
 data=$("${MCPBASH_JSON_TOOL_BIN}" -n --argjson c "$count" '[range($c)] | map({id: ., name: "item-\(.)"})')
 truncated=$(mcp_json_truncate "$data" "$max_bytes")
 
-mcp_result_success "$truncated"
+mcp_result_json "$truncated"
 TOOL
 chmod +x "${PROJECT_ROOT}/tools/truncate-test/tool.sh"
 
-# --- Test: mcp_result_success with simple object ---
-printf ' -> mcp_result_success returns structured envelope\n'
+# --- Test: mcp_result_json with simple object ---
+printf ' -> mcp_result_json returns the data as structuredContent\n'
 
 cat <<'EOF' >"${TEST_TMPDIR}/success_request.ndjson"
 {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}
@@ -131,8 +131,7 @@ EOF
 run_server "${PROJECT_ROOT}" "${TEST_TMPDIR}/success_request.ndjson" "${TEST_TMPDIR}/success_response.ndjson"
 
 # Check response structure
-assert_ndjson_has "${TEST_TMPDIR}/success_response.ndjson" '.id == 2 and .result.structuredContent.success == true'
-assert_ndjson_has "${TEST_TMPDIR}/success_response.ndjson" '.id == 2 and .result.structuredContent.result.foo == "bar"'
+assert_ndjson_has "${TEST_TMPDIR}/success_response.ndjson" '.id == 2 and .result.structuredContent.foo == "bar"'
 assert_ndjson_has "${TEST_TMPDIR}/success_response.ndjson" '.id == 2 and .result.isError == false'
 
 # --- Test: mcp_fail --type returns an error result ---
@@ -162,11 +161,11 @@ EOF
 
 run_server "${PROJECT_ROOT}" "${TEST_TMPDIR}/truncate_request.ndjson" "${TEST_TMPDIR}/truncate_response.ndjson"
 
-assert_ndjson_has "${TEST_TMPDIR}/truncate_response.ndjson" '.id == 2 and .result.structuredContent.result.truncated == true'
-assert_ndjson_has "${TEST_TMPDIR}/truncate_response.ndjson" '.id == 2 and .result.structuredContent.result.kept < .result.structuredContent.result.total'
+assert_ndjson_has "${TEST_TMPDIR}/truncate_response.ndjson" '.id == 2 and .result.structuredContent.truncated == true'
+assert_ndjson_has "${TEST_TMPDIR}/truncate_response.ndjson" '.id == 2 and .result.structuredContent.kept < .result.structuredContent.total'
 
-# --- Test: mcp_result_success handles JSON false value ---
-printf ' -> mcp_result_success handles JSON false value\n'
+# --- Test: mcp_result_json and JSON false ---
+printf ' -> mcp_result_json sends false as text only on a legacy protocol\n'
 
 cat <<'EOF' >"${TEST_TMPDIR}/false_request.ndjson"
 {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}
@@ -176,12 +175,11 @@ EOF
 
 run_server "${PROJECT_ROOT}" "${TEST_TMPDIR}/false_request.ndjson" "${TEST_TMPDIR}/false_response.ndjson"
 
-assert_ndjson_has "${TEST_TMPDIR}/false_response.ndjson" '.id == 2 and .result.structuredContent.success == true'
-assert_ndjson_has "${TEST_TMPDIR}/false_response.ndjson" '.id == 2 and .result.structuredContent.result == false'
+assert_ndjson_has "${TEST_TMPDIR}/false_response.ndjson" '.id == 2 and (.result | has("structuredContent") | not) and .result.content[0].text == "false"'
 assert_ndjson_has "${TEST_TMPDIR}/false_response.ndjson" '.id == 2 and .result.isError == false'
 
-# --- Test: mcp_result_success handles null value ---
-printf ' -> mcp_result_success handles JSON null value\n'
+# --- Test: mcp_result_json and JSON null ---
+printf ' -> mcp_result_json sends null as text only on a legacy protocol\n'
 
 cat <<'EOF' >"${TEST_TMPDIR}/null_request.ndjson"
 {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}
@@ -191,7 +189,6 @@ EOF
 
 run_server "${PROJECT_ROOT}" "${TEST_TMPDIR}/null_request.ndjson" "${TEST_TMPDIR}/null_response.ndjson"
 
-assert_ndjson_has "${TEST_TMPDIR}/null_response.ndjson" '.id == 2 and .result.structuredContent.success == true'
-assert_ndjson_has "${TEST_TMPDIR}/null_response.ndjson" '.id == 2 and .result.structuredContent.result == null'
+assert_ndjson_has "${TEST_TMPDIR}/null_response.ndjson" '.id == 2 and (.result | has("structuredContent") | not) and .result.content[0].text == "null"'
 
 printf 'Integration test for result helpers passed.\n'

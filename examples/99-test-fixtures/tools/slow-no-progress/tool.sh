@@ -13,4 +13,4 @@ duration="$(mcp_args_int ".duration" --default 10)"
 # Just sleep without emitting any progress
 sleep "$duration"
 
-mcp_result_success "$(mcp_json_obj message "Completed after ${duration}s")"
+mcp_result_json "$(mcp_json_obj message "Completed after ${duration}s")"

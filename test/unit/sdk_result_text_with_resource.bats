@@ -55,7 +55,7 @@ jq_check() {
 	: > "${MCP_TOOL_RESOURCES_FILE}"
 	result=$(mcp_result_text_with_resource '{"status":"done"}')
 	jq_check "$result" '.isError == false'
-	jq_check "$result" '.structuredContent.success == true'
+	jq_check "$result" '.isError == false'
 	# Resources file should be empty (no resources)
 	[[ ! -s "${MCP_TOOL_RESOURCES_FILE}" ]]
 }
@@ -249,8 +249,8 @@ jq_check() {
 
 @test "sdk_result_text_with_resource: JSON object data passed correctly" {
 	result=$(mcp_result_text_with_resource '{"key":"value","num":42}')
-	jq_check "$result" '.structuredContent.result.key == "value"'
-	jq_check "$result" '.structuredContent.result.num == 42'
+	jq_check "$result" '.structuredContent.key == "value"'
+	jq_check "$result" '.structuredContent.num == 42'
 }
 
 # ============================================================================

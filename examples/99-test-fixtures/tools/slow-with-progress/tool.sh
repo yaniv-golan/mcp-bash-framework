@@ -15,4 +15,4 @@ for i in $(seq 1 "$duration"); do
 	sleep 1
 done
 
-mcp_result_success "$(mcp_json_obj message "Completed after ${duration}s")"
+mcp_result_json "$(mcp_json_obj message "Completed after ${duration}s")"

@@ -37,7 +37,7 @@ EOF
 set -euo pipefail
 source "${MCP_SDK}/tool-sdk.sh"
 value="$(mcp_args_require '.value')"
-mcp_emit_json "$(mcp_json_obj message "${value}")"
+mcp_result_json "$(mcp_json_obj message "${value}")"
 EOF
 	chmod +x "${PROJECT_ROOT}/tools/echo/tool.sh"
 
@@ -54,7 +54,7 @@ EOF
 set -euo pipefail
 source "\${MCP_SDK}/tool-sdk.sh"
 touch "${side_effect_file}"
-mcp_emit_json "\$(mcp_json_obj message \"ran\")"
+mcp_result_json "\$(mcp_json_obj message \"ran\")"
 EOF
 	chmod +x "${PROJECT_ROOT}/tools/sideeffect/tool.sh"
 
@@ -71,7 +71,7 @@ EOF
 set -euo pipefail
 source "${MCP_SDK}/tool-sdk.sh"
 sleep 5
-mcp_emit_json "$(mcp_json_obj message "done")"
+mcp_result_json "$(mcp_json_obj message "done")"
 EOF
 	chmod +x "${PROJECT_ROOT}/tools/slow/tool.sh"
 }
@@ -138,7 +138,7 @@ EOF
 #!/usr/bin/env bash
 set -euo pipefail
 source "${MCP_SDK}/tool-sdk.sh"
-mcp_emit_json "$(mcp_json_obj message "added")"
+mcp_result_json "$(mcp_json_obj message "added")"
 EOF
 	chmod +x "${PROJECT_ROOT}/tools/added/tool.sh"
 
@@ -220,7 +220,7 @@ EOF
 #!/usr/bin/env bash
 set -euo pipefail
 source "${MCP_SDK}/tool-sdk.sh"
-mcp_emit_json "$(mcp_json_obj message "added")"
+mcp_result_json "$(mcp_json_obj message "added")"
 EOF
 	chmod +x "${PROJECT_ROOT}/tools/added/tool.sh"
 

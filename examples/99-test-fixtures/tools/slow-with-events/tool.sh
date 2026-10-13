@@ -33,4 +33,4 @@ result=$(mcp_run_with_progress \
 	--quiet \
 	-- bash -c "$(declare -f emit_events); emit_events $duration")
 
-mcp_result_success "$(mcp_json_obj message "Completed after ${duration}s" result "$result")"
+mcp_result_json "$(mcp_json_obj message "Completed after ${duration}s" result "$result")"

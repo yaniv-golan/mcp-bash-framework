@@ -41,8 +41,9 @@ mcp_ui_generate_from_template() {
 # --- Common HTML helpers ---
 
 # JavaScript helper shared by the templates that read tool results.
-# mcp_result_success wraps a tool's data as {success: true, result: <data>};
-# the templates want <data>. Anything else is returned unchanged.
+# A {success: true, result: <data>} envelope (mcp-bash 1.x's
+# mcp_result_success, or one a tool builds itself) is unwrapped to <data>;
+# anything else, such as mcp_result_json's data, is returned unchanged.
 _mcp_ui_js_unwrap() {
 	cat <<'JS'
     // mcp-unwrap:start

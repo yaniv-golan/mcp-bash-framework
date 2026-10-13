@@ -35,12 +35,12 @@ jq_get() {
 # Minimal mode tests
 # ============================================================================
 
-@test "sdk_result_helpers_minimal: mcp_result_success produces valid JSON" {
-	result=$(mcp_result_success '{"foo":"bar"}')
+@test "sdk_result_helpers_minimal: mcp_result_json produces valid JSON" {
+	result=$(mcp_result_json '{"foo":"bar"}')
 	# Must be valid JSON
 	printf '%s' "$result" | "${JQ_BIN}" -e '.' >/dev/null 2>&1
 	jq_check "$result" '.isError == false'
-	jq_check "$result" '.structuredContent.success == true'
+	jq_check "$result" '.structuredContent.foo == "bar"'
 }
 
 @test "sdk_result_helpers_minimal: mcp_json_truncate adds warning but returns data" {
@@ -55,16 +55,7 @@ jq_get() {
 	mcp_is_valid_json 'anything'
 }
 
-@test "sdk_result_helpers_minimal: mcp_result_success with special characters produces valid JSON" {
-	result=$(mcp_result_success '{"msg":"line1\nline2\ttab"}')
+@test "sdk_result_helpers_minimal: mcp_result_json with special characters produces valid JSON" {
+	result=$(mcp_result_json '{"msg":"line1\nline2\ttab"}')
 	printf '%s' "$result" | "${JQ_BIN}" -e '.' >/dev/null 2>&1
-}
-
-@test "sdk_result_helpers_minimal: mcp_result_success size threshold works" {
-	# Create a response that exceeds the small threshold
-	result=$(mcp_result_success '{"key":"value"}' 10)
-	printf '%s' "$result" | "${JQ_BIN}" -e '.' >/dev/null 2>&1
-	text=$(jq_get "$result" '.content[0].text')
-	# Should be the summary since envelope > 10 bytes
-	[[ "$text" == *too*large* ]]
 }

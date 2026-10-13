@@ -60,7 +60,7 @@ timeout=$(mcp_config_get '.timeout')
 retries=$(mcp_config_get '.retries')
 debug=$(mcp_config_get '.debug')
 
-mcp_result_success "$(mcp_json_obj api_key "$api_key" timeout "$timeout" retries "$retries" debug "$debug")"
+mcp_result_json "$(mcp_json_obj api_key "$api_key" timeout "$timeout" retries "$retries" debug "$debug")"
 TOOL
 chmod +x "${PROJECT_ROOT}/tools/config-tool/tool.sh"
 
@@ -82,7 +82,7 @@ mcp_config_load \
 # Try to get required value (should fail and trigger the error)
 secret=$(mcp_config_get '.secret') || mcp_fail --type invalid_args "Missing required config: secret"
 
-mcp_result_success '{"ok":true}'
+mcp_result_json '{"ok":true}'
 TOOL
 chmod +x "${PROJECT_ROOT}/tools/config-required/tool.sh"
 
@@ -99,10 +99,10 @@ run_server "${PROJECT_ROOT}" "${TEST_TMPDIR}/req1.jsonl" "${TEST_TMPDIR}/resp1.j
 
 # Check response using helper
 assert_ndjson_has "${TEST_TMPDIR}/resp1.jsonl" '.id == 1 and .result.isError == false'
-assert_ndjson_has "${TEST_TMPDIR}/resp1.jsonl" '.id == 1 and .result.structuredContent.result.api_key == "from_file"'
-assert_ndjson_has "${TEST_TMPDIR}/resp1.jsonl" '.id == 1 and .result.structuredContent.result.timeout == "30"'
-assert_ndjson_has "${TEST_TMPDIR}/resp1.jsonl" '.id == 1 and .result.structuredContent.result.retries == "3"'
-assert_ndjson_has "${TEST_TMPDIR}/resp1.jsonl" '.id == 1 and .result.structuredContent.result.debug == "false"'
+assert_ndjson_has "${TEST_TMPDIR}/resp1.jsonl" '.id == 1 and .result.structuredContent.api_key == "from_file"'
+assert_ndjson_has "${TEST_TMPDIR}/resp1.jsonl" '.id == 1 and .result.structuredContent.timeout == "30"'
+assert_ndjson_has "${TEST_TMPDIR}/resp1.jsonl" '.id == 1 and .result.structuredContent.retries == "3"'
+assert_ndjson_has "${TEST_TMPDIR}/resp1.jsonl" '.id == 1 and .result.structuredContent.debug == "false"'
 
 echo "✓ Test 1: Tool loads config and uses values"
 

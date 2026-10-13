@@ -718,28 +718,6 @@ mcp_fail() {
 	__mcp_sdk_end_with_error tool_failed "${fail_message}" "$@"
 }
 
-mcp_emit_text() {
-	local text="$1"
-	printf '%s' "${text}"
-}
-
-mcp_emit_json() {
-	local json="$1"
-	if [ "${MCPBASH_MODE:-full}" != "minimal" ] && [ -n "${MCPBASH_JSON_TOOL_BIN:-}" ]; then
-		case "${MCPBASH_JSON_TOOL}" in
-		gojq | jq)
-			local compact_json
-			compact_json="$(printf '%s' "${json}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.' 2>/dev/null || true)"
-			if [ -n "${compact_json}" ]; then
-				printf '%s' "${compact_json}"
-				return 0
-			fi
-			;;
-		esac
-	fi
-	printf '%s' "${json}"
-}
-
 # Roots helpers ---------------------------------------------------------------
 
 mcp_roots_list() {
@@ -1193,15 +1171,6 @@ mcp_byte_length() {
 	printf '%s' "$1" | wc -c | tr -d ' '
 }
 
-# mcp_result_success <json_data> [max_text_bytes]
-# Emit MCP CallToolResult with success envelope
-#
-# Arguments:
-#   json_data       - Valid JSON data to return
-#   max_text_bytes  - Max size for content[].text (default: MCPBASH_MAX_TEXT_BYTES or 102400)
-#
-# Output: CallToolResult JSON to stdout
-# Returns: 0 always (MCP tool errors are expressed via isError, not exit codes)
 # mcp_result_text TEXT [--resource PATH [--mime TYPE] [--uri URI]]...
 # Frozen (mcp-bash 1.8+, unchanged in 2.0). A successful result with one text
 # block and no structured content. Prints the result; does not end the tool.
@@ -1359,95 +1328,11 @@ mcp_result_json() {
 	return 0
 }
 
-mcp_result_success() {
-	local data="$1"
-	# Sanitize max_text_bytes to avoid set -e hazards from non-numeric input
-	# Default: 100KB (102400) - large enough for typical LLM responses to avoid
-	# unhelpful summaries like "Success: object with 3 keys"
-	local max_text_bytes
-	max_text_bytes=$(__mcp_sdk_uint_or_default "${2:-}" "${MCPBASH_MAX_TEXT_BYTES:-102400}")
-
-	# Guard: reject empty input
-	if [ -z "$data" ]; then
-		mcp_tool_error_result internal "Empty data passed to mcp_result_success"
-		return 0 # Always return 0 after emitting CallToolResult
-	fi
-
-	if [ "${MCPBASH_MODE:-full}" != "minimal" ] && [ -n "${MCPBASH_JSON_TOOL_BIN:-}" ]; then
-		# Full mode: validate, wrap, and emit in a single jq pipeline
-		# - Use -s (slurp) to enforce single JSON value (reject streams like "1 2")
-		# - Use tojson on parsed value for content[].text (avoids argv pressure entirely)
-		# - Stream everything via stdin (no --arg with large payloads)
-		# NOTE: Do NOT use -n with -s; -n means "don't read input" which breaks slurp
-		printf '%s' "$data" | "${MCPBASH_JSON_TOOL_BIN}" -c -s --argjson max "$max_text_bytes" '
-            # Validate single value
-            if length != 1 then
-                {
-                    content: [{type: "text", text: "Error: input must be single JSON value"}],
-                    structuredContent: {success: false, error: {type: "internal_error", message: "Input contained multiple JSON values", count: length}},
-                    isError: true
-                }
-            else
-                .[0] as $data |
-                {success: true, result: $data} as $envelope |
-                ($envelope | tojson) as $text |
-                # Use utf8bytelength for accurate byte counting (length counts codepoints)
-                if ($text | utf8bytelength) <= $max then
-                    # Small: full envelope in text
-                    {
-                        content: [{type: "text", text: $text}],
-                        structuredContent: $envelope,
-                        isError: false
-                    }
-                else
-                    # Large: summary in text
-                    (
-                        if ($data | type) == "array" then "Success: array with \($data | length) items"
-                        elif ($data | type) == "object" then "Success: object with \($data | keys | length) keys"
-                        else "Success: \($data | tostring | .[0:100])"
-                        end
-                    ) as $summary |
-                    {
-                        content: [{type: "text", text: $summary}],
-                        structuredContent: $envelope,
-                        isError: false
-                    }
-                end
-            end
-        ' 2>/dev/null || {
-			# jq failed (invalid JSON)
-			mcp_tool_error_result internal "Invalid JSON passed to mcp_result_success"
-		}
-	else
-		# Minimal mode: wrap blindly (can't validate or parse)
-		local envelope
-		envelope="{\"success\":true,\"result\":${data}}"
-
-		# Byte-accurate size check
-		local size
-		size=$(printf '%s' "$envelope" | wc -c | tr -d ' ')
-
-		if [ "$size" -le "$max_text_bytes" ]; then
-			# Small: full JSON in text
-			# __mcp_sdk_json_escape returns a QUOTED string like "foo", use directly
-			local escaped_text
-			escaped_text=$(__mcp_sdk_json_escape "$envelope")
-			printf '{"content":[{"type":"text","text":%s}],"structuredContent":%s,"isError":false}\n' \
-				"$escaped_text" "$envelope"
-		else
-			# Large: generic summary (no jq to introspect type)
-			printf '{"content":[{"type":"text","text":"Success: response too large for text content"}],"structuredContent":%s,"isError":false}\n' \
-				"$envelope"
-		fi
-	fi
-	return 0
-}
-
 # mcp_result_text_with_resource <text_or_json> [--path <file>] [--mime <type>] [--uri <uri>]
 # Combine text output with optional embedded resources in a single call.
 #
 # Arguments:
-#   $1       - Text content or JSON object (passed to mcp_result_success)
+#   $1       - JSON value (passed to mcp_result_json)
 #   --path   - File path to embed as resource (repeatable)
 #   --mime   - MIME type for preceding --path, reported as given. If omitted,
 #              the server detects it. Detection always decides text vs blob.
@@ -1555,8 +1440,7 @@ mcp_result_text_with_resource() {
 		fi
 	fi
 
-	# Delegate to mcp_result_success
-	mcp_result_success "$data"
+	mcp_result_json "$data"
 }
 
 # ============================================================================
