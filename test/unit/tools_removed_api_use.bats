@@ -122,3 +122,24 @@ check() {
 	check "${TOOL_DIR}/run"
 	assert_output "mcp_error"
 }
+
+@test "removed api: the result is cached per script until the script changes" {
+	MCPBASH_STATE_DIR="${BATS_TEST_TMPDIR}/state"
+	mkdir -p "${MCPBASH_STATE_DIR}"
+	local path
+	path="$(tool 'mcp_error not_found x')"
+	touch -t 202001010000 "${path}"
+	mcp_tools_removed_api_check "${path}"
+	assert_equal "${MCP_TOOLS_REMOVED_API_HIT}" "mcp_error"
+	# A cache hit doesn't run awk: a broken program doesn't change the answer.
+	local saved="${MCP_TOOLS_REMOVED_API_AWK}"
+	MCP_TOOLS_REMOVED_API_AWK='BEGIN { print "wrong"; exit }'
+	mcp_tools_removed_api_check "${path}"
+	assert_equal "${MCP_TOOLS_REMOVED_API_HIT}" "mcp_error"
+	MCP_TOOLS_REMOVED_API_AWK="${saved}"
+	# Edited in place (newer than the cache): read again.
+	printf '#!/usr/bin/env bash\nmcp_result_text ok\n' >"${path}"
+	touch -t 203001010000 "${path}"
+	mcp_tools_removed_api_check "${path}"
+	assert_equal "${MCP_TOOLS_REMOVED_API_HIT}" ""
+}

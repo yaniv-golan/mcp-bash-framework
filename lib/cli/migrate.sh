@@ -226,7 +226,7 @@ mcp_cli_migrate() {
 	local cache_cleared="false"
 	if [ "${write}" = "true" ] && [ "${applied}" -gt 0 ]; then
 		local registry_dir="${MCPBASH_REGISTRY_DIR:-${project_root}/.registry}" cache_file target
-		for cache_file in tools.json removed-api.findings removed-api.scan; do
+		for cache_file in tools.json removed-api.findings removed-api.scan removed-api.attempt; do
 			target="${registry_dir}/${cache_file}"
 			[ -e "${target}" ] || continue
 			if [ "${in_git:-false}" = "true" ] && git -C "${project_root}" ls-files --error-unmatch -- "${target}" >/dev/null 2>&1; then

@@ -134,9 +134,14 @@ printf '%s\n' tools/fake/tool.sh >>"${F}"
 run old skipped
 grep -q '^tools/fake/tool.sh$' "${F}" || test_fail "an unchanged project was scanned again: $(cat "${F}")"
 
-printf ' -> a changed file: scanned again\n'
+printf ' -> a changed file within the hour of the last scan: not scanned yet\n'
 sleep 1 # find -newer compares whole seconds on some systems
 printf '%s\n' '# edited' >>"${TEST_TMPDIR}/old/proj/tools/hello/tool.sh"
+run old too-soon
+grep -q '^tools/fake/tool.sh$' "${F}" || test_fail "a scan started again within the hour"
+
+printf ' -> a changed file, an hour later: scanned again\n'
+touch -t 202001010000 "${TEST_TMPDIR}/old/proj/.registry/removed-api.attempt"
 WAIT_GONE="${F}:tools/fake/tool.sh" run old rescanned
 if grep -q '^tools/fake/tool.sh$' "${F}"; then
 	test_fail "a changed project was not scanned again"

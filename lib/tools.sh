@@ -810,16 +810,26 @@ _mcp_tools_side_channel_error_result() {
 MCP_TOOLS_REMOVED_SDK_NAMES="mcp_error mcp_result_error mcp_fail_invalid_args mcp_result_success mcp_emit_text mcp_emit_json mcp_result_text_with_resource mcp_result_with_ui mcp_result_with_ui_data"
 
 # Print the first removed SDK helper the tool's own script calls, or nothing.
-# Only the entry script is read, and only when it is a shell script: other
-# tools in the same directory, helpers it sources and non-shell tools are
-# never blocked (a removed helper they call fails with "command not found",
-# and mcp_tools_removed_api_hint names it). Only calls in command position
-# count; strings, comments, heredoc bodies, arguments, assignments and a
-# function of the same name defined in the script don't. One awk per call,
-# with no cache, so a tool fixed in place runs on its next call.
 # Usage: mcp_tools_removed_api_use TOOL_PATH
 mcp_tools_removed_api_use() {
-	local path="$1" first=""
+	mcp_tools_removed_api_check "$1"
+	[ -z "${MCP_TOOLS_REMOVED_API_HIT}" ] || printf '%s\n' "${MCP_TOOLS_REMOVED_API_HIT}"
+}
+
+# Set MCP_TOOLS_REMOVED_API_HIT to the first removed SDK helper the tool's
+# own script calls, or to "". Only the entry script is read, and only when
+# it is a shell script: other tools in the same directory, helpers it sources
+# and non-shell tools are never blocked (a removed helper they call fails
+# with "command not found", and mcp_tools_removed_api_hint names it). Only
+# calls in command position count; strings, comments, heredoc bodies,
+# arguments, assignments and a function of the same name defined in the
+# script don't. The result is cached in the state dir while the cache file
+# is newer than the script, so a repeat call starts no process; a script
+# edited in place (mcp-bash migrate --write) is read again on its next call.
+# Usage: mcp_tools_removed_api_check TOOL_PATH
+mcp_tools_removed_api_check() {
+	local path="$1" first="" cache="" cached_path="" cached_hit=""
+	MCP_TOOLS_REMOVED_API_HIT=""
 	[ -n "${MCP_TOOLS_REMOVED_SDK_NAMES}" ] && [ -f "${path}" ] && [ -r "${path}" ] || return 0
 	case "${path}" in
 	*.sh | *.bash) ;;
@@ -831,10 +841,27 @@ mcp_tools_removed_api_use() {
 		esac
 		;;
 	esac
-	awk -v names="${MCP_TOOLS_REMOVED_SDK_NAMES}" "${MCP_TOOLS_REMOVED_API_AWK}" "${path}" 2>/dev/null || true
+	if [ -n "${MCPBASH_STATE_DIR:-}" ] && [ -d "${MCPBASH_STATE_DIR}" ]; then
+		local key="${path//[^A-Za-z0-9.-]/-}"
+		cache="${MCPBASH_STATE_DIR}/removed-api.${key}"
+		# Strictly newer: a script written in the same second as the cache
+		# (file times may be whole seconds) is read again.
+		if [ -f "${cache}" ] && [ "${cache}" -nt "${path}" ]; then
+			{
+				IFS= read -r cached_path
+				IFS= read -r cached_hit
+			} <"${cache}" 2>/dev/null
+			if [ "${cached_path}" = "${path}" ]; then
+				MCP_TOOLS_REMOVED_API_HIT="${cached_hit}"
+				return 0
+			fi
+		fi
+	fi
+	MCP_TOOLS_REMOVED_API_HIT="$(awk -v names="${MCP_TOOLS_REMOVED_SDK_NAMES}" "${MCP_TOOLS_REMOVED_API_AWK}" "${path}" 2>/dev/null)" || MCP_TOOLS_REMOVED_API_HIT=""
+	[ -z "${cache}" ] || printf '%s\n%s\n' "${path}" "${MCP_TOOLS_REMOVED_API_HIT}" >"${cache}" 2>/dev/null || true
 }
 
-# The awk program for mcp_tools_removed_api_use: a small shell tokenizer.
+# The awk program for mcp_tools_removed_api_check: a small shell tokenizer.
 # shellcheck disable=SC2016  # An awk program, not shell.
 MCP_TOOLS_REMOVED_API_AWK='
 	# Prints the first removed helper called in command position, unless the
@@ -1959,7 +1986,8 @@ mcp_tools_call() {
 	# A tool that still calls an SDK helper removed in 2.0 doesn't run: it would
 	# fail part-way (or, without set -e, carry on as if the helper had worked).
 	local removed_api
-	removed_api="$(mcp_tools_removed_api_use "${absolute_path}")"
+	mcp_tools_removed_api_check "${absolute_path}"
+	removed_api="${MCP_TOOLS_REMOVED_API_HIT}"
 	if [ -n "${removed_api}" ]; then
 		# Like a policy denial, the tool didn't run: no exit code or stderr.
 		_mcp_tools_load_tool_error_sdk

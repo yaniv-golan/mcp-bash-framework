@@ -97,8 +97,9 @@ mcp_spec_build_initialize_response() {
 	server_info="$(mcp_spec_build_server_info)"
 
 	local instructions_field="" instructions="${MCPBASH_SERVER_INSTRUCTIONS:-}"
-	if command -v mcp_core_instructions_text >/dev/null 2>&1; then
-		instructions="$(mcp_core_instructions_text)"
+	if command -v mcp_core_build_instructions >/dev/null 2>&1; then
+		mcp_core_build_instructions
+		instructions="${MCP_CORE_INSTRUCTIONS}"
 	fi
 	if [ "${protocol}" != "2024-11-05" ] && [ -n "${instructions}" ]; then
 		local instructions_json
