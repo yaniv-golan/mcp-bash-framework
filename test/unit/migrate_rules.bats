@@ -51,6 +51,13 @@ check_fixture() {
 	done
 }
 
+@test "migrate rules: registered completion scripts are found without a JSON tool too" {
+	run env MCPBASH_JSON_TOOL_BIN=false bash -c '. "$1/lib/migrate_rules.sh"; mcp_migrate_detect "$2" --only 2-completion-env' _ "${MCPBASH_HOME}" "${FX}/2-completion-env/before"
+	assert_success
+	assert_output --partial $'\tcompletions/suggest\t3\t'
+	assert_output --partial $'\tcompletions/alt.bash\t3\t'
+}
+
 @test "migrate rules: shared helper scripts are scanned; vendored runtime and node_modules never" {
 	run detect_rule 2-mcp-error "${FX}/engine/before"
 	assert_success

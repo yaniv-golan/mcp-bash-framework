@@ -1,0 +1,4 @@
+{"version": 1, "completions": [
+  {"name": "py.completion", "path": "completions/suggest", "timeoutSecs": 5},
+  {"name": "bash.completion", "path": "completions/alt.bash"}
+]}

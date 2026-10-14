@@ -46,7 +46,9 @@ mcp_migrate_rule_files() {
 
 # Print the files of one class under ROOT, one relative path per line.
 # Classes: project-sh (every .sh in the project) tool-sh server-sh ui-html
-# tool-meta config completion (completion scripts without .sh: *.completion)
+# tool-meta config completion (completion scripts that may not end in .sh:
+# *.completion next to prompts and resources, and the paths register.json
+# lists under "completions")
 # Vendored runtimes, node_modules, .git and .registry are never scanned.
 mcp_migrate_files() {
 	local class="$1" root="$2"
@@ -75,6 +77,20 @@ mcp_migrate_files() {
 			for sub in prompts resources; do
 				[ -d "${root}/${sub}" ] && find "${root}/${sub}" "${prune[@]}" -type f -name '*.completion' -print
 			done
+			# Registered scripts run whatever their name (no extension, .bash,
+			# .py). Without a JSON tool (or if it fails), every "path" in the
+			# file: a prompt template among them only costs a scan.
+			if [ -f "${server}/register.json" ]; then
+				local json_bin="${MCPBASH_JSON_TOOL_BIN:-}" rel
+				[ -n "${json_bin}" ] || json_bin="$(command -v jq || command -v gojq || printf false)"
+				{
+					"${json_bin}" -r '.completions[]?.path? // empty | strings' <"${server}/register.json" \
+						|| grep -o '"path"[[:space:]]*:[[:space:]]*"[^"]*"' "${server}/register.json" | sed 's/.*"\([^"]*\)"$/\1/'
+				} | while IFS= read -r rel; do
+					case "${rel}" in '' | /* | ../* | */../* | *..) continue ;; esac
+					[ -f "${root}/${rel}" ] && printf '%s\n' "${root}/${rel}"
+				done
+			fi
 			;;
 		ui-html)
 			[ -d "${tools}" ] && find "${tools}" "${prune[@]}" -type f -path '*/ui/*' -name '*.html' -print
