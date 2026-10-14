@@ -133,6 +133,16 @@ printf ' -> policy.sh that exits at the top level: every call refused, with an a
 printf '%s\n' "${DENY_SECRET}" 'exit 0' >"${POLICY_ROOT}/server.d/policy.sh"
 broken_policy exit "was not loaded: it stops while loading"
 
+printf ' -> a plain failing top-level command: every call refused, with an answer\n'
+printf '%s\n' "${DENY_SECRET}" 'false' >"${POLICY_ROOT}/server.d/policy.sh"
+broken_policy false "was not loaded: it stops while loading"
+
+printf ' -> a syntax error in a file policy.sh sources: every call refused\n'
+printf '%s\n' 'if then' >"${POLICY_ROOT}/server.d/policy-lib.sh"
+printf '%s\n' '. "${MCPBASH_SERVER_DIR}/policy-lib.sh"' "${DENY_SECRET}" >"${POLICY_ROOT}/server.d/policy.sh"
+broken_policy nested "was not loaded: it stops while loading"
+rm -f "${POLICY_ROOT}/server.d/policy-lib.sh"
+
 printf ' -> a last command that fails is fine: the hook still applies\n'
 printf '%s\n' "${DENY_SECRET}" '[ -n "${NOT_SET_ANYWHERE:-}" ] && export X=1' >"${POLICY_ROOT}/server.d/policy.sh"
 test_run_mcp "${POLICY_ROOT}" "${POLICY_ROOT}/req.ndjson" "${POLICY_ROOT}/lastfail.ndjson"

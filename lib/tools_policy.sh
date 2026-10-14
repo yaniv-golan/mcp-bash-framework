@@ -123,7 +123,7 @@ mcp_tools_policy_unsafe_reason() {
 	case "$(mcp_tools_policy_load_verdict "${policy_path}")" in
 	ok) ;;
 	syntax) printf '%s was not loaded: it has a syntax error (check it with: bash -n "%s")' "${policy_path}" "${policy_path}" ;;
-	*) printf '%s was not loaded: it stops while loading (a failing command under set -e, or a top-level exit)' "${policy_path}" ;;
+	*) printf '%s was not loaded: it stops while loading (a top-level command that fails, a syntax error in a file it sources, or a top-level exit)' "${policy_path}" ;;
 	esac
 	return 0
 }
@@ -149,17 +149,26 @@ mcp_tools_policy_load_verdict() {
 	if ! "${BASH:-bash}" -n "${policy_path}" 2>/dev/null; then
 		verdict=syntax
 	else
-		# shellcheck disable=SC1090,SC2034
-		verdict="$(
-			# fd 3 is this capture; everything the file prints is discarded.
+		# A fresh bash process: a subshell would inherit an errexit exemption
+		# from any || or if around this call, and then let a failing
+		# top-level command through. As strict as a worker on every bash: a
+		# top-level command that fails, or one in a file policy.sh sources (a
+		# syntax error there), ends the probe, as it ends a bash 3.2 worker.
+		# The status of the file as a whole (its last command, a top-level
+		# return) is fine: the ERR trap tells that case by where it fires.
+		# shellcheck disable=SC2016  # The probe script is expanded by the new bash.
+		verdict="$("${BASH:-bash}" -c '
 			exec 3>&1 </dev/null >/dev/null 2>&1
+			set -euo pipefail
+			probe_self="${BASH_SOURCE[0]:-}"
 			exited=false
-			# shellcheck disable=SC2329  # Called by a top-level exit in policy.sh.
+			trap "[ \"\${BASH_SOURCE[0]:-}\" = \"\${probe_self}\" ] && [ \"\${exited}\" = false ] && printf ok >&3" ERR
 			exit() { exited=true; }
-			. "${policy_path}" || true
+			. "$1"
 			unset -f exit
+			trap - ERR
 			[ "${exited}" = "false" ] && printf ok >&3
-		)" || true
+		' _ "${policy_path}" 2>/dev/null)" || true
 		[ -n "${verdict}" ] || verdict=failed
 	fi
 	[ -z "${cache}" ] || printf '%s\n%s' "${verdict}" "${content}" >"${cache}" 2>/dev/null || true
