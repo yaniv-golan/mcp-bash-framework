@@ -147,11 +147,9 @@ mcp_core_bootstrap_state() {
 	: >"${MCP_PROGRESS_STREAM}"
 	: >"${MCP_LOG_STREAM}"
 	mcp_runtime_log_startup_summary
+	# Prints why policy.sh can't be loaded, if so (mcp_tools_policy_startup_check).
 	mcp_core_check_policy_hook
 	mcp_core_start_deprecation_notice
-	if declare -F mcp_tools_policy_startup_check >/dev/null 2>&1; then
-		mcp_tools_policy_startup_check || true
-	fi
 }
 
 # Set once per start: true when server.d/policy.sh defines the 1.x hook

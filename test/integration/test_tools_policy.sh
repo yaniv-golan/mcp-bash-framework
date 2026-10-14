@@ -116,6 +116,8 @@ broken_policy() {
 	*"server.d/policy.sh) can't be loaded, so every tool call is refused"*) ;;
 	*) test_fail "${label}: no instructions sentence" ;;
 	esac
+	# The operator gets the reason on stderr, once.
+	test_assert_eq "$(grep -c 'was not loaded' "${POLICY_ROOT}/broken-${label}.ndjson.stderr")" "1"
 }
 DENY_SECRET='mcp_tools_policy_project() { [ "$1" != hello ] || { printf "hello is off"; return 1; }; }'
 
