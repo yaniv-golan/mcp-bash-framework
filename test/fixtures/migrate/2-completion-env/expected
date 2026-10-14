@@ -1,0 +1,4 @@
+completions/c.sh:2:manual
+prompts/p/p.completion.sh:2:manual
+prompts/q/q.completion:2:manual
+providers/kv.sh:2:manual

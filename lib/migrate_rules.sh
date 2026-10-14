@@ -46,7 +46,7 @@ mcp_migrate_rule_files() {
 
 # Print the files of one class under ROOT, one relative path per line.
 # Classes: project-sh (every .sh in the project) tool-sh server-sh ui-html
-# tool-meta config
+# tool-meta config completion (completion scripts without .sh: *.completion)
 # Vendored runtimes, node_modules, .git and .registry are never scanned.
 mcp_migrate_files() {
 	local class="$1" root="$2"
@@ -68,6 +68,12 @@ mcp_migrate_files() {
 			local sub
 			for sub in providers prompts resources completions; do
 				[ -d "${root}/${sub}" ] && find "${root}/${sub}" "${prune[@]}" -type f -name '*.sh' -print
+			done
+			;;
+		completion)
+			local sub
+			for sub in prompts resources; do
+				[ -d "${root}/${sub}" ] && find "${root}/${sub}" "${prune[@]}" -type f -name '*.completion' -print
 			done
 			;;
 		ui-html)
