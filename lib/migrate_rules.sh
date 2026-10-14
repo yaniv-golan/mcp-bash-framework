@@ -6,7 +6,8 @@
 # in its own subshell and defines:
 #   MIG_ID       stable id (equals the file name without .sh)
 #   MIG_API      integer API version the rule moves to
-#   MIG_KIND     default kind of its findings: auto | manual
+#   MIG_KIND     default kind of its findings: auto | manual | advisory (listed,
+#                but neither pending nor blocking the apiVersion marker)
 #   MIG_SUMMARY  one line, shown with each finding
 #   MIG_FIX      short replacement hint
 #   MIG_SCOPE    file classes to scan (see mcp_migrate_files)

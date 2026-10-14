@@ -197,3 +197,15 @@ SH
 	grep -q '^	--resource /etc/hosts --mime text/plain$' "${PROJ}/tools/proj-r/tool.sh" || { cat "${PROJ}/tools/proj-r/tool.sh" >&2; return 1; }
 	assert_equal "$(jq -c '[.outputSchema.type, (.outputSchema | has("description")), (.outputSchema.properties | keys)]' "${PROJ}/tools/proj-r/tool.meta.json")" '["object",false,["m"]]'
 }
+
+@test "migrate: an advisory finding is listed but doesn't keep the marker unset" {
+	mkdir -p "${PROJ}/scripts"
+	printf '%s\n' '#!/usr/bin/env bash' 'out="$(mcp-bash run-tool proj-a)"' "printf '%s' \"\${out}\" | jq 'select(.name == \"proj-a\")'" >"${PROJ}/scripts/check.sh"
+	git_init
+	run mcp-bash migrate --project-root "${PROJ}" --write
+	assert_success
+	run mcp-bash migrate --project-root "${PROJ}"
+	assert_success
+	assert_output --partial "[advisory] scripts/check.sh:3"
+	assert_equal "$(jq '.mcpBash.apiVersion // 0' "${PROJ}/server.d/server.meta.json")" "2"
+}
