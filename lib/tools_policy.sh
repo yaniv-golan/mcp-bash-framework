@@ -288,7 +288,7 @@ mcp_tools_policy_allowlist_effective() {
 		esac
 		return 0
 	fi
-	local IFS=' ,' noglob=0
+	local IFS=$' ,\t\n' noglob=0
 	case $- in *f*) noglob=1 ;; esac
 	set -f
 	# shellcheck disable=SC2086  # Word splitting on " ," is the point.
@@ -312,43 +312,22 @@ mcp_tools_policy_check_default() {
 	local metadata="$2"
 	local policy_context="${MCPBASH_TOOL_POLICY_CONTEXT:-}"
 
-	local allow_default="${MCPBASH_TOOL_ALLOW_DEFAULT:-deny}"
-	local allow_raw="${MCPBASH_TOOL_ALLOWLIST:-}"
-
-	if [ -z "${allow_raw}" ]; then
-		case "${allow_default}" in
-		allow | all)
-			allow_raw="*"
-			;;
-		*)
-			_MCP_TOOLS_ERROR_CODE=-32602
-			if [ "${policy_context}" = "run-tool" ]; then
-				_MCP_TOOLS_ERROR_MESSAGE="Tool '${name}' blocked by policy. Try: mcp-bash run-tool ${name} --allow-self ..."
-			else
-				_MCP_TOOLS_ERROR_MESSAGE="Tool '${name}' blocked by policy. Set MCPBASH_TOOL_ALLOWLIST in your MCP client config."
-			fi
-			return 1
-			;;
-		esac
-	fi
-
+	# One parser for the listing and the call (mcp_tools_policy_allowlist_effective).
 	local allowed="false"
-	local entry
-	local IFS=' ,'
-	read -r -a _mcp_allowlist <<<"${allow_raw}"
-	for entry in "${_mcp_allowlist[@]}"; do
-		[ -n "${entry}" ] || continue
-		case "${entry}" in
-		"*" | "all")
-			allowed="true"
-			break
-			;;
-		"${name}")
-			allowed="true"
-			break
-			;;
-		esac
-	done
+	mcp_tools_policy_allowlist_effective
+	if [ "${MCP_TOOLS_ALLOWLIST_ALL}" = "true" ]; then
+		allowed="true"
+	elif [ -z "${MCPBASH_TOOL_ALLOWLIST:-}" ]; then
+		_MCP_TOOLS_ERROR_CODE=-32602
+		if [ "${policy_context}" = "run-tool" ]; then
+			_MCP_TOOLS_ERROR_MESSAGE="Tool '${name}' blocked by policy. Try: mcp-bash run-tool ${name} --allow-self ..."
+		else
+			_MCP_TOOLS_ERROR_MESSAGE="Tool '${name}' blocked by policy. Set MCPBASH_TOOL_ALLOWLIST in your MCP client config."
+		fi
+		return 1
+	else
+		case " ${MCP_TOOLS_ALLOWLIST_NAMES} " in *" ${name} "*) allowed="true" ;; esac
+	fi
 
 	if [ "${allowed}" != "true" ]; then
 		_MCP_TOOLS_ERROR_CODE=-32602
