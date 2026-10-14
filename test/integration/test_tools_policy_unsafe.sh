@@ -46,7 +46,7 @@ call_write() {
 {"jsonrpc":"2.0","method":"notifications/initialized"}
 {"jsonrpc":"2.0","id":"call","method":"tools/call","params":{"name":"write","arguments":{}}}
 JSON
-	MCPBASH_TOOL_ALLOWLIST=write test_run_mcp "${WS}" "${TEST_TMPDIR}/requests.ndjson" "${out}"
+	MCPBASH_TOOL_ALLOWLIST='write' test_run_mcp "${WS}" "${TEST_TMPDIR}/requests.ndjson" "${out}"
 }
 
 result_of() {
