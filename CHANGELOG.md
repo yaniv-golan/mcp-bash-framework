@@ -37,6 +37,11 @@ Changes for 2.0.0.
 ### Fixed
 - **`examples/09-registry-overrides` failed its own tool call**: `server.d/register.json` still declared the `{success, result}` envelope as the `outputSchema` of `manual.progress`, whose script uses `mcp_result_json`, so every call got `output_schema`. The schema describes the data now. `mcp-bash migrate` does not read `register.json`; update an envelope schema there by hand.
 
+## [1.9.5] - 2026-10-14
+
+### Behaviour changes to check before upgrading
+- **Tool calls are refused while `server.d/policy.sh` can't be loaded safely**: the server refuses to source a `policy.sh` that it, `server.d` or the project root lets group or other users write, that is a symlink or that you don't own, or that has a syntax error. Before, it then ran without it: the operator allowlist still applied, but the project's own restrictions (a read-only mode, say) were silently dropped, the warning reached only the log, and with a syntax error bash 3.2 stopped the call with no response. Now every tool call gets an error result naming the file, the reason and the fix (for example `chmod go-w`), and the reason is printed on stderr at startup. Projects whose directories are group-writable (a `umask` of `002`, common on Ubuntu and Debian) must fix the permissions.
+
 ## [1.9.4] - 2026-10-14
 
 ### Fixed

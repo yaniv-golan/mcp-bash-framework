@@ -148,6 +148,9 @@ mcp_core_bootstrap_state() {
 	: >"${MCP_LOG_STREAM}"
 	mcp_runtime_log_startup_summary
 	mcp_core_start_deprecation_notice
+	if declare -F mcp_tools_policy_startup_check >/dev/null 2>&1; then
+		mcp_tools_policy_startup_check || true
+	fi
 }
 
 # Migrate rules about SDK helpers removed in 2.0 (their findings feed the

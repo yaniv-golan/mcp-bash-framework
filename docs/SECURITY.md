@@ -67,7 +67,7 @@ mcp-bash keeps the attack surface small: every tool is a subprocess with a contr
 > - Review `policy.sh` contents before deployment (treat as privileged code)
 > - Prefer the restrict-only hook `mcp_tools_policy_project`, which runs after the default deny-by-default allowlist and tool path checks and can only narrow them. Defining `mcp_tools_policy_check` instead **replaces** those checks; start it with `mcp_tools_policy_check_default "$@" || return 1`; `mcp-bash validate`/`doctor` warn when it doesn't.
 > - Policy denials (allowlist or project rule) are returned as a tool result with `isError: true` and type `policy_denied`, carrying the denial message; a rejected tool path stays a JSON-RPC error. The project hook runs in a subshell, so its output can't reach the protocol stream.
-> - Set restrictive permissions: `chmod 600 server.d/policy.sh`
+> - Set restrictive permissions: `chmod 600 server.d/policy.sh`. The server refuses to load a `policy.sh` that it, `server.d` or the project root lets group or other users write, that is a symlink or that you don't own, and one with a syntax error; while it exists but can't be loaded, **every tool call is refused** (since 1.9.5; before, the project's restrictions were silently skipped), and the reason is printed on stderr at startup.
 > - Do not deploy in directories writable by untrusted users
 > - Consider using environment-only policy (`MCPBASH_TOOL_ALLOWLIST`) instead of `policy.sh` when possible
 > - In shared environments, verify no other user has the same UID
