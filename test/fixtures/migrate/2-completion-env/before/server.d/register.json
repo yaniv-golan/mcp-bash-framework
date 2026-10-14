@@ -1,4 +1,6 @@
 {"version": 1, "completions": [
   {"name": "py.completion", "path": "completions/suggest", "timeoutSecs": 5},
-  {"name": "bash.completion", "path": "completions/alt.bash"}
+  {"name": "py2.completion", "path": "./completions/suggest"},
+  {"name": "bash.completion", "path": "completions/alt.bash"},
+  {"name": "dots.completion", "path": "completions/../completions/viadots"}
 ]}

@@ -87,8 +87,21 @@ mcp_migrate_files() {
 					"${json_bin}" -r '.completions[]?.path? // empty | strings' <"${server}/register.json" \
 						|| grep -o '"path"[[:space:]]*:[[:space:]]*"[^"]*"' "${server}/register.json" | sed 's/.*"\([^"]*\)"$/\1/'
 				} | while IFS= read -r rel; do
-					case "${rel}" in '' | /* | ../* | */../* | *..) continue ;; esac
-					[ -f "${root}/${rel}" ] && printf '%s\n' "${root}/${rel}"
+					# Resolved as the server does (mcp_completion_resolve_script_path):
+					# relative to the project root, or absolute; the directory with
+					# pwd -P; kept only inside the project. Printed under ROOT, so
+					# two spellings of one file are one finding.
+					local root_phys cand dir
+					root_phys="$(cd "${root}" && pwd -P)" || continue
+					case "${rel}" in
+					'') continue ;;
+					/*) cand="${rel}" ;;
+					*) cand="${root_phys}/${rel}" ;;
+					esac
+					dir="$(cd "$(dirname -- "${cand}")" 2>/dev/null && pwd -P)" || continue
+					cand="${dir}/$(basename -- "${cand}")"
+					case "${cand}" in "${root_phys}/"*) ;; *) continue ;; esac
+					[ -f "${cand}" ] && printf '%s\n' "${root}/${cand#"${root_phys}/"}"
 				done
 			fi
 			;;

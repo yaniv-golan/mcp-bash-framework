@@ -58,6 +58,22 @@ check_fixture() {
 	assert_output --partial $'\tcompletions/alt.bash\t3\t'
 }
 
+@test "migrate rules: a registered completion path is resolved as the server does" {
+	local root="${BATS_TEST_TMPDIR}/abs"
+	cp -R "${FX}/2-completion-env/before" "${root}"
+	# An absolute path inside the project counts; one outside it never runs.
+	mkdir -p "${BATS_TEST_TMPDIR}/outside"
+	printf '%s\n' '. "${MCP_PROMPT_METADATA}"' >"${BATS_TEST_TMPDIR}/outside/x"
+	printf '{"completions":[{"name":"a","path":"%s/completions/alt.bash"},{"name":"o","path":"%s/outside/x"},{"name":"u","path":"../outside/x"}]}\n' \
+		"${root}" "${BATS_TEST_TMPDIR}" >"${root}/server.d/register.json"
+	run detect_rule 2-completion-env "${root}"
+	assert_success
+	assert_output --partial "completions/alt.bash:3:manual"
+	refute_output --partial "outside"
+	# Each script once, however its path is spelled.
+	[ "$(printf '%s\n' "${output}" | grep -c 'completions/alt.bash')" -eq 1 ]
+}
+
 @test "migrate rules: shared helper scripts are scanned; vendored runtime and node_modules never" {
 	run detect_rule 2-mcp-error "${FX}/engine/before"
 	assert_success
