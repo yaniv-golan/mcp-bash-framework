@@ -81,7 +81,8 @@ mcp_migrate_files() {
 			# .py). Without a JSON tool (or if it fails), every "path" in the
 			# file: a prompt template among them only costs a scan.
 			if [ -f "${server}/register.json" ]; then
-				local json_bin="${MCPBASH_JSON_TOOL_BIN:-}" rel
+				local json_bin="${MCPBASH_JSON_TOOL_BIN:-}" rel root_phys cand dir
+				root_phys="$(cd "${root}" && pwd -P)" || root_phys="${root}"
 				[ -n "${json_bin}" ] || json_bin="$(command -v jq || command -v gojq || printf false)"
 				{
 					"${json_bin}" -r '.completions[]?.path? // empty | strings' <"${server}/register.json" \
@@ -91,8 +92,6 @@ mcp_migrate_files() {
 					# relative to the project root, or absolute; the directory with
 					# pwd -P; kept only inside the project. Printed under ROOT, so
 					# two spellings of one file are one finding.
-					local root_phys cand dir
-					root_phys="$(cd "${root}" && pwd -P)" || continue
 					case "${rel}" in
 					'') continue ;;
 					/*) cand="${rel}" ;;
