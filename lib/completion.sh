@@ -745,15 +745,24 @@ mcp_completion_run_provider() {
 		local timeout="${MCP_COMPLETION_PROVIDER_TIMEOUT}"
 		# User-sized values go to the script in files (a large one would
 		# not fit in the environment: Linux caps one variable at 128 KiB).
-		# Made here, outside the script's subshell, so they are removed
-		# however it ends, a timeout included.
-		local args_file meta_file=""
-		args_file="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-completion.args.XXXXXX")"
-		printf '%s' "${args_json}" >"${args_file}"
+		# Removed below when the script ends, and with the worker's other
+		# inputs (mcp_ids_clear_inputs) when a cancel or a timeout stops the
+		# worker first.
+		local args_file="" meta_file=""
+		if ! args_file="$(mcp_runtime_input_file completion-args)" \
+			|| ! printf '%s' "${args_json}" >"${args_file}"; then
+			rm -f "${tmp_out}" "${tmp_err}" ${args_file:+"${args_file}"}
+			MCP_COMPLETION_PROVIDER_RESULT_ERROR="Completion input could not be written"
+			return 1
+		fi
 		case "${MCP_COMPLETION_PROVIDER_TYPE}" in
 		prompt | resource)
-			meta_file="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-completion.meta.XXXXXX")"
-			printf '%s' "${MCP_COMPLETION_PROVIDER_METADATA}" >"${meta_file}"
+			if ! meta_file="$(mcp_runtime_input_file completion-meta)" \
+				|| ! printf '%s' "${MCP_COMPLETION_PROVIDER_METADATA}" >"${meta_file}"; then
+				rm -f "${tmp_out}" "${tmp_err}" "${args_file}" ${meta_file:+"${meta_file}"}
+				MCP_COMPLETION_PROVIDER_RESULT_ERROR="Completion input could not be written"
+				return 1
+			fi
 			;;
 		esac
 		if [ "${MCP_COMPLETION_PROVIDER_TYPE}" = "prompt" ]; then
@@ -835,10 +844,12 @@ mcp_completion_run_provider() {
 		if [ "${MCPBASH_PRESERVE_STATE:-false}" = "true" ] && [ -n "${MCPBASH_STATE_DIR:-}" ]; then
 			local safe_name="${name}"
 			safe_name="${safe_name//[^a-zA-Z0-9._-]/_}"
-			cp -f "${tmp_out}" "${MCPBASH_STATE_DIR}/completion.${safe_name}.${RANDOM}.stdout" 2>/dev/null || true
-			cp -f "${tmp_err}" "${MCPBASH_STATE_DIR}/completion.${safe_name}.${RANDOM}.stderr" 2>/dev/null || true
-			cp -f "${args_file}" "${MCPBASH_STATE_DIR}/completion.${safe_name}.${RANDOM}.args" 2>/dev/null || true
-			[ -z "${meta_file}" ] || cp -f "${meta_file}" "${MCPBASH_STATE_DIR}/completion.${safe_name}.${RANDOM}.meta" 2>/dev/null || true
+			# One suffix per call, so its files can be matched up.
+			local keep="${MCPBASH_STATE_DIR}/completion.${safe_name}.${RANDOM}"
+			cp -f "${tmp_out}" "${keep}.stdout" 2>/dev/null || true
+			cp -f "${tmp_err}" "${keep}.stderr" 2>/dev/null || true
+			cp -f "${args_file}" "${keep}.args" 2>/dev/null || true
+			[ -z "${meta_file}" ] || cp -f "${meta_file}" "${keep}.meta" 2>/dev/null || true
 		fi
 		rm -f "${tmp_out}" "${tmp_err}" "${args_file}" ${meta_file:+"${meta_file}"}
 		if [ "${status}" -ne 0 ]; then

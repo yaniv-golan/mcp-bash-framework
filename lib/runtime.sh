@@ -808,6 +808,21 @@ mcp_env_apply_curated_policy() {
 	return 0
 }
 
+# mcp_runtime_input_file TAG: print the path of a new 0600 file for an input
+# the server hands to a child (completion arguments, metadata, template
+# values). In a worker it goes in the state dir as inputs.<request key>.*,
+# which mcp_ids_clear_inputs removes however the worker ends (a cancel or a
+# timeout included); the state dir itself is removed when the server exits.
+mcp_runtime_input_file() {
+	local tag="$1"
+	local dir="${MCPBASH_STATE_DIR:-${MCPBASH_TMP_ROOT:-${TMPDIR:-/tmp}}}"
+	if [ -n "${MCPBASH_WORKER_KEY:-}" ]; then
+		mktemp "${dir}/inputs.${MCPBASH_WORKER_KEY}.${tag}.XXXXXX"
+	else
+		mktemp "${dir}/inputs.${tag}.XXXXXX"
+	fi
+}
+
 mcp_env_run_curated() {
 	local policy="$1"
 	shift || true

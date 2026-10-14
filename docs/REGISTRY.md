@@ -194,7 +194,7 @@ Project providers follow the same contract as framework providers:
 
 On a read that matched a [resource template](RESOURCE-TEMPLATES.md#reading-expanded-uris), and on no other read:
 - `MCP_RESOURCE_TEMPLATE_NAME` - The matched template's `name`
-- `MCP_RESOURCE_TEMPLATE_VARS_FILE` - Path of a file holding the matched values as a compact JSON object, for example `{"id":"42","rest":"a/b%2Fc"}`. The values are raw (not percent-decoded) and client-supplied: validate them as you would `$1`. Read it on stdin (`jq -r .id <"$MCP_RESOURCE_TEMPLATE_VARS_FILE"`); it is readable only by you and removed when the provider exits. Before 2.0 the JSON was in `MCP_RESOURCE_TEMPLATE_VARS`.
+- `MCP_RESOURCE_TEMPLATE_VARS_FILE` - Path of a file holding the matched values as a compact JSON object, for example `{"id":"42","rest":"a/b%2Fc"}`. The values are raw (not percent-decoded) and client-supplied: validate them as you would `$1`. Read it on stdin (`jq -r .id <"$MCP_RESOURCE_TEMPLATE_VARS_FILE"`); it is readable only by you and removed when the provider ends (a cancel or a timeout included), so the path is valid only while it runs. Before 2.0 the JSON was in `MCP_RESOURCE_TEMPLATE_VARS`.
 
 The server clears host values for both at startup, so they are set only by a template match. Completion scripts aren't providers; see [what a completion script receives](COMPLETION.md#what-a-completion-script-receives).
 

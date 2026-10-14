@@ -99,6 +99,16 @@ mcp_ids_clear_worker() {
 	if [ -f "${cancelled_path}" ]; then
 		rm -f "${cancelled_path}"
 	fi
+	mcp_ids_clear_inputs "${key}"
+}
+
+# Remove the input files the request's children were given
+# (mcp_runtime_input_file). Keys are base64url, so the glob matches only
+# this request's files.
+mcp_ids_clear_inputs() {
+	local key="$1"
+	[ -n "${key}" ] && [ -n "${MCPBASH_STATE_DIR:-}" ] || return 0
+	rm -f "${MCPBASH_STATE_DIR}/inputs.${key}."* 2>/dev/null || true
 }
 
 mcp_ids_mark_cancelled() {

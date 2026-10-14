@@ -2056,19 +2056,10 @@ mcp_resources_scheme_declared() {
 
 mcp_resources_read_file() {
 	local uri="$1"
-	local template_name="${2:-}"
-	local template_vars="${3:-}"
 	local script="${MCPBASH_HOME}/providers/file.sh"
 	local tmp_err
 	tmp_err="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-resource-file.XXXXXX")"
 	local output status
-	# The matched values go to the provider in a file: they come from the
-	# client's URI and can outgrow what one environment variable may hold.
-	local vars_file=""
-	if [ -n "${template_name}" ]; then
-		vars_file="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-resource-vars.XXXXXX")"
-		printf '%s' "${template_vars}" >"${vars_file}"
-	fi
 	if output="$(
 		(
 			local env_pairs=(
@@ -2076,20 +2067,18 @@ mcp_resources_read_file() {
 				"MCP_RESOURCES_ROOTS=${MCP_RESOURCES_ROOTS:-${MCPBASH_RESOURCES_DIR}}"
 				"MCPBASH_MAX_RESOURCE_BYTES=$(mcp_resources_max_bytes)"
 			)
-			if [ -n "${template_name}" ]; then
-				env_pairs+=("MCP_RESOURCE_TEMPLATE_NAME=${template_name}" "MCP_RESOURCE_TEMPLATE_VARS_FILE=${vars_file}")
-			fi
+			# The built-in file provider reads only the URI: no template env.
 			mcp_env_run_curated provider "${env_pairs[@]}" -- "${script}" "${uri}"
 		) 2>"${tmp_err}"
 	)"; then
-		rm -f "${tmp_err}" ${vars_file:+"${vars_file}"}
+		rm -f "${tmp_err}"
 		printf '%s' "${output}"
 		return 0
 	fi
 	status=$?
 	local message
 	message="$(cat "${tmp_err}" 2>/dev/null || true)"
-	rm -f "${tmp_err}" ${vars_file:+"${vars_file}"}
+	rm -f "${tmp_err}"
 	case "${status}" in
 	2)
 		mcp_resources_error -32603 "${message:-Resource outside allowed roots}"
@@ -2187,10 +2176,17 @@ mcp_resources_read_via_provider() {
 		local status=0
 		# The matched values go to the provider in a file: they come from the
 		# client's URI and can outgrow what one environment variable may hold.
+		# Removed below when the provider ends, and with the worker's other
+		# inputs (mcp_ids_clear_inputs) when a cancel or a timeout stops the
+		# worker first.
 		local vars_file=""
 		if [ -n "${template_name}" ]; then
-			vars_file="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-resource-vars.XXXXXX")"
-			printf '%s' "${template_vars}" >"${vars_file}"
+			if ! vars_file="$(mcp_runtime_input_file template-vars)" \
+				|| ! printf '%s' "${template_vars}" >"${vars_file}"; then
+				rm -f "${tmp_out}" "${tmp_err}" ${vars_file:+"${vars_file}"}
+				mcp_resources_error -32603 "Resource template values could not be written"
+				return 1
+			fi
 		fi
 		if (
 			local env_pairs=(
@@ -2276,7 +2272,7 @@ mcp_resources_read_via_provider() {
 
 	case "${provider}" in
 	file)
-		mcp_resources_read_file "${uri}" "${template_name}" "${template_vars}"
+		mcp_resources_read_file "${uri}"
 		;;
 	*)
 		mcp_resources_error -32603 "Unsupported resource provider"

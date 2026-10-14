@@ -1442,6 +1442,7 @@ mcp_core_spawn_worker() {
 	# A modern request's log level for the live flusher; a worker killed
 	# before its cleanup must not leave one for a later request with this id.
 	[ -z "${key}" ] || rm -f "${MCPBASH_STATE_DIR}/loglevel.${key}"
+	mcp_ids_clear_inputs "${key}"
 	local progress_token
 	progress_token="$(mcp_json_extract_progress_token "${json_line}")"
 	local handled_file=""
@@ -1476,6 +1477,8 @@ mcp_core_spawn_worker() {
 			if [ -n "${handled_file}" ]; then
 				rm -f "${handled_file}"
 			fi
+			# A killed worker never ran its cleanup.
+			mcp_ids_clear_inputs "${key}"
 		else
 			mcp_core_worker_entry "${handler}" "${method}" "${json_line}" "${id_json}" "${key}" "${stderr_file}"
 		fi
@@ -1782,6 +1785,8 @@ mcp_core_cancel_escalate() {
 	if mcp_core_process_alive "${pid}" || mcp_core_group_alive "${pgid}"; then
 		mcp_core_send_signal_chain "${pid}" "${pgid}" KILL
 	fi
+	# A worker stopped by KILL never ran its cleanup.
+	mcp_ids_clear_inputs "${key}"
 	# If the worker died while holding the stdout lock, force-release it using the tracked pid.
 	mcp_lock_release_owned "${MCPBASH_STDOUT_LOCK_NAME}" "${pid}"
 	# Fallback for environments where kill -0 cannot verify ownership (e.g., some Windows shells).

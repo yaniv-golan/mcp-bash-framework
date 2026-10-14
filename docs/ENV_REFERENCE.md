@@ -122,7 +122,7 @@ Operators may set these; the defaults suit most setups. The server refuses to st
 
 ## Set by the server for completion scripts and providers
 
-Read-only inputs the server gives a child process. User-sized values come in files: the variable holds the path of a JSON file, readable only by you and removed when the child exits. Read it on stdin (`jq … <"$MCP_COMPLETION_ARGS_FILE"`). The full lists are in [COMPLETION.md](COMPLETION.md#what-a-completion-script-receives) and [the provider contract](REGISTRY.md#provider-contract).
+Read-only inputs the server gives a child process. User-sized values come in files: the variable holds the path of a JSON file, readable only by you and removed when the child ends, however it ends, so the path is valid only while it runs. Read it on stdin (`jq … <"$MCP_COMPLETION_ARGS_FILE"`). The full lists are in [COMPLETION.md](COMPLETION.md#what-a-completion-script-receives) and [the provider contract](REGISTRY.md#provider-contract).
 
 | Variable | Set for | Notes |
 |---|---|---|

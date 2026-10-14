@@ -67,7 +67,7 @@ Resources work the same way, relative to `resources/`. A resource template has n
 
 ## What a completion script receives
 
-Completion scripts aren't resource providers (for those, see [the provider contract](REGISTRY.md#provider-contract)). Small values come in environment variables; the request arguments and the metadata, which can be any size, come in files (since 2.0: a large value can't be passed in the environment, which Linux caps at 128 KiB per variable). The files are readable only by you and are removed when the script exits.
+Completion scripts aren't resource providers (for those, see [the provider contract](REGISTRY.md#provider-contract)). Small values come in environment variables; the request arguments and the metadata, which can be any size, come in files (since 2.0: a large value can't be passed in the environment, which Linux caps at 128 KiB per variable). The files are readable only by you and are removed when the script ends, however it ends (a cancel or a timeout included), so the paths are valid only while it runs: don't keep them.
 
 Every script (manual, prompt and resource):
 - `MCP_COMPLETION_NAME` – completion name (string).
