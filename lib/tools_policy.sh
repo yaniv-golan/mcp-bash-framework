@@ -4,6 +4,7 @@
 set -euo pipefail
 
 : "${MCP_TOOLS_POLICY_LOADED:=false}"
+: "${MCP_TOOLS_POLICY_UNSAFE:=}"
 
 # Security: server.d/policy.sh is full shell code execution. Unlike
 # server.d/register.sh (which is opt-in and permission-checked), policy.sh is
@@ -102,24 +103,54 @@ mcp_tools_policy_check_secure_tree() {
 	return 0
 }
 
+# Why server.d/policy.sh can't be loaded safely: prints the reason, or
+# nothing when there is no policy.sh or it is fine. Insecure ownership or
+# permissions, a symlink, or a syntax error (checked with bash -n first: bash
+# 3.2 stops the whole shell on a syntax error in a sourced file).
+mcp_tools_policy_unsafe_reason() {
+	[ -n "${MCPBASH_SERVER_DIR:-}" ] || return 0
+	local policy_path="${MCPBASH_SERVER_DIR}/policy.sh"
+	[ -e "${policy_path}" ] || [ -L "${policy_path}" ] || return 0
+	if ! mcp_tools_policy_check_secure_tree "${policy_path}"; then
+		printf '%s was not loaded: it, server.d or the project root is writable by group or other users, is a symlink, or is not owned by you. Fix it, for example: chmod go-w "%s" "%s" "%s"' \
+			"${policy_path}" "${policy_path}" "${MCPBASH_SERVER_DIR}" "${MCPBASH_PROJECT_ROOT:-.}"
+		return 0
+	fi
+	if ! "${BASH:-bash}" -n "${policy_path}" 2>/dev/null; then
+		printf '%s was not loaded: it has a syntax error (check it with: bash -n "%s")' "${policy_path}" "${policy_path}"
+	fi
+	return 0
+}
+
+# At server start (main process): tell the operator on stderr when policy.sh
+# can't be loaded. The policy itself is loaded in each tool call's worker,
+# whose stderr is not the server's.
+mcp_tools_policy_startup_check() {
+	local reason
+	reason="$(mcp_tools_policy_unsafe_reason)"
+	[ -n "${reason}" ] || return 0
+	printf 'mcp-bash: %s. Every tool call is refused until it can be loaded.\n' "${reason}" >&2
+	return 0
+}
+
 # Initialize tool policy by sourcing server.d/policy.sh once per process.
+# A policy.sh that exists but can't be loaded safely is not sourced, and every
+# tool call is refused until it is fixed (MCP_TOOLS_POLICY_UNSAFE holds the
+# reason): running without it would drop the project's own restrictions.
 mcp_tools_policy_init() {
 	if [ "${MCP_TOOLS_POLICY_LOADED}" = "true" ]; then
 		return 0
 	fi
 	MCP_TOOLS_POLICY_LOADED="true"
-
-	# Project override lives in server.d/policy.sh; source if present/readable.
-	local policy_path="${MCPBASH_SERVER_DIR:-}/policy.sh"
-	if [ -n "${policy_path}" ] && [ -f "${policy_path}" ]; then
-		if ! mcp_tools_policy_check_secure_tree "${policy_path}"; then
-			if command -v mcp_logging_warning >/dev/null 2>&1; then
-				mcp_logging_warning "mcp.tools.policy" "Refusing to source insecure policy.sh (check ownership/perms/symlink): ${policy_path}"
-			else
-				printf '%s\n' "mcp-bash: refusing to source insecure policy.sh: ${policy_path}" >&2
-			fi
-			return 0
+	MCP_TOOLS_POLICY_UNSAFE="$(mcp_tools_policy_unsafe_reason)"
+	if [ -n "${MCP_TOOLS_POLICY_UNSAFE}" ]; then
+		if command -v mcp_logging_warning >/dev/null 2>&1; then
+			mcp_logging_warning "mcp.tools.policy" "${MCP_TOOLS_POLICY_UNSAFE}" || true
 		fi
+		return 0
+	fi
+	local policy_path="${MCPBASH_SERVER_DIR:-}/policy.sh"
+	if [ -n "${MCPBASH_SERVER_DIR:-}" ] && [ -f "${policy_path}" ]; then
 		# shellcheck disable=SC1090
 		. "${policy_path}"
 	fi
@@ -135,6 +166,12 @@ mcp_tools_policy_init() {
 # `mcp_tools_policy_check_default "$@" || return 1` first and add its own rules.
 # Args: $1 tool name, $2 tool metadata JSON, $3 call arguments JSON.
 mcp_tools_policy_check() {
+	if [ -n "${MCP_TOOLS_POLICY_UNSAFE:-}" ]; then
+		_MCP_TOOLS_ERROR_CODE=-32602
+		_MCP_TOOLS_ERROR_MESSAGE="Tool calls are refused: server.d/policy.sh ${MCP_TOOLS_POLICY_UNSAFE#*/policy.sh }"
+		_MCP_TOOLS_ERROR_DATA=""
+		return 1
+	fi
 	mcp_tools_policy_check_default "$@" || return 1
 	mcp_tools_policy_run_project_hook "$@"
 }
