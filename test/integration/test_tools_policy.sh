@@ -156,7 +156,8 @@ rm -rf "${POLICY_ROOT}/.registry/scan/policy.loads"
 test_run_mcp "${POLICY_ROOT}" "${POLICY_ROOT}/req.ndjson" "${POLICY_ROOT}/probe1.ndjson"
 first="$(wc -c <"${COUNT}" | tr -d ' ')"
 test_run_mcp "${POLICY_ROOT}" "${POLICY_ROOT}/req.ndjson" "${POLICY_ROOT}/probe2.ndjson"
-second="$(( $(wc -c <"${COUNT}" | tr -d ' ') - first ))"
+total="$(wc -c <"${COUNT}" | tr -d ' ')"
+second=$((total - first))
 # First start: the probe and the call's worker; second start: the worker only.
 test_assert_eq "${first}" "2"
 test_assert_eq "${second}" "1"
