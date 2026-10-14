@@ -173,7 +173,7 @@ mcp_tools_policy_loads() {
 		# bash 5 carries on after a syntax error in a sourced file; check it.
 		"${BASH:-bash}" -n "${policy_path}" || builtin exit 0
 		exited=false
-		# shellcheck disable=SC2329  # Called by policy.sh's top-level `exit`.
+		# shellcheck disable=SC2329  # Called by a top-level exit in policy.sh.
 		exit() { exited=true; }
 		. "${policy_path}" || true
 		unset -f exit

@@ -77,6 +77,25 @@ if grep -nE "${brace_default_re}" "${existing_files[@]}" "${MCPBASH_HOME}/bin/mc
 	test_fail "unquoted brace default in a parameter expansion (see matches above)"
 fi
 
+# Every shipped script must at least parse with /bin/bash 3.2: its parser
+# differs (an apostrophe in a comment inside $(...) ends the substitution,
+# for one), and only some libs are sourced below.
+if [ -x /bin/bash ] && /bin/bash -c '[ "${BASH_VERSINFO[0]}" -eq 3 ]' 2>/dev/null; then
+	printf 'Checking that every shipped script parses with /bin/bash 3.2...\n'
+	parse_failed=0
+	while IFS= read -r script; do
+		if ! /bin/bash -n "${script}" 2>/dev/null; then
+			printf 'FAIL: %s does not parse with /bin/bash 3.2\n' "${script#"${MCPBASH_HOME}"/}" >&2
+			/bin/bash -n "${script}" 2>&1 | head -n 3 >&2
+			parse_failed=1
+		fi
+	done < <(
+		find "${MCPBASH_HOME}/lib" "${MCPBASH_HOME}/handlers" "${MCPBASH_HOME}/sdk" "${MCPBASH_HOME}/providers" -type f -name '*.sh' 2>/dev/null
+		printf '%s\n' "${MCPBASH_HOME}/bin/mcp-bash"
+	)
+	[ "${parse_failed}" -eq 0 ] || test_fail "scripts that don't parse with bash 3.2 (see above)"
+fi
+
 # Verify core libs can be sourced with /bin/bash (macOS 3.2 compatibility)
 # This is the definitive test - actually try to source the libs with bash 3.2
 if [ -x /bin/bash ]; then
