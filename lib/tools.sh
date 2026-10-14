@@ -1680,7 +1680,7 @@ mcp_tools_list() {
 			| if $era == "modern" then . else map(
 				if (.outputSchema | type) == "object" and (.outputSchema | has("type")) and .outputSchema.type != "object"
 				then del(.outputSchema) else . end) end) as $page
-		| "\($items | length)\t\($blocked | length)\t\($blocked[0:10] | join(", "))\t\({tools: $page, _meta: {"mcpbash/total": ($items | length)}} | tojson)"
+		| "\($items | length)\t\($blocked | length)\t\({tools: $page, _meta: {"mcpbash/total": ($items | length)}} | tojson)"
 	')" || listed=""
 	if [ -z "${listed}" ]; then
 		mcp_tools_error -32603 "Unable to list tools"
@@ -1689,10 +1689,8 @@ mcp_tools_list() {
 	total="${listed%%$'\t'*}"
 	listed="${listed#*$'\t'}"
 	local blocked_count="${listed%%$'\t'*}"
-	listed="${listed#*$'\t'}"
-	local blocked_names="${listed%%$'\t'*}"
 	result_json="${listed#*$'\t'}"
-	mcp_tools_note_unlisted "${blocked_count}" "${blocked_names}"
+	mcp_tools_note_unlisted "${blocked_count}"
 
 	if ! result_json="$(mcp_paginate_attach_next_cursor "${result_json}" "tools" "${offset}" "${numeric_limit}" "${total}" "${MCP_TOOLS_REGISTRY_HASH}")"; then
 		mcp_tools_error -32603 "Unable to encode tools cursor"
@@ -1702,20 +1700,19 @@ mcp_tools_list() {
 	printf '%s' "${result_json}"
 }
 
-# Say once per server which tools the allowlist keeps out of tools/list (up
-# to ten names), as a warning log message: tools/list runs in a worker,
-# whose stderr isn't the server's. A marker in the state dir makes it once
-# per server. `mcp-bash doctor` names them too.
+# Say once per server how many tools the allowlist keeps out of tools/list,
+# as a warning log message (tools/list runs in a worker, whose stderr isn't
+# the server's). Only the count: the names of tools the operator didn't
+# allow aren't sent to the client; `mcp-bash doctor` lists them. A marker in
+# the state dir makes it once per server.
 mcp_tools_note_unlisted() {
-	local count="$1" names="$2" marker="${MCPBASH_STATE_DIR:-}/allowlist.noted"
+	local count="$1" marker="${MCPBASH_STATE_DIR:-}/allowlist.noted"
 	case "${count}" in '' | 0 | *[!0-9]*) return 0 ;; esac
 	if [ -n "${MCPBASH_STATE_DIR:-}" ]; then
 		[ -e "${marker}" ] && return 0
 		: >"${marker}" 2>/dev/null || true
 	fi
-	local more=""
-	[ "${count}" -le 10 ] || more=" and $((count - 10)) more"
-	mcp_logging_warning "${MCP_TOOLS_LOGGER}" "${count} tool(s) not listed because MCPBASH_TOOL_ALLOWLIST does not allow them: ${names}${more}"
+	mcp_logging_warning "${MCP_TOOLS_LOGGER}" "${count} tool(s) not listed because MCPBASH_TOOL_ALLOWLIST does not allow them (mcp-bash doctor names them)"
 }
 
 mcp_tools_metadata_for_name() {

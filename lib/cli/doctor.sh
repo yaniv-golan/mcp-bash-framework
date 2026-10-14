@@ -13,6 +13,26 @@ fi
 # Project root for doctor. When MCPBASH_SERVER_DIR points at a custom server
 # dir holding server.meta.json, MCPBASH_PROJECT_ROOT is the project (the
 # upward walk below only recognises <root>/server.d/server.meta.json).
+# The project's tool names (tools/**/tool.meta.json and server.d/register.json)
+# that the allowlist in MCP_TOOLS_ALLOWLIST_NAMES doesn't allow, comma
+# separated. Tools without a tool.meta.json aren't seen.
+mcp_doctor_unlisted_tools() {
+	local root="$1" json_bin="$2" names="" name out=""
+	[ -n "${json_bin}" ] || return 0
+	names="$({
+		find "${root}/tools" -name tool.meta.json -type f -exec cat {} + 2>/dev/null | "${json_bin}" -r -s '.[] | .name? // empty | strings' 2>/dev/null
+		"${json_bin}" -r '.tools[]? | .name? // empty | strings' "${root}/server.d/register.json" 2>/dev/null
+	} | LC_ALL=C sort -u)"
+	while IFS= read -r name; do
+		[ -n "${name}" ] || continue
+		case " ${MCP_TOOLS_ALLOWLIST_NAMES} " in *" ${name} "*) continue ;; esac
+		out="${out:+${out}, }${name}"
+	done <<EOF_NAMES
+${names}
+EOF_NAMES
+	printf '%s' "${out}"
+}
+
 mcp_doctor_find_project_root() {
 	if [ -n "${MCPBASH_SERVER_DIR:-}" ] && [ -n "${MCPBASH_PROJECT_ROOT:-}" ] && [ -f "${MCPBASH_SERVER_DIR}/server.meta.json" ]; then
 		printf '%s' "${MCPBASH_PROJECT_ROOT}"
@@ -1797,6 +1817,12 @@ EOF
 			printf '  ✓ %s\n' 'Tool allowlist (this shell): every tool allowed'
 		elif [ -n "${MCP_TOOLS_ALLOWLIST_NAMES}" ]; then
 			printf '  ✓ %s\n' "Tool allowlist (this shell): ${MCP_TOOLS_ALLOWLIST_NAMES}; other tools are not listed"
+			local unlisted
+			unlisted="$(mcp_doctor_unlisted_tools "${detected_root}" "${gojq_path:-${jq_path}}")"
+			if [ -n "${unlisted}" ]; then
+				printf '  ⚠ %s\n' "Tools not allowed by MCPBASH_TOOL_ALLOWLIST, so not listed: ${unlisted}"
+				warnings=$((warnings + 1))
+			fi
 		else
 			printf '  ⚠ %s\n' 'MCPBASH_TOOL_ALLOWLIST is not set in this shell: every tool is denied and none is listed (set it in the MCP client config, e.g. "*" or tool names)'
 			warnings=$((warnings + 1))

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2034  # Used by test runner for reporting.
-TEST_DESC="tools/list omits tools the operator allowlist blocks; instructions and stderr say so."
+TEST_DESC="tools/list omits tools the operator allowlist blocks; the instructions, a log message and doctor say so."
 
 set -euo pipefail
 
@@ -46,8 +46,24 @@ assert_eq '["alpha","gamma"]' "$(names "${OUT}")" "listed tools"
 assert_eq "2" "$(total "${OUT}")" "total counts the listed tools"
 case "$(instr "${OUT}")" in *"${SENTENCE}"*) ;; *) test_fail "no allowlist sentence: $(instr "${OUT}")" ;; esac
 assert_eq "policy_denied" "$(jq -r 'select(.id == "call") | .result._meta["mcpbash/error"].type' "${OUT}")" "calling an unlisted tool"
-# A warning log message names the unlisted tools, once per server.
-test_assert_eq "$(jq -r 'select(.method == "notifications/message") | .params.data' "${OUT}" | grep -c 'not listed because MCPBASH_TOOL_ALLOWLIST does not allow them: beta')" "1"
+# A warning log message gives the count, once per server; the names stay
+# with the operator (mcp-bash doctor), not the client.
+test_assert_eq "$(jq -r 'select(.method == "notifications/message") | .params.data' "${OUT}" | grep -c '1 tool(s) not listed because MCPBASH_TOOL_ALLOWLIST does not allow them')" "1"
+if jq -r 'select(.method == "notifications/message") | .params.data' "${OUT}" | grep -q 'beta'; then
+	test_fail "the log message names a blocked tool"
+fi
+(cd "${WS}" && MCPBASH_TOOL_ALLOWLIST="alpha, gamma" ./bin/mcp-bash doctor 2>&1) >"${TEST_TMPDIR}/doctor.out" || true
+grep -q "not allowed by MCPBASH_TOOL_ALLOWLIST, so not listed: beta" "${TEST_TMPDIR}/doctor.out" || test_fail "doctor doesn't name the unlisted tool: $(grep -i allowlist "${TEST_TMPDIR}/doctor.out")"
+
+printf ' -> a blocked tool whose name has a tab doesn'"'"'t break the listing\n'
+mkdir -p "${WS}/tools/tabbed"
+printf '{"name":"tab\\tbed","description":"t","inputSchema":{"type":"object"}}\n' >"${WS}/tools/tabbed/tool.meta.json"
+printf '#!/usr/bin/env bash\necho x\n' >"${WS}/tools/tabbed/tool.sh"
+chmod +x "${WS}/tools/tabbed/tool.sh"
+OUT="${TEST_TMPDIR}/tab.ndjson"
+MCPBASH_TOOL_ALLOWLIST="alpha" test_run_mcp "${WS}" "${REQ}" "${OUT}"
+assert_eq '["alpha"]' "$(names "${OUT}")" "listing with a tab-named blocked tool"
+rm -rf "${WS}/tools/tabbed" "${WS}/.registry"
 
 printf ' -> "*": everything is listed, no sentence\n'
 OUT="${TEST_TMPDIR}/all.ndjson"
