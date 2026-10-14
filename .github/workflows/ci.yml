@@ -278,6 +278,8 @@ jobs:
           mkdir -p "${shim}"
           ln -sf /bin/bash "${shim}/bash"
           echo "${shim}" >> "$GITHUB_PATH"
+      - name: Every shipped script parses with bash 3.2
+        run: bash test/parse-bash32.sh /bin/bash
       - name: Check that bash 3.2 is in use
         run: |
           set -euo pipefail
