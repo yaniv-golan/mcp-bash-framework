@@ -113,7 +113,9 @@ mcp_tools_policy_check_secure_tree() {
 # time); the workers reuse that verdict while the file's content is the same.
 # A file it sources that breaks while the server runs is not seen until the
 # next start (a worker's own load can't tell on bash 5: the dispatcher's
-# callers exempt it from errexit and ERR traps).
+# callers exempt it from errexit and ERR traps), except that a worker whose
+# load no longer defines the hook the start check saw refuses the call
+# (mcp_tools_policy_init).
 mcp_tools_policy_unsafe_reason() {
 	[ -n "${MCPBASH_SERVER_DIR:-}" ] || return 0
 	local policy_path="${MCPBASH_SERVER_DIR}/policy.sh"
@@ -124,15 +126,16 @@ mcp_tools_policy_unsafe_reason() {
 		return 0
 	fi
 	case "$(mcp_tools_policy_load_verdict "${policy_path}")" in
-	ok) ;;
+	ok | ok-hook) ;;
 	syntax) printf '%s was not loaded: it has a syntax error (check it with: bash -n "%s")' "${policy_path}" "${policy_path}" ;;
 	*) printf '%s was not loaded: it stops while loading (a top-level command that fails, a syntax error in a file it sources, or a top-level exit)' "${policy_path}" ;;
 	esac
 	return 0
 }
 
-# ok, syntax or failed: whether sourcing POLICY_PATH completes, tried in a
-# new bash process, cached in the state dir against the file's content.
+# ok, ok-hook, syntax or failed: whether sourcing POLICY_PATH completes,
+# tried in a new bash process, cached in the state dir against the file's
+# content. ok-hook: it loads and defines mcp_tools_policy_project.
 mcp_tools_policy_load_verdict() {
 	local policy_path="$1" content="" cache="" cached_content="" verdict=""
 	IFS= read -r -d '' content <"${policy_path}" 2>/dev/null || true
@@ -175,12 +178,15 @@ mcp_tools_policy_load_verdict() {
 			set -euo pipefail
 			probe_self="${BASH_SOURCE[0]:-}"
 			exited=false
-			trap "[ \"\${BASH_SOURCE[0]:-}\" = \"\${probe_self}\" ] && [ \"\${exited}\" = false ] && printf ok >&3" ERR
+			_mcp_probe_loaded() {
+				if declare -F mcp_tools_policy_project >/dev/null; then printf ok-hook >&3; else printf ok >&3; fi
+			}
+			trap "[ \"\${BASH_SOURCE[0]:-}\" = \"\${probe_self}\" ] && [ \"\${exited}\" = false ] && _mcp_probe_loaded" ERR
 			exit() { exited=true; }
 			. "$1"
 			unset -f exit
 			trap - ERR
-			[ "${exited}" = "false" ] && printf ok >&3
+			[ "${exited}" = "false" ] && _mcp_probe_loaded
 		' _ "${policy_path}" 2>/dev/null
 		)" || true
 		[ -n "${verdict}" ] || verdict=failed
@@ -234,6 +240,12 @@ mcp_tools_policy_init() {
 		unset -f exit
 		if [ "${_MCP_TOOLS_POLICY_EXITED}" = "true" ]; then
 			MCP_TOOLS_POLICY_UNSAFE="${policy_path} was not loaded: it stops while loading (a top-level exit)"
+		elif ! declare -F mcp_tools_policy_project >/dev/null 2>&1 \
+			&& [ "$(mcp_tools_policy_load_verdict "${policy_path}")" = "ok-hook" ]; then
+			# The start check saw the hook, this load didn't define it: a file
+			# policy.sh sources broke since (this load can't see a failure on
+			# bash 5: the callers exempt it from errexit).
+			MCP_TOOLS_POLICY_UNSAFE="${policy_path} was not loaded: it no longer defines mcp_tools_policy_project (a file it sources changed since the server started; restart the server)"
 		fi
 	fi
 	return 0

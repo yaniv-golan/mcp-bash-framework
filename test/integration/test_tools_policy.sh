@@ -161,6 +161,21 @@ broken_policy restart "was not loaded: it stops while loading"
 
 rm -f "${POLICY_ROOT}/server.d/rules.sh"
 
+printf ' -> a sourced file that breaks after the start check: calls refused\n'
+# rules.sh loads at the start check, then replaces itself with a copy whose
+# syntax error ends the load before the hook is defined: the worker sees the
+# broken copy. The hook the start check saw is missing, so calls are refused.
+printf '%s\n' 'if then' "${DENY_SECRET}" >"${POLICY_ROOT}/server.d/rules-broken.sh"
+printf '%s\n' "${DENY_SECRET}" 'cp "${MCPBASH_SERVER_DIR}/rules-broken.sh" "${MCPBASH_SERVER_DIR}/rules.sh"' >"${POLICY_ROOT}/server.d/rules.sh"
+printf '%s\n' '. "${MCPBASH_SERVER_DIR}/rules.sh"' >"${POLICY_ROOT}/server.d/policy.sh"
+test_run_mcp "${POLICY_ROOT}" "${POLICY_ROOT}/req.ndjson" "${POLICY_ROOT}/late.ndjson"
+r="$(call "${POLICY_ROOT}/late.ndjson" || true)"
+if [ -n "${r}" ] || [ "${BASH_VERSINFO[0]}" -ge 4 ]; then
+	assert_policy_denied "${r}" "was not loaded" "late break"
+fi
+# (bash 3.2 ends the worker on a syntax error in a sourced file: no answer.)
+rm -f "${POLICY_ROOT}/server.d/rules.sh" "${POLICY_ROOT}/server.d/rules-broken.sh"
+
 printf ' -> a last command that fails is fine: the hook still applies\n'
 printf '%s\n' "${DENY_SECRET}" '[ -n "${NOT_SET_ANYWHERE:-}" ] && export X=1' >"${POLICY_ROOT}/server.d/policy.sh"
 test_run_mcp "${POLICY_ROOT}" "${POLICY_ROOT}/req.ndjson" "${POLICY_ROOT}/lastfail.ndjson"
