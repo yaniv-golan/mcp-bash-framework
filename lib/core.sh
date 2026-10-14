@@ -165,11 +165,11 @@ mcp_core_check_policy_hook() {
 	local policy="${MCPBASH_SERVER_DIR:-}/policy.sh"
 	[ -n "${MCPBASH_SERVER_DIR:-}" ] && [ -e "${policy}" ] || return 0
 	declare -F mcp_tools_policy_file_has_legacy_hook >/dev/null 2>&1 || return 0
-	# The same checks a call makes; the load probe's verdict is cached in the
-	# state dir, so the workers don't repeat it.
-	if ! mcp_tools_policy_check_secure_tree "${policy}" || ! mcp_tools_policy_loads "${policy}"; then
+	# The same checks a call makes (the load verdict is cached in the state
+	# dir, so the workers don't repeat it); stderr names the reason.
+	if [ -n "$(mcp_tools_policy_unsafe_reason)" ]; then
 		MCP_CORE_POLICY_BROKEN=true
-		printf '%s\n' 'mcp-bash: server.d/policy.sh is insecure (ownership, permissions or a symlink) or fails while loading; every tool call is refused until it is fixed' >&2
+		mcp_tools_policy_startup_check || true
 		return 0
 	fi
 	mcp_tools_policy_file_has_legacy_hook "${policy}" || return 0

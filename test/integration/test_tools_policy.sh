@@ -122,16 +122,16 @@ DENY_SECRET='mcp_tools_policy_project() { [ "$1" != hello ] || { printf "hello i
 printf ' -> policy.sh writable by others: not loaded, every call refused\n'
 printf '%s\n' "${DENY_SECRET}" >"${POLICY_ROOT}/server.d/policy.sh"
 chmod 0666 "${POLICY_ROOT}/server.d/policy.sh"
-broken_policy perms "server.d/policy.sh is not loaded"
+broken_policy perms "Tool calls are refused: server.d/policy.sh was not loaded: it, server.d or the project root is writable"
 chmod 0644 "${POLICY_ROOT}/server.d/policy.sh"
 
 printf ' -> policy.sh with a syntax error: every call refused, with an answer\n'
 printf '%s\n' "${DENY_SECRET}" 'if then' >"${POLICY_ROOT}/server.d/policy.sh"
-broken_policy syntax "server.d/policy.sh failed while loading"
+broken_policy syntax "was not loaded: it has a syntax error"
 
 printf ' -> policy.sh that exits at the top level: every call refused, with an answer\n'
 printf '%s\n' "${DENY_SECRET}" 'exit 0' >"${POLICY_ROOT}/server.d/policy.sh"
-broken_policy exit "server.d/policy.sh failed while loading"
+broken_policy exit "was not loaded: it stops while loading"
 
 printf ' -> a last command that fails is fine: the hook still applies\n'
 printf '%s\n' "${DENY_SECRET}" '[ -n "${NOT_SET_ANYWHERE:-}" ] && export X=1' >"${POLICY_ROOT}/server.d/policy.sh"

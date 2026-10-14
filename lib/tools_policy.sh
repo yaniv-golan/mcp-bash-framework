@@ -4,6 +4,7 @@
 set -euo pipefail
 
 : "${MCP_TOOLS_POLICY_LOADED:=false}"
+: "${MCP_TOOLS_POLICY_UNSAFE:=}"
 
 # Security: server.d/policy.sh is full shell code execution. Unlike
 # server.d/register.sh (which is opt-in and permission-checked), policy.sh is
@@ -102,54 +103,34 @@ mcp_tools_policy_check_secure_tree() {
 	return 0
 }
 
-# Initialize tool policy by sourcing server.d/policy.sh once per process.
-# A policy.sh that exists but can't be loaded safely makes every call
-# refused (MCP_TOOLS_POLICY_BROKEN holds the reason): skipping it would drop
-# the project's own restrictions. That covers a file that fails the
-# ownership/permission check, and one that dies while loading (a syntax
-# error, a failing command under set -e on bash 3.2, a top-level exit).
-# Whether it loads is first tried in a subshell (bash 3.2 ends the whole
-# shell on a syntax error in a sourced file); the verdict is cached in the
-# state dir with the file's content, so that runs once per server and
-# version of the file. Its top-level code therefore runs twice then.
-MCP_TOOLS_POLICY_BROKEN=""
-mcp_tools_policy_init() {
-	if [ "${MCP_TOOLS_POLICY_LOADED}" = "true" ]; then
-		return 0
-	fi
-	MCP_TOOLS_POLICY_LOADED="true"
-	MCP_TOOLS_POLICY_BROKEN=""
-
-	local policy_path="${MCPBASH_SERVER_DIR:-}/policy.sh"
-	[ -n "${MCPBASH_SERVER_DIR:-}" ] && [ -e "${policy_path}" ] || return 0
+# Why server.d/policy.sh can't be loaded safely: prints the reason, or
+# nothing when there is no policy.sh or it is fine. Insecure ownership or
+# permissions, a symlink, or a syntax error (checked with bash -n first: bash
+# 3.2 stops the whole shell on a syntax error in a sourced file). Then, from
+# 2.0, a file that dies while it is sourced (a failing command under set -e,
+# a top-level exit), tried in a subshell; that verdict is cached in the state
+# dir with the file's content, so it runs once per server and version of the
+# file, and the file's top-level code then runs twice.
+mcp_tools_policy_unsafe_reason() {
+	[ -n "${MCPBASH_SERVER_DIR:-}" ] || return 0
+	local policy_path="${MCPBASH_SERVER_DIR}/policy.sh"
+	[ -e "${policy_path}" ] || [ -L "${policy_path}" ] || return 0
 	if ! mcp_tools_policy_check_secure_tree "${policy_path}"; then
-		MCP_TOOLS_POLICY_BROKEN="server.d/policy.sh is not loaded: it is a symlink, not owned by the server's user, or writable by group or others. Every tool call is refused until that is fixed (for example chmod go-w server.d/policy.sh)."
-		if command -v mcp_logging_warning >/dev/null 2>&1; then
-			mcp_logging_warning "mcp.tools.policy" "Refusing to source insecure policy.sh (check ownership/perms/symlink); every tool call is refused"
-		fi
+		printf '%s was not loaded: it, server.d or the project root is writable by group or other users, is a symlink, or is not owned by you. Fix it, for example: chmod go-w "%s" "%s" "%s"' \
+			"${policy_path}" "${policy_path}" "${MCPBASH_SERVER_DIR}" "${MCPBASH_PROJECT_ROOT:-.}"
 		return 0
 	fi
-	if ! mcp_tools_policy_loads "${policy_path}"; then
-		MCP_TOOLS_POLICY_BROKEN="server.d/policy.sh failed while loading (a syntax error, a failing command under set -e, or a top-level exit). Every tool call is refused until it loads cleanly."
-		return 0
-	fi
-	# A top-level `exit` in policy.sh would end this worker, and the client
-	# would never get an answer: catch it while sourcing.
-	_MCP_TOOLS_POLICY_EXITED=false
-	# shellcheck disable=SC2329  # Called by policy.sh's top-level `exit`.
-	exit() { _MCP_TOOLS_POLICY_EXITED=true; }
-	# shellcheck disable=SC1090
-	. "${policy_path}" || true
-	unset -f exit
-	if [ "${_MCP_TOOLS_POLICY_EXITED}" = "true" ]; then
-		MCP_TOOLS_POLICY_BROKEN="server.d/policy.sh failed while loading (it calls exit at the top level). Every tool call is refused until it loads cleanly."
-	fi
+	case "$(mcp_tools_policy_load_verdict "${policy_path}")" in
+	ok) ;;
+	syntax) printf '%s was not loaded: it has a syntax error (check it with: bash -n "%s")' "${policy_path}" "${policy_path}" ;;
+	*) printf '%s was not loaded: it stops while loading (a failing command under set -e, or a top-level exit)' "${policy_path}" ;;
+	esac
 	return 0
 }
 
-# True when sourcing POLICY_PATH completes, tried in a subshell. Cached in
-# the state dir against the file's content.
-mcp_tools_policy_loads() {
+# ok, syntax or failed: whether sourcing POLICY_PATH completes, tried in a
+# subshell, cached in the state dir against the file's content.
+mcp_tools_policy_load_verdict() {
 	local policy_path="$1" content="" cache="" cached_content="" verdict=""
 	IFS= read -r -d '' content <"${policy_path}" 2>/dev/null || true
 	if [ -n "${MCPBASH_STATE_DIR:-}" ] && [ -d "${MCPBASH_STATE_DIR}" ]; then
@@ -159,29 +140,74 @@ mcp_tools_policy_loads() {
 				IFS= read -r verdict
 				IFS= read -r -d '' cached_content || true
 			} <"${cache}" 2>/dev/null || true
-			if [ "${cached_content}" = "${content}" ]; then
-				[ "${verdict}" = "ok" ]
-				return
+			if [ -n "${verdict}" ] && [ "${cached_content}" = "${content}" ]; then
+				printf '%s' "${verdict}"
+				return 0
 			fi
 		fi
 	fi
-	local probe=""
-	# shellcheck disable=SC1090,SC2034
-	probe="$(
-		# fd 3 is this capture; everything the file prints is discarded.
-		exec 3>&1 </dev/null >/dev/null 2>&1
-		# bash 5 carries on after a syntax error in a sourced file; check it.
-		"${BASH:-bash}" -n "${policy_path}" || builtin exit 0
-		exited=false
+	if ! "${BASH:-bash}" -n "${policy_path}" 2>/dev/null; then
+		verdict=syntax
+	else
+		# shellcheck disable=SC1090,SC2034
+		verdict="$(
+			# fd 3 is this capture; everything the file prints is discarded.
+			exec 3>&1 </dev/null >/dev/null 2>&1
+			exited=false
+			# shellcheck disable=SC2329  # Called by a top-level exit in policy.sh.
+			exit() { exited=true; }
+			. "${policy_path}" || true
+			unset -f exit
+			[ "${exited}" = "false" ] && printf ok >&3
+		)" || true
+		[ -n "${verdict}" ] || verdict=failed
+	fi
+	[ -z "${cache}" ] || printf '%s\n%s' "${verdict}" "${content}" >"${cache}" 2>/dev/null || true
+	printf '%s' "${verdict}"
+}
+
+# At server start (main process): tell the operator on stderr when policy.sh
+# can't be loaded. The policy itself is loaded in each tool call's worker,
+# whose stderr is not the server's. Also warms the load verdict's cache.
+mcp_tools_policy_startup_check() {
+	local reason
+	reason="$(mcp_tools_policy_unsafe_reason)"
+	[ -n "${reason}" ] || return 0
+	printf 'mcp-bash: %s. Every tool call is refused until it can be loaded.\n' "${reason}" >&2
+	return 0
+}
+
+# Initialize tool policy by sourcing server.d/policy.sh once per process.
+# A policy.sh that exists but can't be loaded safely is not sourced, and every
+# tool call is refused until it is fixed (MCP_TOOLS_POLICY_UNSAFE holds the
+# reason): running without it would drop the project's own restrictions.
+mcp_tools_policy_init() {
+	if [ "${MCP_TOOLS_POLICY_LOADED}" = "true" ]; then
+		return 0
+	fi
+	MCP_TOOLS_POLICY_LOADED="true"
+	MCP_TOOLS_POLICY_UNSAFE="$(mcp_tools_policy_unsafe_reason)"
+	if [ -n "${MCP_TOOLS_POLICY_UNSAFE}" ]; then
+		if command -v mcp_logging_warning >/dev/null 2>&1; then
+			mcp_logging_warning "mcp.tools.policy" "${MCP_TOOLS_POLICY_UNSAFE}" || true
+		fi
+		return 0
+	fi
+	local policy_path="${MCPBASH_SERVER_DIR:-}/policy.sh"
+	if [ -n "${MCPBASH_SERVER_DIR:-}" ] && [ -f "${policy_path}" ]; then
+		# A top-level `exit` would end this worker, and the client would get no
+		# answer: catch it while sourcing.
+		_MCP_TOOLS_POLICY_EXITED=false
 		# shellcheck disable=SC2329  # Called by a top-level exit in policy.sh.
-		exit() { exited=true; }
+		exit() { _MCP_TOOLS_POLICY_EXITED=true; }
+		# shellcheck disable=SC1090
 		. "${policy_path}" || true
 		unset -f exit
-		[ "${exited}" = "false" ] && printf ok >&3
-	)" || true
-	verdict="${probe:-failed}"
-	[ -z "${cache}" ] || printf '%s\n%s' "${verdict}" "${content}" >"${cache}" 2>/dev/null || true
-	[ "${verdict}" = "ok" ]
+		if [ "${_MCP_TOOLS_POLICY_EXITED}" = "true" ]; then
+			MCP_TOOLS_POLICY_UNSAFE="${policy_path} was not loaded: it stops while loading (a top-level exit)"
+		fi
+	fi
+	return 0
 }
 
 # The tool policy, run by the dispatcher before every call: the operator's
@@ -198,9 +224,9 @@ mcp_tools_policy_loads() {
 mcp_tools_policy_enforce() {
 	# shellcheck disable=SC2034  # Read by mcp_tools_call (lib/tools.sh).
 	MCP_TOOLS_POLICY_LEGACY_HOOK=false
-	if [ -n "${MCP_TOOLS_POLICY_BROKEN:-}" ]; then
+	if [ -n "${MCP_TOOLS_POLICY_UNSAFE:-}" ]; then
 		_MCP_TOOLS_ERROR_CODE=-32602
-		_MCP_TOOLS_ERROR_MESSAGE="${MCP_TOOLS_POLICY_BROKEN}"
+		_MCP_TOOLS_ERROR_MESSAGE="Tool calls are refused: server.d/policy.sh ${MCP_TOOLS_POLICY_UNSAFE#*/policy.sh }"
 		_MCP_TOOLS_ERROR_DATA=""
 		return 1
 	fi
