@@ -118,11 +118,7 @@ When several templates match, the winner is the one with:
 ### What a match changes
 
 - **`mimeType` is a declared label.** If the matched template sets `mimeType`, the response reports it. The content itself still decides whether it is sent as `text` or as a base64 `blob`. Without a template `mimeType`, the type is detected as before. Set `mimeType` on a template only if every URI it matches shares that type.
-- **Provider environment.** The provider gets two extra variables:
-  - `MCP_RESOURCE_TEMPLATE_NAME`: the matched template's `name`;
-  - `MCP_RESOURCE_TEMPLATE_VARS_FILE`: the path of a file holding a compact JSON object of the matched values, for example `{"id":"42","rest":"a/b%2Fc"}`. Read it on stdin: `jq -r .id <"$MCP_RESOURCE_TEMPLATE_VARS_FILE"`. The file is readable only by you and removed when the provider exits. (Before 2.0 the JSON was in `MCP_RESOURCE_TEMPLATE_VARS`; a value from a long URI could then stop the provider from starting.)
-
-  Neither is set on any other read, nor for tools or completion providers. The server clears any value the host set for them at startup.
+- **Provider environment.** The provider also gets `MCP_RESOURCE_TEMPLATE_NAME` (the matched template's `name`) and `MCP_RESOURCE_TEMPLATE_VARS_FILE` (a file with the matched values as JSON, for example `{"id":"42","rest":"a/b%2Fc"}`). Neither is set on any other read, nor for tools or completion scripts. See [the provider contract](REGISTRY.md#provider-contract) for how to read the file and what else a provider receives.
 - **The values are raw.** They are the characters from the URI, not percent-decoded. Decode them yourself if you need to, and validate the result: `%2F` decodes to `/` and `%2E%2E` to `..`, so a decoded `{v}` can still reach another path.
 
 `$1` is still the full URI, so providers that parse it themselves keep working.
