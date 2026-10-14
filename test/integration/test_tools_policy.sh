@@ -154,6 +154,11 @@ set -u
 POLICY
 test_run_mcp "${POLICY_ROOT}" "${POLICY_ROOT}/req.ndjson" "${POLICY_ROOT}/paths.ndjson"
 assert_policy_denied "$(call "${POLICY_ROOT}/paths.ndjson")" "hello is off" "server paths at the top level"
+
+printf ' -> a sourced file that breaks between starts: every call refused\n'
+printf '%s\n' 'if then' "${DENY_SECRET}" >"${POLICY_ROOT}/server.d/rules.sh"
+broken_policy restart "was not loaded: it stops while loading"
+
 rm -f "${POLICY_ROOT}/server.d/rules.sh"
 
 printf ' -> a last command that fails is fine: the hook still applies\n'
@@ -161,20 +166,20 @@ printf '%s\n' "${DENY_SECRET}" '[ -n "${NOT_SET_ANYWHERE:-}" ] && export X=1' >"
 test_run_mcp "${POLICY_ROOT}" "${POLICY_ROOT}/req.ndjson" "${POLICY_ROOT}/lastfail.ndjson"
 assert_policy_denied "$(call "${POLICY_ROOT}/lastfail.ndjson")" "hello is off" "last command fails"
 
-printf ' -> the load probe runs once per version of policy.sh, not per start\n'
+printf ' -> the load probe runs once per start, not per call\n'
 COUNT="${TEST_TMPDIR}/policy-runs"
 : >"${COUNT}"
 printf '%s\n' "printf x >>'${COUNT}'" "${DENY_SECRET}" >"${POLICY_ROOT}/server.d/policy.sh"
-rm -rf "${POLICY_ROOT}/.registry/scan/policy.loads"
 test_run_mcp "${POLICY_ROOT}" "${POLICY_ROOT}/req.ndjson" "${POLICY_ROOT}/probe1.ndjson"
 first="$(wc -c <"${COUNT}" | tr -d ' ')"
 test_run_mcp "${POLICY_ROOT}" "${POLICY_ROOT}/req.ndjson" "${POLICY_ROOT}/probe2.ndjson"
 total="$(wc -c <"${COUNT}" | tr -d ' ')"
 second=$((total - first))
-# First start: the probe and the call's worker; second start: the worker only.
+# Each start: the probe and the call's worker. The verdict is not kept
+# across starts: a file policy.sh sources may have changed.
 test_assert_eq "${first}" "2"
-test_assert_eq "${second}" "1"
-assert_policy_denied "$(call "${POLICY_ROOT}/probe2.ndjson")" "hello is off" "cached verdict"
+test_assert_eq "${second}" "2"
+assert_policy_denied "$(call "${POLICY_ROOT}/probe2.ndjson")" "hello is off" "second start"
 
 printf ' -> policy.sh cannot redefine the built-in checks\n'
 printf '%s\n' 'mcp_tools_policy_enforce() { return 0; }' 'mcp_tools_policy_check_default() { return 0; }' >"${POLICY_ROOT}/server.d/policy.sh"
