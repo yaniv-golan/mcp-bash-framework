@@ -59,6 +59,18 @@ esac
 cat "${MCP_RESOURCE_TEMPLATE_VARS_FILE}"
 SH
 printf '%s\n' '{"name": "kv-item", "uriTemplate": "kv://{kind}/{id}"}' >"${WS}/resources/kv-item.meta.json"
+# Used by the reused-id case at the end. Made now: the first run caches the
+# prompt list, and a prompt added after it may not be seen by the next run.
+mkdir -p "${WS}/prompts/late"
+printf '{"name": "late", "description": "d", "path": "late/late.txt",\n "arguments": {"type": "object", "properties": {"q": {"type": "string"}}}}\n' >"${WS}/prompts/late/late.meta.json"
+printf 'x {{q}}\n' >"${WS}/prompts/late/late.txt"
+cat >"${WS}/prompts/late/late.completion.sh" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+sleep 3
+printf '["late:%s"]' "$(jq -r .query <"${MCP_COMPLETION_ARGS_FILE}")"
+SH
+chmod +x "${WS}/prompts/late/late.completion.sh"
 chmod +x "${WS}/prompts/hang/hang.completion.sh" "${WS}/prompts/quick/quick.completion.sh" "${WS}/providers/kv.sh"
 chmod -R go-w "${WS}"
 
@@ -107,17 +119,6 @@ left="$(find "${STATE}" "${TMPROOT}" -name 'inputs.*' -o -name 'mcp-completion.a
 # A request that reuses a running request's id (which MCP forbids) must not
 # remove that request's files: the first reads its arguments after the second
 # has come and gone.
-mkdir -p "${WS}/prompts/late"
-printf '{"name": "late", "description": "d", "path": "late/late.txt",\n "arguments": {"type": "object", "properties": {"q": {"type": "string"}}}}\n' >"${WS}/prompts/late/late.meta.json"
-printf 'x {{q}}\n' >"${WS}/prompts/late/late.txt"
-cat >"${WS}/prompts/late/late.completion.sh" <<'SH'
-#!/usr/bin/env bash
-set -euo pipefail
-sleep 3
-printf '["late:%s"]' "$(jq -r .query <"${MCP_COMPLETION_ARGS_FILE}")"
-SH
-chmod +x "${WS}/prompts/late/late.completion.sh"
-chmod -R go-w "${WS}"
 cat >"${WS}/requests-reuse.ndjson" <<'JSON'
 {"jsonrpc":"2.0","id":"init","method":"initialize","params":{}}
 {"jsonrpc":"2.0","method":"notifications/initialized"}
