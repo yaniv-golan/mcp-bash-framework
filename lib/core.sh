@@ -1426,10 +1426,11 @@ mcp_core_clear_inputs() {
 # nothing when the line has none.
 mcp_core_inputs_tag_of() {
 	local tag="${1##* }"
-	case "${tag}" in
-	*[!A-Za-z0-9_.-]* | *.*.* | .* | *.) return 0 ;;
-	*.[0-9]*) printf '%s' "${tag}" ;;
-	esac
+	local key="${tag%.*}" num="${tag##*.}"
+	[ "${key}" != "${tag}" ] && [ -n "${key}" ] && [ -n "${num}" ] || return 0
+	case "${key}" in *[!A-Za-z0-9_-]*) return 0 ;; esac
+	case "${num}" in *[!0-9]*) return 0 ;; esac
+	printf '%s' "${tag}"
 }
 mcp_core_spawn_worker() {
 	local handler="$1"
@@ -1468,7 +1469,9 @@ mcp_core_spawn_worker() {
 	[ -z "${key}" ] || rm -f "${MCPBASH_STATE_DIR}/loglevel.${key}"
 	MCP_CORE_SPAWN_SEQ=$((MCP_CORE_SPAWN_SEQ + 1))
 	local inputs_tag=""
-	[ -z "${key}" ] || inputs_tag="${key}.${MCP_CORE_SPAWN_SEQ}${RANDOM}"
+	# The counter alone: it runs in the read loop, so it never repeats while the
+	# server runs (and each server has its own state dir).
+	[ -z "${key}" ] || inputs_tag="${key}.${MCP_CORE_SPAWN_SEQ}"
 	local progress_token
 	progress_token="$(mcp_json_extract_progress_token "${json_line}")"
 	local handled_file=""
