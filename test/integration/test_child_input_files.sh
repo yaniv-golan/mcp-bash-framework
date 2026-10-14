@@ -27,7 +27,9 @@ SEEN="${WS}/seen"
 cat >"${WS}/record.sh" <<'SH'
 for f in "$@"; do
 	[ -n "${f}" ] || continue
-	mode="$(stat -c '%a' "${f}" 2>/dev/null || stat -f '%Lp' "${f}")"
+	# A cancel can remove the file while this runs: then there is nothing to check.
+	mode="$(stat -c '%a' "${f}" 2>/dev/null || stat -f '%Lp' "${f}" 2>/dev/null)" || continue
+	[ -n "${mode}" ] || continue
 	printf '%s %s\n' "${mode}" "${f}" >>"${MCPBASH_PROJECT_ROOT}/seen"
 done
 SH
