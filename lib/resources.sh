@@ -2062,6 +2062,13 @@ mcp_resources_read_file() {
 	local tmp_err
 	tmp_err="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-resource-file.XXXXXX")"
 	local output status
+	# The matched values go to the provider in a file: they come from the
+	# client's URI and can outgrow what one environment variable may hold.
+	local vars_file=""
+	if [ -n "${template_name}" ]; then
+		vars_file="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-resource-vars.XXXXXX")"
+		printf '%s' "${template_vars}" >"${vars_file}"
+	fi
 	if output="$(
 		(
 			local env_pairs=(
@@ -2070,19 +2077,19 @@ mcp_resources_read_file() {
 				"MCPBASH_MAX_RESOURCE_BYTES=$(mcp_resources_max_bytes)"
 			)
 			if [ -n "${template_name}" ]; then
-				env_pairs+=("MCP_RESOURCE_TEMPLATE_NAME=${template_name}" "MCP_RESOURCE_TEMPLATE_VARS=${template_vars}")
+				env_pairs+=("MCP_RESOURCE_TEMPLATE_NAME=${template_name}" "MCP_RESOURCE_TEMPLATE_VARS_FILE=${vars_file}")
 			fi
 			mcp_env_run_curated provider "${env_pairs[@]}" -- "${script}" "${uri}"
 		) 2>"${tmp_err}"
 	)"; then
-		rm -f "${tmp_err}"
+		rm -f "${tmp_err}" ${vars_file:+"${vars_file}"}
 		printf '%s' "${output}"
 		return 0
 	fi
 	status=$?
 	local message
 	message="$(cat "${tmp_err}" 2>/dev/null || true)"
-	rm -f "${tmp_err}"
+	rm -f "${tmp_err}" ${vars_file:+"${vars_file}"}
 	case "${status}" in
 	2)
 		mcp_resources_error -32603 "${message:-Resource outside allowed roots}"
@@ -2099,8 +2106,9 @@ mcp_resources_read_file() {
 
 # mcp_resources_read_via_provider PROVIDER URI [TEMPLATE_NAME TEMPLATE_VARS]
 # With a template name, the provider gets MCP_RESOURCE_TEMPLATE_NAME and
-# MCP_RESOURCE_TEMPLATE_VARS; otherwise neither is set (both are unset at
-# startup, so a host value cannot leak in).
+# MCP_RESOURCE_TEMPLATE_VARS_FILE (the matched values as JSON, in a file);
+# otherwise neither is set (both are unset at startup, so a host value cannot
+# leak in).
 # The resource size limit in bytes: MCPBASH_MAX_RESOURCE_BYTES, else
 # MCPBASH_MAX_TOOL_OUTPUT_SIZE, else 10 MiB; a malformed value means 10 MiB.
 mcp_resources_max_bytes() {
@@ -2177,6 +2185,13 @@ mcp_resources_read_via_provider() {
 		local tmp_err
 		tmp_err="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-resource-provider.XXXXXX")"
 		local status=0
+		# The matched values go to the provider in a file: they come from the
+		# client's URI and can outgrow what one environment variable may hold.
+		local vars_file=""
+		if [ -n "${template_name}" ]; then
+			vars_file="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-resource-vars.XXXXXX")"
+			printf '%s' "${template_vars}" >"${vars_file}"
+		fi
 		if (
 			local env_pairs=(
 				"MCPBASH_HOME=${MCPBASH_HOME}"
@@ -2217,7 +2232,7 @@ mcp_resources_read_via_provider() {
 			if [ -n "${HTTPS_PROXY-}" ]; then env_pairs+=("HTTPS_PROXY=${HTTPS_PROXY-}"); fi
 			if [ -n "${NO_PROXY-}" ]; then env_pairs+=("NO_PROXY=${NO_PROXY-}"); fi
 			if [ -n "${template_name}" ]; then
-				env_pairs+=("MCP_RESOURCE_TEMPLATE_NAME=${template_name}" "MCP_RESOURCE_TEMPLATE_VARS=${template_vars}")
+				env_pairs+=("MCP_RESOURCE_TEMPLATE_NAME=${template_name}" "MCP_RESOURCE_TEMPLATE_VARS_FILE=${vars_file}")
 			fi
 
 			# Bash 3.2 + `set -u`: expanding an empty array triggers "unbound variable".
@@ -2228,14 +2243,14 @@ mcp_resources_read_via_provider() {
 			status=$?
 		fi
 		if [ "${status}" -eq 0 ]; then
-			rm -f "${tmp_err}"
+			rm -f "${tmp_err}" ${vars_file:+"${vars_file}"}
 			cat "${tmp_out}"
 			rm -f "${tmp_out}"
 			return 0
 		fi
 		local message
 		message="$(cat "${tmp_err}" 2>/dev/null || true)"
-		rm -f "${tmp_err}" "${tmp_out}"
+		rm -f "${tmp_err}" "${tmp_out}" ${vars_file:+"${vars_file}"}
 		case "${status}" in
 		2)
 			mcp_resources_error -32603 "${message:-Resource outside allowed roots}"

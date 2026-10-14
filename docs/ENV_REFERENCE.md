@@ -129,6 +129,7 @@ Read-only inputs the server gives a child process. User-sized values come in fil
 | `MCP_COMPLETION_ARGS_FILE` | every completion script | The request arguments (`query`/`prefix`, `argument`, `ref`, `context.arguments`). Client-supplied. Replaces `MCP_COMPLETION_ARGS_JSON` (removed in 2.0). |
 | `MCP_PROMPT_METADATA_FILE` | prompt completion scripts | The prompt's metadata. Replaces `MCP_PROMPT_METADATA` (removed in 2.0). |
 | `MCP_RESOURCE_METADATA_FILE` | resource completion scripts | The resource's or template's metadata. Replaces `MCP_RESOURCE_METADATA` (removed in 2.0). |
+| `MCP_RESOURCE_TEMPLATE_VARS_FILE` | a provider, on a template match | The matched values (raw, client-supplied). Replaces `MCP_RESOURCE_TEMPLATE_VARS` (removed in 2.0). With it, `MCP_RESOURCE_TEMPLATE_NAME` (a scalar) names the template. |
 
 ## Internal Runtime State (do not override)
 

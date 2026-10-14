@@ -120,7 +120,7 @@ When several templates match, the winner is the one with:
 - **`mimeType` is a declared label.** If the matched template sets `mimeType`, the response reports it. The content itself still decides whether it is sent as `text` or as a base64 `blob`. Without a template `mimeType`, the type is detected as before. Set `mimeType` on a template only if every URI it matches shares that type.
 - **Provider environment.** The provider gets two extra variables:
   - `MCP_RESOURCE_TEMPLATE_NAME`: the matched template's `name`;
-  - `MCP_RESOURCE_TEMPLATE_VARS`: a compact JSON object of the matched values, for example `{"id":"42","rest":"a/b%2Fc"}`.
+  - `MCP_RESOURCE_TEMPLATE_VARS_FILE`: the path of a file holding a compact JSON object of the matched values, for example `{"id":"42","rest":"a/b%2Fc"}`. Read it on stdin: `jq -r .id <"$MCP_RESOURCE_TEMPLATE_VARS_FILE"`. The file is readable only by you and removed when the provider exits. (Before 2.0 the JSON was in `MCP_RESOURCE_TEMPLATE_VARS`; a value from a long URI could then stop the provider from starting.)
 
   Neither is set on any other read, nor for tools or completion providers. The server clears any value the host set for them at startup.
 - **The values are raw.** They are the characters from the URI, not percent-decoded. Decode them yourself if you need to, and validate the result: `%2F` decodes to `/` and `%2E%2E` to `..`, so a decoded `{v}` can still reach another path.
@@ -150,4 +150,4 @@ Declarations follow the registry cache. A removed template stops counting after 
 
 - Templates do not bypass roots: `resources/read` still enforces configured roots for the expanded URI.
 - Broad templates like `file:///{+path}` should be paired with tight roots and reviewed for path traversal and symlink handling in your providers.
-- Treat `MCP_RESOURCE_TEMPLATE_VARS` like `$1`: it is client-supplied. Validate each value after any decoding.
+- Treat the `MCP_RESOURCE_TEMPLATE_VARS_FILE` values like `$1`: they are client-supplied. Validate each value after any decoding.
