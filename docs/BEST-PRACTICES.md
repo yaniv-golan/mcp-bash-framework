@@ -95,7 +95,7 @@ This guide distils hands-on recommendations for designing, building, and operati
 
 ### Troubleshooting keywords
 - **Minimal mode** – server only exposes lifecycle/ping/logging; often triggered by missing `jq`/`gojq` or forced via `MCPBASH_FORCE_MINIMAL`.
-- **Compatibility toggles** – `MCPBASH_COMPAT_BATCHES` re-enables legacy JSON-RPC batch arrays for clients using newer protocols; protocol `2025-03-26` accepts arrays automatically. The toggle is removed in 2.0. <!-- lint-api-usage: allow -->
+- **Batches** – protocol `2025-03-26` accepts JSON-RPC array batches automatically; newer protocols reject them. The 1.x `MCPBASH_COMPAT_BATCHES` toggle is removed in 2.0. <!-- lint-api-usage: allow -->
 - **Discovery churn** – `notifications/*/list_changed` loops may indicate fast TTLs or manual registry overrides; inspect `.registry/*.json`.
 - **Cancellation** – `mcp_is_cancelled` returning true mid-tool (see `examples/03-progress-and-cancellation/tools/slow/tool.sh:5`) highlights clients timing out; revisit tool timeouts and progress cadence.
 - **Progress throttling** – hitting the 100/minute default triggers warning logs and truncated progress; adjust `MCPBASH_MAX_PROGRESS_PER_MIN` when high-frequency updates matter.
@@ -281,9 +281,9 @@ repo_path="$(mcp_require_path '.repoPath' --default-to-single-root)"
 - Use `server.d/policy.sh` to gate tool invocations in one place (read-only modes, audit hooks). The framework sources it once per process. Prefer the restrict-only hook `mcp_tools_policy_project TOOL_NAME ARGS_JSON`: it runs after the built-in checks (deny-by-default allowlist, tool path checks), so it can only narrow access.
 - Exit 0 allows; any other status denies, and what the hook printed becomes the denial message (trailing newlines dropped, capped at 1 KiB, default `Tool '<name>' denied by server policy`). Write it for the model: say what was refused and what the user can do.
 - The hook runs in a subshell (`$(...)`) so it can never write to the protocol stream; output on allow is discarded, and variables don't survive between calls (keep state in files).
-- Keep the hook fast and deterministic; it runs on every invocation.
+- Keep the hook fast and deterministic; it runs on every invocation. Its top-level code runs in every tool call's worker (each call sources the file), and since 2.0 once more, in a separate bash process, at each server start: the server checks that it loads. A top level that fails (any command, under `set -euo pipefail`), a syntax error in a file it sources or a top-level `exit` gets every tool call refused, and a slow top level delays `initialize`. Keep the top level to definitions and quick setup.
 - Denials reach the client as a tool result with `isError: true` and `_meta["mcpbash/error"].type` = `policy_denied`, which clients such as Claude Desktop display; a JSON-RPC error would show only as a generic failure.
-- The older form, redefining `mcp_tools_policy_check`, still works but **replaces** the built-in policy, including the deny-by-default allowlist (`MCPBASH_TOOL_ALLOWLIST`) and tool path checks, so it must start with `mcp_tools_policy_check_default "$@" || return 1`; `mcp-bash validate` and `doctor` warn when it doesn't. Its `mcp_tools_error` message and data are kept in the `policy_denied` result; the code is dropped. This guards against accidentally widening access, not against a hostile project: `policy.sh` is trusted shell code sourced at startup and can redefine anything.
+- In mcp-bash 2.0 the 1.x hook `mcp_tools_policy_check` (which *replaced* the built-in check) is no longer called: a `policy.sh` that still defines it gets every tool call refused (`migration_required`), and `initialize`/`server/discover` instructions and stderr say so; `mcp-bash validate` and `doctor` report it as an error. Rename it to `mcp_tools_policy_project`, drop its `mcp_tools_policy_check_default` call (the built-in checks run first) and read the call arguments from `$2` (they were `$3`); `mcp-bash migrate --write` does this when it can tell the body is safe. <!-- lint-api-usage: allow --> The project hook guards against accidentally widening access, not against a hostile project: `policy.sh` is trusted shell code sourced into the server and can redefine anything.
 - Example read-only mode:
 
 ```bash
@@ -1802,7 +1802,7 @@ sequenceDiagram
 ```
 
 - **Full vs minimal mode** – Document which commands require full JSON tooling. For example, completing resource list pagination depends on `jq` or `gojq` for canonicalisation; clients should handle `minimal` capability flags gracefully.
-- **Backward compatibility** – Protocol `2025-03-26` accepts JSON-RPC array batches automatically; newer protocols remain strict single-object per line unless `MCPBASH_COMPAT_BATCHES=true` is set for legacy clients (1.x only; removed in 2.0). <!-- lint-api-usage: allow -->
+- **Backward compatibility** – Protocol `2025-03-26` accepts JSON-RPC array batches automatically; newer protocols remain strict single-object per line (the 1.x `MCPBASH_COMPAT_BATCHES` override is removed in 2.0). <!-- lint-api-usage: allow -->
 - **Transport considerations** – When tunnelling through gateways, preserve stdio framing (one JSON object per line) and forward `Mcp-Session-Id`. Reference [docs/REMOTE.md](REMOTE.md) for gateway-specific nuances.
 - **Example transcripts** – Capture happy-path sequences (initialize → tools/list → tool invocation) using your recording method of choice and store sanitized transcripts under `examples/run/`. (No built-in `--transcript` flag today.)
 

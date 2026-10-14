@@ -13,6 +13,26 @@ fi
 # Project root for doctor. When MCPBASH_SERVER_DIR points at a custom server
 # dir holding server.meta.json, MCPBASH_PROJECT_ROOT is the project (the
 # upward walk below only recognises <root>/server.d/server.meta.json).
+# The project's tool names (tools/**/tool.meta.json and server.d/register.json)
+# that the allowlist in MCP_TOOLS_ALLOWLIST_NAMES doesn't allow, comma
+# separated. Tools without a tool.meta.json aren't seen.
+mcp_doctor_unlisted_tools() {
+	local root="$1" json_bin="$2" names="" name out=""
+	[ -n "${json_bin}" ] || return 0
+	names="$({
+		find "${root}/tools" -name tool.meta.json -type f -exec cat {} + 2>/dev/null | "${json_bin}" -r -s '.[] | .name? // empty | strings' 2>/dev/null
+		"${json_bin}" -r '.tools[]? | .name? // empty | strings' "${root}/server.d/register.json" 2>/dev/null
+	} | LC_ALL=C sort -u)"
+	while IFS= read -r name; do
+		[ -n "${name}" ] || continue
+		mcp_tools_policy_allowlist_has "${name}" && continue
+		out="${out:+${out}, }${name}"
+	done <<EOF_NAMES
+${names}
+EOF_NAMES
+	printf '%s' "${out}"
+}
+
 mcp_doctor_find_project_root() {
 	if [ -n "${MCPBASH_SERVER_DIR:-}" ] && [ -n "${MCPBASH_PROJECT_ROOT:-}" ] && [ -f "${MCPBASH_SERVER_DIR}/server.meta.json" ]; then
 		printf '%s' "${MCPBASH_PROJECT_ROOT}"
@@ -640,10 +660,17 @@ EOF
 				errors=$((errors + 1))
 				add_finding "project.register_permissions" "error" "${reg_message}" "false" ""
 			done < <(mcp_doctor_register_permission_issues "${project_root}")
-			command -v mcp_tools_policy_hook_bypasses_default >/dev/null 2>&1 || . "${MCPBASH_HOME}/lib/tools_policy.sh"
-			if mcp_tools_policy_hook_bypasses_default "$(mcp_runtime_effective_server_dir "${project_root}")/policy.sh"; then
+			command -v mcp_tools_policy_file_has_legacy_hook >/dev/null 2>&1 || . "${MCPBASH_HOME}/lib/tools_policy.sh"
+			if mcp_tools_policy_file_has_legacy_hook "$(mcp_runtime_effective_server_dir "${project_root}")/policy.sh"; then
+				errors=$((errors + 1))
+				add_finding "project.policy_legacy_hook" "error" 'policy.sh defines mcp_tools_policy_check, the mcp-bash 1.x policy hook: every tool call is refused until it is renamed to mcp_tools_policy_project (run mcp-bash migrate)' "false" ""
+			fi
+			# The operator allowlist as this shell sets it; the client config
+			# may differ. Tools it doesn't allow aren't listed.
+			mcp_tools_policy_allowlist_effective
+			if [ "${MCP_TOOLS_ALLOWLIST_ALL}" != "true" ] && [ -z "${MCP_TOOLS_ALLOWLIST_NAMES}" ]; then
 				warnings=$((warnings + 1))
-				add_finding "project.policy_hook_replaces_default" "warning" 'policy.sh replaces the default tool policy (deny-by-default allowlist and tool path checks); start mcp_tools_policy_check with: mcp_tools_policy_check_default "$@" || return 1' "false" ""
+				add_finding "project.tool_allowlist_empty" "warning" 'MCPBASH_TOOL_ALLOWLIST allows no tool in this shell (unset or empty): every tool is denied and none is listed (set it in the MCP client config, e.g. "*" or tool names)' "false" ""
 			fi
 
 			# Tool/provider env policy, as seen from this shell. Names and states
@@ -1779,12 +1806,27 @@ EOF
 			printf '  ✗ %s (every tools/resources/prompts list fails until fixed)\n' "${reg_message}"
 			errors=$((errors + 1))
 		done < <(mcp_doctor_register_permission_issues "${detected_root}")
-		command -v mcp_tools_policy_hook_bypasses_default >/dev/null 2>&1 || . "${MCPBASH_HOME}/lib/tools_policy.sh"
-		if mcp_tools_policy_hook_bypasses_default "$(mcp_runtime_effective_server_dir "${detected_root}")/policy.sh"; then
-			printf '  ⚠ %s\n' 'policy.sh replaces the default tool policy (deny-by-default allowlist and tool path checks); start mcp_tools_policy_check with: mcp_tools_policy_check_default "$@" || return 1'
-			warnings=$((warnings + 1))
+		command -v mcp_tools_policy_file_has_legacy_hook >/dev/null 2>&1 || . "${MCPBASH_HOME}/lib/tools_policy.sh"
+		if mcp_tools_policy_file_has_legacy_hook "$(mcp_runtime_effective_server_dir "${detected_root}")/policy.sh"; then
+			printf '  ✗ %s\n' 'policy.sh defines mcp_tools_policy_check, the mcp-bash 1.x policy hook: every tool call is refused until it is renamed to mcp_tools_policy_project (run mcp-bash migrate)'
+			errors=$((errors + 1))
 		fi
 
+		mcp_tools_policy_allowlist_effective
+		if [ "${MCP_TOOLS_ALLOWLIST_ALL}" = "true" ]; then
+			printf '  ✓ %s\n' 'Tool allowlist (this shell): every tool allowed'
+		elif [ -n "${MCP_TOOLS_ALLOWLIST_NAMES}" ]; then
+			printf '  ✓ %s\n' "Tool allowlist (this shell): ${MCP_TOOLS_ALLOWLIST_NAMES}; other tools are not listed"
+			local unlisted
+			unlisted="$(mcp_doctor_unlisted_tools "${detected_root}" "${gojq_path:-${jq_path}}")"
+			if [ -n "${unlisted}" ]; then
+				printf '  ⚠ %s\n' "Tools not allowed by MCPBASH_TOOL_ALLOWLIST, so not listed: ${unlisted}"
+				warnings=$((warnings + 1))
+			fi
+		else
+			printf '  ⚠ %s\n' 'MCPBASH_TOOL_ALLOWLIST allows no tool in this shell (unset or empty): every tool is denied and none is listed (set it in the MCP client config, e.g. "*" or tool names)'
+			warnings=$((warnings + 1))
+		fi
 		mcp_doctor_print_env_policy "$(mcp_runtime_effective_server_dir "${detected_root}")/server.meta.json" "${gojq_path:-${jq_path}}"
 	else
 		printf '  (no project detected in current directory)\n'

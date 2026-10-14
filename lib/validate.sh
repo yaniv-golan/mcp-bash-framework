@@ -120,12 +120,11 @@ mcp_validate_server_meta() {
 		warnings=$((warnings + 1))
 	fi
 
-	# A policy.sh that redefines mcp_tools_policy_check without calling the
-	# default silently drops the deny-by-default allowlist.
-	command -v mcp_tools_policy_hook_bypasses_default >/dev/null 2>&1 || . "${MCPBASH_HOME}/lib/tools_policy.sh"
-	if mcp_tools_policy_hook_bypasses_default "${MCPBASH_SERVER_DIR}/policy.sh"; then
-		printf '⚠ %s/%s\n' "${meta_label}" 'policy.sh replaces the default tool policy (deny-by-default allowlist and tool path checks); start mcp_tools_policy_check with: mcp_tools_policy_check_default "$@" || return 1'
-		warnings=$((warnings + 1))
+	# A policy.sh that still defines the 1.x hook: 2.0 refuses every tool call.
+	command -v mcp_tools_policy_file_has_legacy_hook >/dev/null 2>&1 || . "${MCPBASH_HOME}/lib/tools_policy.sh"
+	if mcp_tools_policy_file_has_legacy_hook "${MCPBASH_SERVER_DIR}/policy.sh"; then
+		printf '✗ %s/%s\n' "${meta_label}" 'policy.sh defines mcp_tools_policy_check, the mcp-bash 1.x policy hook: every tool call is refused until it is renamed to mcp_tools_policy_project (run mcp-bash migrate)'
+		errors=$((errors + 1))
 	fi
 
 	printf '%s %s\n' "${errors}" "${warnings}"
@@ -177,6 +176,13 @@ mcp_validate_tools() {
 						fi
 						if [ -z "${has_schema}" ]; then
 							printf '⚠ %s - inputSchema has no "type" or "properties"\n' "${rel_meta}"
+							warnings=$((warnings + 1))
+						fi
+						# Clients before 2026-07-28 take object outputSchemas only.
+						local out_type
+						out_type="$("${MCPBASH_JSON_TOOL_BIN}" -r 'if (.outputSchema | type) == "object" and (.outputSchema | has("type")) and .outputSchema.type != "object" then (.outputSchema.type | tostring) else "" end' "${meta_path}" 2>/dev/null || printf '')"
+						if [ -n "${out_type}" ]; then
+							printf '⚠ %s - outputSchema type is %s: only 2026-07-28 clients get structured output (older ones get text only)\n' "${rel_meta}" "${out_type}"
 							warnings=$((warnings + 1))
 						fi
 						# Validate icons format

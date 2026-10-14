@@ -77,6 +77,12 @@ if grep -nE "${brace_default_re}" "${existing_files[@]}" "${MCPBASH_HOME}/bin/mc
 	test_fail "unquoted brace default in a parameter expansion (see matches above)"
 fi
 
+# Every shipped script must at least parse with /bin/bash 3.2 (the same check
+# runs in the bash32-macos CI job; lint runs on Linux there).
+if [ -x /bin/bash ]; then
+	bash "${MCPBASH_HOME}/test/parse-bash32.sh" /bin/bash || test_fail "scripts that don't parse with bash 3.2 (see above)"
+fi
+
 # Verify core libs can be sourced with /bin/bash (macOS 3.2 compatibility)
 # This is the definitive test - actually try to source the libs with bash 3.2
 if [ -x /bin/bash ]; then

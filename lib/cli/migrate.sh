@@ -205,7 +205,8 @@ mcp_cli_migrate() {
 		findings="$(mcp_migrate_detect_resolved "${project_root}" ${detect_args[@]+"${detect_args[@]}"} || true)"
 		# Record the API version once nothing but the marker is pending.
 		local remaining_other
-		remaining_other="$(printf '%s\n' "${findings}" | awk -F'\t' '$1 != "" && $1 != "2-marker"' | wc -l | tr -d ' ')"
+		# Advisory findings (a note, not a change migrate expects) don't block it.
+		remaining_other="$(printf '%s\n' "${findings}" | awk -F'\t' '$1 != "" && $1 != "2-marker" && $2 != "advisory"' | wc -l | tr -d ' ')"
 		if [ "${remaining_other}" -eq 0 ] && printf '%s\n' "${findings}" | grep -q '^2-marker	'; then
 			local meta="${MCPBASH_SERVER_DIR:-${project_root}/server.d}/server.meta.json"
 			if [ "${in_git}" != "true" ]; then

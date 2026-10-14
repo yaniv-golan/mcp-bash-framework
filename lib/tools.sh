@@ -51,13 +51,9 @@ mcp_require json mcp_json_icons_to_data_uris
 mcp_require uri mcp_uri_file_uri_from_path
 mcp_require resource_content mcp_resource_content_object_from_file
 
-# Provide defaults if policy helpers were not sourced (older bootstraps).
-if ! declare -F mcp_tools_policy_check >/dev/null 2>&1; then
-	mcp_tools_policy_check() { return 0; }
-fi
-if ! declare -F mcp_tools_policy_init >/dev/null 2>&1; then
-	mcp_tools_policy_init() { return 0; }
-fi
+# The tool policy lives in lib/tools_policy.sh; without it every call is
+# refused (fail closed), never allowed.
+mcp_require tools_policy mcp_tools_policy_enforce
 
 mcp_tools_scan_root() {
 	mcp_registry_resolve_scan_root "${MCPBASH_TOOLS_DIR}"
@@ -273,36 +269,6 @@ mcp_tools_normalize_schema() {
 		normalized='{"type":"object","properties":{}}'
 	fi
 	printf '%s' "${normalized}"
-}
-
-# Normalize deprecated _meta format to current nested structure
-# Converts _meta["ui/resourceUri"] to _meta.ui.resourceUri per MCP Apps spec
-mcp_tools_normalize_meta() {
-	local output="$1"
-
-	# Only process if JSON tooling is available
-	if [ "${MCPBASH_JSON_TOOL:-none}" = "none" ]; then
-		printf '%s' "${output}"
-		return
-	fi
-
-	# Check for deprecated flat format: _meta["ui/resourceUri"]
-	local has_deprecated
-	has_deprecated="$("${MCPBASH_JSON_TOOL_BIN}" -r '._meta["ui/resourceUri"] // empty' <<<"${output}" 2>/dev/null || true)"
-
-	if [ -n "${has_deprecated}" ]; then
-		# Convert to nested format
-		output="$("${MCPBASH_JSON_TOOL_BIN}" -c '
-			if ._meta["ui/resourceUri"] then
-				._meta.ui.resourceUri = ._meta["ui/resourceUri"] |
-				del(._meta["ui/resourceUri"])
-			else
-				.
-			end
-		' <<<"${output}" 2>/dev/null || printf '%s' "${output}")"
-	fi
-
-	printf '%s' "${output}"
 }
 
 mcp_tools_normalize_local_path() {
@@ -1162,6 +1128,12 @@ mcp_tools_validate_output_schema() {
 	if [ "${output_schema}" = "null" ] || [ -z "${output_schema}" ] || [ "${has_json_tool}" != "true" ]; then
 		return 0
 	fi
+	# Before 2026-07-28 a non-object outputSchema isn't advertised and the
+	# result carries no structured content to check against it.
+	if [ "${MCPBASH_PROTOCOL_ERA:-legacy}" != "modern" ] \
+		&& printf '%s' "${output_schema}" | "${MCPBASH_JSON_TOOL_BIN}" -e 'type == "object" and has("type") and .type != "object"' >/dev/null 2>&1; then
+		return 0
+	fi
 
 	# Parse the tool output as JSON
 	local structured_json=""
@@ -1685,14 +1657,45 @@ mcp_tools_list() {
 		fi
 	fi
 
-	local total="${MCP_TOOLS_TOTAL}"
-	local result_json
-	result_json="$(printf '%s' "${MCP_TOOLS_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -c --argjson offset "${offset}" --argjson limit "${numeric_limit}" --argjson total "${total}" '
-		{
-			tools: .items[$offset:$offset+$limit],
-			_meta: {"mcpbash/total": $total}
-		}
-	')"
+	# Tools the operator's allowlist blocks aren't listed: a client that saw
+	# them would only get a policy denial when calling them. The project hook
+	# (mcp_tools_policy_project) takes the call's arguments, so it can't
+	# filter a listing; it applies at call time.
+	local total="${MCP_TOOLS_TOTAL}" result_json filter=false names=""
+	mcp_tools_policy_allowlist_effective
+	if [ "${MCP_TOOLS_ALLOWLIST_ALL}" != "true" ]; then
+		filter=true
+		names="${MCP_TOOLS_ALLOWLIST_NAMES}"
+	fi
+	local listed
+	listed="$(printf '%s' "${MCP_TOOLS_REGISTRY_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -r \
+		--argjson offset "${offset}" --argjson limit "${numeric_limit}" \
+		--arg filter "${filter}" --arg names "${names}" --arg era "${MCPBASH_PROTOCOL_ERA:-legacy}" '
+		($names | split(" ") | map(select(. != ""))) as $allowed
+		| (if $filter == "true" then (.items | map(select(.name as $n | any($allowed[]; . == $n)))) else .items end) as $items
+		| ((.items | map(.name)) - ($items | map(.name))) as $blocked
+		# Before 2026-07-28 an outputSchema must describe an object: one with
+		# another explicit type is left out for those clients.
+		| ($items[$offset:$offset+$limit]
+			| if $era == "modern" then . else map(
+				if (.outputSchema | type) == "object" and (.outputSchema | has("type")) and .outputSchema.type != "object"
+				then del(.outputSchema)
+				# Those versions require outputSchema.type = "object"; one without
+				# a type gets it.
+				elif (.outputSchema | type) == "object" and (.outputSchema | has("type") | not)
+				then .outputSchema = ({type: "object"} + .outputSchema)
+				else . end) end) as $page
+		| "\($items | length)\t\($blocked | length)\t\({tools: $page, _meta: {"mcpbash/total": ($items | length)}} | tojson)"
+	')" || listed=""
+	if [ -z "${listed}" ]; then
+		mcp_tools_error -32603 "Unable to list tools"
+		return 1
+	fi
+	total="${listed%%$'\t'*}"
+	listed="${listed#*$'\t'}"
+	local blocked_count="${listed%%$'\t'*}"
+	result_json="${listed#*$'\t'}"
+	mcp_tools_note_unlisted "${blocked_count}"
 
 	if ! result_json="$(mcp_paginate_attach_next_cursor "${result_json}" "tools" "${offset}" "${numeric_limit}" "${total}" "${MCP_TOOLS_REGISTRY_HASH}")"; then
 		mcp_tools_error -32603 "Unable to encode tools cursor"
@@ -1700,6 +1703,21 @@ mcp_tools_list() {
 	fi
 
 	printf '%s' "${result_json}"
+}
+
+# Say once per server how many tools the allowlist keeps out of tools/list,
+# as a warning log message (tools/list runs in a worker, whose stderr isn't
+# the server's). Only the count: the names of tools the operator didn't
+# allow aren't sent to the client; `mcp-bash doctor` lists them. A marker in
+# the state dir makes it once per server.
+mcp_tools_note_unlisted() {
+	local count="$1" marker="${MCPBASH_STATE_DIR:-}/allowlist.noted"
+	case "${count}" in '' | 0 | *[!0-9]*) return 0 ;; esac
+	if [ -n "${MCPBASH_STATE_DIR:-}" ]; then
+		[ -e "${marker}" ] && return 0
+		: >"${marker}" 2>/dev/null || true
+	fi
+	mcp_logging_warning "${MCP_TOOLS_LOGGER}" "${count} tool(s) not listed because MCPBASH_TOOL_ALLOWLIST does not allow them (mcp-bash doctor names them)"
 }
 
 mcp_tools_metadata_for_name() {
@@ -1962,11 +1980,19 @@ mcp_tools_call() {
 		return 1
 	fi
 
-	# Initialize and enforce project policy (server.d/policy.sh can override).
+	# The built-in policy, then the project's restrict-only hook.
 	mcp_tools_policy_init
 	_MCP_TOOLS_POLICY_REFUSAL=""
 	_MCP_TOOLS_POLICY_DENIED=false
-	if ! mcp_tools_policy_check "${name}" "${metadata}" "${args_json}"; then
+	if ! mcp_tools_policy_enforce "${name}" "${metadata}" "${args_json}"; then
+		if [ "${MCP_TOOLS_POLICY_LEGACY_HOOK:-false}" = "true" ]; then
+			_mcp_tools_load_tool_error_sdk
+			# shellcheck disable=SC2016  # Backticks are literal text.
+			_MCP_TOOLS_RESULT="$(mcp_tool_error_result migration_required "${_MCP_TOOLS_ERROR_MESSAGE}" \
+				--hint "Run \`mcp-bash migrate\` in the project (\`--write\` renames the hook when it is safe)." \
+				--data '{"removed":"mcp_tools_policy_check"}')"
+			return 0
+		fi
 		if [ "${_MCP_TOOLS_ERROR_CODE:-0}" -eq 0 ]; then
 			mcp_tools_error -32602 "Tool '${name}' blocked by policy"
 		fi
@@ -2648,7 +2674,7 @@ mcp_tools_call() {
 	local result_json
 	result_json="$(
 		"${MCPBASH_JSON_TOOL_BIN}" -n -c \
-			--arg name "${name}" \
+			--arg era "${MCPBASH_PROTOCOL_ERA:-legacy}" \
 			--rawfile stdout "${stdout_content}" \
 			--arg stderr "${stderr_tail}" \
 			--argjson exit_code "${exit_code}" \
@@ -2657,7 +2683,6 @@ mcp_tools_call() {
 			--arg has_schema "$([ "${output_schema}" != "null" ] && [ -n "${output_schema}" ] && printf true || printf false)" \
 			'
 		{
-			name: $name,
 			content: [],
 			isError: false,
 			_meta: {
@@ -2674,14 +2699,17 @@ mcp_tools_call() {
 					# Tool already emitted CallToolResult - use it directly with metadata
 					# Merge existing _meta with framework metadata (preserving ui field, etc.)
 					$json
-					| .name = $name
+					# Before 2026-07-28 structuredContent must be an object.
+					| if $era != "modern" and has("structuredContent") and (.structuredContent | type) != "object" then del(.structuredContent) else . end
 					| ._meta = ((._meta // {}) + {exitCode: $meta_exit_code} + (if ($stderr | length > 0) then {stderr: $stderr} else {} end))
 					| if $exit_code != 0 then .isError = true else . end
 				else
 					# Normal JSON output - wrap in CallToolResult
 					$base
 					| .content += [{type: "text", text: $stdout}]
-					| .structuredContent = $json
+					# Before 2026-07-28 structuredContent must be an object; other
+					# JSON is sent as text only.
+					| if $era == "modern" or ($json | type) == "object" then .structuredContent = $json else . end
 				end
 			) catch (
 				$base | .content += [{type: "text", text: $stdout}]
@@ -2744,9 +2772,6 @@ mcp_tools_call() {
 	fi
 
 	cleanup_tool_temp_files
-
-	# Normalize deprecated _meta format (ui/resourceUri -> ui.resourceUri)
-	result_json="$(mcp_tools_normalize_meta "${result_json}")"
 
 	_MCP_TOOLS_RESULT="${result_json}"
 }

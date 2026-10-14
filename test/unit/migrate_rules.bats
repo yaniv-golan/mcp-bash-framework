@@ -154,3 +154,47 @@ tools/a/tool.sh:2:manual"
 tools/a/tool.sh:2:auto
 tools/a/tool.sh:3:auto"
 }
+
+# policy_kind BODY: the 2-policy-replace verdict for a policy.sh with BODY.
+policy_kind() {
+	local root="${BATS_TEST_TMPDIR}/p$RANDOM"
+	mkdir -p "${root}/server.d"
+	printf '{"name":"p"}\n' >"${root}/server.d/server.meta.json"
+	printf '%s\n' "$1" >"${root}/server.d/policy.sh"
+	detect_rule 2-policy-replace "${root}" | cut -d: -f3
+}
+
+@test "migrate rules: 2-policy-replace stays manual when the hook reads the 1.x arguments" {
+	local first='	mcp_tools_policy_check_default "$@" || return 1'
+	# $1 only: same meaning in both hooks.
+	run policy_kind "$(printf 'mcp_tools_policy_check() {\n%s\n\t[ "$1" != rm ] || return 1\n}' "${first}")"
+	assert_output "auto"
+	# $3 was the call arguments; the new hook passes them as $2, so a rename
+	# would read nothing there (and could allow what it used to deny).
+	run policy_kind "$(printf 'mcp_tools_policy_check() {\n%s\n\tcase "$3" in *rm*) return 1 ;; esac\n}' "${first}")"
+	assert_output "manual"
+	run policy_kind "$(printf 'mcp_tools_policy_check() {\n%s\n\tlog_call "$@"\n}' "${first}")"
+	assert_output "manual"
+	run policy_kind "$(printf 'mcp_tools_policy_check() {\n%s\n\tlog_call $*\n}' "${first}")"
+	assert_output "manual"
+	# Code after the default call on its line: never dropped by a rewrite.
+	run policy_kind "$(printf 'mcp_tools_policy_check() {\n%s; [ "$1" = secret ] && return 1\n\treturn 0\n}' "${first}")"
+	assert_output "manual"
+	# The 1.x arguments read through shift, set --, $# or indirection.
+	run policy_kind "$(printf 'mcp_tools_policy_check() {\n%s\n\tshift 2\n\tcase "${1:-}" in *danger*) return 1 ;; esac\n}' "${first}")"
+	assert_output "manual"
+	run policy_kind "$(printf 'mcp_tools_policy_check() {\n%s\n\tset -- x\n\treturn 0\n}' "${first}")"
+	assert_output "manual"
+	run policy_kind "$(printf 'mcp_tools_policy_check() {\n%s\n\t[ "$#" -ge 3 ] || return 1\n}' "${first}")"
+	assert_output "manual"
+	run policy_kind "$(printf 'mcp_tools_policy_check() {\n%s\n\tlocal n=3; [ -n "${!n}" ]\n}' "${first}")"
+	assert_output "manual"
+	# A trailing comment on the default call is fine.
+	run policy_kind "$(printf 'mcp_tools_policy_check() {\n%s # built-in first\n\t[ "$1" != rm ] || return 1\n}' "${first}")"
+	assert_output "auto"
+	# A one-line hook is reported (manual), not missed.
+	run policy_kind 'mcp_tools_policy_check() { mcp_tools_policy_check_default "$@"; }'
+	assert_output "manual"
+	run policy_kind 'function mcp_tools_policy_check { return 0; }'
+	assert_output "manual"
+}

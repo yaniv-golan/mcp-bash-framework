@@ -63,4 +63,15 @@ expect_code "preinit" "-32000"
 expect_code "unknown" "-32601"
 expect_code "batch" "-32600"
 
+# MCPBASH_COMPAT_BATCHES is gone in 2.0: setting it doesn't enable batch
+# arrays on protocols that don't have them (2025-03-26 keeps them).
+RESPONSES_COMPAT="${WORKSPACE}/responses-compat.ndjson"
+MCPBASH_COMPAT_BATCHES=true test_run_mcp "${WORKSPACE}" "${REQUESTS}" "${RESPONSES_COMPAT}"
+assert_json_lines "${RESPONSES_COMPAT}"
+if jq -e 'select(.id == "batch") | .result' "${RESPONSES_COMPAT}" >/dev/null 2>&1; then
+	test_fail "MCPBASH_COMPAT_BATCHES=true still enables batches"
+fi
+jq -e 'select(.error.code == -32600 and ((.error.data // "") | type == "string" and contains("Batch arrays")))' "${RESPONSES_COMPAT}" >/dev/null \
+	|| test_fail "batch not rejected with MCPBASH_COMPAT_BATCHES=true"
+
 printf 'Core error handling tests passed.\n'

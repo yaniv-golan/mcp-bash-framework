@@ -84,10 +84,10 @@ test_assert_eq "${ok_text}" "ok"
 expect_error "${RESPONSES}" "writable" "-32602" "path rejected by policy"
 expect_error "${RESPONSES}" "data" "-32602" "Tool executable missing"
 
-# A project policy.sh that allows everything skips the default path check, so
-# the call-time path validation in mcp_tools_call is what refuses it.
+# A project hook that allows everything can't skip the built-in path check:
+# it only runs after that check passed (it can only restrict).
 cat <<'SH' >"${WORKSPACE}/server.d/policy.sh"
-mcp_tools_policy_check() {
+mcp_tools_policy_project() {
 	return 0
 }
 SH
@@ -95,7 +95,7 @@ chmod 0644 "${WORKSPACE}/server.d/policy.sh"
 RESPONSES_POLICY="${WORKSPACE}/responses-policy.ndjson"
 test_run_mcp "${WORKSPACE}" "${WORKSPACE}/requests.ndjson" "${RESPONSES_POLICY}"
 assert_json_lines "${RESPONSES_POLICY}"
-expect_error "${RESPONSES_POLICY}" "writable" "-32602" "Tool path rejected by policy"
+expect_error "${RESPONSES_POLICY}" "writable" "-32602" "path rejected by policy"
 expect_error "${RESPONSES_POLICY}" "data" "-32602" "Tool executable missing"
 rm -f "${WORKSPACE}/server.d/policy.sh"
 

@@ -66,13 +66,12 @@ Authoritative list of supported environment variables. Defaults shown are the sh
 | `MCPBASH_COMPLETION_TIMEOUT_SECS` | `5` | Timeout for per-prompt and per-resource completion scripts (`0` disables). Registered completions use their own `timeoutSecs`, or `MCPBASH_COMPLETION_REGISTERED_TIMEOUT_SECS`. |
 | `MCPBASH_COMPLETION_REGISTERED_TIMEOUT_SECS` | `30` | Timeout for registered completions (`register.json` / `register.sh`) that do not set `timeoutSecs` (`0` disables). An explicit `timeoutSecs` always wins; `timeoutSecs: 0` means no timeout. |
 | `MCPBASH_IGNORE_META_ENV` | `false` | Operator switch: when `true`, ignore the `"env"` object in `server.d/server.meta.json`. `mcp-bash run-tool --print-env` and `mcp-bash doctor` show which source (launch env, `server.meta.json`, default) decides each scope, with names and states only (never values). `--print-env` reflects the launch env plus `server.meta.json`, not `--with-server-env`/`--source` files or `server.d/policy.sh`. |
-| `MCPBASH_TOOL_ALLOWLIST` | (required) | Space/comma-separated tool names allowed to run (`*` to allow all). Empty by default (deny). |
+| `MCPBASH_TOOL_ALLOWLIST` | (required) | Space/comma-separated tool names allowed to run (`*` to allow all). Empty by default (deny). Tools it doesn't allow are left out of `tools/list` (since 2.0); the instructions then say so, a warning log message gives their number once per server, and `mcp-bash doctor` shows the effective list and names them. |
 | `MCPBASH_TOOL_ALLOW_DEFAULT` | `deny` | Set to `allow` to keep legacy allow-all behavior without an explicit allowlist. |
 | `MCPBASH_FORCE_MINIMAL` | (unset) | Force minimal capability tier even when JSON tooling is present. |
 | `MCPBASH_JSON_TOOL` | (auto-detect jq → gojq) | Explicit JSON tool selection: `jq`, `gojq`, or `none`. Default order is jq-first (Windows E2BIG mitigation). |
 | `MCPBASH_JSON_TOOL_BIN` | (derived from tool) | Explicit path to JSON tool; infers `MCPBASH_JSON_TOOL` from basename if unset and treats unknown names as jq-compatible (behavior may differ if flags differ). |
 | `MCPBASH_ALLOW_JSON_TOOL_OVERRIDE_FOR_ROOT` | `false` | Allow `MCPBASH_JSON_TOOL{,_BIN}` overrides when running as root. |
-| `MCPBASH_COMPAT_BATCHES` | (unset) | Enable legacy batch request support (auto-enabled when protocol is `2025-03-26`; use only for out-of-spec clients on newer protocols). Removed in 2.0, where batches stay automatic for `2025-03-26` only. <!-- lint-api-usage: allow --> |
 | `MCPBASH_DEBUG_PAYLOADS` | (unset) | Write full message payloads to `${TMPDIR}/mcpbash.state.*`. |
 | `MCPBASH_DEBUG_ERRORS` | `false` | When `true`, include tool diagnostics (exit code, stderr tail, trace line) in outputSchema validation errors. |
 | `MCPBASH_DEBUG_LOG` | (unset) | Override the per-tool debug log path; when unset, tools get a per-invocation file under the log/state dir. |

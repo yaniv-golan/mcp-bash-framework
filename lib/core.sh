@@ -147,10 +147,36 @@ mcp_core_bootstrap_state() {
 	: >"${MCP_PROGRESS_STREAM}"
 	: >"${MCP_LOG_STREAM}"
 	mcp_runtime_log_startup_summary
+	# Prints why policy.sh can't be loaded, if so (mcp_tools_policy_startup_check).
+	mcp_core_check_policy_hook
 	mcp_core_start_deprecation_notice
-	if declare -F mcp_tools_policy_startup_check >/dev/null 2>&1; then
+}
+
+# Set once per start: true when server.d/policy.sh defines the 1.x hook
+# mcp_tools_policy_check, so every tool call is refused (lib/tools_policy.sh).
+# The instructions say so, and stderr says it once per start. Static and
+# builtins only: the file isn't sourced here.
+MCP_CORE_POLICY_LEGACY_HOOK=false
+# Also set once per start: true when policy.sh exists but can't be loaded
+# safely (see mcp_tools_policy_init), so every call is refused.
+MCP_CORE_POLICY_BROKEN=false
+mcp_core_check_policy_hook() {
+	MCP_CORE_POLICY_LEGACY_HOOK=false
+	MCP_CORE_POLICY_BROKEN=false
+	local policy="${MCPBASH_SERVER_DIR:-}/policy.sh"
+	[ -n "${MCPBASH_SERVER_DIR:-}" ] && [ -e "${policy}" ] || return 0
+	declare -F mcp_tools_policy_file_has_legacy_hook >/dev/null 2>&1 || return 0
+	# The same checks a call makes (the load verdict is cached in the state
+	# dir, so the workers don't repeat it); stderr names the reason.
+	if [ -n "$(mcp_tools_policy_unsafe_reason)" ]; then
+		MCP_CORE_POLICY_BROKEN=true
 		mcp_tools_policy_startup_check || true
+		return 0
 	fi
+	mcp_tools_policy_file_has_legacy_hook "${policy}" || return 0
+	MCP_CORE_POLICY_LEGACY_HOOK=true
+	# shellcheck disable=SC2016  # Backticks are literal text.
+	printf '%s\n' 'mcp-bash: server.d/policy.sh defines mcp_tools_policy_check, the 1.x policy hook; mcp-bash 2.0 refuses every tool call until it is renamed to mcp_tools_policy_project (run `mcp-bash migrate`)' >&2
 }
 
 # Migrate rules about SDK helpers removed in 2.0 (their findings feed the
@@ -180,6 +206,20 @@ MCP_CORE_REMOVED_API_NOTE_ON=0
 # has entries.
 mcp_core_build_instructions() {
 	MCP_CORE_INSTRUCTIONS="${MCPBASH_SERVER_INSTRUCTIONS:-}"
+	# From the environment only (no registry load): the allowlist decides
+	# what tools/list shows.
+	if declare -F mcp_tools_policy_allowlist_effective >/dev/null 2>&1; then
+		mcp_tools_policy_allowlist_effective
+		if [ "${MCP_TOOLS_ALLOWLIST_ALL}" != "true" ]; then
+			MCP_CORE_INSTRUCTIONS="${MCP_CORE_INSTRUCTIONS:+${MCP_CORE_INSTRUCTIONS}$'\n\n'}Tools outside the server operator's allowlist (MCPBASH_TOOL_ALLOWLIST) are not listed and can't be called."
+		fi
+	fi
+	if [ "${MCP_CORE_POLICY_BROKEN}" = "true" ]; then
+		MCP_CORE_INSTRUCTIONS="${MCP_CORE_INSTRUCTIONS:+${MCP_CORE_INSTRUCTIONS}$'\n\n'}This server's tool policy (server.d/policy.sh) can't be loaded, so every tool call is refused until the server's operator fixes it."
+	elif [ "${MCP_CORE_POLICY_LEGACY_HOOK}" = "true" ]; then
+		# shellcheck disable=SC2016  # Backticks are literal text.
+		MCP_CORE_INSTRUCTIONS="${MCP_CORE_INSTRUCTIONS:+${MCP_CORE_INSTRUCTIONS}$'\n\n'}This server's tool policy (server.d/policy.sh) uses the mcp-bash 1.x hook, so every tool call is refused until it is migrated (\`mcp-bash migrate\`)."
+	fi
 	local findings="${MCPBASH_REGISTRY_DIR:-}/scan/removed-api.findings"
 	[ "${MCP_CORE_REMOVED_API_NOTE_ON}" = 1 ] && [ -s "${findings}" ] || return 0
 	local files="" n=0 line note

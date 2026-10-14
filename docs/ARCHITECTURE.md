@@ -43,7 +43,7 @@ my-server/
 ## Lifecycle loop
 - `bin/mcp-bash` sources runtime, JSON, RPC, and core libraries, confirms stdout is a pipe or terminal, and enters `mcp_core_run`.
 - Each line from stdio is BOM-stripped, trimmed, and compacted with jq/gojq or validated through the minimal tokenizer before dispatch.
-- Arrays are accepted when the negotiated protocol is `2025-03-26`; newer protocols reject batch arrays unless `MCPBASH_COMPAT_BATCHES=true`, in which case batches are decomposed into individual requests (`MCPBASH_COMPAT_BATCHES` is removed in 2.0; batches stay automatic for `2025-03-26`). Batches under `2025-03-26` are answered one response per item: each response is its own line, not one JSON array, and responses from long-running requests may arrive after later items. <!-- lint-api-usage: allow -->
+- Arrays are accepted when the negotiated protocol is `2025-03-26`; newer protocols reject batch arrays (the 1.x `MCPBASH_COMPAT_BATCHES` override is gone in 2.0). For 2025-03-26, batches are decomposed into individual requests. Batches under `2025-03-26` are answered one response per item: each response is its own line, not one JSON array, and responses from long-running requests may arrive after later items. <!-- lint-api-usage: allow -->
 - Dispatch routes lifecycle, ping, logging, tools, resources, prompts, and completion methods; unknown methods return `-32601` and notifications remain server-owned.
 - Responses flow through `rpc_send_line` to guarantee single-line JSON with newline termination and carriage-return scrubbing.
 
@@ -72,7 +72,7 @@ my-server/
 - Cursors are opaque base64url payloads with `ver`, `collection`, `offset`, `hash`, and `timestamp`; `tools/list` returns deterministic slices with `nextCursor` and exposes the full count as an extension via `result._meta["mcpbash/total"]` (not a top-level field) for strict-client compatibility.
 - `tools/call` wires the SDK env, captures stdout/stderr, surfaces `_meta.stderr`, emits structured content when metadata declares `outputSchema`, and returns `isError` on tool exit codes.
 - Embedded resource content: tools can append to `MCP_TOOL_RESOURCES_FILE` (JSON array or tab-separated `path<TAB>mime<TAB>uri`) to have the framework emit `{type:"resource"}` entries in the result `content` array; binary files are base64 encoded automatically.
-- Tool policy hook: if present, `server.d/policy.sh` defines `mcp_tools_policy_check()` and is invoked before every tool run (default implementation allows all tools).
+- Tool policy: before every tool run the built-in policy (deny-by-default `MCPBASH_TOOL_ALLOWLIST`, tool path checks) runs, then `mcp_tools_policy_project()` if `server.d/policy.sh` defines it; the project hook can only deny. A `policy.sh` that still defines the 1.x `mcp_tools_policy_check()` gets every call refused. <!-- lint-api-usage: allow -->
 - Declarative registration: `server.d/register.json` can provide a `tools` array (and other kinds) without executing project shell code; if present, it takes precedence and invalid input fails loudly (no fallback to hooks).
 - Hook registration: `server.d/register.sh` can return a `tools` array to replace auto-discovery, but it executes shell code and is opt-in (`MCPBASH_ALLOW_PROJECT_HOOKS=true` plus safe ownership/permissions).
 
