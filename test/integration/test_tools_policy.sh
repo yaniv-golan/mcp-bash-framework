@@ -103,6 +103,41 @@ printf ' -> the hook can only restrict: the operator allowlist still applies\n'
 MCPBASH_TOOL_ALLOWLIST="other" test_run_mcp "${POLICY_ROOT}" "${POLICY_ROOT}/req.ndjson" "${POLICY_ROOT}/allowlist.ndjson"
 assert_policy_denied "$(call "${POLICY_ROOT}/allowlist.ndjson")" "not in MCPBASH_TOOL_ALLOWLIST" "allowlist before the hook"
 
+# A policy.sh that can't be loaded refuses every call (fail closed): the
+# client gets a policy_denied result naming the reason, never no answer.
+broken_policy() {
+	local label="$1" want="$2"
+	test_run_mcp "${POLICY_ROOT}" "${POLICY_ROOT}/req.ndjson" "${POLICY_ROOT}/broken-${label}.ndjson"
+	local r
+	r="$(call "${POLICY_ROOT}/broken-${label}.ndjson")"
+	[ -n "${r}" ] || test_fail "${label}: no response to tools/call"
+	assert_policy_denied "${r}" "${want}" "${label}"
+	case "$(jq -r 'select(.id=="init") | .result.instructions // ""' "${POLICY_ROOT}/broken-${label}.ndjson")" in
+	*"server.d/policy.sh) can't be loaded, so every tool call is refused"*) ;;
+	*) test_fail "${label}: no instructions sentence" ;;
+	esac
+}
+DENY_SECRET='mcp_tools_policy_project() { [ "$1" != hello ] || { printf "hello is off"; return 1; }; }'
+
+printf ' -> policy.sh writable by others: not loaded, every call refused\n'
+printf '%s\n' "${DENY_SECRET}" >"${POLICY_ROOT}/server.d/policy.sh"
+chmod 0666 "${POLICY_ROOT}/server.d/policy.sh"
+broken_policy perms "server.d/policy.sh is not loaded"
+chmod 0644 "${POLICY_ROOT}/server.d/policy.sh"
+
+printf ' -> policy.sh with a syntax error: every call refused, with an answer\n'
+printf '%s\n' "${DENY_SECRET}" 'if then' >"${POLICY_ROOT}/server.d/policy.sh"
+broken_policy syntax "server.d/policy.sh failed while loading"
+
+printf ' -> policy.sh that exits at the top level: every call refused, with an answer\n'
+printf '%s\n' "${DENY_SECRET}" 'exit 0' >"${POLICY_ROOT}/server.d/policy.sh"
+broken_policy exit "server.d/policy.sh failed while loading"
+
+printf ' -> a last command that fails is fine: the hook still applies\n'
+printf '%s\n' "${DENY_SECRET}" '[ -n "${NOT_SET_ANYWHERE:-}" ] && export X=1' >"${POLICY_ROOT}/server.d/policy.sh"
+test_run_mcp "${POLICY_ROOT}" "${POLICY_ROOT}/req.ndjson" "${POLICY_ROOT}/lastfail.ndjson"
+assert_policy_denied "$(call "${POLICY_ROOT}/lastfail.ndjson")" "hello is off" "last command fails"
+
 printf ' -> the 1.x hook (mcp_tools_policy_check) fails closed\n'
 cat <<'POLICY' >"${POLICY_ROOT}/server.d/policy.sh"
 #!/usr/bin/env bash

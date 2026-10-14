@@ -156,11 +156,22 @@ mcp_core_bootstrap_state() {
 # The instructions say so, and stderr says it once per start. Static and
 # builtins only: the file isn't sourced here.
 MCP_CORE_POLICY_LEGACY_HOOK=false
+# Also set once per start: true when policy.sh exists but can't be loaded
+# safely (see mcp_tools_policy_init), so every call is refused.
+MCP_CORE_POLICY_BROKEN=false
 mcp_core_check_policy_hook() {
 	MCP_CORE_POLICY_LEGACY_HOOK=false
+	MCP_CORE_POLICY_BROKEN=false
 	local policy="${MCPBASH_SERVER_DIR:-}/policy.sh"
-	[ -n "${MCPBASH_SERVER_DIR:-}" ] || return 0
+	[ -n "${MCPBASH_SERVER_DIR:-}" ] && [ -e "${policy}" ] || return 0
 	declare -F mcp_tools_policy_file_has_legacy_hook >/dev/null 2>&1 || return 0
+	# The same checks a call makes; the load probe's verdict is cached in the
+	# state dir, so the workers don't repeat it.
+	if ! mcp_tools_policy_check_secure_tree "${policy}" || ! mcp_tools_policy_loads "${policy}"; then
+		MCP_CORE_POLICY_BROKEN=true
+		printf '%s\n' 'mcp-bash: server.d/policy.sh is insecure (ownership, permissions or a symlink) or fails while loading; every tool call is refused until it is fixed' >&2
+		return 0
+	fi
 	mcp_tools_policy_file_has_legacy_hook "${policy}" || return 0
 	MCP_CORE_POLICY_LEGACY_HOOK=true
 	# shellcheck disable=SC2016  # Backticks are literal text.
@@ -202,7 +213,9 @@ mcp_core_build_instructions() {
 			MCP_CORE_INSTRUCTIONS="${MCP_CORE_INSTRUCTIONS:+${MCP_CORE_INSTRUCTIONS}$'\n\n'}Tools outside the server operator's allowlist (MCPBASH_TOOL_ALLOWLIST) are not listed and can't be called."
 		fi
 	fi
-	if [ "${MCP_CORE_POLICY_LEGACY_HOOK}" = "true" ]; then
+	if [ "${MCP_CORE_POLICY_BROKEN}" = "true" ]; then
+		MCP_CORE_INSTRUCTIONS="${MCP_CORE_INSTRUCTIONS:+${MCP_CORE_INSTRUCTIONS}$'\n\n'}This server's tool policy (server.d/policy.sh) can't be loaded, so every tool call is refused until the server's operator fixes it."
+	elif [ "${MCP_CORE_POLICY_LEGACY_HOOK}" = "true" ]; then
 		# shellcheck disable=SC2016  # Backticks are literal text.
 		MCP_CORE_INSTRUCTIONS="${MCP_CORE_INSTRUCTIONS:+${MCP_CORE_INSTRUCTIONS}$'\n\n'}This server's tool policy (server.d/policy.sh) uses the mcp-bash 1.x hook, so every tool call is refused until it is migrated (\`mcp-bash migrate\`)."
 	fi
