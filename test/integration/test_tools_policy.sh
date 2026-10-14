@@ -145,6 +145,17 @@ printf '%s\n' '. "${MCPBASH_SERVER_DIR}/policy-lib.sh"' "${DENY_SECRET}" >"${POL
 broken_policy nested "was not loaded: it stops while loading"
 rm -f "${POLICY_ROOT}/server.d/policy-lib.sh"
 
+printf ' -> policy.sh can use the server paths at its top level\n'
+printf '%s\n' "${DENY_SECRET}" >"${POLICY_ROOT}/server.d/rules.sh"
+cat <<'POLICY' >"${POLICY_ROOT}/server.d/policy.sh"
+set -u
+: "${MCPBASH_HOME}" "${MCPBASH_TOOLS_DIR}" "${MCPBASH_STATE_DIR}" "${MCPBASH_PROJECT_ROOT}"
+. "${MCPBASH_SERVER_DIR}/rules.sh"
+POLICY
+test_run_mcp "${POLICY_ROOT}" "${POLICY_ROOT}/req.ndjson" "${POLICY_ROOT}/paths.ndjson"
+assert_policy_denied "$(call "${POLICY_ROOT}/paths.ndjson")" "hello is off" "server paths at the top level"
+rm -f "${POLICY_ROOT}/server.d/rules.sh"
+
 printf ' -> a last command that fails is fine: the hook still applies\n'
 printf '%s\n' "${DENY_SECRET}" '[ -n "${NOT_SET_ANYWHERE:-}" ] && export X=1' >"${POLICY_ROOT}/server.d/policy.sh"
 test_run_mcp "${POLICY_ROOT}" "${POLICY_ROOT}/req.ndjson" "${POLICY_ROOT}/lastfail.ndjson"

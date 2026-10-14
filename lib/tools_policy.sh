@@ -168,8 +168,13 @@ mcp_tools_policy_load_verdict() {
 		# syntax error there), ends the probe, as it ends a bash 3.2 worker.
 		# The status of the file as a whole (its last command, a top-level
 		# return) is fine: the ERR trap tells that case by where it fires.
+		# A new process sees only exported variables: export the server paths
+		# a policy.sh may use at its top level, as a worker has them (in this
+		# command substitution only; an unset one stays unset).
 		# shellcheck disable=SC2016  # The probe script is expanded by the new bash.
-		verdict="$("${BASH:-bash}" -c '
+		verdict="$(
+			export MCPBASH_HOME MCPBASH_PROJECT_ROOT MCPBASH_SERVER_DIR MCPBASH_TOOLS_DIR MCPBASH_STATE_DIR
+			exec "${BASH:-bash}" -c '
 			exec 3>&1 </dev/null >/dev/null 2>&1
 			set -euo pipefail
 			probe_self="${BASH_SOURCE[0]:-}"
@@ -180,7 +185,8 @@ mcp_tools_policy_load_verdict() {
 			unset -f exit
 			trap - ERR
 			[ "${exited}" = "false" ] && printf ok >&3
-		' _ "${policy_path}" 2>/dev/null)" || true
+		' _ "${policy_path}" 2>/dev/null
+		)" || true
 		[ -n "${verdict}" ] || verdict=failed
 	fi
 	[ -z "${cache}" ] || printf '%s\n%s' "${verdict}" "${content}" >"${cache}" 2>/dev/null || true
