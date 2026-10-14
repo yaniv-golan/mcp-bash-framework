@@ -25,7 +25,7 @@ mcp_doctor_unlisted_tools() {
 	} | LC_ALL=C sort -u)"
 	while IFS= read -r name; do
 		[ -n "${name}" ] || continue
-		case " ${MCP_TOOLS_ALLOWLIST_NAMES} " in *" ${name} "*) continue ;; esac
+		mcp_tools_policy_allowlist_has "${name}" && continue
 		out="${out:+${out}, }${name}"
 	done <<EOF_NAMES
 ${names}

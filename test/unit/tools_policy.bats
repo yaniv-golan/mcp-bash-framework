@@ -87,3 +87,13 @@ POLICY
 	run mcp_tools_policy_enforce "hello" '{}' '{}'
 	assert_failure
 }
+
+@test "tools_policy: an allowlist entry matches one tool name exactly" {
+	MCP_TOOLS_POLICY_LOADED="false"
+	mcp_tools_policy_init
+	MCPBASH_TOOL_ALLOWLIST="a b c d"
+	# "b c" is not an entry, though the list contains that text.
+	run mcp_tools_policy_enforce "b c" '{}' '{}'
+	assert_failure
+	mcp_tools_policy_enforce "b" '{}' '{}'
+}

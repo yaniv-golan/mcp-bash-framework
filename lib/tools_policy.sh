@@ -199,7 +199,8 @@ mcp_tools_policy_init() {
 		# fails with "readonly function" and the original stays). This guards
 		# against an accidental override, not a hostile file: see SECURITY.md.
 		readonly -f mcp_tools_policy_enforce mcp_tools_policy_check_default \
-			mcp_tools_policy_run_project_hook mcp_tools_policy_allowlist_effective 2>/dev/null || true
+			mcp_tools_policy_run_project_hook mcp_tools_policy_allowlist_effective \
+			mcp_tools_policy_allowlist_has 2>/dev/null || true
 		# A top-level `exit` would end this worker, and the client would get no
 		# answer: catch it while sourcing.
 		_MCP_TOOLS_POLICY_EXITED=false
@@ -337,6 +338,24 @@ mcp_tools_policy_allowlist_effective() {
 	[ "${noglob}" = 1 ] || set +f
 }
 
+# True when NAME is one of the entries in MCP_TOOLS_ALLOWLIST_NAMES (set by
+# mcp_tools_policy_allowlist_effective), compared whole: a name may contain a
+# space, and "b c" must not match the list "a b c d".
+mcp_tools_policy_allowlist_has() {
+	local name="$1" entry noglob=0 found=1
+	case $- in *f*) noglob=1 ;; esac
+	set -f
+	# shellcheck disable=SC2086  # The entries are space-separated.
+	for entry in ${MCP_TOOLS_ALLOWLIST_NAMES}; do
+		if [ "${entry}" = "${name}" ]; then
+			found=0
+			break
+		fi
+	done
+	[ "${noglob}" = 1 ] || set +f
+	return "${found}"
+}
+
 mcp_tools_policy_check_default() {
 	# $1: tool name; $2: tool metadata JSON string
 	local name="$1"
@@ -356,8 +375,8 @@ mcp_tools_policy_check_default() {
 			_MCP_TOOLS_ERROR_MESSAGE="Tool '${name}' blocked by policy. Set MCPBASH_TOOL_ALLOWLIST in your MCP client config."
 		fi
 		return 1
-	else
-		case " ${MCP_TOOLS_ALLOWLIST_NAMES} " in *" ${name} "*) allowed="true" ;; esac
+	elif mcp_tools_policy_allowlist_has "${name}"; then
+		allowed="true"
 	fi
 
 	if [ "${allowed}" != "true" ]; then
