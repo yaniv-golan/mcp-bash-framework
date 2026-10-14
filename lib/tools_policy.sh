@@ -105,8 +105,15 @@ mcp_tools_policy_check_secure_tree() {
 
 # Why server.d/policy.sh can't be loaded safely: prints the reason, or
 # nothing when there is no policy.sh or it is fine. Insecure ownership or
-# permissions, a symlink, or a syntax error (checked with bash -n first: bash
-# 3.2 stops the whole shell on a syntax error in a sourced file).
+# permissions, a symlink, a syntax error, or a file that dies while it is
+# sourced (a top-level command that fails, a syntax error in a file it
+# sources, a top-level exit), tried in a fresh bash process at each start
+# (its top-level code then runs one extra time); the workers reuse that
+# verdict while the file's content is the same. A file it sources that breaks
+# while the server runs is not seen until the next start (a worker's own load
+# can't tell on bash 4+: the dispatcher's callers exempt it from errexit),
+# except that a worker whose load no longer defines a hook the start check
+# saw refuses the call (mcp_tools_policy_init).
 mcp_tools_policy_unsafe_reason() {
 	[ -n "${MCPBASH_SERVER_DIR:-}" ] || return 0
 	local policy_path="${MCPBASH_SERVER_DIR}/policy.sh"
@@ -116,10 +123,75 @@ mcp_tools_policy_unsafe_reason() {
 			"${policy_path}" "${policy_path}" "${MCPBASH_SERVER_DIR}" "${MCPBASH_PROJECT_ROOT:-.}"
 		return 0
 	fi
-	if ! "${BASH:-bash}" -n "${policy_path}" 2>/dev/null; then
-		printf '%s was not loaded: it has a syntax error (check it with: bash -n "%s")' "${policy_path}" "${policy_path}"
-	fi
+	case "$(mcp_tools_policy_load_verdict "${policy_path}")" in
+	ok*) ;;
+	syntax) printf '%s was not loaded: it has a syntax error (check it with: bash -n "%s")' "${policy_path}" "${policy_path}" ;;
+	*) printf '%s was not loaded: it stops while loading (a top-level command that fails, a syntax error in a file it sources, or a top-level exit)' "${policy_path}" ;;
+	esac
 	return 0
+}
+
+# Whether sourcing POLICY_PATH completes, tried in a new bash process and
+# cached in the state dir against the file's content: "syntax", "failed", or
+# "ok" followed by the hooks it defines, as ":project" (mcp_tools_policy_project)
+# and ":check" (a mcp_tools_policy_check that replaces the built-in one).
+mcp_tools_policy_load_verdict() {
+	local policy_path="$1" content="" cache="" cached_content="" verdict=""
+	IFS= read -r -d '' content <"${policy_path}" 2>/dev/null || true
+	# Kept for this server only (its state dir), so the workers don't repeat
+	# it: the next start checks again, since a file policy.sh sources may
+	# have changed (only policy.sh's own content is compared).
+	if [ -n "${MCPBASH_STATE_DIR:-}" ] && [ -d "${MCPBASH_STATE_DIR}" ]; then
+		cache="${MCPBASH_STATE_DIR}/policy.loads"
+	fi
+	if [ -n "${cache}" ] && [ -f "${cache}" ]; then
+		{
+			IFS= read -r verdict
+			IFS= read -r -d '' cached_content || true
+		} <"${cache}" 2>/dev/null || true
+		if [ -n "${verdict}" ] && [ "${cached_content}" = "${content}" ]; then
+			printf '%s' "${verdict}"
+			return 0
+		fi
+	fi
+	if ! "${BASH:-bash}" -n "${policy_path}" 2>/dev/null; then
+		verdict=syntax
+	else
+		# A fresh bash process: a subshell would inherit an errexit exemption
+		# from any || or if around this call, and then let a failing
+		# top-level command through. As strict as a worker on every bash: a
+		# top-level command that fails, or one in a file policy.sh sources (a
+		# syntax error there), ends the probe. The status of the file as a
+		# whole (its last command) is fine: the ERR trap tells that case by
+		# where it fires. A new process sees only exported variables: export
+		# the server paths a policy.sh may use at its top level, as a worker
+		# has them (in this command substitution only).
+		# shellcheck disable=SC2016  # The probe script is expanded by the new bash.
+		verdict="$(
+			export MCPBASH_HOME MCPBASH_PROJECT_ROOT MCPBASH_SERVER_DIR MCPBASH_TOOLS_DIR MCPBASH_STATE_DIR
+			exec "${BASH:-bash}" -c '
+			exec 3>&1 </dev/null >/dev/null 2>&1
+			set -euo pipefail
+			probe_self="${BASH_SOURCE[0]:-}"
+			exited=false
+			_mcp_probe_loaded() {
+				local v=ok
+				if declare -F mcp_tools_policy_project >/dev/null; then v="${v}:project"; fi
+				if declare -F mcp_tools_policy_check >/dev/null; then v="${v}:check"; fi
+				printf "%s" "${v}" >&3
+			}
+			trap "[ \"\${BASH_SOURCE[0]:-}\" = \"\${probe_self}\" ] && [ \"\${exited}\" = false ] && _mcp_probe_loaded" ERR
+			exit() { exited=true; }
+			. "$1"
+			unset -f exit
+			trap - ERR
+			[ "${exited}" = "false" ] && _mcp_probe_loaded
+		' _ "${policy_path}" 2>/dev/null
+		)" || true
+		[ -n "${verdict}" ] || verdict=failed
+	fi
+	[ -z "${cache}" ] || printf '%s\n%s' "${verdict}" "${content}" >"${cache}" 2>/dev/null || true
+	printf '%s' "${verdict}"
 }
 
 # At server start (main process): tell the operator on stderr when policy.sh
@@ -151,8 +223,30 @@ mcp_tools_policy_init() {
 	fi
 	local policy_path="${MCPBASH_SERVER_DIR:-}/policy.sh"
 	if [ -n "${MCPBASH_SERVER_DIR:-}" ] && [ -f "${policy_path}" ]; then
+		local check_before
+		check_before="$(declare -f mcp_tools_policy_check 2>/dev/null || true)"
+		# A top-level `exit` would end this worker, and the client would get no
+		# answer: catch it while sourcing.
+		_MCP_TOOLS_POLICY_EXITED=false
+		# shellcheck disable=SC2317,SC2329  # Invoked indirectly: by a top-level exit in policy.sh.
+		exit() { _MCP_TOOLS_POLICY_EXITED=true; }
 		# shellcheck disable=SC1090
-		. "${policy_path}"
+		. "${policy_path}" || true
+		unset -f exit
+		local verdict=""
+		if [ "${_MCP_TOOLS_POLICY_EXITED}" = "true" ]; then
+			MCP_TOOLS_POLICY_UNSAFE="${policy_path} was not loaded: it stops while loading (a top-level exit)"
+		elif ! declare -F mcp_tools_policy_project >/dev/null 2>&1 \
+			|| [ "$(declare -f mcp_tools_policy_check 2>/dev/null || true)" = "${check_before}" ]; then
+			# A hook the start check saw is missing from this load: a file
+			# policy.sh sources broke since (this load can't see a failure on
+			# bash 4+: the callers exempt it from errexit).
+			verdict="$(mcp_tools_policy_load_verdict "${policy_path}")"
+			if { ! declare -F mcp_tools_policy_project >/dev/null 2>&1 && [ "${verdict}" != "${verdict#*:project}" ]; } \
+				|| { [ "$(declare -f mcp_tools_policy_check 2>/dev/null || true)" = "${check_before}" ] && [ "${verdict}" != "${verdict#*:check}" ]; }; then
+				MCP_TOOLS_POLICY_UNSAFE="${policy_path} was not loaded: it no longer defines its policy hook (a file it sources changed since the server started; restart the server)"
+			fi
+		fi
 	fi
 	return 0
 }
