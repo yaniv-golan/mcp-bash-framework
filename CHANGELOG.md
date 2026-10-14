@@ -5,7 +5,7 @@ All notable changes to mcp-bash-framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.9.6] - 2026-10-14
 
 ### Behaviour changes to check before upgrading
 - **`server.d/policy.sh` is test-loaded once at every server start, so its top-level code runs one extra time**: to catch a `policy.sh` that dies while it is loaded, the server sources it in a separate bash process at each start, before any call. Anything its top level does outside its functions (writing files, network calls, output) now happens twice per start, and a slow top level delays the server's first answer. Keep `policy.sh` to function definitions and plain assignments.
