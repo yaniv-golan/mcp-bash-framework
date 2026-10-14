@@ -138,6 +138,11 @@ printf '%s\n' "${DENY_SECRET}" '[ -n "${NOT_SET_ANYWHERE:-}" ] && export X=1' >"
 test_run_mcp "${POLICY_ROOT}" "${POLICY_ROOT}/req.ndjson" "${POLICY_ROOT}/lastfail.ndjson"
 assert_policy_denied "$(call "${POLICY_ROOT}/lastfail.ndjson")" "hello is off" "last command fails"
 
+printf ' -> policy.sh cannot redefine the built-in checks\n'
+printf '%s\n' 'mcp_tools_policy_enforce() { return 0; }' 'mcp_tools_policy_check_default() { return 0; }' >"${POLICY_ROOT}/server.d/policy.sh"
+MCPBASH_TOOL_ALLOWLIST="other" test_run_mcp "${POLICY_ROOT}" "${POLICY_ROOT}/req.ndjson" "${POLICY_ROOT}/redefine.ndjson"
+assert_policy_denied "$(call "${POLICY_ROOT}/redefine.ndjson")" "not in MCPBASH_TOOL_ALLOWLIST" "redefined built-ins"
+
 printf ' -> the 1.x hook (mcp_tools_policy_check) fails closed\n'
 cat <<'POLICY' >"${POLICY_ROOT}/server.d/policy.sh"
 #!/usr/bin/env bash

@@ -670,7 +670,7 @@ EOF
 			mcp_tools_policy_allowlist_effective
 			if [ "${MCP_TOOLS_ALLOWLIST_ALL}" != "true" ] && [ -z "${MCP_TOOLS_ALLOWLIST_NAMES}" ]; then
 				warnings=$((warnings + 1))
-				add_finding "project.tool_allowlist_empty" "warning" 'MCPBASH_TOOL_ALLOWLIST is not set in this shell: every tool is denied and none is listed (set it in the MCP client config, e.g. "*" or tool names)' "false" ""
+				add_finding "project.tool_allowlist_empty" "warning" 'MCPBASH_TOOL_ALLOWLIST allows no tool in this shell (unset or empty): every tool is denied and none is listed (set it in the MCP client config, e.g. "*" or tool names)' "false" ""
 			fi
 
 			# Tool/provider env policy, as seen from this shell. Names and states
@@ -1824,7 +1824,7 @@ EOF
 				warnings=$((warnings + 1))
 			fi
 		else
-			printf '  ⚠ %s\n' 'MCPBASH_TOOL_ALLOWLIST is not set in this shell: every tool is denied and none is listed (set it in the MCP client config, e.g. "*" or tool names)'
+			printf '  ⚠ %s\n' 'MCPBASH_TOOL_ALLOWLIST allows no tool in this shell (unset or empty): every tool is denied and none is listed (set it in the MCP client config, e.g. "*" or tool names)'
 			warnings=$((warnings + 1))
 		fi
 		mcp_doctor_print_env_policy "$(mcp_runtime_effective_server_dir "${detected_root}")/server.meta.json" "${gojq_path:-${jq_path}}"

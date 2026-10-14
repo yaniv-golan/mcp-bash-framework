@@ -195,6 +195,11 @@ mcp_tools_policy_init() {
 	fi
 	local policy_path="${MCPBASH_SERVER_DIR:-}/policy.sh"
 	if [ -n "${MCPBASH_SERVER_DIR:-}" ] && [ -f "${policy_path}" ]; then
+		# The built-in checks can't be redefined by policy.sh (a redefinition
+		# fails with "readonly function" and the original stays). This guards
+		# against an accidental override, not a hostile file: see SECURITY.md.
+		readonly -f mcp_tools_policy_enforce mcp_tools_policy_check_default \
+			mcp_tools_policy_run_project_hook mcp_tools_policy_allowlist_effective 2>/dev/null || true
 		# A top-level `exit` would end this worker, and the client would get no
 		# answer: catch it while sourcing.
 		_MCP_TOOLS_POLICY_EXITED=false
@@ -235,7 +240,7 @@ mcp_tools_policy_enforce() {
 		MCP_TOOLS_POLICY_LEGACY_HOOK=true
 		_MCP_TOOLS_ERROR_CODE=-32602
 		# shellcheck disable=SC2016  # $2 and $3 are literal text.
-		_MCP_TOOLS_ERROR_MESSAGE='server.d/policy.sh defines mcp_tools_policy_check, the mcp-bash 1.x policy hook, so mcp-bash 2.0 refuses every tool call. In server.d/policy.sh: rename the function to mcp_tools_policy_project; remove its call to mcp_tools_policy_check_default (the built-in checks now run first); read the call arguments from $2 (they were $3; there is no metadata argument); to deny, print the reason and return 1.'
+		_MCP_TOOLS_ERROR_MESSAGE='server.d/policy.sh (or a file it sources) defines mcp_tools_policy_check, the mcp-bash 1.x policy hook, so mcp-bash 2.0 refuses every tool call. In that file: rename the function to mcp_tools_policy_project; remove its call to mcp_tools_policy_check_default (the built-in checks now run first); read the call arguments from $2 (they were $3; there is no metadata argument); to deny, print the reason and return 1.'
 		_MCP_TOOLS_ERROR_DATA=""
 		return 1
 	fi
