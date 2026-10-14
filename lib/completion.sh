@@ -746,7 +746,7 @@ mcp_completion_run_provider() {
 		# User-sized values go to the script in files (a large one would
 		# not fit in the environment: Linux caps one variable at 128 KiB).
 		# Removed below when the script ends, and with the worker's other
-		# inputs (mcp_ids_clear_inputs) when a cancel or a timeout stops the
+		# inputs (mcp_core_clear_inputs) when a cancel or a timeout stops the
 		# worker first.
 		local args_file="" meta_file=""
 		if ! args_file="$(mcp_runtime_input_file completion-args)" \

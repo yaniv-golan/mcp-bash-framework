@@ -104,4 +104,29 @@ done <"${SEEN}"
 left="$(find "${STATE}" "${TMPROOT}" -name 'inputs.*' -o -name 'mcp-completion.args.*' -o -name 'mcp-completion.meta.*' -o -name 'mcp-resource-vars.*' 2>/dev/null)"
 [ -z "${left}" ] || test_fail "input files left behind: ${left}"
 
+# A request that reuses a running request's id (which MCP forbids) must not
+# remove that request's files: the first reads its arguments after the second
+# has come and gone.
+mkdir -p "${WS}/prompts/late"
+printf '{"name": "late", "description": "d", "path": "late/late.txt",\n "arguments": {"type": "object", "properties": {"q": {"type": "string"}}}}\n' >"${WS}/prompts/late/late.meta.json"
+printf 'x {{q}}\n' >"${WS}/prompts/late/late.txt"
+cat >"${WS}/prompts/late/late.completion.sh" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+sleep 3
+printf '["late:%s"]' "$(jq -r .query <"${MCP_COMPLETION_ARGS_FILE}")"
+SH
+chmod +x "${WS}/prompts/late/late.completion.sh"
+chmod -R go-w "${WS}"
+cat >"${WS}/requests-reuse.ndjson" <<'JSON'
+{"jsonrpc":"2.0","id":"init","method":"initialize","params":{}}
+{"jsonrpc":"2.0","method":"notifications/initialized"}
+{"jsonrpc":"2.0","id":"dup","method":"completion/complete","params":{"ref":{"type":"ref/prompt","name":"late"},"argument":{"name":"q","value":"first"}}}
+{"jsonrpc":"2.0","id":"dup","method":"completion/complete","params":{"ref":{"type":"ref/prompt","name":"quick"},"argument":{"name":"q","value":"second"}}}
+JSON
+MCPBASH_STATE_DIR="${STATE}" MCPBASH_TMP_ROOT="${TMPROOT}" \
+	test_run_mcp "${WS}" "${WS}/requests-reuse.ndjson" "${WS}/responses-reuse.ndjson" || true
+first="$(jq -c 'select(.id=="dup") | .result.completion.values // .error.message' "${WS}/responses-reuse.ndjson" | grep -v '"done"' || true)"
+assert_eq '["late:first"]' "${first}" "the first request with a reused id kept its input files"
+
 printf 'Child input file test passed.\n'

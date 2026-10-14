@@ -827,6 +827,7 @@ mcp_core_state_worker_pids() {
 				state_pids="${state_pids}"$'\n'"${pid}"
 			fi
 		else
+			mcp_core_clear_inputs "$(mcp_core_inputs_tag_of "${info}")"
 			mcp_ids_clear_worker "${key}"
 		fi
 	done <<<"${keys}"$'\n'
@@ -1407,6 +1408,29 @@ mcp_core_execute_handler() {
 	rpc_send_line "${response}"
 }
 
+# Numbers each worker's input files (mcp_runtime_input_file), so a request
+# that reuses a running request's id can't clear that request's files.
+MCP_CORE_SPAWN_SEQ=0
+
+# Remove the input files one worker's children were given
+# (mcp_runtime_input_file), by its inputs tag (<request key>.<spawn number>).
+# Keys are base64url and the number ends at a dot, so the glob matches only
+# that worker's files.
+mcp_core_clear_inputs() {
+	local tag="$1"
+	[ -n "${tag}" ] && [ -n "${MCPBASH_STATE_DIR:-}" ] || return 0
+	rm -f "${MCPBASH_STATE_DIR}/inputs.${tag}."* 2>/dev/null || true
+}
+
+# The inputs tag at the end of a pid file line (mcp_ids_track_worker), or
+# nothing when the line has none.
+mcp_core_inputs_tag_of() {
+	local tag="${1##* }"
+	case "${tag}" in
+	*[!A-Za-z0-9_.-]* | *.*.* | .* | *.) return 0 ;;
+	*.[0-9]*) printf '%s' "${tag}" ;;
+	esac
+}
 mcp_core_spawn_worker() {
 	local handler="$1"
 	local method="$2"
@@ -1442,7 +1466,9 @@ mcp_core_spawn_worker() {
 	# A modern request's log level for the live flusher; a worker killed
 	# before its cleanup must not leave one for a later request with this id.
 	[ -z "${key}" ] || rm -f "${MCPBASH_STATE_DIR}/loglevel.${key}"
-	mcp_ids_clear_inputs "${key}"
+	MCP_CORE_SPAWN_SEQ=$((MCP_CORE_SPAWN_SEQ + 1))
+	local inputs_tag=""
+	[ -z "${key}" ] || inputs_tag="${key}.${MCP_CORE_SPAWN_SEQ}${RANDOM}"
 	local progress_token
 	progress_token="$(mcp_json_extract_progress_token "${json_line}")"
 	local handled_file=""
@@ -1453,6 +1479,8 @@ mcp_core_spawn_worker() {
 
 	(
 		exec 2>"${stderr_file}"
+		# shellcheck disable=SC2030
+		export MCPBASH_WORKER_INPUTS="${inputs_tag}"
 		# shellcheck disable=SC2030
 		export MCP_PROGRESS_STREAM="${progress_stream}"
 		# shellcheck disable=SC2030
@@ -1478,7 +1506,7 @@ mcp_core_spawn_worker() {
 				rm -f "${handled_file}"
 			fi
 			# A killed worker never ran its cleanup.
-			mcp_ids_clear_inputs "${key}"
+			mcp_core_clear_inputs "${inputs_tag}"
 		else
 			mcp_core_worker_entry "${handler}" "${method}" "${json_line}" "${id_json}" "${key}" "${stderr_file}"
 		fi
@@ -1490,7 +1518,7 @@ mcp_core_spawn_worker() {
 	local pgid
 	pgid="$(mcp_runtime_lookup_pgid "${pid}")"
 
-	mcp_ids_track_worker "${key}" "${pid}" "${pgid}" "${stderr_file}"
+	mcp_ids_track_worker "${key}" "${pid}" "${pgid}" "${stderr_file}" "${inputs_tag}"
 	if [ -n "${key}" ] && ! mcp_core_process_alive "${pid}"; then
 		wait "${pid}" 2>/dev/null || true
 		mcp_ids_clear_worker "${key}"
@@ -1657,6 +1685,8 @@ mcp_core_worker_cleanup() {
 			mcp_elicitation_cleanup_for_worker "${key}"
 		fi
 		mcp_ids_clear_worker "${key}"
+		# shellcheck disable=SC2031  # Set for this worker by mcp_core_spawn_worker.
+		mcp_core_clear_inputs "${MCPBASH_WORKER_INPUTS:-}"
 		rm -f "${MCPBASH_STATE_DIR}/rate.progress.${key}.log"
 		rm -f "${MCPBASH_STATE_DIR}/rate.log.${key}.log"
 		rm -f "${MCPBASH_STATE_DIR}/progress.${key}.ndjson.offset"
@@ -1750,6 +1780,8 @@ mcp_core_cancel_request() {
 
 	pid="$(printf '%s' "${info}" | awk '{print $1}')"
 	pgid="$(printf '%s' "${info}" | awk '{print $2}')"
+	local inputs_tag
+	inputs_tag="$(mcp_core_inputs_tag_of "${info}")"
 
 	if [ -z "${pid}" ]; then
 		return 0
@@ -1770,7 +1802,7 @@ mcp_core_cancel_request() {
 		(
 			set +e
 			sleep 1
-			mcp_core_cancel_escalate "${key}" "${pid}" "${pgid}"
+			mcp_core_cancel_escalate "${key}" "${pid}" "${pgid}" "${inputs_tag}"
 		) >/dev/null </dev/null &
 	)
 }
@@ -1779,6 +1811,7 @@ mcp_core_cancel_escalate() {
 	local key="$1"
 	local pid="$2"
 	local pgid="$3"
+	local inputs_tag="${4:-}"
 
 	# The worker usually exits on TERM at once; the tool and the processes it
 	# started can outlive it in the same group, so check the group too.
@@ -1786,7 +1819,7 @@ mcp_core_cancel_escalate() {
 		mcp_core_send_signal_chain "${pid}" "${pgid}" KILL
 	fi
 	# A worker stopped by KILL never ran its cleanup.
-	mcp_ids_clear_inputs "${key}"
+	mcp_core_clear_inputs "${inputs_tag}"
 	# If the worker died while holding the stdout lock, force-release it using the tracked pid.
 	mcp_lock_release_owned "${MCPBASH_STDOUT_LOCK_NAME}" "${pid}"
 	# Fallback for environments where kill -0 cannot verify ownership (e.g., some Windows shells).

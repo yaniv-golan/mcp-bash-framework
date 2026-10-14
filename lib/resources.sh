@@ -2177,7 +2177,7 @@ mcp_resources_read_via_provider() {
 		# The matched values go to the provider in a file: they come from the
 		# client's URI and can outgrow what one environment variable may hold.
 		# Removed below when the provider ends, and with the worker's other
-		# inputs (mcp_ids_clear_inputs) when a cancel or a timeout stops the
+		# inputs (mcp_core_clear_inputs) when a cancel or a timeout stops the
 		# worker first.
 		local vars_file=""
 		if [ -n "${template_name}" ]; then
