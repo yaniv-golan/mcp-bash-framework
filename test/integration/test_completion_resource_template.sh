@@ -24,9 +24,11 @@ printf '%s\n' '{"name": "template-completion"}' >"${WS}/server.d/server.meta.jso
 printf '%s\n' '{"name": "items", "description": "Items", "uriTemplate": "file:///items/{id}"}' >"${WS}/resources/items.meta.json"
 cat >"${WS}/resources/items.completion.sh" <<'SH'
 #!/usr/bin/env bash
-arg="$(printf '%s' "${MCP_COMPLETION_ARGS_JSON}" | jq -r '.argument.name // ""')"
-jq -cn --arg uri "${MCP_RESOURCE_URI:-}" --arg n "${MCP_COMPLETION_NAME:-}" --arg arg "${arg}" \
-	'[("item-" + $arg), ("name=" + $n), ("uri=" + $uri)]'
+arg="$(jq -r '.argument.name // ""' <"${MCP_COMPLETION_ARGS_FILE}")"
+meta="$(jq -r '.name // ""' <"${MCP_RESOURCE_METADATA_FILE}")"
+jq -cn --arg uri "${MCP_RESOURCE_URI:-}" --arg n "${MCP_COMPLETION_NAME:-}" --arg arg "${arg}" --arg meta "${meta}" \
+	--arg old "${MCP_COMPLETION_ARGS_JSON+args}${MCP_RESOURCE_METADATA+meta}" \
+	'[("item-" + $arg), ("name=" + $n), ("uri=" + $uri), ("meta=" + $meta), ("old=" + $old)]'
 SH
 
 # Directory layout: resources/orders/orders.meta.json + resources/orders/orders.completion.sh.
@@ -53,8 +55,8 @@ test_run_mcp "${WS}" "${WS}/requests.ndjson" "${WS}/responses.ndjson" || true
 
 values() { jq -c --arg id "$1" 'select(.id==$id) | (.result.completion.values // .error)' "${WS}/responses.ndjson"; }
 
-assert_eq '["item-id","name=items","uri=file:///items/{id}"]' "$(values tpl)" "ref/resource with the uriTemplate runs the template's completion script"
-assert_eq '["item-id","name=items","uri=file:///items/{id}"]' "$(values concrete)" "ref/resource with a URI matching the template runs the same script"
+assert_eq '["item-id","name=items","uri=file:///items/{id}","meta=items","old="]' "$(values tpl)" "ref/resource with the uriTemplate runs the template's completion script"
+assert_eq '["item-id","name=items","uri=file:///items/{id}","meta=items","old="]' "$(values concrete)" "ref/resource with a URI matching the template runs the same script"
 assert_eq '["order-1"]' "$(values dir)" "directory layout: resources/<name>/<name>.completion.sh"
 plain="$(values plain)"
 case "${plain}" in

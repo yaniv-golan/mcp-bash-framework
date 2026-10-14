@@ -21,7 +21,7 @@
 4. Exposes a `demo.completion` prompt argument in `prompts/` so the Inspector UI can trigger completions from the Prompts tab.
 
 **Script contract (manual)**
-- Env: `MCP_COMPLETION_NAME`, `MCP_COMPLETION_ARGS_JSON`, `MCP_COMPLETION_LIMIT`, `MCP_COMPLETION_OFFSET`, `MCP_COMPLETION_ARGS_HASH`, `MCPBASH_JSON_TOOL_BIN`.
+- Env: `MCP_COMPLETION_NAME`, `MCP_COMPLETION_ARGS_FILE` (path to the request arguments as JSON), `MCP_COMPLETION_LIMIT`, `MCP_COMPLETION_OFFSET`, `MCP_COMPLETION_ARGS_HASH`, `MCPBASH_JSON_TOOL_BIN`.
 - Stdout: `string[]` (or an object with `suggestions: string[]`, `hasMore`, optional `next`/`cursor`).
 
 **Success criteria**

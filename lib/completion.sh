@@ -743,6 +743,19 @@ mcp_completion_run_provider() {
 		tmp_out="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-completion.out.XXXXXX")"
 		tmp_err="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-completion.err.XXXXXX")"
 		local timeout="${MCP_COMPLETION_PROVIDER_TIMEOUT}"
+		# User-sized values go to the script in files (a large one would
+		# not fit in the environment: Linux caps one variable at 128 KiB).
+		# Made here, outside the script's subshell, so they are removed
+		# however it ends, a timeout included.
+		local args_file meta_file=""
+		args_file="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-completion.args.XXXXXX")"
+		printf '%s' "${args_json}" >"${args_file}"
+		case "${MCP_COMPLETION_PROVIDER_TYPE}" in
+		prompt | resource)
+			meta_file="$(mktemp "${MCPBASH_TMP_ROOT}/mcp-completion.meta.XXXXXX")"
+			printf '%s' "${MCP_COMPLETION_PROVIDER_METADATA}" >"${meta_file}"
+			;;
+		esac
 		if [ "${MCP_COMPLETION_PROVIDER_TYPE}" = "prompt" ]; then
 			local prompt_rel="${MCP_COMPLETION_PROVIDER_PROMPT_TEMPLATE}"
 			local prompt_abs=""
@@ -755,13 +768,13 @@ mcp_completion_run_provider() {
 					"MCPBASH_JSON_TOOL_BIN=${MCPBASH_JSON_TOOL_BIN}"
 					"MCPBASH_JSON_TOOL=${MCPBASH_JSON_TOOL}"
 					"MCP_COMPLETION_NAME=${name}"
-					"MCP_COMPLETION_ARGS_JSON=${args_json}"
+					"MCP_COMPLETION_ARGS_FILE=${args_file}"
 					"MCP_COMPLETION_LIMIT=${limit}"
 					"MCP_COMPLETION_OFFSET=${offset}"
 					"MCP_COMPLETION_ARGS_HASH=${args_hash}"
 					"MCP_PROMPT_REL_PATH=${prompt_rel}"
 					"MCP_PROMPT_PATH=${prompt_abs}"
-					"MCP_PROMPT_METADATA=${MCP_COMPLETION_PROVIDER_METADATA}"
+					"MCP_PROMPT_METADATA_FILE=${meta_file}"
 				)
 				if [ -n "${timeout}" ]; then
 					with_timeout "${timeout}" -- mcp_env_run_curated provider "${env_pairs[@]}" -- "${provider_runner[@]}"
@@ -781,7 +794,7 @@ mcp_completion_run_provider() {
 					"MCPBASH_JSON_TOOL_BIN=${MCPBASH_JSON_TOOL_BIN}"
 					"MCPBASH_JSON_TOOL=${MCPBASH_JSON_TOOL}"
 					"MCP_COMPLETION_NAME=${name}"
-					"MCP_COMPLETION_ARGS_JSON=${args_json}"
+					"MCP_COMPLETION_ARGS_FILE=${args_file}"
 					"MCP_COMPLETION_LIMIT=${limit}"
 					"MCP_COMPLETION_OFFSET=${offset}"
 					"MCP_COMPLETION_ARGS_HASH=${args_hash}"
@@ -789,7 +802,7 @@ mcp_completion_run_provider() {
 					"MCP_RESOURCE_PATH=${res_abs}"
 					"MCP_RESOURCE_URI=${MCP_COMPLETION_PROVIDER_RESOURCE_URI}"
 					"MCP_RESOURCE_PROVIDER=${MCP_COMPLETION_PROVIDER_RESOURCE_PROVIDER}"
-					"MCP_RESOURCE_METADATA=${MCP_COMPLETION_PROVIDER_METADATA}"
+					"MCP_RESOURCE_METADATA_FILE=${meta_file}"
 				)
 				if [ -n "${timeout}" ]; then
 					with_timeout "${timeout}" -- mcp_env_run_curated provider "${env_pairs[@]}" -- "${provider_runner[@]}"
@@ -804,7 +817,7 @@ mcp_completion_run_provider() {
 					"MCPBASH_JSON_TOOL_BIN=${MCPBASH_JSON_TOOL_BIN}"
 					"MCPBASH_JSON_TOOL=${MCPBASH_JSON_TOOL}"
 					"MCP_COMPLETION_NAME=${name}"
-					"MCP_COMPLETION_ARGS_JSON=${args_json}"
+					"MCP_COMPLETION_ARGS_FILE=${args_file}"
 					"MCP_COMPLETION_LIMIT=${limit}"
 					"MCP_COMPLETION_OFFSET=${offset}"
 					"MCP_COMPLETION_ARGS_HASH=${args_hash}"
@@ -824,8 +837,10 @@ mcp_completion_run_provider() {
 			safe_name="${safe_name//[^a-zA-Z0-9._-]/_}"
 			cp -f "${tmp_out}" "${MCPBASH_STATE_DIR}/completion.${safe_name}.${RANDOM}.stdout" 2>/dev/null || true
 			cp -f "${tmp_err}" "${MCPBASH_STATE_DIR}/completion.${safe_name}.${RANDOM}.stderr" 2>/dev/null || true
+			cp -f "${args_file}" "${MCPBASH_STATE_DIR}/completion.${safe_name}.${RANDOM}.args" 2>/dev/null || true
+			[ -z "${meta_file}" ] || cp -f "${meta_file}" "${MCPBASH_STATE_DIR}/completion.${safe_name}.${RANDOM}.meta" 2>/dev/null || true
 		fi
-		rm -f "${tmp_out}" "${tmp_err}"
+		rm -f "${tmp_out}" "${tmp_err}" "${args_file}" ${meta_file:+"${meta_file}"}
 		if [ "${status}" -ne 0 ]; then
 			# shellcheck disable=SC2034
 			MCP_COMPLETION_PROVIDER_RESULT_ERROR="${stderr_output:-Completion provider failed}"

@@ -120,6 +120,16 @@ Operators may set these; the defaults suit most setups. The server refuses to st
 | `MCPBASH_STATE_DIR` | a new `mktemp -d` directory (mode 0700) under `MCPBASH_TMP_ROOT` | Per-process runtime state (worker files, logs, traces). A directory the server created is removed on exit unless `MCPBASH_PRESERVE_STATE=true` or `MCPBASH_KEEP_LOGS=true`; one you set is never removed. |
 | `MCPBASH_LOCK_ROOT` | `<state dir>/locks` | Lock directories (stdout and others). |
 
+## Set by the server for completion scripts and providers
+
+Read-only inputs the server gives a child process. User-sized values come in files: the variable holds the path of a JSON file, readable only by you and removed when the child exits. Read it on stdin (`jq … <"$MCP_COMPLETION_ARGS_FILE"`). The full lists are in [COMPLETION.md](COMPLETION.md#what-a-completion-script-receives) and [the provider contract](REGISTRY.md#provider-contract).
+
+| Variable | Set for | Notes |
+|---|---|---|
+| `MCP_COMPLETION_ARGS_FILE` | every completion script | The request arguments (`query`/`prefix`, `argument`, `ref`, `context.arguments`). Client-supplied. Replaces `MCP_COMPLETION_ARGS_JSON` (removed in 2.0). |
+| `MCP_PROMPT_METADATA_FILE` | prompt completion scripts | The prompt's metadata. Replaces `MCP_PROMPT_METADATA` (removed in 2.0). |
+| `MCP_RESOURCE_METADATA_FILE` | resource completion scripts | The resource's or template's metadata. Replaces `MCP_RESOURCE_METADATA` (removed in 2.0). |
+
 ## Internal Runtime State (do not override)
 
 Examples: `MCPBASH_STDOUT_LOCK_NAME`, `MCPBASH_INITIALIZED`, `MCPBASH_ROOTS_*` (not to be confused with the user-facing `MCPBASH_ROOTS`), `MCPBASH_CLIENT_SUPPORTS_*`, `MCPBASH_PROGRESS_FLUSHER_PID`, `MCPBASH_RESOURCE_POLL_PID`, `MCPBASH_NEXT_OUTGOING_ID`, `MCPBASH_HANDLER_OUTPUT`. These are set by the runtime to coordinate sourced scripts and are not user-facing.
