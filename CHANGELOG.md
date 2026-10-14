@@ -44,6 +44,16 @@ Changes for 2.0.0.
 ### Fixed
 - **`examples/09-registry-overrides` failed its own tool call**: `server.d/register.json` still declared the `{success, result}` envelope as the `outputSchema` of `manual.progress`, whose script uses `mcp_result_json`, so every call got `output_schema`. The schema describes the data now. `mcp-bash migrate` does not read `register.json`; update an envelope schema there by hand.
 
+## [1.9.6] - 2026-10-14
+
+### Behaviour changes to check before upgrading
+- **`server.d/policy.sh` is test-loaded once at every server start, so its top-level code runs one extra time**: to catch a `policy.sh` that dies while it is loaded, the server sources it in a separate bash process at each start, before any call. Anything its top level does outside its functions (writing files, network calls, output) now happens twice per start, and a slow top level delays the server's first answer. Keep `policy.sh` to function definitions and plain assignments.
+- **Tool calls are refused when `policy.sh` dies while it is loaded**: a top-level command that fails, a syntax error in a file `policy.sh` sources, or a top-level `exit`. Before, a syntax error in a sourced file could leave the project's hook undefined on bash 4+, so the tool ran without the project's restrictions; a failing top-level command or an `exit` ended the call with no response. Now the call gets an error result naming the reason, and the reason is printed on stderr at startup.
+- **Calls are refused when a file `policy.sh` sources breaks while the server runs**, if the project's hook (`mcp_tools_policy_project`, or a `mcp_tools_policy_check` that replaces the built-in check) is then no longer defined. Other mid-run breaks are caught at the next start: restart the server after editing files `policy.sh` sources.
+
+### Changed
+- `test_exit_stops_tools.sh` waits up to 30 s for its tool to start (it timed out under load).
+
 ## [1.9.5] - 2026-10-14
 
 ### Behaviour changes to check before upgrading
