@@ -53,7 +53,7 @@ test_run_mcp "${WS}" "${REQ}" "${OUT}"
 assert_json_lines "${OUT}"
 assert_eq "null" "$(schema_of "${OUT}" arr list)" "legacy: a non-object outputSchema isn't listed"
 assert_eq '"object"' "$(schema_of "${OUT}" obj list | jq -c '.type')" "legacy: an object outputSchema is listed"
-assert_eq "true" "$(schema_of "${OUT}" untyped list | jq -c 'type == "object"')" "legacy: a schema without a type is listed"
+assert_eq '"object"' "$(schema_of "${OUT}" untyped list | jq -c '.type')" "legacy: a schema without a type is listed as an object one"
 for t in arr scal pass; do
 	r="$(res "${OUT}" "${t}")"
 	assert_eq "[false,false]" "$(printf '%s' "${r}" | jq -c '[.isError, has("structuredContent")]')" "legacy ${t}: text only: ${r}"

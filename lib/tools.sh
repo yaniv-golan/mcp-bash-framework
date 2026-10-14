@@ -1679,7 +1679,12 @@ mcp_tools_list() {
 		| ($items[$offset:$offset+$limit]
 			| if $era == "modern" then . else map(
 				if (.outputSchema | type) == "object" and (.outputSchema | has("type")) and .outputSchema.type != "object"
-				then del(.outputSchema) else . end) end) as $page
+				then del(.outputSchema)
+				# Those versions require outputSchema.type = "object"; one without
+				# a type gets it.
+				elif (.outputSchema | type) == "object" and (.outputSchema | has("type") | not)
+				then .outputSchema = ({type: "object"} + .outputSchema)
+				else . end) end) as $page
 		| "\($items | length)\t\($blocked | length)\t\({tools: $page, _meta: {"mcpbash/total": ($items | length)}} | tojson)"
 	')" || listed=""
 	if [ -z "${listed}" ]; then
