@@ -5,7 +5,7 @@ All notable changes to mcp-bash-framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.9.5] - 2026-10-14
 
 ### Behaviour changes to check before upgrading
 - **Tool calls are refused while `server.d/policy.sh` can't be loaded safely**: the server refuses to source a `policy.sh` that it, `server.d` or the project root lets group or other users write, that is a symlink or that you don't own, or that has a syntax error. Before, it then ran without it: the operator allowlist still applied, but the project's own restrictions (a read-only mode, say) were silently dropped, the warning reached only the log, and with a syntax error bash 3.2 stopped the call with no response. Now every tool call gets an error result naming the file, the reason and the fix (for example `chmod go-w`), and the reason is printed on stderr at startup. Projects whose directories are group-writable (a `umask` of `002`, common on Ubuntu and Debian) must fix the permissions.
