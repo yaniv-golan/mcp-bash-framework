@@ -225,7 +225,7 @@ mcp_tools_policy_init() {
 		# A top-level `exit` would end this worker, and the client would get no
 		# answer: catch it while sourcing.
 		_MCP_TOOLS_POLICY_EXITED=false
-		# shellcheck disable=SC2329  # Called by a top-level exit in policy.sh.
+		# shellcheck disable=SC2317,SC2329  # Invoked indirectly: by a top-level exit in policy.sh.
 		exit() { _MCP_TOOLS_POLICY_EXITED=true; }
 		# shellcheck disable=SC1090
 		. "${policy_path}" || true
