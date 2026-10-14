@@ -88,4 +88,88 @@ case "${r}" in
 *) test_fail "syntax error in policy.sh: the message should say so: ${r}" ;;
 esac
 
+# A policy.sh that dies while it is sourced refuses every call too: the call
+# gets a refusal, never no answer, and the blocked tool never runs.
+SD="${WS}/server.d"
+DENY_HOOK='mcp_tools_policy_project() { printf "read-only mode: %s is blocked" "$1"; return 1; }'
+DENY_CHECK='mcp_tools_policy_check() { _MCP_TOOLS_ERROR_CODE=-32602; _MCP_TOOLS_ERROR_MESSAGE="replaced check: $1 is blocked"; return 1; }'
+
+refused() {
+	local label="$1" want="$2" out="${TEST_TMPDIR}/$1.ndjson"
+	call_write "${out}"
+	local r
+	r="$(result_of "${out}")"
+	[ -n "${r}" ] || test_fail "${label}: no response to the call: $(cat "${out}")"
+	assert_eq "true" "$(printf '%s' "${r}" | jq -r '.isError')" "${label}: the call must be refused: ${r}"
+	case "${r}" in
+	*"${want}"*) ;;
+	*) test_fail "${label}: expected '${want}' in: ${r}" ;;
+	esac
+	if grep -q 'WROTE' "${out}"; then
+		test_fail "${label}: the tool ran"
+	fi
+}
+
+write_policy() {
+	printf '%s\n' "$@" >"${POLICY}"
+	chmod 644 "${POLICY}"
+}
+
+write_policy "${DENY_HOOK}" 'exit 0'
+refused exit "was not loaded: it stops while loading"
+test_assert_eq "$(grep -c 'was not loaded' "${TEST_TMPDIR}/exit.ndjson.stderr")" "1"
+
+write_policy "${DENY_HOOK}" 'false'
+refused false "was not loaded: it stops while loading"
+
+printf '%s\n' 'if then' >"${SD}/policy-lib.sh"
+write_policy '. "${MCPBASH_SERVER_DIR}/policy-lib.sh"' "${DENY_HOOK}"
+refused nested "was not loaded: it stops while loading"
+rm -f "${SD}/policy-lib.sh"
+
+# The server paths are there at the top level, as in a worker.
+printf '%s\n' "${DENY_HOOK}" >"${SD}/rules.sh"
+write_policy 'set -u' ': "${MCPBASH_HOME}" "${MCPBASH_TOOLS_DIR}" "${MCPBASH_STATE_DIR}" "${MCPBASH_PROJECT_ROOT}"' '. "${MCPBASH_SERVER_DIR}/rules.sh"'
+refused paths "read-only mode: write is blocked"
+rm -f "${SD}/rules.sh"
+
+# A last command that fails is fine: the hook still applies.
+write_policy "${DENY_HOOK}" '[ -n "${NOT_SET_ANYWHERE:-}" ] && export X=1'
+refused lastfail "read-only mode: write is blocked"
+
+# A sourced file that breaks after the start check (here it replaces itself
+# with a broken copy when sourced): the hook the start check saw is gone,
+# so calls are refused. Bash 3.2 ends the worker on the syntax error in the
+# sourced file instead: no answer, and the tool still doesn't run.
+late_break() {
+	local label="$1" hook="$2"
+	printf '%s\n' 'if then' "${hook}" >"${SD}/rules-broken.sh"
+	printf '%s\n' "${hook}" 'cp "${MCPBASH_SERVER_DIR}/rules-broken.sh" "${MCPBASH_SERVER_DIR}/rules.sh"' >"${SD}/rules.sh"
+	write_policy '. "${MCPBASH_SERVER_DIR}/rules.sh"'
+	local out="${TEST_TMPDIR}/${label}.ndjson"
+	call_write "${out}"
+	local r
+	r="$(result_of "${out}")"
+	if grep -q 'WROTE' "${out}"; then
+		test_fail "${label}: the tool ran: ${r}"
+	fi
+	if [ -n "${r}" ] || [ "${BASH_VERSINFO[0]}" -ge 4 ]; then
+		assert_eq "true" "$(printf '%s' "${r}" | jq -r '.isError')" "${label}: the call must be refused: ${r}"
+		case "${r}" in
+		*"was not loaded"*) ;;
+		*) test_fail "${label}: expected 'was not loaded' in: ${r}" ;;
+		esac
+	fi
+	rm -f "${SD}/rules.sh" "${SD}/rules-broken.sh"
+}
+late_break late-hook "${DENY_HOOK}"
+late_break late-check "${DENY_CHECK}"
+
+# The load check runs once per start, then once per call's worker.
+COUNT="${TEST_TMPDIR}/policy-runs"
+: >"${COUNT}"
+write_policy "printf x >>'${COUNT}'" "${DENY_HOOK}"
+refused count "read-only mode: write is blocked"
+test_assert_eq "$(wc -c <"${COUNT}" | tr -d ' ')" "2"
+
 printf 'Unsafe policy.sh test passed.\n'
