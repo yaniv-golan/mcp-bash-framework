@@ -25,12 +25,14 @@ printf '%s\n' '{"name": "template-read"}' >"${WORKSPACE}/server.d/server.meta.js
 
 # Reports the template env as a child sees it: the vars file's content
 # ("<unset>" when absent), " old" if the pre-2.0 MCP_RESOURCE_TEMPLATE_VARS is
-# set, and any server-set *_FILE variable that still holds the host's value.
+# set, and any variable the server sets (or set before 2.0) that still holds
+# the host's value.
 cat <<'SH' >"${WORKSPACE}/probe.sh"
 vars='<unset>'
 [ -z "${MCP_RESOURCE_TEMPLATE_VARS_FILE+x}" ] || vars="$(cat "${MCP_RESOURCE_TEMPLATE_VARS_FILE}")"
 leak=''
-for v in MCP_RESOURCE_TEMPLATE_VARS_FILE MCP_COMPLETION_ARGS_FILE MCP_PROMPT_METADATA_FILE MCP_RESOURCE_METADATA_FILE; do
+for v in MCP_RESOURCE_TEMPLATE_VARS_FILE MCP_COMPLETION_ARGS_FILE MCP_PROMPT_METADATA_FILE MCP_RESOURCE_METADATA_FILE \
+	MCP_COMPLETION_ARGS_JSON MCP_PROMPT_METADATA MCP_RESOURCE_METADATA; do
 	[ "${!v-}" != /host/value ] || leak="${leak} ${v}"
 done
 report="$(printf 'name=[%s] vars=[%s]%s%s' "${MCP_RESOURCE_TEMPLATE_NAME-<unset>}" "${vars}" "${MCP_RESOURCE_TEMPLATE_VARS+ old}" "${leak:+ leak=[${leak# }]}")"
@@ -137,10 +139,12 @@ check_case() {
 MCP_RESOURCE_TEMPLATE_NAME="host-name" MCP_RESOURCE_TEMPLATE_VARS='{"host":"1"}' \
 	MCP_RESOURCE_TEMPLATE_VARS_FILE=/host/value MCP_COMPLETION_ARGS_FILE=/host/value \
 	MCP_PROMPT_METADATA_FILE=/host/value MCP_RESOURCE_METADATA_FILE=/host/value \
+	MCP_COMPLETION_ARGS_JSON=/host/value MCP_PROMPT_METADATA=/host/value MCP_RESOURCE_METADATA=/host/value \
 	check_case isolate
 MCP_RESOURCE_TEMPLATE_NAME="host-name" MCP_RESOURCE_TEMPLATE_VARS='{"host":"1"}' \
 	MCP_RESOURCE_TEMPLATE_VARS_FILE=/host/value MCP_COMPLETION_ARGS_FILE=/host/value \
 	MCP_PROMPT_METADATA_FILE=/host/value MCP_RESOURCE_METADATA_FILE=/host/value \
+	MCP_COMPLETION_ARGS_JSON=/host/value MCP_PROMPT_METADATA=/host/value MCP_RESOURCE_METADATA=/host/value \
 	MCPBASH_PROVIDER_ENV_MODE=inherit MCPBASH_PROVIDER_ENV_INHERIT_ALLOW=true \
 	MCPBASH_TOOL_ENV_MODE=inherit MCPBASH_TOOL_ENV_INHERIT_ALLOW=true \
 	check_case inherit

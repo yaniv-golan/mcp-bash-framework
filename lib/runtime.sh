@@ -342,9 +342,12 @@ mcp_runtime_init_paths() {
 	# Set only by the server for one child (a template match in resources/read,
 	# a completion script). Drop host values before any child starts:
 	# MCP_RESOURCE_*, MCP_COMPLETION_* and MCP_PROMPT_* pass the curated
-	# provider/tool env, and inherit mode keeps everything.
+	# provider/tool env, and inherit mode keeps everything. The names the
+	# server set before 2.0 go too, so a script not yet migrated reads
+	# nothing rather than a stale host value.
 	unset MCP_RESOURCE_TEMPLATE_NAME MCP_RESOURCE_TEMPLATE_VARS MCP_RESOURCE_TEMPLATE_VARS_FILE \
-		MCP_COMPLETION_ARGS_FILE MCP_PROMPT_METADATA_FILE MCP_RESOURCE_METADATA_FILE 2>/dev/null || true
+		MCP_COMPLETION_ARGS_FILE MCP_PROMPT_METADATA_FILE MCP_RESOURCE_METADATA_FILE \
+		MCP_COMPLETION_ARGS_JSON MCP_PROMPT_METADATA MCP_RESOURCE_METADATA 2>/dev/null || true
 
 	# CI mode: set safe defaults only when unset.
 	if [ "${MCPBASH_CI_MODE:-false}" = "true" ]; then
