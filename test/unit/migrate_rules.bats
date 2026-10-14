@@ -177,6 +177,21 @@ policy_kind() {
 	assert_output "manual"
 	run policy_kind "$(printf 'mcp_tools_policy_check() {\n%s\n\tlog_call $*\n}' "${first}")"
 	assert_output "manual"
+	# Code after the default call on its line: never dropped by a rewrite.
+	run policy_kind "$(printf 'mcp_tools_policy_check() {\n%s; [ "$1" = secret ] && return 1\n\treturn 0\n}' "${first}")"
+	assert_output "manual"
+	# The 1.x arguments read through shift, set --, $# or indirection.
+	run policy_kind "$(printf 'mcp_tools_policy_check() {\n%s\n\tshift 2\n\tcase "${1:-}" in *danger*) return 1 ;; esac\n}' "${first}")"
+	assert_output "manual"
+	run policy_kind "$(printf 'mcp_tools_policy_check() {\n%s\n\tset -- x\n\treturn 0\n}' "${first}")"
+	assert_output "manual"
+	run policy_kind "$(printf 'mcp_tools_policy_check() {\n%s\n\t[ "$#" -ge 3 ] || return 1\n}' "${first}")"
+	assert_output "manual"
+	run policy_kind "$(printf 'mcp_tools_policy_check() {\n%s\n\tlocal n=3; [ -n "${!n}" ]\n}' "${first}")"
+	assert_output "manual"
+	# A trailing comment on the default call is fine.
+	run policy_kind "$(printf 'mcp_tools_policy_check() {\n%s # built-in first\n\t[ "$1" != rm ] || return 1\n}' "${first}")"
+	assert_output "auto"
 	# A one-line hook is reported (manual), not missed.
 	run policy_kind 'mcp_tools_policy_check() { mcp_tools_policy_check_default "$@"; }'
 	assert_output "manual"

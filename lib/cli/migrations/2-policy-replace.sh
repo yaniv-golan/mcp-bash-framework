@@ -29,15 +29,17 @@ mig_detect() {
 	local body first rest kind=manual
 	body="$(awk -v n="${line}" 'NR > n { print } NR > n && /^}/ { exit }' "${file}")"
 	first="$(printf '%s\n' "${body}" | grep -vE '^[[:space:]]*(#.*)?$' | head -n 1)"
-	case "${first}" in
-	*'mcp_tools_policy_check_default "$@" || return 1'*)
-		# The body after that first statement.
+	# The default call must be the whole first line (a trailing comment
+	# aside): mig_apply deletes that line, so nothing else may be on it.
+	local whole='^[[:space:]]*mcp_tools_policy_check_default "[$]@" [|][|] return 1[[:space:]]*(#.*)?$'
+	if printf '%s\n' "${first}" | grep -qE "${whole}"; then
+		# The body after that first statement. Manual when it reads the 1.x
+		# arguments in any way: $2, $3, "$@", $*, $#, ${!...}, shift or set --.
 		rest="$(printf '%s\n' "${body}" | awk -v f="${first}" 'done { print; next } $0 == f { done = 1 }')"
-		if ! printf '%s\n' "${rest}" | grep -qE '[$][{]?[23*@]|_MCP_TOOLS_ERROR_|mcp_tools_error'; then
+		if ! printf '%s\n' "${rest}" | grep -qE '[$][{]?[23*@#]|[$][{]!|(^|[^A-Za-z0-9_])shift([^A-Za-z0-9_]|$)|(^|[^A-Za-z0-9_])set[[:space:]]+--|_MCP_TOOLS_ERROR_|mcp_tools_error'; then
 			kind=auto
 		fi
-		;;
-	esac
+	fi
 	printf '%s\t%s\t%s\n' "${line}" "${kind}" "mcp_tools_policy_check() {"
 }
 # Rename the hook and drop the default call (2.0 runs the built-in checks first).
