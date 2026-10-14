@@ -51,12 +51,12 @@ cleanup_tools() {
 }
 trap cleanup_tools EXIT
 
-# $1: tool seconds; waits up to 10s for the tool to start.
+# $1: tool seconds; waits up to 30s for the tool to start (slow under a loaded machine).
 wait_tool_started() {
 	local secs="$1" n=0
 	while ! tool_running "${secs}"; do
 		n=$((n + 1))
-		[ "${n}" -lt 100 ] || test_fail "tool sleep ${secs} never started"
+		[ "${n}" -lt 300 ] || test_fail "tool sleep ${secs} never started"
 		sleep 0.1
 	done
 }
