@@ -351,6 +351,7 @@ jobs:
             test_resource_read_timeout.sh
             test_live_progress_logs.sh
             test_tools_stderr_invalid_utf8.sh
+            test_tools_policy_unsafe.sh
         run: |
           set -euo pipefail
           unset MCPBASH_CI_MODE
@@ -448,10 +449,12 @@ jobs:
         run: |
           set -euo pipefail
           if [ "${GITHUB_EVENT_NAME}" = "schedule" ] || [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
-            export MCPBASH_INTEGRATION_TEST_TIMEOUT_SECONDS=300
+            export MCPBASH_INTEGRATION_TEST_TIMEOUT_SECONDS=360
           else
             export MCPBASH_INTEGRATION_ONLY="test_bootstrap.sh test_cli_scaffold_test.sh test_cli_validate.sh test_lifecycle_gating.sh test_windows_env_size_tools_call.sh test_windows_env_size_providers.sh test_resources.sh test_prompts.sh"
-            export MCPBASH_INTEGRATION_TEST_TIMEOUT_SECONDS=240
+            # Windows runners vary by 30-40% between runs; the slowest tests
+            # (env-size providers, resources) reach 230 s on a slow one.
+            export MCPBASH_INTEGRATION_TEST_TIMEOUT_SECONDS=360
           fi
           start="$(date +%s)"
           test/integration/run.sh
