@@ -107,10 +107,11 @@ mcp_tools_policy_check_secure_tree() {
 # nothing when there is no policy.sh or it is fine. Insecure ownership or
 # permissions, a symlink, or a syntax error (checked with bash -n first: bash
 # 3.2 stops the whole shell on a syntax error in a sourced file). Then, from
-# 2.0, a file that dies while it is sourced (a failing command under set -e,
-# a top-level exit), tried in a subshell; that verdict is cached in the state
-# dir with the file's content, so it runs once per server and version of the
-# file, and the file's top-level code then runs twice.
+# 2.0, a file that dies while it is sourced (a top-level command that
+# fails, a syntax error in a file it sources, a top-level exit), tried in a
+# fresh bash process; that verdict is cached with the file's content, so it
+# runs once per version of the file (its top-level code then runs one extra
+# time, at the first start after a change).
 mcp_tools_policy_unsafe_reason() {
 	[ -n "${MCPBASH_SERVER_DIR:-}" ] || return 0
 	local policy_path="${MCPBASH_SERVER_DIR}/policy.sh"
@@ -133,8 +134,19 @@ mcp_tools_policy_unsafe_reason() {
 mcp_tools_policy_load_verdict() {
 	local policy_path="$1" content="" cache="" cached_content="" verdict=""
 	IFS= read -r -d '' content <"${policy_path}" 2>/dev/null || true
-	if [ -n "${MCPBASH_STATE_DIR:-}" ] && [ -d "${MCPBASH_STATE_DIR}" ]; then
+	# Kept across starts next to the startup scan's files (ignored by git)
+	# when the registry dir is writable, else for this server only: a slow
+	# top level then delays only the first start after policy.sh changes.
+	local scan_dir="${MCPBASH_REGISTRY_DIR:-}/scan"
+	if [ -n "${MCPBASH_REGISTRY_DIR:-}" ] && [ -d "${MCPBASH_REGISTRY_DIR}" ] && [ -w "${MCPBASH_REGISTRY_DIR}" ] && [ ! -f "${scan_dir}/.gitignore" ]; then
+		mkdir -p "${scan_dir}" 2>/dev/null && printf '*\n' >"${scan_dir}/.gitignore" 2>/dev/null || true
+	fi
+	if [ -n "${MCPBASH_REGISTRY_DIR:-}" ] && [ -d "${scan_dir}" ] && [ -w "${scan_dir}" ]; then
+		cache="${scan_dir}/policy.loads"
+	elif [ -n "${MCPBASH_STATE_DIR:-}" ] && [ -d "${MCPBASH_STATE_DIR}" ]; then
 		cache="${MCPBASH_STATE_DIR}/policy.loads"
+	fi
+	if [ -n "${cache}" ]; then
 		if [ -f "${cache}" ]; then
 			{
 				IFS= read -r verdict
