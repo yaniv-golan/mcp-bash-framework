@@ -36,18 +36,37 @@ make_tool() {
 	chmod +x "${WS}/tools/${name}/tool.sh"
 }
 SIGTERM_SECS=7311
+# Started by a tool's TERM handler, which then exits: stopped by the KILL.
+TERM_LEFT_SECS=7316
+KILL_LEFT_SECS=7317
 STDOUT_SECS=7312
 ORPHAN_SECS=7313
-make_tool long-term "${SIGTERM_SECS}"
+KILL_SECS=7314
+ZOMBIE_SECS=7315
+PRESERVE_SECS=7318
+OPERATOR_SECS=7319
+# A tool whose TERM handler starts a child of its own and exits.
+make_leaver() {
+	local name="$1" secs="$2" left="$3"
+	mkdir -p "${WS}/tools/${name}"
+	printf '{"name": "%s", "description": "Runs %ss", "inputSchema": {"type": "object", "properties": {}}, "timeoutSecs": 9000}\n' "${name}" "${secs}" >"${WS}/tools/${name}/tool.meta.json"
+	printf '#!/usr/bin/env bash\ntrap "sleep %s & exit 0" TERM\nsleep %s &\nwait $!\n' "${left}" "${secs}" >"${WS}/tools/${name}/tool.sh"
+	chmod +x "${WS}/tools/${name}/tool.sh"
+}
+make_leaver long-term "${SIGTERM_SECS}" "${TERM_LEFT_SECS}"
 make_tool long-stdout "${STDOUT_SECS}"
 make_tool long-orphan "${ORPHAN_SECS}"
+make_leaver long-kill "${KILL_SECS}" "${KILL_LEFT_SECS}"
+make_tool long-zombie "${ZOMBIE_SECS}"
+make_tool long-preserve "${PRESERVE_SECS}"
+make_tool long-operator "${OPERATOR_SECS}"
 make_tool slow 2
 chmod -R go-w "${WS}"
 
 trap '' PIPE
 tool_running() { pgrep -f "sleep $1\$" >/dev/null 2>&1; }
 cleanup_tools() {
-	pkill -f "sleep (${SIGTERM_SECS}|${STDOUT_SECS}|${ORPHAN_SECS})\$" 2>/dev/null || true
+	pkill -f "sleep (${SIGTERM_SECS}|${STDOUT_SECS}|${ORPHAN_SECS}|${KILL_SECS}|${ZOMBIE_SECS}|${TERM_LEFT_SECS}|${KILL_LEFT_SECS}|${PRESERVE_SECS}|${OPERATOR_SECS})\$" 2>/dev/null || true
 }
 trap cleanup_tools EXIT
 
@@ -81,10 +100,21 @@ expect_stopped() {
 	printf ' -> %s: server and tool stopped within %s.%ss\n' "${label}" "$((n / 10))" "$((n % 10))"
 }
 
+# $1: label; $2: seconds of the child a TERM handler left: it must be gone
+# within 20s.
+expect_left_gone() {
+	local label="$1" secs="$2" n=0
+	while tool_running "${secs}"; do
+		n=$((n + 1))
+		[ "${n}" -lt 200 ] || test_fail "${label}: a child the tool's TERM handler started is still running"
+		sleep 0.1
+	done
+}
+
 INIT='{"jsonrpc":"2.0","id":"init","method":"initialize","params":{}}'
 INITIALIZED='{"jsonrpc":"2.0","method":"notifications/initialized"}'
 call() { printf '{"jsonrpc":"2.0","id":"%s","method":"tools/call","params":{"name":"%s","arguments":{}}}' "$1" "$2"; }
-ALLOW='long-term long-stdout long-orphan slow'
+ALLOW='long-term long-stdout long-orphan long-kill long-zombie long-preserve long-operator slow'
 
 # 1) The host sends SIGTERM while a tool runs.
 in1="${TEST_TMPDIR}/term.in"
@@ -96,6 +126,7 @@ printf '%s\n%s\n%s\n' "${INIT}" "${INITIALIZED}" "$(call c1 long-term)" >&7
 wait_tool_started "${SIGTERM_SECS}"
 kill -TERM "${server}"
 expect_stopped "host SIGTERM" "${server}" "${SIGTERM_SECS}"
+expect_left_gone "host SIGTERM" "${TERM_LEFT_SECS}"
 exec 7>&-
 wait "${server}" 2>/dev/null || true
 
@@ -140,5 +171,119 @@ wait_tool_started "${ORPHAN_SECS}"
 wait "${parent}" 2>/dev/null || true
 expect_stopped "dead parent" "${server}" "${ORPHAN_SECS}"
 exec 7>&-
+
+# A SIGKILLed server runs no cleanup of its own: what it started must still
+# stop, and the state dir it made must go. Its own temp root shows leftovers.
+unset MCPBASH_KEEP_LOGS MCPBASH_PRESERVE_STATE MCPBASH_LOG_DIR
+# $1: label; $2: tool seconds; $3: temp root. The tool must stop within 20s
+# (the lifeline checks every 5s), and no state dir may be left.
+expect_tool_and_state_gone() {
+	local label="$1" secs="$2" root="$3" n=0
+	while tool_running "${secs}"; do
+		n=$((n + 1))
+		[ "${n}" -lt 200 ] || test_fail "${label}: tool still running 20s after the server was killed"
+		sleep 0.1
+	done
+	while [ -n "$(find "${root}" -maxdepth 1 -name 'mcpbash.state.*' 2>/dev/null)" ]; do
+		n=$((n + 1))
+		[ "${n}" -lt 250 ] || test_fail "${label}: state dir left behind: $(find "${root}" -maxdepth 1 -name 'mcpbash.state.*')"
+		sleep 0.1
+	done
+	printf ' -> %s: tool stopped and state removed within %s.%ss\n' "${label}" "$((n / 10))" "$((n % 10))"
+}
+
+# 4) The host SIGKILLs the server (and reaps it) while a tool runs.
+root4="${TEST_TMPDIR}/kill-root"
+mkdir -p "${root4}"
+in4="${TEST_TMPDIR}/kill.in"
+mkfifo "${in4}"
+(cd "${WS}" && MCPBASH_TMP_ROOT="${root4}" MCPBASH_TOOL_ALLOWLIST="${ALLOW}" exec bash ./bin/mcp-bash <"${in4}" >/dev/null 2>"${TEST_TMPDIR}/kill.err") &
+server=$!
+exec 7>"${in4}"
+printf '%s\n%s\n%s\n' "${INIT}" "${INITIALIZED}" "$(call c1 long-kill)" >&7
+wait_tool_started "${KILL_SECS}"
+kill -KILL "${server}"
+wait "${server}" 2>/dev/null || true
+expect_tool_and_state_gone "host SIGKILL" "${KILL_SECS}" "${root4}"
+expect_left_gone "host SIGKILL" "${KILL_LEFT_SECS}"
+exec 7>&-
+
+# 5) The same, but the parent never reaps the killed server, so it stays a
+# zombie (kill -0 still succeeds on it).
+root5="${TEST_TMPDIR}/zombie-root"
+mkdir -p "${root5}"
+in5="${TEST_TMPDIR}/zombie.in"
+go5="${TEST_TMPDIR}/zombie.go"
+pid5="${TEST_TMPDIR}/zombie.pid"
+mkfifo "${in5}"
+exec 7<>"${in5}"
+(
+	cd "${WS}" || exit 1
+	MCPBASH_TMP_ROOT="${root5}" MCPBASH_TOOL_ALLOWLIST="${ALLOW}" PIDF="${pid5}" GO="${go5}" exec perl -e '
+		my $pid = fork;
+		defined $pid or exit 1;
+		if (!$pid) { exec @ARGV or exit 127; }
+		open(my $f, ">", $ENV{PIDF}) or exit 1; print $f $pid; close $f;
+		until (-e $ENV{GO}) { select(undef, undef, undef, 0.1); }
+		kill 9, $pid;
+		sleep 30;
+	' bash ./bin/mcp-bash <"${in5}" >/dev/null 2>"${TEST_TMPDIR}/zombie.err"
+) &
+zparent=$!
+n=0
+while [ ! -s "${pid5}" ]; do
+	n=$((n + 1))
+	[ "${n}" -lt 100 ] || test_fail "zombie case: the server never started"
+	sleep 0.1
+done
+printf '%s\n%s\n%s\n' "${INIT}" "${INITIALIZED}" "$(call c1 long-zombie)" >&7
+wait_tool_started "${ZOMBIE_SECS}"
+: >"${go5}"
+expect_tool_and_state_gone "SIGKILL, never reaped" "${ZOMBIE_SECS}" "${root5}"
+kill "${zparent}" 2>/dev/null || true
+exec 7>&-
+
+# $1: label; $2: tool; $3: tool seconds; the rest: env for the server.
+# SIGKILL the server while the tool runs: the tool stops (the caller checks
+# what happened to the state dir).
+kill_and_keep_state() {
+	local label="$1" tool="$2" secs="$3" in n=0
+	shift 3
+	in="${TEST_TMPDIR}/${tool}.in"
+	mkfifo "${in}"
+	(cd "${WS}" && exec env "$@" MCPBASH_TOOL_ALLOWLIST="${ALLOW}" bash ./bin/mcp-bash <"${in}" >/dev/null 2>"${TEST_TMPDIR}/${tool}.err") &
+	server=$!
+	exec 7>"${in}"
+	printf '%s\n%s\n%s\n' "${INIT}" "${INITIALIZED}" "$(call c1 "${tool}")" >&7
+	wait_tool_started "${secs}"
+	kill -KILL "${server}"
+	wait "${server}" 2>/dev/null || true
+	while tool_running "${secs}"; do
+		n=$((n + 1))
+		[ "${n}" -lt 200 ] || test_fail "${label}: tool still running 20s after the server was killed"
+		sleep 0.1
+	done
+	exec 7>&-
+	# Give the lifeline time to have removed it, had it been going to.
+	sleep 2
+	printf ' -> %s: tool stopped\n' "${label}"
+}
+
+# 6) MCPBASH_PRESERVE_STATE keeps the killed server's state dir.
+root6="${TEST_TMPDIR}/preserve-root"
+mkdir -p "${root6}"
+kill_and_keep_state "SIGKILL, state preserved" long-preserve "${PRESERVE_SECS}" \
+	MCPBASH_TMP_ROOT="${root6}" MCPBASH_PRESERVE_STATE=true
+[ -n "$(find "${root6}" -maxdepth 1 -name 'mcpbash.state.*')" ] || test_fail "SIGKILL, state preserved: the state dir was removed"
+
+# 7) A state dir the operator set is never removed. It is inside the server's
+# temp root, where the removal would be allowed if it weren't the operator's.
+root7="${TEST_TMPDIR}/operator-root"
+op7="${root7}/mcpbash.state.operator"
+mkdir -p "${op7}"
+chmod 700 "${root7}" "${op7}"
+kill_and_keep_state "SIGKILL, operator state dir" long-operator "${OPERATOR_SECS}" \
+	MCPBASH_TMP_ROOT="${root7}" MCPBASH_STATE_DIR="${op7}"
+[ -d "${op7}" ] || test_fail "SIGKILL, operator state dir: removed"
 
 printf 'exit stops tools test passed.\n'

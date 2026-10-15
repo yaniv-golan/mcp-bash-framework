@@ -13,6 +13,7 @@ MCPBASH_SHUTDOWN_WATCHDOG_CANCEL=""
 MCPBASH_EXIT_REQUESTED=false
 MCPBASH_PROGRESS_FLUSHER_PID=""
 MCPBASH_RESOURCE_POLL_PID=""
+MCPBASH_LIFELINE_PID=""
 # Set when a resources/subscribe is dispatched; see mcp_core_maybe_start_background_workers.
 MCPBASH_RESOURCE_POLL_WANTED=false
 MCPBASH_LAST_REGISTRY_POLL=""
@@ -371,7 +372,8 @@ mcp_core_server_alive() {
 	kill -0 "$$" 2>/dev/null || return 1
 	local state=""
 	if [ -r "/proc/$$/stat" ]; then
-		state="$(cat "/proc/$$/stat" 2>/dev/null || true)"
+		# A builtin read: helpers call this every tick.
+		IFS= read -r state <"/proc/$$/stat" 2>/dev/null || true
 		state="${state##*) }"
 		state="${state%% *}"
 	else
@@ -750,7 +752,7 @@ mcp_core_stop_all_workers() {
 	[ -n "${MCPBASH_STATE_DIR:-}" ] || return 0
 	# Loops read line by line, so they do not depend on IFS (called from the
 	# exit trap, which runs with the IFS of whatever it interrupted).
-	local keys key info pid pgid rest targets="" alive tries=0
+	local keys key info pid pgid rest identity targets="" alive tries=0
 	keys="$(mcp_ids_list_active_workers 2>/dev/null || true)"
 	[ -n "${keys}" ] || return 0
 	while IFS= read -r key; do
@@ -763,14 +765,18 @@ mcp_core_stop_all_workers() {
 		if [ "${MCPBASH_SKIP_PROCESS_GROUP_LOOKUP:-0}" = "1" ]; then
 			pgid=""
 		fi
+		# Who leads the group at the TERM, for the KILL below
+		# (mcp_runtime_signal_checked); last on the line, as it may hold spaces.
+		identity="$(mcp_runtime_group_snapshot "${pgid}")"
 		mcp_core_send_signal_chain "${pid}" "${pgid}" TERM
-		targets="${targets}${pid} ${pgid}"$'\n'
+		targets="${targets}${pid} ${pgid:--} ${identity}"$'\n'
 	done <<<"${keys}"
 	[ -n "${targets}" ] || return 0
 	while [ "${tries}" -lt 10 ]; do
 		alive=false
-		while IFS=' ' read -r pid pgid; do
+		while IFS=' ' read -r pid pgid identity; do
 			[ -n "${pid}" ] || continue
+			[ "${pgid}" != "-" ] || pgid=""
 			if mcp_core_process_alive "${pid}" || mcp_core_group_alive "${pgid}"; then
 				alive=true
 				break
@@ -780,9 +786,10 @@ mcp_core_stop_all_workers() {
 		sleep 0.1
 		tries=$((tries + 1))
 	done
-	while IFS=' ' read -r pid pgid; do
+	while IFS=' ' read -r pid pgid identity; do
 		[ -n "${pid}" ] || continue
-		mcp_core_send_signal_chain "${pid}" "${pgid}" KILL
+		[ "${pgid}" != "-" ] || pgid=""
+		mcp_runtime_signal_checked KILL "${pgid}" "${pid}" "${MCPBASH_MAIN_PGID}" "${identity}"
 	done <<<"${targets}"
 }
 
@@ -1442,6 +1449,7 @@ mcp_core_spawn_worker() {
 	local timeout=""
 
 	mcp_core_wait_for_available_slot
+	mcp_core_start_lifeline
 
 	# Each async request runs in its own background worker with dedicated stderr
 	# capture, optional timeout wrapper, and isolated progress/log streams so
@@ -1517,7 +1525,6 @@ mcp_core_spawn_worker() {
 
 	local pid=$!
 
-	mcp_runtime_set_process_group "${pid}" || true
 	local pgid
 	pgid="$(mcp_runtime_lookup_pgid "${pid}")"
 
@@ -1795,6 +1802,10 @@ mcp_core_cancel_request() {
 		pgid=""
 	fi
 
+	# Who leads the group now, so the KILL a second later skips a group
+	# recreated by then (mcp_runtime_signal_checked).
+	local identity=""
+	identity="$(mcp_runtime_group_snapshot "${pgid}")"
 	mcp_core_send_signal_chain "${pid}" "${pgid}" TERM
 	# Escalate from a helper so the main loop isn't held up: waiting here
 	# stalled all request handling for 1s per cancel, one cancel at a time.
@@ -1805,7 +1816,7 @@ mcp_core_cancel_request() {
 		(
 			set +e
 			sleep 1
-			mcp_core_cancel_escalate "${key}" "${pid}" "${pgid}" "${inputs_tag}"
+			mcp_core_cancel_escalate "${key}" "${pid}" "${pgid}" "${inputs_tag}" "${identity}"
 		) >/dev/null </dev/null &
 	)
 }
@@ -1815,11 +1826,12 @@ mcp_core_cancel_escalate() {
 	local pid="$2"
 	local pgid="$3"
 	local inputs_tag="${4:-}"
+	local identity="${5:-}"
 
 	# The worker usually exits on TERM at once; the tool and the processes it
 	# started can outlive it in the same group, so check the group too.
 	if mcp_core_process_alive "${pid}" || mcp_core_group_alive "${pgid}"; then
-		mcp_core_send_signal_chain "${pid}" "${pgid}" KILL
+		mcp_runtime_signal_checked KILL "${pgid}" "${pid}" "${MCPBASH_MAIN_PGID}" "${identity}"
 	fi
 	# A worker stopped by KILL never ran its cleanup.
 	mcp_core_clear_inputs "${inputs_tag}"
@@ -2223,6 +2235,46 @@ mcp_core_start_progress_flusher() {
 		done
 	) &
 	MCPBASH_PROGRESS_FLUSHER_PID=$!
+}
+
+# A helper that outlives a server killed without cleanup (SIGKILL, a crash):
+# once the server is gone it does what the server's exit trap would have
+# done, stopping the workers and the tools they started and removing the
+# server's state dir. Started with the first request that runs in a worker
+# (tools/call, tools/list, resources/read, ...). Its own process, not in
+# the job table (so it never counts as a worker), with none of the server's
+# stdio (it must not hold the client's pipes open).
+mcp_core_start_lifeline() {
+	[ -z "${MCPBASH_LIFELINE_PID:-}" ] || return 0
+	[ -n "${MCPBASH_STATE_DIR:-}" ] || return 0
+	(
+		set +e
+		trap - EXIT
+		# Stopped on a normal exit: take the tick's sleep along.
+		tick=""
+		trap '[ -z "${tick}" ] || kill "${tick}" 2>/dev/null; exit 0' TERM
+		# $$ is the server's PID here too; a zombie counts as gone. Every 5s:
+		# on macOS each check runs ps, for as long as the server lives.
+		while mcp_core_server_alive; do
+			sleep 5 &
+			tick=$!
+			wait "${tick}"
+			tick=""
+		done
+		mcp_core_stop_all_workers
+		mcp_runtime_remove_state_dirs
+		mcp_runtime_cleanup_bootstrap
+	) </dev/null >/dev/null 2>&1 &
+	MCPBASH_LIFELINE_PID=$!
+	disown "${MCPBASH_LIFELINE_PID}" 2>/dev/null || true
+}
+
+mcp_core_stop_lifeline() {
+	local pid="${MCPBASH_LIFELINE_PID:-}"
+	[ -n "${pid}" ] || return 0
+	MCPBASH_LIFELINE_PID=""
+	# Still ours: it exits only after the server is gone.
+	kill "${pid}" 2>/dev/null || true
 }
 
 mcp_core_stop_progress_flusher() {

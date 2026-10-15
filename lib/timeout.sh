@@ -64,8 +64,11 @@ mcp_timeout_terminate_worker() {
 
 	# Only use process group signals if the worker is properly isolated.
 	# Otherwise, we'd kill the caller along with the tool!
-	local tree=""
+	local tree="" identity=""
 	if [ "${isolated}" = "true" ]; then
+		# Who leads the group now, so the KILL a second later skips a group
+		# recreated by then (mcp_runtime_signal_checked).
+		identity="$(mcp_runtime_group_snapshot "${worker_pgid}")"
 		mcp_runtime_signal_group "${worker_pgid}" TERM "${worker_pid}" "${main_pgid}"
 	else
 		# Not isolated: signal the worker and the processes it started, listed
@@ -81,7 +84,7 @@ mcp_timeout_terminate_worker() {
 
 	if [ "${isolated}" = "true" ]; then
 		if kill -0 "${worker_pid}" 2>/dev/null || kill -0 "-${worker_pgid}" 2>/dev/null; then
-			mcp_runtime_signal_group "${worker_pgid}" KILL "${worker_pid}" "${main_pgid}"
+			mcp_runtime_signal_checked KILL "${worker_pgid}" "${worker_pid}" "${main_pgid}" "${identity}"
 		fi
 	else
 		local p
@@ -148,7 +151,8 @@ with_timeout() {
 	if [ -n "${MCPBASH_STATE_DIR:-}" ]; then
 		watchdog_state="${MCPBASH_STATE_DIR}/watchdog.${worker_pid}.log"
 		watchdog_token="${worker_pid}.${RANDOM}.${SECONDS}"
-		printf '%s %s %s %s %s\n' "${worker_pid}" "${worker_pgid}" "${seconds}" "${watchdog_token}" "${isolated}" >"${watchdog_state}"
+		# Whitespace-separated, read by field number: an empty pgid is "-".
+		printf '%s %s %s %s %s\n' "${worker_pid}" "${worker_pgid:--}" "${seconds}" "${watchdog_token}" "${isolated}" >"${watchdog_state}"
 	fi
 
 	# Watchdog reads progress settings from inherited environment:

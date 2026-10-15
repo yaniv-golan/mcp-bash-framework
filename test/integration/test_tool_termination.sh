@@ -50,6 +50,24 @@ SH
 }
 make_tool timeout term.timeout 2 timeout
 make_tool cancel term.cancel 60 cancel
+# A tool whose TERM handler starts a child of its own and exits: the KILL a
+# second later must still stop that child.
+make_leaver() {
+	local dir="$1" name="$2" timeout="$3" tag="$4"
+	mkdir -p "${WORKSPACE}/tools/${dir}"
+	cat <<META >"${WORKSPACE}/tools/${dir}/tool.meta.json"
+{"name":"${name}","description":"leaves a child","timeoutSecs":${timeout},"inputSchema":{"type":"object","properties":{}}}
+META
+	cat <<SH >"${WORKSPACE}/tools/${dir}/tool.sh"
+#!/usr/bin/env bash
+trap 'sleep 300 & echo "\$!" >"${MARKS}/${tag}.left"; exit 0' TERM
+echo started >"${MARKS}/${tag}.started"
+sleep 300 &
+wait "\$!"
+SH
+	chmod +x "${WORKSPACE}/tools/${dir}/tool.sh"
+}
+make_leaver leave-cancel leave.cancel 60 leave-cancel
 
 leftovers=""
 cleanup_leftovers() {
@@ -139,6 +157,18 @@ if ! gone="$(wait_gone "${tool_pid} ${child_pid}" 10)"; then
 	test_fail "cancelled tool left processes running:${gone}"
 fi
 [ -f "${MARKS}/cancel.term" ] || test_fail "cancelled tool never received TERM (its trap did not run)"
+
+# 3) A TERM handler that leaves a child behind: on a cancel, the KILL a second
+# later stops that child too.
+send '{"jsonrpc":"2.0","id":"lc","method":"tools/call","params":{"name":"leave.cancel","arguments":{}}}'
+wait_file "${MARKS}/leave-cancel.started" 20 || test_fail "leave.cancel never started"
+send '{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":"lc"}}'
+wait_file "${MARKS}/leave-cancel.left" 20 || test_fail "leave.cancel: its TERM handler never ran"
+read -r left_pid <"${MARKS}/leave-cancel.left"
+leftovers="${leftovers} ${left_pid}"
+if ! gone="$(wait_gone "${left_pid}" 10)"; then
+	test_fail "cancel: a child the TERM handler started is still running:${gone}"
+fi
 
 exec 3>&-
 server_pid="$(cat "${WORKSPACE}/server.pid")"

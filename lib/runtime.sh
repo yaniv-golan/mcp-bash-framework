@@ -604,9 +604,28 @@ mcp_runtime_cleanup() {
 			printf 'mcp-bash: state preserved at %s\n' "${MCPBASH_STATE_DIR}" >&2
 		fi
 		mcp_runtime_cleanup_bootstrap
+		mcp_runtime_stop_lifeline
 		return
 	fi
 
+	mcp_runtime_remove_state_dirs
+	mcp_runtime_cleanup_bootstrap
+	# Last: until here a kill of this process would still need it.
+	mcp_runtime_stop_lifeline
+}
+
+mcp_runtime_stop_lifeline() {
+	if declare -f mcp_core_stop_lifeline >/dev/null 2>&1; then
+		mcp_core_stop_lifeline
+	fi
+}
+
+# Remove the state dir and the lock root, unless MCPBASH_PRESERVE_STATE or
+# MCPBASH_KEEP_LOGS keeps them; a directory the operator set is left in
+# place (mcp_runtime_rmrf_mode). Also run by the lifeline for a server that
+# was killed (mcp_core_start_lifeline).
+mcp_runtime_remove_state_dirs() {
+	[ "${MCPBASH_PRESERVE_STATE:-}" != "true" ] || return 0
 	if [ -n "${MCPBASH_STATE_DIR}" ] && { [ -d "${MCPBASH_STATE_DIR}" ] || [ -L "${MCPBASH_STATE_DIR}" ]; }; then
 		if [ "${MCPBASH_KEEP_LOGS:-false}" = "true" ]; then
 			if mcp_runtime_log_allowed; then
@@ -620,8 +639,6 @@ mcp_runtime_cleanup() {
 	if [ -n "${MCPBASH_LOCK_ROOT}" ] && { [ -d "${MCPBASH_LOCK_ROOT}" ] || [ -L "${MCPBASH_LOCK_ROOT}" ]; }; then
 		mcp_runtime_safe_rmrf "${MCPBASH_LOCK_ROOT}" "$(mcp_runtime_rmrf_mode "${MCPBASH_LOCK_ROOT_CREATED}")" || true
 	fi
-
-	mcp_runtime_cleanup_bootstrap
 }
 
 # "operator" for a directory the operator chose (MCPBASH_STATE_DIR or
@@ -1140,26 +1157,6 @@ mcp_runtime_enable_job_control() {
 	fi
 }
 
-mcp_runtime_set_process_group() {
-	# Isolate worker processes so cancellation and timeouts can target entire trees.
-	# NOTE: This is a no-op legacy function. Process group isolation is now handled
-	# by spawning processes with job control enabled (set -m), which automatically
-	# places background processes in their own process group.
-	local pid="$1"
-	[ -n "${pid}" ] || return 1
-
-	# Check if the process is already its own group leader (job control worked)
-	local pgid
-	pgid="$(mcp_runtime_query_pgid "${pid}")" || pgid=""
-	if [ -n "${pgid}" ] && [ "${pgid}" = "${pid}" ]; then
-		return 0
-	fi
-
-	# Process not isolated - this is expected if job control wasn't enabled
-	# The caller should handle this gracefully (e.g., only signal specific PIDs)
-	return 1
-}
-
 mcp_runtime_descendants() {
 	# Print the pids of every descendant of PID, space-separated. Prints nothing
 	# where ps can't list pid/ppid pairs (Git Bash), so callers fall back to the
@@ -1223,12 +1220,82 @@ mcp_runtime_lookup_pgid() {
 
 	pgid="$(mcp_runtime_query_pgid "${pid}")" || pgid=""
 
-	# Fallback to assuming pid == pgid if ps fails
+	# Fallback to assuming pid == pgid if ps fails. Callers that signal the
+	# group fall back to the pid when the group doesn't exist.
 	if [ -z "${pgid}" ]; then
 		pgid="${pid}"
 	fi
 
 	printf '%s' "${pgid}"
+}
+
+# Whether a process with this pid exists (a zombie counts).
+mcp_runtime_pid_exists() {
+	kill -0 "$1" 2>/dev/null
+}
+
+# mcp_runtime_process_identity PID: what tells this process from a later one
+# given the same pid, its start time: from /proc (a builtin read: Linux,
+# BusyBox, MSYS) or ps -o lstart (macOS). Nothing where neither can say.
+mcp_runtime_process_identity() {
+	local pid="$1" line="" IFS=$' \t\n' noglob=false
+	if [ -r "/proc/${pid}/stat" ]; then
+		IFS= read -r line <"/proc/${pid}/stat" 2>/dev/null || line=""
+		IFS=$' \t\n'
+		if [ -n "${line}" ]; then
+			# "pid (comm) state ...": the start time is field 22, the 20th after
+			# the last ") " (comm may hold spaces and parentheses).
+			line="${line##*) }"
+			case "$-" in *f*) noglob=true ;; esac
+			set -f
+			# shellcheck disable=SC2086 # split into the stat fields
+			set -- ${line}
+			[ "${noglob}" = true ] || set +f
+			printf '%s' "${20:-}"
+			return 0
+		fi
+	fi
+	# The same text whatever the locale or time zone, with no space at either
+	# end (macOS ends it with one): callers compare a value stored in a line
+	# and read back with read, which drops it.
+	LC_ALL=C TZ=UTC0 ps -o lstart= -p "${pid}" 2>/dev/null | tr -s ' ' | sed 's/^ //; s/ $//' || true
+}
+
+# mcp_runtime_group_snapshot PGID [PID...]: taken before the TERM of a cancel
+# or timeout, for mcp_runtime_signal_checked: the identity of the process
+# whose pid is the group id (the group's leader), or nothing when there is
+# none or no way to tell. (The PIDs are accepted for the callers' sake.)
+mcp_runtime_group_snapshot() {
+	local pgid="$1"
+	[ -n "${pgid}" ] || return 0
+	mcp_runtime_pid_exists "${pgid}" || return 0
+	mcp_runtime_process_identity "${pgid}"
+}
+
+# mcp_runtime_signal_checked SIGNAL PGID FALLBACK_PID MAIN_PGID IDENTITY: the
+# delayed signal (the KILL a second after the TERM), sent as
+# mcp_runtime_signal_group sends it (the group; the fallback pid alone for the
+# server's own group or no group), except to a group recreated in the
+# meantime. A pid isn't handed out while a group with that id exists, so a
+# process at the group id that isn't the leader noted at the TERM (IDENTITY,
+# from mcp_runtime_group_snapshot) means the tool's group is gone and the id
+# now names someone else's. With no identity (no leader then, or no way to
+# tell), as before.
+mcp_runtime_signal_checked() {
+	local signal="$1" pgid="$2" fallback_pid="$3" main_pgid="$4" identity="$5"
+	if [ "${MCPBASH_SKIP_PROCESS_GROUP_LOOKUP:-0}" = "1" ]; then
+		pgid=""
+	fi
+	if [ -n "${identity}" ] && [ -n "${pgid}" ] && [ "${pgid}" != "${main_pgid}" ] \
+		&& mcp_runtime_pid_exists "${pgid}"; then
+		local now
+		now="$(mcp_runtime_process_identity "${pgid}")"
+		if [ -n "${now}" ] && [ "${now}" != "${identity}" ]; then
+			return 0
+		fi
+	fi
+	[ -n "${fallback_pid}" ] || return 0
+	mcp_runtime_signal_group "${pgid}" "${signal}" "${fallback_pid}" "${main_pgid}"
 }
 
 mcp_runtime_signal_group() {
