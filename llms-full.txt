@@ -38,7 +38,7 @@ If you are an AI agent building an MCP server project, follow these steps:
 
 1. **Create project:** `mcp-bash new my-server && cd my-server`
 2. **Add tools:** `mcp-bash scaffold tool my-tool-name` — this generates `tools/my-tool-name/tool.sh` and `tools/my-tool-name/tool.meta.json` with the correct SDK sourcing and structure. Always use the scaffold instead of writing tool files from scratch.
-3. **Implement logic** in `tools/my-tool-name/tool.sh`. The scaffold already sources the SDK (`source "${MCP_SDK:?}/tool-sdk.sh"`). Use `mcp_args_get`, `mcp_result_json` / `mcp_result_text` for results and `mcp_fail --type TYPE "message" --hint "..."` for errors the model should see (it ends the tool) — not raw jq.
+3. **Implement logic** in `tools/my-tool-name/tool.sh`. The scaffold already sources the SDK (`source "${MCP_SDK:?}/tool-sdk.sh"`). Use `mcp_args_get`, `mcp_result_json` / `mcp_result_text` for results and `mcp_fail --type TYPE "message" --hint "..."` for errors the model should see (it ends the tool) — not raw jq. Then set the `annotations` in `tool.meta.json` to match what the tool does: the scaffold writes the cautious defaults (not read-only, may be destructive), and some clients run a tool marked `readOnlyHint: true` without asking the user, so mark only tools that change nothing.
 4. **Generate client config:** `mcp-bash config --client claude-desktop`
    - **CRITICAL:** The config output includes `MCPBASH_TOOL_ALLOWLIST`. Without it every tool is denied (default-deny policy): `tools/list` is empty and the server's instructions say why. Do not remove it.
 5. **Test:** `mcp-bash run-tool my-tool-name --allow-self --args '{"key":"value"}'`
