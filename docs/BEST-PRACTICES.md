@@ -734,7 +734,7 @@ if mcp_elicit_string -v name --arg name "Enter your name:" "name"; then
 fi
 
 # Yes/no confirmation
-if ! mcp_elicit_confirm --arg confirmed "Proceed with deletion?"; then
+if ! mcp_elicit_confirm "Proceed with deletion?"; then
 	mcp_fail --type declined "Not confirmed (${MCP_ELICIT_ACTION})"
 fi
 

@@ -94,9 +94,10 @@ mcp_result_json "$(mcp_json_obj query "${query}" name "${name}")"
   answer as four separate outcomes, and raise the tool's `timeoutSecs` (for example 120) so a
   person has time to answer. Call the question helpers directly, in an `if`: exit 0 means
   the user accepted, and `MCP_ELICIT_ACTION` says why not (`decline`, `cancel`,
-  `unavailable`): `if ! mcp_elicit_confirm --arg confirmed "Delete it?"; then mcp_fail
+  `unavailable`): `if ! mcp_elicit_confirm "Delete it?"; then mcp_fail
   --type declined "Not confirmed"; fi`. Never capture them with `$(...)`: they print
-  nothing. `-v VAR` gets an answer. See `docs/ELICITATION.md`.
+  nothing. `-v VAR` gets an answer. Never put `--arg` on a destructive confirmation: it lets the
+  model answer yes for the user. See `docs/ELICITATION.md`.
   **Claude Desktop extensions (`.mcpb`) get no elicitation at all** (checked in 2.31226.1), so
   the no-answer fallback (for example "call again with `confirm: true`") is the real safety
   gate there; design it as the main path.
