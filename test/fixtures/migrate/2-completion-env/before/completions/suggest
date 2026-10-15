@@ -1,0 +1,4 @@
+#!/usr/bin/env python3
+import json, os
+args = json.loads(os.environ.get("MCP_COMPLETION_ARGS_JSON", "{}"))
+print(json.dumps([args.get("query", "")]))

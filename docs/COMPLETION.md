@@ -60,27 +60,32 @@ Resources work the same way, relative to `resources/`. A resource template has n
 
 **Client support:** Claude Desktop sends no `completion/complete` requests to installed extensions (checked in 2.31226.1, Chat): its prompt form shows plain inputs and its menu has no picker for templated resources. (2.31226.0's bundled agent was seen requesting `ref/resource` completions.) Completions therefore help other clients, such as MCP Inspector and Cursor. For Desktop users, list valid values in the argument's `description`.
 
-- `MCP_COMPLETION_NAME` is the prompt, resource or template name. `MCP_COMPLETION_ARGS_JSON` `.argument.name` says which argument is being completed (for a template, which variable).
+- `MCP_COMPLETION_NAME` is the prompt, resource or template name. `.argument.name` in the `MCP_COMPLETION_ARGS_FILE` JSON says which argument is being completed (for a template, which variable).
 - Scripts run from the project root, under the provider env policy (`MCPBASH_PROVIDER_ENV_*`). To read a secret such as an API key, allowlist it, for example with `MCPBASH_PROVIDER_ENV_ALLOWLIST` in `server.meta.json` `"env"`.
-- They receive the manual-provider variables below plus, for prompts, `MCP_PROMPT_REL_PATH`, `MCP_PROMPT_PATH` and `MCP_PROMPT_METADATA`; for resources, `MCP_RESOURCE_REL_PATH`, `MCP_RESOURCE_PATH`, `MCP_RESOURCE_URI`, `MCP_RESOURCE_PROVIDER` and `MCP_RESOURCE_METADATA`. For a template, `MCP_RESOURCE_URI` is the `uriTemplate`, `MCP_RESOURCE_METADATA` is the template entry, and the path and provider variables are empty.
+- They receive what the next section lists. For a template, `MCP_RESOURCE_URI` is the `uriTemplate`, the `MCP_RESOURCE_METADATA_FILE` JSON is the template entry, and the path and provider variables are empty.
 - They time out after `MCPBASH_COMPLETION_TIMEOUT_SECS` seconds (default 5; `0` disables). Completions run on every keystroke, so keep them fast. A timed-out script returns an error to the client.
 
-## Script Contract (manual provider)
+## What a completion script receives
 
-Environment variables:
+Completion scripts aren't resource providers (for those, see [the provider contract](REGISTRY.md#provider-contract)). Small values come in environment variables; the request arguments and the metadata, which can be any size, come in files (since 2.0: a large value can't be passed in the environment, which Linux caps at 128 KiB per variable). The files are readable only by you and are removed when the script ends, however it ends (a cancel or a timeout included), so the paths are valid only while it runs: don't keep them.
+
+Every script (manual, prompt and resource):
 - `MCP_COMPLETION_NAME` – completion name (string).
-- `MCP_COMPLETION_ARGS_JSON` – JSON object derived from the request params:
-  - a normalized object that includes `query`/`prefix` (from `params.argument.value`), `argument` (`{name, value}`), plus `ref` and `context.arguments`
+- `MCP_COMPLETION_ARGS_FILE` – path to a JSON object derived from the request params:
+  - a normalized object that includes `query`/`prefix` (from `params.argument.value`), `argument` (`{name, value}`), plus `ref` and `context.arguments`. It is client-supplied: treat it as untrusted.
 - `MCP_COMPLETION_LIMIT` – max suggestions requested (int; capped at 100).
 - `MCP_COMPLETION_OFFSET` – pagination offset (int).
 - `MCP_COMPLETION_ARGS_HASH` – opaque hash for cursor binding.
+- `MCPBASH_JSON_TOOL_BIN`, `MCPBASH_JSON_TOOL` – the JSON tool the server uses.
 
-Recommended parsing:
+Prompt scripts also get `MCP_PROMPT_REL_PATH`, `MCP_PROMPT_PATH` and `MCP_PROMPT_METADATA_FILE` (the prompt's metadata as JSON). Resource scripts also get `MCP_RESOURCE_REL_PATH`, `MCP_RESOURCE_PATH`, `MCP_RESOURCE_URI`, `MCP_RESOURCE_PROVIDER` and `MCP_RESOURCE_METADATA_FILE` (the resource's or template's metadata as JSON).
+
+Before 2.0 the arguments and metadata came in `MCP_COMPLETION_ARGS_JSON`, `MCP_PROMPT_METADATA` and `MCP_RESOURCE_METADATA`; those are gone (`mcp-bash migrate` finds scripts that read them).
+
+Recommended parsing (pass the file to jq on stdin):
 ```bash
 # Prefer .query; fall back to .prefix; treat missing as empty string.
-args="${MCP_COMPLETION_ARGS_JSON:-}"
-[ -n "${args}" ] || args='{}'
-query="$(printf '%s' "${args}" | jq -r '(.query // .prefix // "")')"
+query="$(jq -r '(.query // .prefix // "")' <"${MCP_COMPLETION_ARGS_FILE}")"
 ```
 
 Stdout (any of):
@@ -113,7 +118,7 @@ Notes:
 ## Example Flow
 See `examples/10-completions`:
 - Registers `demo.completion` via `server.d/register.json`.
-- Script reads `.query` (or `.prefix`) from `MCP_COMPLETION_ARGS_JSON`, filters suggestions, and paginates with `hasMore`.
+- Script reads `.query` (or `.prefix`) from `MCP_COMPLETION_ARGS_FILE`, filters suggestions, and paginates with `hasMore`.
 - `completion/complete` returns suggestions, `hasMore`, and `nextCursor` until results are exhausted.
 
 If you need **dynamic/imperative** completion registration (for example, generate names from the filesystem or gate entries on env vars), see `examples/advanced/register-sh-hooks/` which uses `server.d/register.sh` (opt-in).

@@ -23,7 +23,7 @@ test_create_tmpdir
 WS="${TEST_TMPDIR}/ws"
 test_stage_workspace "${WS}"
 rm -f "${WS}/server.d/register.sh"
-mkdir -p "${WS}/resources" "${WS}/prompts/big" "${WS}/prompts/echo" "${WS}/tools/embed" "${WS}/tools/icon" "${WS}/data"
+mkdir -p "${WS}/resources" "${WS}/prompts/big" "${WS}/prompts/echo" "${WS}/prompts/iconic" "${WS}/tools/embed" "${WS}/tools/icon" "${WS}/data"
 FILES="${TEST_TMPDIR}/expected"
 mkdir -p "${FILES}"
 
@@ -104,6 +104,29 @@ printf ']'
 SH
 chmod +x "${WS}/prompts/big/big.completion.sh"
 
+# A prompt whose icon becomes a data URI of about 1.6 MB, past macOS's 1 MiB
+# cap on arguments and environment together, and a completion script that
+# reports the sizes of the metadata and the arguments it was given. Both once
+# went to the script in environment variables, so it could not start.
+{
+	printf '<svg xmlns="http://www.w3.org/2000/svg"><!-- '
+	make_text 1258291
+	printf ' --></svg>'
+} >"${WS}/prompts/iconic/icon.svg"
+cat >"${WS}/prompts/iconic/iconic.meta.json" <<'EOF'
+{"name": "iconic.prompt", "path": "iconic/iconic.txt", "icons": [{"src": "./icon.svg"}],
+ "arguments": {"type": "object", "properties": {"q": {"type": "string"}}}}
+EOF
+printf 'x {{q}}\n' >"${WS}/prompts/iconic/iconic.txt"
+cat >"${WS}/prompts/iconic/iconic.completion.sh" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+meta="$(wc -c <"${MCP_PROMPT_METADATA_FILE}" | tr -d ' ')"
+query="$(jq -r '.query | length' <"${MCP_COMPLETION_ARGS_FILE}")"
+printf '["meta>%s","query=%s"]' "$([ "${meta}" -gt 1258291 ] && echo 1.2MB || echo "${meta}")" "${query}"
+SH
+chmod +x "${WS}/prompts/iconic/iconic.completion.sh"
+
 # A tool that embeds a 300 KB text file in its result.
 make_text 307200 >"${WS}/data/embed.txt"
 cat >"${WS}/tools/embed/tool.meta.json" <<'EOF'
@@ -148,6 +171,7 @@ chmod -R go-w "${WS}"
 	printf '%s\n' '{"jsonrpc":"2.0","id":"prompt","method":"prompts/get","params":{"name":"big.prompt","arguments":{"name":"World"}}}'
 	printf '{"jsonrpc":"2.0","id":"prompt-arg","method":"prompts/get","params":{"name":"echo.prompt","arguments":{"value":"%s"}}}\n' "$(cat "${FILES}/arg-value.txt")"
 	printf '%s\n' '{"jsonrpc":"2.0","id":"complete","method":"completion/complete","params":{"ref":{"type":"ref/prompt","name":"big.prompt"},"argument":{"name":"name","value":""},"limit":100}}'
+	printf '{"jsonrpc":"2.0","id":"complete-big-input","method":"completion/complete","params":{"ref":{"type":"ref/prompt","name":"iconic.prompt"},"argument":{"name":"q","value":"%s"}}}\n' "$(cat "${FILES}/arg-value.txt")"
 	printf '%s\n' '{"jsonrpc":"2.0","id":"embed","method":"tools/call","params":{"name":"embed-big","arguments":{}}}'
 	printf '%s\n' '{"jsonrpc":"2.0","id":"list","method":"tools/list","params":{}}'
 } >"${WS}/requests.ndjson"
@@ -198,5 +222,9 @@ check_payload "400 KB icon data URI" "list" '.result.tools[] | select(.name == "
 completion_shape="$(response_for "complete" | jq -c '.result.completion.values | [length, (map(length) | unique)]')"
 assert_eq '[100,[2000]]' "${completion_shape}" "200 KB completion output: values"
 printf '  ok: 200 KB completion output\n'
+
+input_seen="$(response_for "complete-big-input" | jq -c '.result.completion.values')"
+assert_eq "[\"meta>1.2MB\",\"query=$(wc -c <"${FILES}/arg-value.txt" | tr -d ' ')\"]" "${input_seen}" "1.2 MB completion metadata and 200 KB argument"
+printf '  ok: 1.2 MB completion metadata and 200 KB argument\n'
 
 printf 'Large payload test passed\n'

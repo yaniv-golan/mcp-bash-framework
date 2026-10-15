@@ -169,7 +169,9 @@ my-project/
 
 Project providers follow the same contract as framework providers:
 
-**Arguments**: Provider receives the full URI as `$1`. This can be any URI in the provider's scheme, not only the URIs the project registers, and, for a resource template that names the provider, any URI the template matches, in any scheme. Validate it and exit `3` or `4` for URIs the provider does not serve.
+**Arguments**: Provider receives the full URI as `$1`. This can be any URI in the provider's scheme, not only the URIs the project registers, and, for a resource template that names the provider, any URI the template matches, in any scheme. Validate it and exit `3` or `4` for URIs the provider does not serve. The URI is client-supplied and passed as an argument, so it is subject to the system's argument size limit (128 KiB for one argument on Linux): a longer one fails with `-32603`.
+
+**Output**: the content on stdout. On failure, what the provider writes to stderr becomes the error message.
 
 **Timeout**: a `resources/read` is stopped (TERM, then KILL, to the provider's process group) after `MCPBASH_DEFAULT_RESOURCE_TIMEOUT` (120 seconds by default; `0` disables it), and the client gets `-32603`. A request's `params.timeoutSecs` overrides it.
 
@@ -181,13 +183,20 @@ Project providers follow the same contract as framework providers:
 - `5`: Fetch failed
 - `6`: Size limit exceeded
 
-**Environment**: Providers run in a curated environment with:
+**Environment**: Providers run in a curated environment (the provider env policy, `MCPBASH_PROVIDER_ENV_*`; allowlist anything else they need, such as an API key) with:
 - `MCPBASH_HOME` - Framework installation directory
 - `MCPBASH_PROJECT_ROOT` - Project root directory
 - `MCPBASH_PROVIDERS_DIR` - Providers directory
 - `MCP_RESOURCES_ROOTS` - Allowed resource roots (colon-separated)
 - `MCPBASH_JSON_TOOL_BIN` / `MCPBASH_JSON_TOOL` - The JSON tool the server selected (jq or gojq)
+- The proxy variables (`http_proxy`, `https_proxy`, `no_proxy` and their upper-case forms), when set
 - Standard paths: `PATH`, `HOME`, `TMPDIR`, `LANG`, `LC_*`
+
+On a read that matched a [resource template](RESOURCE-TEMPLATES.md#reading-expanded-uris), and on no other read:
+- `MCP_RESOURCE_TEMPLATE_NAME` - The matched template's `name`
+- `MCP_RESOURCE_TEMPLATE_VARS_FILE` - Path of a file holding the matched values as a compact JSON object, for example `{"id":"42","rest":"a/b%2Fc"}`. The values are raw (not percent-decoded) and client-supplied: validate them as you would `$1`. Read it on stdin (`jq -r .id <"$MCP_RESOURCE_TEMPLATE_VARS_FILE"`); it is readable only by you and removed when the provider ends (a cancel or a timeout included), so the path is valid only while it runs. Before 2.0 the JSON was in `MCP_RESOURCE_TEMPLATE_VARS`.
+
+The server clears host values for both at startup, so they are set only by a template match. Completion scripts aren't providers; see [what a completion script receives](COMPLETION.md#what-a-completion-script-receives).
 
 ### Example Provider
 
@@ -271,7 +280,7 @@ Key behaviors:
 - Discovery results are cached in `.registry/resource-templates.json` with hash-based pagination. TTL is controlled via `MCP_RESOURCES_TEMPLATES_TTL` (default 5s).
 - Changes to templates trigger the existing `notifications/resources/list_changed` path (`MCP_RESOURCES_CHANGED` flag is shared with resources).
 - `resources/templates/list` supports the same `limit` extension as other list endpoints and exposes the full count via `result._meta["mcpbash/total"]`; cursor decoding uses the templates registry hash so stale cursors are rejected after changes.
-- `resources/read` matches a URI against these entries when no resource has that name or exact URI. A matched template's `mimeType` is reported as the content's type, and its name and variables reach the provider as `MCP_RESOURCE_TEMPLATE_NAME` and `MCP_RESOURCE_TEMPLATE_VARS`. Only `{v}`, `{+v}` and `{#v}` are matched; see [RESOURCE-TEMPLATES.md](RESOURCE-TEMPLATES.md#reading-expanded-uris). The registry format is unchanged.
+- `resources/read` matches a URI against these entries when no resource has that name or exact URI. A matched template's `mimeType` is reported as the content's type, and its name and variables reach the provider as `MCP_RESOURCE_TEMPLATE_NAME` and `MCP_RESOURCE_TEMPLATE_VARS_FILE` (a JSON file). Only `{v}`, `{+v}` and `{#v}` are matched; see [RESOURCE-TEMPLATES.md](RESOURCE-TEMPLATES.md#reading-expanded-uris). The registry format is unchanged.
 
 ## Declarative registration (`server.d/register.json`)
 

@@ -339,10 +339,15 @@ mcp_runtime_init_paths() {
 	local mode="${1:-server}"
 	local allow_bootstrap="${2:-}"
 
-	# Set only by resources/read on a template match (via the provider's
-	# env_pairs). Drop host values before any child starts: MCP_RESOURCE_* passes
-	# the curated provider/tool env, and inherit mode keeps everything.
-	unset MCP_RESOURCE_TEMPLATE_NAME MCP_RESOURCE_TEMPLATE_VARS 2>/dev/null || true
+	# Set only by the server for one child (a template match in resources/read,
+	# a completion script). Drop host values before any child starts:
+	# MCP_RESOURCE_*, MCP_COMPLETION_* and MCP_PROMPT_* pass the curated
+	# provider/tool env, and inherit mode keeps everything. The names the
+	# server set before 2.0 go too, so a script not yet migrated reads
+	# nothing rather than a stale host value.
+	unset MCP_RESOURCE_TEMPLATE_NAME MCP_RESOURCE_TEMPLATE_VARS MCP_RESOURCE_TEMPLATE_VARS_FILE \
+		MCP_COMPLETION_ARGS_FILE MCP_PROMPT_METADATA_FILE MCP_RESOURCE_METADATA_FILE \
+		MCP_COMPLETION_ARGS_JSON MCP_PROMPT_METADATA MCP_RESOURCE_METADATA 2>/dev/null || true
 
 	# CI mode: set safe defaults only when unset.
 	if [ "${MCPBASH_CI_MODE:-false}" = "true" ]; then
@@ -804,6 +809,22 @@ mcp_env_apply_curated_policy() {
 		;;
 	esac
 	return 0
+}
+
+# mcp_runtime_input_file TAG: print the path of a new 0600 file for an input
+# the server hands to a child (completion arguments, metadata, template
+# values). In a worker it goes in the state dir as inputs.<worker's inputs
+# tag>.*, which mcp_core_clear_inputs removes however the worker ends (a
+# cancel or a timeout included); a state dir the server made is removed when
+# it exits.
+mcp_runtime_input_file() {
+	local tag="$1"
+	local dir="${MCPBASH_STATE_DIR:-${MCPBASH_TMP_ROOT:-${TMPDIR:-/tmp}}}"
+	if [ -n "${MCPBASH_WORKER_INPUTS:-}" ]; then
+		mktemp "${dir}/inputs.${MCPBASH_WORKER_INPUTS}.${tag}.XXXXXX"
+	else
+		mktemp "${dir}/inputs.${tag}.XXXXXX"
+	fi
 }
 
 mcp_env_run_curated() {

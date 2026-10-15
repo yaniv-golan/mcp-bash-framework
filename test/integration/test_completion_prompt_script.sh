@@ -28,8 +28,12 @@ printf 'Review {{listName}}\n' >"${WS}/prompts/pick/pick.txt"
 cat >"${WS}/prompts/pick/pick.completion.sh" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
-query="$(printf '%s' "${MCP_COMPLETION_ARGS_JSON}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.query // .prefix // ""')"
-printf '["%s:%s","rel=%s","cwd=%s","limit=%s"]' "${MCP_COMPLETION_NAME}" "${query}" "${MCP_PROMPT_REL_PATH}" "$(basename "$(pwd)")" "${MCP_COMPLETION_LIMIT}"
+# User-sized values arrive in files; the old env vars are gone.
+printf '%s\n' "${MCP_COMPLETION_ARGS_FILE}" "${MCP_PROMPT_METADATA_FILE}" >>seen-files
+query="$("${MCPBASH_JSON_TOOL_BIN}" -r '.query // .prefix // ""' <"${MCP_COMPLETION_ARGS_FILE}")"
+meta="$("${MCPBASH_JSON_TOOL_BIN}" -r '.name' <"${MCP_PROMPT_METADATA_FILE}")"
+printf '["%s:%s","rel=%s","cwd=%s","limit=%s","meta=%s","old=%s%s"]' "${MCP_COMPLETION_NAME}" "${query}" "${MCP_PROMPT_REL_PATH}" "$(basename "$(pwd)")" "${MCP_COMPLETION_LIMIT}" \
+	"${meta}" "${MCP_COMPLETION_ARGS_JSON+args}" "${MCP_PROMPT_METADATA+meta}"
 SH
 
 cat >"${WS}/prompts/hang/hang.meta.json" <<'JSON'
@@ -38,6 +42,7 @@ JSON
 printf 'x\n' >"${WS}/prompts/hang/hang.txt"
 cat >"${WS}/prompts/hang/hang.completion.sh" <<'SH'
 #!/usr/bin/env bash
+printf '%s\n' "${MCP_COMPLETION_ARGS_FILE}" "${MCP_PROMPT_METADATA_FILE}" >>seen-files
 sleep 60
 printf '["too-late"]'
 SH
@@ -56,7 +61,12 @@ MCPBASH_COMPLETION_TIMEOUT_SECS=2 test_run_mcp "${WS}" "${WS}/requests.ndjson" "
 elapsed=$(($(date +%s) - start))
 
 values="$(jq -c 'select(.id=="pick") | .result.completion.values' "${WS}/responses.ndjson")"
-assert_eq '["pick:dea","rel=pick/pick.txt","cwd=ws","limit=10"]' "${values}" "per-prompt completion script contract"
+assert_eq '["pick:dea","rel=pick/pick.txt","cwd=ws","limit=10","meta=pick","old="]' "${values}" "per-prompt completion script contract"
+# The files are removed once the script exits, a timed-out one included.
+test_assert_eq "$(wc -l <"${WS}/seen-files" | tr -d ' ')" "4"
+while IFS= read -r seen; do
+	[ ! -e "${seen}" ] || test_fail "completion input file left behind: ${seen}"
+done <"${WS}/seen-files"
 
 hang_err="$(jq -r 'select(.id=="hang") | has("error")' "${WS}/responses.ndjson")"
 assert_eq "true" "${hang_err}" "a hung completion script must fail, not answer"

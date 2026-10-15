@@ -181,7 +181,8 @@ work".
   - Scripts are found by name next to what they complete:
     `prompts/<name>/<name>.completion.sh`, or `resources/<template-name>.completion.sh` (or
     `resources/<name>/<name>.completion.sh`) for a resource template. The argument being
-    completed is `.argument.name` in `MCP_COMPLETION_ARGS_JSON`. See `docs/COMPLETION.md`.
+    completed is `.argument.name` in the JSON file `MCP_COMPLETION_ARGS_FILE` names (read it on
+    stdin: `jq -r .argument.name <"$MCP_COMPLETION_ARGS_FILE"`). See `docs/COMPLETION.md`.
   - **Claude Desktop sends no completion requests** to installed extensions (checked in
     2.31226.1), and its menu has no picker for templated resources. Completions help other
     clients (MCP Inspector, Cursor and others); for Desktop users, list valid values in the

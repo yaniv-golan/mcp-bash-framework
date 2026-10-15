@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+icon="$(printf '%s' "$MCP_RESOURCE_METADATA" | jq -r '.icons[0].src')"
+printf '["%s"]' "${icon}"

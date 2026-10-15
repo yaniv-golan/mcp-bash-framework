@@ -7,11 +7,11 @@ if [ -z "${json_bin}" ]; then
 	exit 0
 fi
 
-args_json="${MCP_COMPLETION_ARGS_JSON:-}"
-if [ -z "${args_json}" ]; then
-	args_json='{}'
+# The request arguments arrive in a file (MCP_COMPLETION_ARGS_FILE).
+query=""
+if [ -f "${MCP_COMPLETION_ARGS_FILE:-}" ]; then
+	query="$("${json_bin}" -r '(.query // .prefix // "")' <"${MCP_COMPLETION_ARGS_FILE}" 2>/dev/null || printf '')"
 fi
-query="$("${json_bin}" -r '(.query // .prefix // "")' <<<"${args_json}" 2>/dev/null || printf '')"
 
 limit="${MCP_COMPLETION_LIMIT:-5}"
 offset="${MCP_COMPLETION_OFFSET:-0}"

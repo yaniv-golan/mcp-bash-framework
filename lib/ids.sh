@@ -71,6 +71,7 @@ mcp_ids_track_worker() {
 	local pid="$2"
 	local pgid="$3"
 	local stderr_path="$4"
+	local inputs_tag="${5:-}"
 
 	if [ -z "${key}" ]; then
 		return 0
@@ -78,7 +79,8 @@ mcp_ids_track_worker() {
 
 	local path
 	path="$(mcp_ids_state_path "pid" "${key}")"
-	printf '%s %s %s' "${pid}" "${pgid}" "${stderr_path}" >"${path}"
+	# The inputs tag goes last: the stderr path before it may hold spaces.
+	printf '%s %s %s %s' "${pid}" "${pgid}" "${stderr_path}" "${inputs_tag:--}" >"${path}"
 }
 
 mcp_ids_clear_worker() {
