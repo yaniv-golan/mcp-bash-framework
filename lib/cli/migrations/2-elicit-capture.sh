@@ -51,6 +51,8 @@ mig_detect() {
 			trimmed = line
 			sub(/^[[:space:]]+/, "", trimmed)
 			if (trimmed == "" || substr(trimmed, 1, 1) == "#") { prev = line; next }
+			# Only a line with a call can be reported; mask() is slow on a long line.
+			if (!index(line, "mcp_elicit_")) { prev = line; next }
 			if (line ~ capture || (prev ~ opened && line ~ linestart)) { report(NR, line); prev = line; next }
 			m = mask(line)
 			if (match(m, "(^|[^A-Za-z0-9_])" h "([^A-Za-z0-9_]|$)")) {

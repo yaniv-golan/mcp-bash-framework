@@ -221,3 +221,25 @@ policy_kind() {
 	run policy_kind 'function mcp_tools_policy_check { return 0; }'
 	assert_output "manual"
 }
+
+@test "migrate rules: the elicit rules stay fast on a very long line" {
+	# A tool script can hold a long line (an embedded base64 icon). The rules
+	# read such a line character by character only when it could matter.
+	local f="${BATS_TEST_TMPDIR}/long.sh" rule start took out
+	{
+		printf '#!/usr/bin/env bash\nset -e\nblob="'
+		head -c 600000 /dev/zero | tr '\0' 'A'
+		printf '"\nmcp_elicit_confirm "x"\nr=$(mcp_elicit_confirm "y")\n'
+	} >"${f}"
+	for rule in 2-elicit-capture 2-elicit-bare; do
+		start="${SECONDS}"
+		out="$(bash -c '. "$1/lib/cli/migrations/$2.sh"; mig_detect "$3"' _ "${MCPBASH_HOME}" "${rule}" "${f}" | cut -f1 | tr '\n' ' ')"
+		took=$((SECONDS - start))
+		case "${rule}" in
+		2-elicit-capture) assert_equal "${out}" "5 " ;;
+		2-elicit-bare) assert_equal "${out}" "4 " ;;
+		esac
+		# Several seconds per rule before (tens on BusyBox awk); well under one now.
+		[ "${took}" -lt 5 ] || fail "${rule} took ${took}s on one 600 KB line"
+	done
+}

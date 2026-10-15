@@ -55,6 +55,8 @@ mig_detect() {
 			trimmed = text
 			sub(/^[[:space:]]+/, "", trimmed)
 			if (trimmed == "" || substr(trimmed, 1, 1) == "#") next
+			# Only a call or a set line matters; mask() is slow on a long line.
+			if (!index(text, "mcp_elicit_") && trimmed !~ /^set[[:space:]]/) next
 			m = mask(text)
 			sub(/[[:space:]]#.*$/, "", m)
 			errexit(m)
