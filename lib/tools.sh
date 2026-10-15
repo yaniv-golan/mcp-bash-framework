@@ -2188,9 +2188,13 @@ mcp_tools_call() {
 	local elicit_request_file=""
 	local elicit_response_file=""
 	local elicit_key="${MCPBASH_WORKER_KEY:-${key:-}}"
-	if declare -F mcp_elicitation_is_supported >/dev/null 2>&1 && [ -n "${elicit_key}" ]; then
-		if mcp_elicitation_is_supported; then
-			elicit_supported="1"
+	# MCP_ELICIT_SUPPORTED says the client can ask, even for a call with no
+	# worker key (an "id": null request), which gets no question files: its
+	# questions are "unavailable", and mcp_elicit_confirm must still not take
+	# the model's --arg answer.
+	if declare -F mcp_elicitation_is_supported >/dev/null 2>&1 && mcp_elicitation_is_supported; then
+		elicit_supported="1"
+		if [ -n "${elicit_key}" ]; then
 			elicit_request_file="$(mcp_elicitation_request_path_for_worker "${elicit_key}")"
 			elicit_response_file="$(mcp_elicitation_response_path_for_worker "${elicit_key}")"
 			rm -f "${elicit_request_file}" "${elicit_response_file}"
