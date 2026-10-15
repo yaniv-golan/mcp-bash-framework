@@ -1151,26 +1151,6 @@ mcp_runtime_enable_job_control() {
 	fi
 }
 
-mcp_runtime_set_process_group() {
-	# Isolate worker processes so cancellation and timeouts can target entire trees.
-	# NOTE: This is a no-op legacy function. Process group isolation is now handled
-	# by spawning processes with job control enabled (set -m), which automatically
-	# places background processes in their own process group.
-	local pid="$1"
-	[ -n "${pid}" ] || return 1
-
-	# Check if the process is already its own group leader (job control worked)
-	local pgid
-	pgid="$(mcp_runtime_query_pgid "${pid}")" || pgid=""
-	if [ -n "${pgid}" ] && [ "${pgid}" = "${pid}" ]; then
-		return 0
-	fi
-
-	# Process not isolated - this is expected if job control wasn't enabled
-	# The caller should handle this gracefully (e.g., only signal specific PIDs)
-	return 1
-}
-
 mcp_runtime_descendants() {
 	# Print the pids of every descendant of PID, space-separated. Prints nothing
 	# where ps can't list pid/ppid pairs (Git Bash), so callers fall back to the

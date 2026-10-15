@@ -1523,7 +1523,6 @@ mcp_core_spawn_worker() {
 
 	local pid=$!
 
-	mcp_runtime_set_process_group "${pid}" || true
 	local pgid
 	pgid="$(mcp_runtime_lookup_pgid "${pid}")"
 

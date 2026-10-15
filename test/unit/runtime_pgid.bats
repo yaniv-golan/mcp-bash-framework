@@ -48,9 +48,6 @@ kernel_pgid() {
 	PATH="${STUB_BIN}:${PATH}" run mcp_runtime_lookup_pgid "${CHILD}"
 	assert_success
 	assert_output "${expected}"
-	# ...so it is not mistaken for an isolated group leader.
-	PATH="${STUB_BIN}:${PATH}" run mcp_runtime_set_process_group "${CHILD}"
-	assert_failure
 }
 
 @test "pgid: a command name with spaces and a parenthesis is parsed" {
