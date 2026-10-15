@@ -108,6 +108,15 @@ SH
 	assert_output --partial "2-elicit-capture"
 }
 
+@test "lint-api-usage: 2.0 question-helper prose and code in SKILL.md pass" {
+	skill 'Ask with `mcp_elicit_confirm` (exit 0 = yes); the reason is `decline`|`cancel`.' \
+		'```bash' 'if mcp_elicit_choice -v fmt "Format (json|csv)?" json csv; then :; fi' '```'
+	printf 'mcp_elicit_confirm() { :; }\nmcp_elicit_choice() { :; }\n' >>"${ROOT}/sdk/tool-sdk.sh"
+	run "${LINT}" --root "${ROOT}"
+	assert_success
+	refute_output --partial "2-elicit-capture"
+}
+
 @test "lint-api-usage: recipes defined in examples/ count as existing names" {
 	mkdir -p "${ROOT}/examples/x/lib"
 	printf 'mcp_detect_cli() { :; }\n' >"${ROOT}/examples/x/lib/d.sh"

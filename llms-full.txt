@@ -165,7 +165,7 @@ mcp_result_json "$(printf '%s' "$result" | jq -c '.')"
   - `mcp_elicit_choice [-v VAR] [--arg NAME] "msg" "opt1" "opt2" ...`; `mcp_elicit_titled_choice` (`"value:Title"` options); `mcp_elicit_multi_choice` / `mcp_elicit_titled_multi_choice` (answer: a compact JSON array); `mcp_elicit_url "msg" URL`.
   - `--arg NAME` answers from the tool's argument `NAME` when the call has it, without asking.
   - Raw, for custom schemas: `mcp_elicit "msg" '<schema_json>' [timeout_secs]` and `mcp_elicit_url_raw "msg" URL` print the client's JSON answer.
-  - A 1.x capture (`resp="$(mcp_elicit_confirm …)"` + `.action`) fails silently in 2.0 (empty capture: the "not accepted" branch always runs); `mcp-bash migrate`/`validate` list them (rule `2-elicit-capture`), and bare calls under `set -e` (rule `2-elicit-bare`).
+  - A 1.x capture (`resp="$(mcp_elicit_confirm …)"` + `.action`) fails silently in 2.0 (empty capture: the "not accepted" branch always runs); `mcp-bash migrate`/`validate` list them (rule `2-elicit-capture`), and bare calls under `set -e` (rule `2-elicit-bare`). <!-- lint-api-usage: allow -->
 - Configuration loading helpers:
   - `mcp_config_load --env VAR --file path --example path --defaults '{...}'` → load config with precedence (env var → file → example → defaults).
   - `mcp_config_get '.key' --default value` → extract value from loaded config by jq path.
