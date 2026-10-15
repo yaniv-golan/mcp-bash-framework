@@ -1238,22 +1238,27 @@ mcp_runtime_pid_exists() {
 # given the same pid, its start time: from /proc (a builtin read: Linux,
 # BusyBox, MSYS) or ps -o lstart (macOS). Nothing where neither can say.
 mcp_runtime_process_identity() {
-	local pid="$1" line=""
+	local pid="$1" line="" IFS=$' \t\n' noglob=false
 	if [ -r "/proc/${pid}/stat" ]; then
 		IFS= read -r line <"/proc/${pid}/stat" 2>/dev/null || line=""
+		IFS=$' \t\n'
 		if [ -n "${line}" ]; then
 			# "pid (comm) state ...": the start time is field 22, the 20th after
 			# the last ") " (comm may hold spaces and parentheses).
 			line="${line##*) }"
+			case "$-" in *f*) noglob=true ;; esac
 			set -f
 			# shellcheck disable=SC2086 # split into the stat fields
 			set -- ${line}
-			set +f
+			[ "${noglob}" = true ] || set +f
 			printf '%s' "${20:-}"
 			return 0
 		fi
 	fi
-	ps -o lstart= -p "${pid}" 2>/dev/null | tr -s ' ' || true
+	# The same text whatever the locale or time zone, with no space at either
+	# end (macOS ends it with one): callers compare a value stored in a line
+	# and read back with read, which drops it.
+	LC_ALL=C TZ=UTC0 ps -o lstart= -p "${pid}" 2>/dev/null | tr -s ' ' | sed 's/^ //; s/ $//' || true
 }
 
 # mcp_runtime_group_snapshot PGID [PID...]: taken before the TERM of a cancel

@@ -32,8 +32,11 @@ mock_kill() {
 	# (the host, say) and the worker, all in it.
 	perl -e 'setpgrp(0,0); for my $s (9301, 9302) { if (!fork) { exec "sleep", $s } } exec "sleep", 9300' &
 	GROUP_LEADER=$!
-	local w b i=0
-	while { w="$(pgrep -f 'sleep 9302$')"; b="$(pgrep -f 'sleep 9301$')"; [ -z "${w}" ] || [ -z "${b}" ]; } && [ "${i}" -lt 50 ]; do
+	local w="" b="" i=0
+	while [ "${i}" -lt 50 ]; do
+		w="$(pgrep -f 'sleep 9302$' || true)"
+		b="$(pgrep -f 'sleep 9301$' || true)"
+		[ -z "${w}" ] || [ -z "${b}" ] || break
 		sleep 0.1
 		i=$((i + 1))
 	done
@@ -48,6 +51,28 @@ mock_kill() {
 	case "$(ps -o stat= -p "${w}" 2>/dev/null)" in '' | Z*) ;; *) fail "worker not killed" ;; esac
 	kill -0 "${b}" 2>/dev/null || fail "bystander in the server's group was killed"
 	kill -0 "${g}" 2>/dev/null || fail "the server stand-in was killed"
+}
+
+@test "delayed KILL: the real identity survives being stored in a line and read back" {
+	command -v perl >/dev/null || skip "no perl"
+	# A group leader that ignores TERM (ignored signals stay ignored across
+	# exec), as a tool or worker that outlives the TERM.
+	perl -e '$SIG{TERM} = "IGNORE"; setpgrp(0, 0); exec "sleep", 9303' &
+	GROUP_LEADER=$!
+	local g="${GROUP_LEADER}" i=0
+	while [ "$(ps -o pgid= -p "${g}" 2>/dev/null | tr -d ' ')" != "${g}" ] && [ "${i}" -lt 50 ]; do
+		sleep 0.1
+		i=$((i + 1))
+	done
+	# As mcp_core_stop_all_workers does: the identity goes at the end of a
+	# "pid pgid identity" line and is read back with read.
+	local line pid pgid identity
+	line="${g} ${g} $(mcp_runtime_group_snapshot "${g}")"
+	IFS=' ' read -r pid pgid identity <<<"${line}"
+	[ -n "${identity}" ] || skip "no way to tell a process's start time here"
+	mcp_runtime_signal_checked KILL "${pgid}" "${pid}" "" "${identity}"
+	sleep 0.3
+	case "$(ps -o stat= -p "${g}" 2>/dev/null)" in '' | Z*) ;; *) fail "the leader, still the same process, was not killed" ;; esac
 }
 
 @test "delayed KILL: a group recreated since the TERM is left alone" {
