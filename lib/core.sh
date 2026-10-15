@@ -752,7 +752,7 @@ mcp_core_stop_all_workers() {
 	[ -n "${MCPBASH_STATE_DIR:-}" ] || return 0
 	# Loops read line by line, so they do not depend on IFS (called from the
 	# exit trap, which runs with the IFS of whatever it interrupted).
-	local keys key info pid pgid rest targets="" snapshots="" alive tries=0
+	local keys key info pid pgid rest identity targets="" alive tries=0
 	keys="$(mcp_ids_list_active_workers 2>/dev/null || true)"
 	[ -n "${keys}" ] || return 0
 	while IFS= read -r key; do
@@ -765,17 +765,18 @@ mcp_core_stop_all_workers() {
 		if [ "${MCPBASH_SKIP_PROCESS_GROUP_LOOKUP:-0}" = "1" ]; then
 			pgid=""
 		fi
-		# What was ours at the TERM, for the KILL below
-		# (mcp_runtime_signal_checked).
-		snapshots="${snapshots}$(mcp_runtime_group_snapshot "${pgid}" "${pid}")"$'\n'
+		# Who leads the group at the TERM, for the KILL below
+		# (mcp_runtime_signal_checked); last on the line, as it may hold spaces.
+		identity="$(mcp_runtime_group_snapshot "${pgid}")"
 		mcp_core_send_signal_chain "${pid}" "${pgid}" TERM
-		targets="${targets}${pid} ${pgid}"$'\n'
+		targets="${targets}${pid} ${pgid:--} ${identity}"$'\n'
 	done <<<"${keys}"
 	[ -n "${targets}" ] || return 0
 	while [ "${tries}" -lt 10 ]; do
 		alive=false
-		while IFS=' ' read -r pid pgid; do
+		while IFS=' ' read -r pid pgid identity; do
 			[ -n "${pid}" ] || continue
+			[ "${pgid}" != "-" ] || pgid=""
 			if mcp_core_process_alive "${pid}" || mcp_core_group_alive "${pgid}"; then
 				alive=true
 				break
@@ -785,9 +786,10 @@ mcp_core_stop_all_workers() {
 		sleep 0.1
 		tries=$((tries + 1))
 	done
-	while IFS=' ' read -r pid pgid; do
+	while IFS=' ' read -r pid pgid identity; do
 		[ -n "${pid}" ] || continue
-		mcp_runtime_signal_checked KILL "${pgid}" "${pid}" "${MCPBASH_MAIN_PGID}" "${snapshots}"
+		[ "${pgid}" != "-" ] || pgid=""
+		mcp_runtime_signal_checked KILL "${pgid}" "${pid}" "${MCPBASH_MAIN_PGID}" "${identity}"
 	done <<<"${targets}"
 }
 
@@ -1800,10 +1802,10 @@ mcp_core_cancel_request() {
 		pgid=""
 	fi
 
-	# What the KILL may reach a second later: pids and group ids can be
-	# handed out again by then (mcp_runtime_signal_checked).
-	local snapshot=""
-	snapshot="$(mcp_runtime_group_snapshot "${pgid}" "${pid}")"
+	# Who leads the group now, so the KILL a second later skips a group
+	# recreated by then (mcp_runtime_signal_checked).
+	local identity=""
+	identity="$(mcp_runtime_group_snapshot "${pgid}")"
 	mcp_core_send_signal_chain "${pid}" "${pgid}" TERM
 	# Escalate from a helper so the main loop isn't held up: waiting here
 	# stalled all request handling for 1s per cancel, one cancel at a time.
@@ -1814,7 +1816,7 @@ mcp_core_cancel_request() {
 		(
 			set +e
 			sleep 1
-			mcp_core_cancel_escalate "${key}" "${pid}" "${pgid}" "${inputs_tag}" "${snapshot}"
+			mcp_core_cancel_escalate "${key}" "${pid}" "${pgid}" "${inputs_tag}" "${identity}"
 		) >/dev/null </dev/null &
 	)
 }
@@ -1824,12 +1826,12 @@ mcp_core_cancel_escalate() {
 	local pid="$2"
 	local pgid="$3"
 	local inputs_tag="${4:-}"
-	local snapshot="${5:-}"
+	local identity="${5:-}"
 
 	# The worker usually exits on TERM at once; the tool and the processes it
 	# started can outlive it in the same group, so check the group too.
 	if mcp_core_process_alive "${pid}" || mcp_core_group_alive "${pgid}"; then
-		mcp_runtime_signal_checked KILL "${pgid}" "${pid}" "${MCPBASH_MAIN_PGID}" "${snapshot}"
+		mcp_runtime_signal_checked KILL "${pgid}" "${pid}" "${MCPBASH_MAIN_PGID}" "${identity}"
 	fi
 	# A worker stopped by KILL never ran its cleanup.
 	mcp_core_clear_inputs "${inputs_tag}"

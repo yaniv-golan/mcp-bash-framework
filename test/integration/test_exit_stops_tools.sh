@@ -36,14 +36,25 @@ make_tool() {
 	chmod +x "${WS}/tools/${name}/tool.sh"
 }
 SIGTERM_SECS=7311
+# Started by a tool's TERM handler, which then exits: stopped by the KILL.
+TERM_LEFT_SECS=7316
+KILL_LEFT_SECS=7317
 STDOUT_SECS=7312
 ORPHAN_SECS=7313
 KILL_SECS=7314
 ZOMBIE_SECS=7315
-make_tool long-term "${SIGTERM_SECS}"
+# A tool whose TERM handler starts a child of its own and exits.
+make_leaver() {
+	local name="$1" secs="$2" left="$3"
+	mkdir -p "${WS}/tools/${name}"
+	printf '{"name": "%s", "description": "Runs %ss", "inputSchema": {"type": "object", "properties": {}}, "timeoutSecs": 9000}\n' "${name}" "${secs}" >"${WS}/tools/${name}/tool.meta.json"
+	printf '#!/usr/bin/env bash\ntrap "sleep %s & exit 0" TERM\nsleep %s &\nwait $!\n' "${left}" "${secs}" >"${WS}/tools/${name}/tool.sh"
+	chmod +x "${WS}/tools/${name}/tool.sh"
+}
+make_leaver long-term "${SIGTERM_SECS}" "${TERM_LEFT_SECS}"
 make_tool long-stdout "${STDOUT_SECS}"
 make_tool long-orphan "${ORPHAN_SECS}"
-make_tool long-kill "${KILL_SECS}"
+make_leaver long-kill "${KILL_SECS}" "${KILL_LEFT_SECS}"
 make_tool long-zombie "${ZOMBIE_SECS}"
 make_tool slow 2
 chmod -R go-w "${WS}"
@@ -51,7 +62,7 @@ chmod -R go-w "${WS}"
 trap '' PIPE
 tool_running() { pgrep -f "sleep $1\$" >/dev/null 2>&1; }
 cleanup_tools() {
-	pkill -f "sleep (${SIGTERM_SECS}|${STDOUT_SECS}|${ORPHAN_SECS}|${KILL_SECS}|${ZOMBIE_SECS})\$" 2>/dev/null || true
+	pkill -f "sleep (${SIGTERM_SECS}|${STDOUT_SECS}|${ORPHAN_SECS}|${KILL_SECS}|${ZOMBIE_SECS}|${TERM_LEFT_SECS}|${KILL_LEFT_SECS})\$" 2>/dev/null || true
 }
 trap cleanup_tools EXIT
 
@@ -85,6 +96,17 @@ expect_stopped() {
 	printf ' -> %s: server and tool stopped within %s.%ss\n' "${label}" "$((n / 10))" "$((n % 10))"
 }
 
+# $1: label; $2: seconds of the child a TERM handler left: it must be gone
+# within 10s.
+expect_left_gone() {
+	local label="$1" secs="$2" n=0
+	while tool_running "${secs}"; do
+		n=$((n + 1))
+		[ "${n}" -lt 100 ] || test_fail "${label}: a child the tool's TERM handler started is still running"
+		sleep 0.1
+	done
+}
+
 INIT='{"jsonrpc":"2.0","id":"init","method":"initialize","params":{}}'
 INITIALIZED='{"jsonrpc":"2.0","method":"notifications/initialized"}'
 call() { printf '{"jsonrpc":"2.0","id":"%s","method":"tools/call","params":{"name":"%s","arguments":{}}}' "$1" "$2"; }
@@ -100,6 +122,7 @@ printf '%s\n%s\n%s\n' "${INIT}" "${INITIALIZED}" "$(call c1 long-term)" >&7
 wait_tool_started "${SIGTERM_SECS}"
 kill -TERM "${server}"
 expect_stopped "host SIGTERM" "${server}" "${SIGTERM_SECS}"
+expect_left_gone "host SIGTERM" "${TERM_LEFT_SECS}"
 exec 7>&-
 wait "${server}" 2>/dev/null || true
 
@@ -178,6 +201,7 @@ wait_tool_started "${KILL_SECS}"
 kill -KILL "${server}"
 wait "${server}" 2>/dev/null || true
 expect_tool_and_state_gone "host SIGKILL" "${KILL_SECS}" "${root4}"
+expect_left_gone "host SIGKILL" "${KILL_LEFT_SECS}"
 exec 7>&-
 
 # 5) The same, but the parent never reaps the killed server, so it stays a
