@@ -1212,9 +1212,14 @@ mcp_runtime_lookup_pgid() {
 	local pgid=""
 	[ -n "${pid}" ] || return 1
 
-	# Nothing when neither /proc nor ps can say: callers then treat the process
-	# as not isolated (taking its pid for its group would look isolated).
 	pgid="$(mcp_runtime_query_pgid "${pid}")" || pgid=""
+
+	# Fallback to assuming pid == pgid if ps fails. Callers that signal the
+	# group fall back to the pid when the group doesn't exist.
+	if [ -z "${pgid}" ]; then
+		pgid="${pid}"
+	fi
+
 	printf '%s' "${pgid}"
 }
 

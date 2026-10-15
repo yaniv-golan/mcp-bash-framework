@@ -155,6 +155,7 @@ TESTS=(
 	"test_deprecation_notice.sh"
 	"test_staging_cache_key.sh"
 	"test_tool_termination.sh"
+	"test_timeout_without_ps.sh"
 	"test_project_root_detection.sh"
 	"test_elicitation.sh"
 	"test_elicitation_modes.sh"

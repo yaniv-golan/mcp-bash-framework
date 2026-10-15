@@ -156,7 +156,8 @@ with_timeout() {
 	if [ -n "${MCPBASH_STATE_DIR:-}" ]; then
 		watchdog_state="${MCPBASH_STATE_DIR}/watchdog.${worker_pid}.log"
 		watchdog_token="${worker_pid}.${RANDOM}.${SECONDS}"
-		printf '%s %s %s %s %s\n' "${worker_pid}" "${worker_pgid}" "${seconds}" "${watchdog_token}" "${isolated}" >"${watchdog_state}"
+		# Whitespace-separated, read by field number: an empty pgid is "-".
+		printf '%s %s %s %s %s\n' "${worker_pid}" "${worker_pgid:--}" "${seconds}" "${watchdog_token}" "${isolated}" >"${watchdog_state}"
 	fi
 
 	# Watchdog reads progress settings from inherited environment:

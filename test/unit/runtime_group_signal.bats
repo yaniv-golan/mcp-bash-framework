@@ -27,14 +27,6 @@ setup() {
 
 table() { printf '%s\n' "$@" >"${PS_TABLE}"; }
 
-@test "pgid lookup: nothing, not the pid, when nothing can say" {
-	# A pid with no /proc entry, and a ps that prints nothing: the pid must
-	# not be taken for its own group (it would look isolated).
-	PATH="${STUB_BIN}:${PATH}" run mcp_runtime_lookup_pgid 999999
-	assert_success
-	assert_output ""
-}
-
 @test "group snapshot: the group's members and the listed pids" {
 	table '100 100' '101 100' '102 7' '200 200'
 	PATH="${STUB_BIN}:${PATH}" run mcp_runtime_group_snapshot 100 102
