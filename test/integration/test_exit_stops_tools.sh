@@ -101,12 +101,12 @@ expect_stopped() {
 }
 
 # $1: label; $2: seconds of the child a TERM handler left: it must be gone
-# within 10s.
+# within 20s.
 expect_left_gone() {
 	local label="$1" secs="$2" n=0
 	while tool_running "${secs}"; do
 		n=$((n + 1))
-		[ "${n}" -lt 100 ] || test_fail "${label}: a child the tool's TERM handler started is still running"
+		[ "${n}" -lt 200 ] || test_fail "${label}: a child the tool's TERM handler started is still running"
 		sleep 0.1
 	done
 }
@@ -175,18 +175,18 @@ exec 7>&-
 # A SIGKILLed server runs no cleanup of its own: what it started must still
 # stop, and the state dir it made must go. Its own temp root shows leftovers.
 unset MCPBASH_KEEP_LOGS MCPBASH_PRESERVE_STATE MCPBASH_LOG_DIR
-# $1: label; $2: tool seconds; $3: temp root. The tool must stop within 10s,
-# and no state dir may be left.
+# $1: label; $2: tool seconds; $3: temp root. The tool must stop within 20s
+# (the lifeline checks every 5s), and no state dir may be left.
 expect_tool_and_state_gone() {
 	local label="$1" secs="$2" root="$3" n=0
 	while tool_running "${secs}"; do
 		n=$((n + 1))
-		[ "${n}" -lt 100 ] || test_fail "${label}: tool still running 10s after the server was killed"
+		[ "${n}" -lt 200 ] || test_fail "${label}: tool still running 20s after the server was killed"
 		sleep 0.1
 	done
 	while [ -n "$(find "${root}" -maxdepth 1 -name 'mcpbash.state.*' 2>/dev/null)" ]; do
 		n=$((n + 1))
-		[ "${n}" -lt 150 ] || test_fail "${label}: state dir left behind: $(find "${root}" -maxdepth 1 -name 'mcpbash.state.*')"
+		[ "${n}" -lt 250 ] || test_fail "${label}: state dir left behind: $(find "${root}" -maxdepth 1 -name 'mcpbash.state.*')"
 		sleep 0.1
 	done
 	printf ' -> %s: tool stopped and state removed within %s.%ss\n' "${label}" "$((n / 10))" "$((n % 10))"
@@ -260,12 +260,12 @@ kill_and_keep_state() {
 	wait "${server}" 2>/dev/null || true
 	while tool_running "${secs}"; do
 		n=$((n + 1))
-		[ "${n}" -lt 100 ] || test_fail "${label}: tool still running 10s after the server was killed"
+		[ "${n}" -lt 200 ] || test_fail "${label}: tool still running 20s after the server was killed"
 		sleep 0.1
 	done
 	exec 7>&-
 	# Give the lifeline time to have removed it, had it been going to.
-	sleep 1.5
+	sleep 2
 	printf ' -> %s: tool stopped\n' "${label}"
 }
 

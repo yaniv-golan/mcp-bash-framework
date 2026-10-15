@@ -2253,9 +2253,10 @@ mcp_core_start_lifeline() {
 		# Stopped on a normal exit: take the tick's sleep along.
 		tick=""
 		trap '[ -z "${tick}" ] || kill "${tick}" 2>/dev/null; exit 0' TERM
-		# $$ is the server's PID here too; a zombie counts as gone.
+		# $$ is the server's PID here too; a zombie counts as gone. Every 5s:
+		# on macOS each check runs ps, for as long as the server lives.
 		while mcp_core_server_alive; do
-			sleep 1 &
+			sleep 5 &
 			tick=$!
 			wait "${tick}"
 			tick=""

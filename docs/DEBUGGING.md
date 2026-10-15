@@ -345,7 +345,7 @@ mcp-bash includes automatic defenses against zombie processes:
 
 From 1.9.0, when the server exits abnormally (a signal such as SIGTERM, SIGINT or SIGHUP, a closed stdout, a dead parent, or a fatal error), it stops the tools still running (TERM, then KILL after 1 second; this grace is fixed), since nobody can receive their results. On a normal end of input the server still waits for running tools, up to their timeouts. After `shutdown`, it waits only until end of input or `MCPBASH_SHUTDOWN_TIMEOUT` (5 seconds by default); when that elapses, the server is terminated and running tools are stopped.
 
-A server killed with SIGKILL (or crashing) can't do this itself. A small helper process, started with the first request that runs in a worker (a tool call, a list, a read), notices within about a second that the server is gone (a zombie counts as gone) and stops the tools still running the same way, then removes the server's state directory.
+A server killed with SIGKILL (or crashing) can't do this itself. A small helper process, started with the first request that runs in a worker (a tool call, a list, a read), notices within about 5 seconds that the server is gone (a zombie counts as gone) and stops the tools still running the same way, then removes the server's state directory.
 
 ### Manual Cleanup
 
