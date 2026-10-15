@@ -99,8 +99,11 @@ mcp_result_json "$(mcp_json_obj query "${query}" name "${name}")"
   nothing. `-v VAR` gets an answer. Never put `--arg` on a destructive confirmation: when the client
   can't ask, it lets the model answer yes for the user. See `docs/ELICITATION.md`.
   **Claude Desktop extensions (`.mcpb`) get no elicitation at all** (checked in 2.31226.1), so
-  the no-answer fallback (for example "call again with `confirm: true`") is the real safety
-  gate there; design it as the main path.
+  the no-answer fallback (for example "call again with `confirm: true`") is what runs there;
+  design it as the main path. That argument comes from the model: the user's checkpoint is
+  Desktop's approval card before the call (checked in 2.37337.1, Cowork and Code), which "Allow
+  for this task", bypass mode and, in Cowork's Auto mode, `readOnlyHint: true` skip. Never mark
+  a tool that changes anything read-only; `destructiveHint` doesn't make Desktop ask.
 - After changing `inputSchema`, update the sample arguments in `tools/<name>/smoke.sh` if the
   scaffold created one.
 

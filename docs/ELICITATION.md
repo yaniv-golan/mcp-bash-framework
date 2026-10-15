@@ -2,7 +2,7 @@
 
 Elicitation lets a tool pause execution, ask the MCP client for user input, and continue once a response arrives. It is supported when the client advertises `capabilities.elicitation` during `initialize`.
 
-**Client support:** Claude Desktop does not advertise elicitation to installed extensions (`.mcpb`; checked in 2.31226.1); its remote connectors advertise URL mode only. In Desktop, the helpers' no-answer path is what runs, so design it as the main path (for example, require `confirm: true` in the arguments before a destructive action).
+**Client support:** Claude Desktop does not advertise elicitation to installed extensions (`.mcpb`; checked in 2.31226.1); its remote connectors advertise URL mode only. In Desktop, the helpers' no-answer path is what runs, so design it as the main path (for example, require `confirm: true` in the arguments before a destructive action). That argument comes from the model, though, so it isn't the user's approval. In Desktop's agent sessions (Cowork and Code; checked in 2.37337.1), the user approves through Desktop's own card before each tool call. The card is skipped after "Allow for this task", in bypass mode, and, in Cowork's Auto mode, for a tool annotated `readOnlyHint: true`, so never mark a tool that changes anything as read-only. `destructiveHint` doesn't make Desktop ask about an extension's tool.
 
 ## Server Behavior
 - On initialize, the server records whether the client supports elicitation and which modes (`form`, `url`).
