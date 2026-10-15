@@ -276,12 +276,14 @@ kill_and_keep_state "SIGKILL, state preserved" long-preserve "${PRESERVE_SECS}" 
 	MCPBASH_TMP_ROOT="${root6}" MCPBASH_PRESERVE_STATE=true
 [ -n "$(find "${root6}" -maxdepth 1 -name 'mcpbash.state.*')" ] || test_fail "SIGKILL, state preserved: the state dir was removed"
 
-# 7) A state dir the operator set is never removed.
-op7="${TEST_TMPDIR}/operator-state"
+# 7) A state dir the operator set is never removed. It is inside the server's
+# temp root, where the removal would be allowed if it weren't the operator's.
+root7="${TEST_TMPDIR}/operator-root"
+op7="${root7}/mcpbash.state.operator"
 mkdir -p "${op7}"
-chmod 700 "${op7}"
+chmod 700 "${root7}" "${op7}"
 kill_and_keep_state "SIGKILL, operator state dir" long-operator "${OPERATOR_SECS}" \
-	MCPBASH_STATE_DIR="${op7}"
+	MCPBASH_TMP_ROOT="${root7}" MCPBASH_STATE_DIR="${op7}"
 [ -d "${op7}" ] || test_fail "SIGKILL, operator state dir: removed"
 
 printf 'exit stops tools test passed.\n'

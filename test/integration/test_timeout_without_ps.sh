@@ -40,14 +40,20 @@ JSON
 start=${SECONDS}
 # If the timeout never fires, end the tool after 30s so the test fails
 # instead of waiting on it.
+STOP="${TEST_TMPDIR}/stop-guard"
 (
-	sleep 30
-	pkill -f "sleep 3017$" 2>/dev/null || true
+	n=0
+	while [ "${n}" -lt 300 ] && [ ! -e "${STOP}" ]; do
+		sleep 0.1
+		n=$((n + 1))
+	done
+	[ -e "${STOP}" ] || pkill -f "sleep 3017$" 2>/dev/null || true
 ) &
 guard=$!
 PATH="${STUB}:${PATH}" MCPBASH_TOOL_ALLOWLIST=slow test_run_mcp "${WS}" "${WS}/requests.ndjson" "${WS}/responses.ndjson" || true
 elapsed=$((SECONDS - start))
-kill "${guard}" 2>/dev/null || true
+: >"${STOP}"
+wait "${guard}" 2>/dev/null || true
 resp="$(jq -c 'select(.id=="call")' "${WS}/responses.ndjson")"
 [ -n "${resp}" ] || test_fail "no answer to the call"
 printf '%s' "${resp}" | jq -e '.result.isError == true' >/dev/null || test_fail "not an error result: ${resp}"
