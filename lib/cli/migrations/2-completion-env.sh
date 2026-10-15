@@ -4,6 +4,7 @@
 MIG_ID=2-completion-env
 MIG_API=2
 MIG_KIND=manual
+MIG_SILENT=1
 MIG_SCOPE="project-sh completion"
 MIG_SUMMARY="completion scripts and providers get user-sized values in files in 2.0: MCP_COMPLETION_ARGS_JSON, MCP_PROMPT_METADATA, MCP_RESOURCE_METADATA and MCP_RESOURCE_TEMPLATE_VARS are no longer set"
 # shellcheck disable=SC2016  # The fix text shows literal shell code.

@@ -12,6 +12,9 @@
 #   MIG_FIX      short replacement hint
 #   MIG_SCOPE    file classes to scan (see mcp_migrate_files)
 #   MIG_VALIDATE 0 to keep the rule out of `validate` (default 1)
+#   MIG_SILENT   1 when the old code keeps running in the next major version
+#                but does the wrong thing with no error: validate marks
+#                its findings and sums them up (mcp_migrate_silent_rules)
 #   MIG_REPLACEMENT  frozen (default): the replacement already exists and is
 #                frozen; none: it only arrives with the next major version, so
 #                there is nothing to change yet (lints report, never fail)
@@ -28,6 +31,14 @@
 # Rules directory.
 mcp_migrate_rules_dir() {
 	printf '%s/lib/cli/migrations' "${MCPBASH_HOME}"
+}
+
+# The ids of the rules marked MIG_SILENT=1, one per line.
+mcp_migrate_silent_rules() {
+	local dir
+	dir="$(mcp_migrate_rules_dir)"
+	[ -d "${dir}" ] || return 0
+	grep -l '^MIG_SILENT=1$' "${dir}"/*.sh 2>/dev/null | sed 's#.*/##; s#[.]sh$##'
 }
 
 # List rule files, ordered by API version, then id.

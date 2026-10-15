@@ -77,11 +77,34 @@ skill() { printf '%s\n' "$@" >"${ROOT}/plugins/p/skills/s/SKILL.md"; }
 	assert_failure
 }
 
-@test "lint-api-usage: a rule with no 1.x replacement yet is reported, not failed, in SKILL.md" {
+@test "lint-api-usage: a rule with no replacement yet is reported, not failed, in SKILL.md" {
+	# A copy of the lint and the rule engine, with one rule of its own whose
+	# replacement doesn't exist yet (MIG_REPLACEMENT=none).
+	local home="${BATS_TEST_TMPDIR}/home"
+	mkdir -p "${home}/test" "${home}/lib/cli/migrations"
+	cp "${LINT}" "${home}/test/"
+	cp "${MCPBASH_HOME}/lib/migrate_rules.sh" "${home}/lib/"
+	cat >"${home}/lib/cli/migrations/9-future.sh" <<'SH'
+MIG_ID=9-future
+MIG_API=9
+MIG_REPLACEMENT=none
+MIG_KIND=manual
+MIG_SCOPE="project-sh"
+MIG_SUMMARY='future_helper changes in a later version'
+MIG_FIX='nothing yet'
+mig_detect() { mig_grep_regex 'future_helper' "$1"; }
+SH
+	skill '```bash' 'future_helper "x"' '```'
+	run "${home}/test/lint-api-usage.sh" --root "${ROOT}"
+	assert_success
+	assert_output --partial "9-future"
+}
+
+@test "lint-api-usage: a 1.x capture of a question helper in SKILL.md fails" {
 	skill '```bash' 'resp="$(mcp_elicit_confirm "Sure?")" || true' '```'
 	printf 'mcp_elicit_confirm() { :; }\n' >>"${ROOT}/sdk/tool-sdk.sh"
 	run "${LINT}" --root "${ROOT}"
-	assert_success
+	assert_failure
 	assert_output --partial "2-elicit-capture"
 }
 

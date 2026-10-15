@@ -206,22 +206,40 @@ EOF
 		local findings
 		findings="$(mcp_migrate_detect_resolved "${project_root}" --validate 2>/dev/null || true)"
 		if [ -n "${findings}" ]; then
+			# Rules whose old code keeps running in 2.0 but does the wrong
+			# thing, with no error: marked, and summed up below.
+			local silent_rules silent=0 silent_ids="" is_silent
+			silent_rules=" $(mcp_migrate_silent_rules | tr '\n' ' ') "
 			local f_id f_kind f_file f_line f_summary f_fix f_text
 			while IFS=$'\t' read -r f_id f_kind f_file f_line f_summary f_fix f_text; do
 				[ -n "${f_id}" ] || continue
 				deprecations=$((deprecations + 1))
+				is_silent=false
+				case "${silent_rules}" in *" ${f_id} "*)
+					is_silent=true
+					silent=$((silent + 1))
+					case " ${silent_ids} " in *" ${f_id} "*) ;; *) silent_ids="${silent_ids:+${silent_ids} }${f_id}" ;; esac
+					;;
+				esac
 				if [ "${json_mode}" = "true" ]; then
 					local obj
-					obj="$(printf '{"level":"deprecation","section":"deprecations","id":%s,"kind":%s,"file":%s,"line":%s,"message":%s,"fix":%s,"text":%s}' \
+					obj="$(printf '{"level":"deprecation","section":"deprecations","id":%s,"kind":%s,"file":%s,"line":%s,"message":%s,"fix":%s,"text":%s,"silent":%s}' \
 						"$(mcp_json_quote_text "${f_id}")" "$(mcp_json_quote_text "${f_kind}")" \
 						"$(mcp_json_quote_text "${f_file}")" "${f_line}" \
 						"$(mcp_json_quote_text "${f_summary}")" "$(mcp_json_quote_text "${f_fix}")" \
-						"$(mcp_json_quote_text "${f_text}")")"
+						"$(mcp_json_quote_text "${f_text}")" "${is_silent}")"
 					messages_json="$(append_to_array "${messages_json}" "${obj}")"
+				elif [ "${is_silent}" = true ]; then
+					printf '✗ %s:%s %s [%s]\n    fails silently in 2.0: the tool keeps running but takes the wrong branch, with no error\n    fix: %s\n' \
+						"${f_file}" "${f_line}" "${f_summary}" "${f_id}" "${f_fix}"
 				else
 					printf '⚠ %s:%s %s [%s]\n    fix: %s\n' "${f_file}" "${f_line}" "${f_summary}" "${f_id}" "${f_fix}"
 				fi
 			done <<<"${findings}"
+			if [ "${silent}" -gt 0 ] && [ "${json_mode}" != "true" ]; then
+				printf '\n✗ %d deprecation(s); %d of them fail(s) silently in mcp-bash 2.0 (%s): fix those before upgrading. See: mcp-bash migrate --explain ID\n' \
+					"${deprecations}" "${silent}" "${silent_ids}"
+			fi
 		fi
 	fi
 	if [ "${deprecations_as_errors}" = "true" ]; then
