@@ -1232,14 +1232,71 @@ mcp_runtime_lookup_pgid() {
 	local pgid=""
 	[ -n "${pid}" ] || return 1
 
+	# Nothing when neither /proc nor ps can say: callers then treat the process
+	# as not isolated (taking its pid for its group would look isolated).
 	pgid="$(mcp_runtime_query_pgid "${pid}")" || pgid=""
-
-	# Fallback to assuming pid == pgid if ps fails
-	if [ -z "${pgid}" ]; then
-		pgid="${pid}"
-	fi
-
 	printf '%s' "${pgid}"
+}
+
+# Print every process as "pid pgid" lines, or nothing where ps can't list
+# them (Git Bash). BusyBox ps has no -a/-x; it lists every process anyway.
+mcp_runtime_process_table() {
+	local table
+	table="$(ps -axo pid=,pgid= 2>/dev/null || true)"
+	[ -n "${table}" ] || table="$(ps -o pid=,pgid= 2>/dev/null || true)"
+	[ -n "${table}" ] || return 0
+	printf '%s\n' "${table}" | awk 'NF >= 2 && $1 ~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/ { print $1, $2 }'
+}
+
+# mcp_runtime_group_snapshot PGID [PID...]: the "pid pgid" lines of the
+# group's members and of the listed pids, taken before the first signal.
+# mcp_runtime_signal_checked uses it to tell processes the server started
+# from ones that got a reused pid or group id since.
+mcp_runtime_group_snapshot() {
+	local pgid="$1"
+	shift
+	mcp_runtime_process_table | awk -v g="${pgid}" -v pids=" $* " '
+		($2 == g && g != "") || index(pids, " " $1 " ") { print $1, $2 }'
+}
+
+# mcp_runtime_signal_checked SIGNAL PGID FALLBACK_PID MAIN_PGID SNAPSHOT: a
+# later signal (the KILL after a grace period) to what the snapshot listed.
+# The group is signalled only while one of the snapshot's processes is still
+# in it: once all of them have exited its id can be handed out again, and the
+# new group isn't ours. Without a group (or for the server's own group), each
+# snapshot process still running with the same group is signalled on its
+# own. With no snapshot, or no table now (ps can't list), as
+# mcp_runtime_signal_group. A child forked after the snapshot, in a group
+# whose snapshot members have all exited, is missed.
+mcp_runtime_signal_checked() {
+	local signal="$1" pgid="$2" fallback_pid="$3" main_pgid="$4" snapshot="$5"
+	if [ "${MCPBASH_SKIP_PROCESS_GROUP_LOOKUP:-0}" = "1" ]; then
+		pgid=""
+	fi
+	local now=""
+	[ -z "${snapshot}" ] || now="$(mcp_runtime_process_table)"
+	if [ -z "${snapshot}" ] || [ -z "${now}" ]; then
+		[ -n "${fallback_pid}" ] || return 0
+		mcp_runtime_signal_group "${pgid}" "${signal}" "${fallback_pid}" "${main_pgid}"
+		return 0
+	fi
+	local live
+	# awk -v takes no newlines (BSD awk): pass the pairs comma-separated.
+	live="$(printf '%s\n' "${now}" | awk -v snap="${snapshot//$'\n'/,}" '
+		BEGIN { n = split(snap, lines, ","); for (i = 1; i <= n; i++) if (lines[i] != "") ours[lines[i]] = 1 }
+		($1 " " $2) in ours { print $1, $2 }')"
+	[ -n "${live}" ] || return 0
+	if [ -n "${pgid}" ] && [ "${pgid}" != "${main_pgid}" ] \
+		&& printf '%s\n' "${live}" | awk -v g="${pgid}" '$2 == g { found = 1 } END { exit !found }'; then
+		kill -"${signal}" "-${pgid}" 2>/dev/null || true
+		return 0
+	fi
+	local p _
+	while read -r p _; do
+		[ -n "${p}" ] || continue
+		kill -"${signal}" "${p}" 2>/dev/null || true
+	done <<<"${live}"
+	return 0
 }
 
 mcp_runtime_signal_group() {

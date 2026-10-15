@@ -65,3 +65,18 @@ teardown() {
 	done
 	[ ! -d "${MCPBASH_LOCK_ROOT}/stdout.lock" ] || fail "stdout lock still held 5s after cancel"
 }
+
+@test "cancel: escalation removes the killed worker's input files" {
+	# A worker stopped by KILL never runs its own cleanup.
+	MCPBASH_STATE_DIR="${BATS_TEST_TMPDIR}/state"
+	mkdir -p "${MCPBASH_STATE_DIR}"
+	: >"${MCPBASH_STATE_DIR}/inputs.key1.7.completion-args.X"
+	mcp_ids_worker_info() { printf '%s %s %s %s' "${STUBBORN_PID}" "" "/x/stderr.key1.log" "key1.7"; }
+	mcp_core_cancel_request '"r1"'
+	local i=0
+	while [ -e "${MCPBASH_STATE_DIR}/inputs.key1.7.completion-args.X" ] && [ "${i}" -lt 50 ]; do
+		sleep 0.1
+		i=$((i + 1))
+	done
+	[ ! -e "${MCPBASH_STATE_DIR}/inputs.key1.7.completion-args.X" ] || fail "input file still there 5s after cancel"
+}

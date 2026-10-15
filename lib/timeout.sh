@@ -64,8 +64,12 @@ mcp_timeout_terminate_worker() {
 
 	# Only use process group signals if the worker is properly isolated.
 	# Otherwise, we'd kill the caller along with the tool!
-	local tree=""
+	# The KILL a second later goes only to what was ours at the TERM: by then
+	# a pid or the group id may belong to another process
+	# (mcp_runtime_signal_checked).
+	local tree="" snapshot=""
 	if [ "${isolated}" = "true" ]; then
+		snapshot="$(mcp_runtime_group_snapshot "${worker_pgid}" "${worker_pid}")"
 		mcp_runtime_signal_group "${worker_pgid}" TERM "${worker_pid}" "${main_pgid}"
 	else
 		# Not isolated: signal the worker and the processes it started, listed
@@ -74,6 +78,8 @@ mcp_timeout_terminate_worker() {
 			tree="$(mcp_runtime_descendants "${worker_pid}")"
 		fi
 		# shellcheck disable=SC2086 # tree is a space-separated pid list
+		snapshot="$(mcp_runtime_group_snapshot "" "${worker_pid}" ${tree})"
+		# shellcheck disable=SC2086 # tree is a space-separated pid list
 		kill -TERM "${worker_pid}" ${tree} 2>/dev/null || true
 	fi
 
@@ -81,8 +87,10 @@ mcp_timeout_terminate_worker() {
 
 	if [ "${isolated}" = "true" ]; then
 		if kill -0 "${worker_pid}" 2>/dev/null || kill -0 "-${worker_pgid}" 2>/dev/null; then
-			mcp_runtime_signal_group "${worker_pgid}" KILL "${worker_pid}" "${main_pgid}"
+			mcp_runtime_signal_checked KILL "${worker_pgid}" "${worker_pid}" "${main_pgid}" "${snapshot}"
 		fi
+	elif [ -n "${snapshot}" ]; then
+		mcp_runtime_signal_checked KILL "" "" "" "${snapshot}"
 	else
 		local p
 		for p in ${worker_pid} ${tree}; do

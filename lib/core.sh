@@ -752,7 +752,7 @@ mcp_core_stop_all_workers() {
 	[ -n "${MCPBASH_STATE_DIR:-}" ] || return 0
 	# Loops read line by line, so they do not depend on IFS (called from the
 	# exit trap, which runs with the IFS of whatever it interrupted).
-	local keys key info pid pgid rest targets="" alive tries=0
+	local keys key info pid pgid rest targets="" snapshots="" alive tries=0
 	keys="$(mcp_ids_list_active_workers 2>/dev/null || true)"
 	[ -n "${keys}" ] || return 0
 	while IFS= read -r key; do
@@ -765,6 +765,9 @@ mcp_core_stop_all_workers() {
 		if [ "${MCPBASH_SKIP_PROCESS_GROUP_LOOKUP:-0}" = "1" ]; then
 			pgid=""
 		fi
+		# What was ours at the TERM, for the KILL below
+		# (mcp_runtime_signal_checked).
+		snapshots="${snapshots}$(mcp_runtime_group_snapshot "${pgid}" "${pid}")"$'\n'
 		mcp_core_send_signal_chain "${pid}" "${pgid}" TERM
 		targets="${targets}${pid} ${pgid}"$'\n'
 	done <<<"${keys}"
@@ -784,7 +787,7 @@ mcp_core_stop_all_workers() {
 	done
 	while IFS=' ' read -r pid pgid; do
 		[ -n "${pid}" ] || continue
-		mcp_core_send_signal_chain "${pid}" "${pgid}" KILL
+		mcp_runtime_signal_checked KILL "${pgid}" "${pid}" "${MCPBASH_MAIN_PGID}" "${snapshots}"
 	done <<<"${targets}"
 }
 
@@ -1798,6 +1801,10 @@ mcp_core_cancel_request() {
 		pgid=""
 	fi
 
+	# What the KILL may reach a second later: pids and group ids can be
+	# handed out again by then (mcp_runtime_signal_checked).
+	local snapshot=""
+	snapshot="$(mcp_runtime_group_snapshot "${pgid}" "${pid}")"
 	mcp_core_send_signal_chain "${pid}" "${pgid}" TERM
 	# Escalate from a helper so the main loop isn't held up: waiting here
 	# stalled all request handling for 1s per cancel, one cancel at a time.
@@ -1808,7 +1815,7 @@ mcp_core_cancel_request() {
 		(
 			set +e
 			sleep 1
-			mcp_core_cancel_escalate "${key}" "${pid}" "${pgid}" "${inputs_tag}"
+			mcp_core_cancel_escalate "${key}" "${pid}" "${pgid}" "${inputs_tag}" "${snapshot}"
 		) >/dev/null </dev/null &
 	)
 }
@@ -1818,11 +1825,12 @@ mcp_core_cancel_escalate() {
 	local pid="$2"
 	local pgid="$3"
 	local inputs_tag="${4:-}"
+	local snapshot="${5:-}"
 
 	# The worker usually exits on TERM at once; the tool and the processes it
 	# started can outlive it in the same group, so check the group too.
 	if mcp_core_process_alive "${pid}" || mcp_core_group_alive "${pgid}"; then
-		mcp_core_send_signal_chain "${pid}" "${pgid}" KILL
+		mcp_runtime_signal_checked KILL "${pgid}" "${pid}" "${MCPBASH_MAIN_PGID}" "${snapshot}"
 	fi
 	# A worker stopped by KILL never ran its cleanup.
 	mcp_core_clear_inputs "${inputs_tag}"
