@@ -878,6 +878,8 @@ mcp_elicit() {
 	__mcp_el_response="$(cat "${MCP_ELICIT_RESPONSE_FILE}")"
 	rm -f "${MCP_ELICIT_RESPONSE_FILE}"
 	printf '%s' "${__mcp_el_response}"
+	# The server writes a client error as "unavailable": no answer came back.
+	case "${__mcp_el_response}" in *'"action":"unavailable"'*) return 1 ;; esac
 }
 
 # Question helpers (2.0): call them directly, not inside $(...). Exit 0 means
@@ -1100,6 +1102,8 @@ mcp_elicit_url_raw() {
 	__mcp_el_response="$(cat "${MCP_ELICIT_RESPONSE_FILE}")"
 	rm -f "${MCP_ELICIT_RESPONSE_FILE}"
 	printf '%s' "${__mcp_el_response}"
+	# The server writes a client error as "unavailable": no answer came back.
+	case "${__mcp_el_response}" in *'"action":"unavailable"'*) return 1 ;; esac
 }
 
 # Usage: mcp_elicit_string [-v VAR] [--arg NAME] MESSAGE [FIELD]

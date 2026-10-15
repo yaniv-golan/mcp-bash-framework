@@ -356,3 +356,19 @@ helper_locals() {
 	assert_equal "${MCP_ELICIT_ACTION}" "unavailable"
 	[ ! -e "${BATS_TEST_TMPDIR}/asked" ]
 }
+
+@test "elicit: raw helpers exit non-zero when the client's reply was an error" {
+	# The server turns a client error into an "unavailable" reply: no answer.
+	answer '{"action":"unavailable","content":null}'
+	run mcp_elicit "Name?" '{"type":"object"}'
+	assert_failure
+	assert_output '{"action":"unavailable","content":null}'
+	answer '{"action":"unavailable","content":null}'
+	run mcp_elicit_url_raw "Sign in" "https://example.com"
+	assert_failure
+	assert_output '{"action":"unavailable","content":null}'
+	# A decline is an answer.
+	answer '{"action":"decline","content":null}'
+	run mcp_elicit "Name?" '{"type":"object"}'
+	assert_success
+}
