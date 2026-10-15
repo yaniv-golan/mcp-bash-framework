@@ -724,25 +724,29 @@ mcp_log_info "mytool" "Using timeout=${timeout}, retries=${retries}"
 Request user input when the client supports elicitation:
 
 ```bash
-# Each helper prints {"action": ..., "content": ...} and exits non-zero when no
-# answer came back (unsupported client, timeout, cancelled call), so under
-# `set -e` add `|| true` and branch on .action.
+# Call the helpers directly, in an if: exit 0 means the user accepted, and
+# MCP_ELICIT_ACTION says why not (decline, cancel, unavailable). -v VAR gets
+# the answer; --arg NAME takes it from the tool's arguments when given.
 
 # Simple string input
-response="$(mcp_elicit_string "Enter your name:" "name")" || true
+if mcp_elicit_string -v name --arg name "Enter your name:" "name"; then
+	mcp_log_info "my-tool" "Hello ${name}"
+fi
 
 # Yes/no confirmation
-response="$(mcp_elicit_confirm "Proceed with deletion?")" || true
+if ! mcp_elicit_confirm --arg confirmed "Proceed with deletion?"; then
+	mcp_fail --type declined "Not confirmed (${MCP_ELICIT_ACTION})"
+fi
 
 # Choice from options
-response="$(mcp_elicit_choice "Select environment:" "dev" "staging" "prod")" || true
+mcp_elicit_choice -v env "Select environment:" "dev" "staging" "prod" || env="dev"
 
-# Custom schema
+# Custom schema: the raw helper prints the client's JSON answer
 schema='{"type":"object","properties":{"port":{"type":"integer"}},"required":["port"]}'
 response="$(mcp_elicit "Configure server:" "${schema}")" || true
 ```
 
-See [ELICITATION.md](ELICITATION.md#using-the-helpers-under-set--e) for a full branch-on-`.action` example.
+See [ELICITATION.md](ELICITATION.md#calling-them-under-set--e) for the calling rules, and how to upgrade a 1.x tool.
 
 #### Complete tool example
 
