@@ -869,7 +869,7 @@ mcp_elicit() {
 
 	if [ ! -f "${MCP_ELICIT_RESPONSE_FILE}" ]; then
 		rm -f "${MCP_ELICIT_REQUEST_FILE}"
-		__mcp_sdk_warn "mcp_elicit: Timeout waiting for user __mcp_el_response"
+		__mcp_sdk_warn "mcp_elicit: Timeout waiting for user response"
 		printf '{"action":"unavailable","content":null}'
 		return 1
 	fi
@@ -1091,7 +1091,7 @@ mcp_elicit_url_raw() {
 
 	if [ ! -f "${MCP_ELICIT_RESPONSE_FILE}" ]; then
 		rm -f "${MCP_ELICIT_REQUEST_FILE}"
-		__mcp_sdk_warn "mcp_elicit_url: Timeout waiting for user __mcp_el_response"
+		__mcp_sdk_warn "mcp_elicit_url: Timeout waiting for user response"
 		printf '{"action":"unavailable","content":null}'
 		return 1
 	fi

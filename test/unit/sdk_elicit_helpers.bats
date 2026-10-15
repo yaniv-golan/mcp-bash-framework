@@ -7,6 +7,8 @@ load '../../node_modules/bats-support/load'
 load '../../node_modules/bats-assert/load'
 load '../common/fixtures'
 
+bats_require_minimum_version 1.5.0
+
 setup() {
 	# shellcheck source=lib/runtime.sh
 	# shellcheck disable=SC1091
@@ -91,6 +93,10 @@ answer() {
 	assert_equal "${MCP_ELICIT_ACTION}" "unavailable"
 	run mcp_elicit "Name?" '{"type":"object"}' 1
 	refute_output --partial '"error"'
+	run --separate-stderr mcp_elicit "Name?" '{"type":"object"}' 1
+	[[ "${stderr}" == *"Timeout waiting for user response"* ]]
+	run --separate-stderr mcp_elicit_url_raw "Sign in" "https://example.com" 1
+	[[ "${stderr}" == *"Timeout waiting for user response"* ]]
 }
 
 @test "elicit: string, choice and titled choice put the answer in -v's variable" {
