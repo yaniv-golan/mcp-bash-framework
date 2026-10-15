@@ -349,7 +349,10 @@ helper_locals() {
 
 @test "elicit: a choice helper with no options is unavailable" {
 	local st=0 c
+	# A client that would answer anything: the helper must not ask at all.
+	answer '{"action":"accept","content":{"choice":"x"}}'
 	mcp_elicit_choice -v c "Pick" 2>/dev/null || st=$?
 	assert_equal "${st}" "1"
 	assert_equal "${MCP_ELICIT_ACTION}" "unavailable"
+	[ ! -e "${BATS_TEST_TMPDIR}/asked" ]
 }
