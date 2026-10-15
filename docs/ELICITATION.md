@@ -69,11 +69,11 @@ fi
 ```
 
 ### Raw helpers
-`mcp_elicit <message> <schema_json> [timeout_secs] [mode]` and `mcp_elicit_url_raw <message> <url> [timeout_secs]` print the client's answer as JSON (`{"action": "...", "content": ...}`), for schemas the helpers above don't cover. Capture them with `$(...)` and branch on `.action`: `accept`, `decline`, `cancel`, or `unavailable` (since 2.0; 1.x printed `error` here, and `decline` when the client couldn't ask). They exit non-zero when no answer came back.
+`mcp_elicit <message> <schema_json> [timeout_secs] [mode]` and `mcp_elicit_url_raw <message> <url> [timeout_secs]` print the client's answer as JSON (`{"action": "...", "content": ...}`), for schemas the helpers above don't cover. Capture them with `$(...)` and branch on `.action`: `accept`, `decline`, `cancel`, or `unavailable` (since 2.0; 1.x printed `error` here, and `decline` when the client couldn't ask). They exit non-zero when no answer came back (`unavailable`, including a client that answered with an error, or `cancel` when the request was cancelled), so capture them with `|| true` under `set -e`.
 
 ### Calling them under `set -e`
 
-Call the helpers in an `if` (or `if !`) or before `||`. A bare call under `set -euo pipefail` ends the tool on any answer but yes; `mcp-bash validate` and `migrate` flag such calls (rule `2-elicit-bare`). Don't name a `-v` variable with the SDK's prefixes (`__mcp_el_`, `_MCP_ELICIT_`); they are refused (`unavailable`), and so is a readonly variable.
+Call the helpers in an `if` (or `if !`) or before `||`. A bare call under `set -euo pipefail` ends the tool on any answer but yes; `mcp-bash validate` and `migrate` flag such calls (rule `2-elicit-bare`). Don't name a `-v` variable with the SDK's prefixes (`__mcp_el_`, `_MCP_ELICIT_`) or `MCP_ELICIT_ACTION`; they are refused (`unavailable`), and so is a readonly variable.
 
 `mcp_fail --type` ends the tool. `mcp_result_json` and `mcp_result_text` print the result but **do not exit**: in an early-return branch, follow them with `exit 0`, or the tool keeps running and prints a second result.
 
@@ -94,7 +94,7 @@ if ! mcp_elicit_confirm "Delete 40 files?"; then
 fi
 ```
 
-On the opt-in 2026-07-28 path (`MCPBASH_MODERN_PROTOCOL=true`) the server can't ask yet: the helpers answer `unavailable` there.
+On the opt-in 2026-07-28 path (`MCPBASH_MODERN_PROTOCOL=true`) the server can't ask yet: the helpers answer `unavailable` there, unless `--arg` gives a valid answer from the call's arguments (`mcp_elicit_confirm` included, since the client can't be asked).
 
 ## Environment Variables
 
