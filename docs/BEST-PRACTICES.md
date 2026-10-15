@@ -910,7 +910,7 @@ Declare behavior hints in `<tool>.meta.json` to help clients present appropriate
 | `idempotentHint` | `false` | Multiple calls with same args have same effect as one call |
 | `openWorldHint` | `true` | Tool may interact with external systems |
 
-Clients may use these hints to show confirmation dialogs, group tools by risk level, or enable/disable tools based on user preferences. Annotations are advisory—do not rely on them for security decisions.
+Clients may use these hints to show confirmation dialogs, group tools by risk level, or enable/disable tools based on user preferences. Annotations are advisory—do not rely on them for security decisions. Set `readOnlyHint: true` only on a tool that changes nothing: some clients call a read-only tool without asking the user. `mcp-bash scaffold tool` writes the cautious defaults from the table above.
 
 #### Shared code
 

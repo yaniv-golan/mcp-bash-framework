@@ -10,7 +10,7 @@ Key files:
 Next steps:
 
 1. Implement your tool logic inside `tool.sh`, replacing the greeting with real behaviour.
-2. Adjust `tool.meta.json` to document any required arguments, timeouts, or structured output.
+2. Adjust `tool.meta.json` to document any required arguments, timeouts, or structured output. Its `annotations` start with the cautious defaults (not read-only, may be destructive). Relax them only to describe what the tool really does: some clients skip asking the user before calling a tool marked `readOnlyHint: true`.
 3. Check out `examples/02-logging-and-levels` and `examples/03-progress-and-cancellation` for patterns that build on the SDK helpers.
 4. Run `./smoke.sh` after edits to validate JSON output. Update the sample args in `smoke.sh` if you change `tool.meta.json`.
 
