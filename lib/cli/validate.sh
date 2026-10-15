@@ -129,7 +129,8 @@ EOF
 			[ -z "${line}" ] && continue
 			local symbol="${line%% *}"
 			local msg="${line#"${symbol} "}"
-			if [ "${symbol}" != "✗" ] && [ "${symbol}" != "⚠" ] && [ "${symbol}" != "✓" ]; then
+			# ℹ is a note: level "info", like a pass, with the symbol dropped.
+			if [ "${symbol}" != "✗" ] && [ "${symbol}" != "⚠" ] && [ "${symbol}" != "✓" ] && [ "${symbol}" != "ℹ" ]; then
 				msg="${line}"
 				symbol="✓"
 			fi
