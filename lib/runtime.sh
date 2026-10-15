@@ -595,9 +595,6 @@ mcp_runtime_cleanup() {
 	if declare -f mcp_core_stop_resource_poll >/dev/null 2>&1; then
 		mcp_core_stop_resource_poll
 	fi
-	if declare -f mcp_core_stop_lifeline >/dev/null 2>&1; then
-		mcp_core_stop_lifeline
-	fi
 
 	mcp_io_log_corruption_summary
 
@@ -607,17 +604,26 @@ mcp_runtime_cleanup() {
 			printf 'mcp-bash: state preserved at %s\n' "${MCPBASH_STATE_DIR}" >&2
 		fi
 		mcp_runtime_cleanup_bootstrap
+		mcp_runtime_stop_lifeline
 		return
 	fi
 
 	mcp_runtime_remove_state_dirs
 	mcp_runtime_cleanup_bootstrap
+	# Last: until here a kill of this process would still need it.
+	mcp_runtime_stop_lifeline
+}
+
+mcp_runtime_stop_lifeline() {
+	if declare -f mcp_core_stop_lifeline >/dev/null 2>&1; then
+		mcp_core_stop_lifeline
+	fi
 }
 
 # Remove the state dir and the lock root, unless MCPBASH_PRESERVE_STATE or
-# MCPBASH_KEEP_LOGS keeps them; one the operator set is only emptied of what
-# the server made (mcp_runtime_rmrf_mode). Also run by the lifeline for a
-# server that was killed (mcp_core_start_lifeline).
+# MCPBASH_KEEP_LOGS keeps them; a directory the operator set is left in
+# place (mcp_runtime_rmrf_mode). Also run by the lifeline for a server that
+# was killed (mcp_core_start_lifeline).
 mcp_runtime_remove_state_dirs() {
 	[ "${MCPBASH_PRESERVE_STATE:-}" != "true" ] || return 0
 	if [ -n "${MCPBASH_STATE_DIR}" ] && { [ -d "${MCPBASH_STATE_DIR}" ] || [ -L "${MCPBASH_STATE_DIR}" ]; }; then

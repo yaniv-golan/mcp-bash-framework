@@ -227,6 +227,7 @@ mcp_result_json "$(printf '%s' "$result" | jq -c '.')"
   - `MCPBASH_ORPHAN_CHECK_ENABLED` (default `true` on Unix, `false` on Windows) → exit if parent process dies.
   - `MCPBASH_ORPHAN_CHECK_INTERVAL` (default 30s) → orphan check frequency.
   - On SIGTERM/SIGINT, a closed stdout (the client stopped reading) or a dead parent, running tools get TERM, then KILL after 1s. On stdin EOF or `shutdown` the server still waits for them.
+  - A server killed with SIGKILL (or crashing, or left a zombie by its host) can't do this itself: a lifeline helper, started with the first request that runs in a worker, notices within about a second, stops the running tools the same way and removes the server's state dir.
 - Progress & logging throttles:
   - `MCPBASH_MAX_PROGRESS_PER_MIN` (default 100 per request).
   - `MCPBASH_MAX_LOGS_PER_MIN` (default 100 per request).

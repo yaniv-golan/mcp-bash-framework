@@ -2240,7 +2240,8 @@ mcp_core_start_progress_flusher() {
 # A helper that outlives a server killed without cleanup (SIGKILL, a crash):
 # once the server is gone it does what the server's exit trap would have
 # done, stopping the workers and the tools they started and removing the
-# server's state dir. Started with the first worker. Its own process, not in
+# server's state dir. Started with the first request that runs in a worker
+# (tools/call, tools/list, resources/read, ...). Its own process, not in
 # the job table (so it never counts as a worker), with none of the server's
 # stdio (it must not hold the client's pipes open).
 mcp_core_start_lifeline() {
@@ -2249,12 +2250,19 @@ mcp_core_start_lifeline() {
 	(
 		set +e
 		trap - EXIT
+		# Stopped on a normal exit: take the tick's sleep along.
+		tick=""
+		trap '[ -z "${tick}" ] || kill "${tick}" 2>/dev/null; exit 0' TERM
 		# $$ is the server's PID here too; a zombie counts as gone.
 		while mcp_core_server_alive; do
-			sleep 1
+			sleep 1 &
+			tick=$!
+			wait "${tick}"
+			tick=""
 		done
 		mcp_core_stop_all_workers
 		mcp_runtime_remove_state_dirs
+		mcp_runtime_cleanup_bootstrap
 	) </dev/null >/dev/null 2>&1 &
 	MCPBASH_LIFELINE_PID=$!
 	disown "${MCPBASH_LIFELINE_PID}" 2>/dev/null || true
