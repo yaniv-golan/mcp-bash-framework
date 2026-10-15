@@ -166,3 +166,166 @@ answer() {
 	mcp_elicit_url "Sign in" "https://example.com/auth"
 	assert_equal "${MCP_ELICIT_ACTION}" "accept"
 }
+
+# --- Names, validation, edge cases -------------------------------------------
+
+# The names the question helpers declare as locals, read from the source.
+helper_locals() {
+	awk '
+		/^(mcp_elicit[a-z_]*|__mcp_elicit[a-z_]*)\(\) \{/ { inside = 1; next }
+		inside && /^}/ { inside = 0; next }
+		inside && /^[[:space:]]*local[[:space:]]/ {
+			line = $0
+			sub(/^[[:space:]]*local[[:space:]]+/, "", line)
+			n = split(line, w, /[[:space:]]+/)
+			for (i = 1; i <= n; i++) {
+				name = w[i]
+				sub(/=.*/, "", name)
+				if (name ~ /^[A-Za-z_][A-Za-z0-9_]*$/) print name
+			}
+		}' "${MCPBASH_HOME}/sdk/tool-sdk.sh" | sort -u
+}
+
+@test "elicit: every local in the question helpers has the reserved prefix" {
+	local names bad=""
+	names="$(helper_locals)"
+	[ -n "${names}" ] || fail "no locals found: the parser is out of date"
+	local n
+	for n in ${names}; do
+		case "${n}" in __mcp_el_*) ;; *) bad="${bad} ${n}" ;; esac
+	done
+	[ -z "${bad}" ] || fail "locals without the __mcp_el_ prefix:${bad}"
+}
+
+@test "elicit: -v gets the answer whatever the caller's variable is called" {
+	local name
+	for name in value action message field var arg kind schema filter caller field_name resp path options json_tool enum_json json_bin; do
+		answer '{"action":"accept","content":{"choice":"safe"}}'
+		unset "${name}" 2>/dev/null || true
+		mcp_elicit_choice -v "${name}" "Mode?" explore safe || fail "-v ${name}: not accepted (${MCP_ELICIT_ACTION})"
+		assert_equal "${!name}" "safe"
+		wait "${RESPONDER}" 2>/dev/null || true
+	done
+}
+
+@test "elicit: -v refuses the SDK's reserved names and a readonly variable" {
+	local name st
+	for name in __mcp_el_value _MCP_ELICIT_VAR MCP_ELICIT_ACTION; do
+		st=0
+		mcp_elicit_string -v "${name}" "Name?" 2>/dev/null || st=$?
+		assert_equal "${st}" "1"
+		assert_equal "${MCP_ELICIT_ACTION}" "unavailable"
+	done
+	readonly frozen_answer=x
+	st=0
+	mcp_elicit_string -v frozen_answer "Name?" 2>/dev/null || st=$?
+	assert_equal "${st}" "1"
+	assert_equal "${MCP_ELICIT_ACTION}" "unavailable"
+}
+
+@test "elicit: --arg must be one of the choices, of the right type; otherwise the user is asked" {
+	local c="" st
+	for bad in '{"env":"prod; rm -rf /"}' '{"env":1}' '{"env":true}' '{"env":["dev"]}' '{"env":{"x":1}}'; do
+		MCP_TOOL_ARGS_JSON="${bad}"
+		answer '{"action":"accept","content":{"choice":"staging"}}'
+		mcp_elicit_choice -v c --arg env "Env?" dev staging || fail "${bad}: not accepted (${MCP_ELICIT_ACTION})"
+		assert_equal "${c}" "staging"
+		wait "${RESPONDER}" 2>/dev/null || true
+	done
+	MCP_TOOL_ARGS_JSON='{"env":"dev"}'
+	mcp_elicit_choice -v c --arg env "Env?" dev staging
+	assert_equal "${c}" "dev"
+	# A client that can't ask: an invalid --arg value is unavailable.
+	MCP_ELICIT_SUPPORTED=0
+	MCP_TOOL_ARGS_JSON='{"env":"prod"}'
+	st=0
+	mcp_elicit_choice -v c --arg env "Env?" dev staging 2>/dev/null || st=$?
+	assert_equal "${st}" "1"
+	assert_equal "${MCP_ELICIT_ACTION}" "unavailable"
+}
+
+@test "elicit: multi-choice --arg must be an array of distinct choices" {
+	local f="" bad
+	for bad in '{"f":[1,"zz"]}' '{"f":["zz"]}' '{"f":"logging"}' '{"f":["logging","logging"]}'; do
+		MCP_TOOL_ARGS_JSON="${bad}"
+		answer '{"action":"accept","content":{"choices":["caching"]}}'
+		mcp_elicit_multi_choice -v f --arg f "F?" logging caching || fail "${bad}: not accepted"
+		assert_equal "${f}" '["caching"]'
+		wait "${RESPONDER}" 2>/dev/null || true
+	done
+	MCP_TOOL_ARGS_JSON='{"f":["logging"]}'
+	mcp_elicit_multi_choice -v f --arg f "F?" logging caching
+	assert_equal "${f}" '["logging"]'
+}
+
+@test "elicit: confirm --arg takes a real boolean only" {
+	local st
+	MCP_ELICIT_SUPPORTED=0
+	for bad in '{"ok":"true"}' '{"ok":1}' '{"ok":"yes"}'; do
+		MCP_TOOL_ARGS_JSON="${bad}"
+		st=0
+		mcp_elicit_confirm --arg ok "Go?" 2>/dev/null || st=$?
+		assert_equal "${st}" "1"
+		assert_equal "${MCP_ELICIT_ACTION}" "unavailable"
+	done
+	MCP_TOOL_ARGS_JSON='{"ok":true}'
+	mcp_elicit_confirm --arg ok "Go?"
+}
+
+@test "elicit: a client reply outside the choices, or of the wrong type, is unavailable" {
+	local c="stale" st reply
+	for reply in '{"action":"accept","content":{"choice":"prod"}}' '{"action":"accept","content":{"choice":7}}' \
+		'{"action":"accept","content":{}}' '{"action":"accept"}' '{"action":"accept","content":"x"}'; do
+		answer "${reply}"
+		st=0
+		mcp_elicit_choice -v c "Env?" dev staging || st=$?
+		assert_equal "${st}" "1"
+		assert_equal "${MCP_ELICIT_ACTION}" "unavailable"
+		assert_equal "${c}" ""
+		wait "${RESPONDER}" 2>/dev/null || true
+	done
+	answer '{"action":"accept","content":{"choices":"logging"}}'
+	st=0
+	mcp_elicit_multi_choice -v c "F?" logging || st=$?
+	assert_equal "${st}" "1"
+	assert_equal "${MCP_ELICIT_ACTION}" "unavailable"
+}
+
+@test "elicit: a string answer that is missing or not a string is unavailable" {
+	local name st reply
+	for reply in '{"action":"accept","content":{}}' '{"action":"accept","content":{"value":3}}'; do
+		answer "${reply}"
+		st=0
+		mcp_elicit_string -v name "Name?" || st=$?
+		assert_equal "${st}" "1"
+		assert_equal "${MCP_ELICIT_ACTION}" "unavailable"
+		wait "${RESPONDER}" 2>/dev/null || true
+	done
+}
+
+@test "elicit: a field name is data, never part of the jq program" {
+	local email="" st
+	answer '{"action":"accept","content":{"e-mail":"a@b.c"}}'
+	mcp_elicit_string -v email "Email?" "e-mail"
+	assert_equal "${email}" "a@b.c"
+	wait "${RESPONDER}" 2>/dev/null || true
+	answer '{"action":"accept","content":{"value":"v"}}'
+	st=0
+	mcp_elicit_string -v email "Email?" 'value + env.HOME' || st=$?
+	assert_equal "${st}" "1"
+	[[ "${email}" != *"${HOME}"* ]] || fail "the field name ran as jq"
+}
+
+@test "elicit: trailing newlines in an answer are kept" {
+	local text=""
+	answer '{"action":"accept","content":{"value":"two\n\n"}}'
+	mcp_elicit_string -v text "Text?"
+	assert_equal "${text}" $'two\n\n'
+}
+
+@test "elicit: a choice helper with no options is unavailable" {
+	local st=0 c
+	mcp_elicit_choice -v c "Pick" 2>/dev/null || st=$?
+	assert_equal "${st}" "1"
+	assert_equal "${MCP_ELICIT_ACTION}" "unavailable"
+}

@@ -110,10 +110,12 @@ mcp_rpc_handle_response() {
 		error_code="$(printf '%s' "${json_payload}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.error.code // -32603' 2>/dev/null || printf '%s' "-32603")"
 		error_message="$(printf '%s' "${json_payload}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.error.message // "Unknown error"' 2>/dev/null || printf '%s' "Unknown error")"
 		mcp_logging_warning "mcp.elicitation" "Client error: code=${error_code} message=${error_message}"
-		normalized='{"action":"error","content":null}'
+		# No answer came back: "unavailable", as for a client that can't ask.
+		normalized='{"action":"unavailable","content":null}'
 	else
 		local action content action_json
-		action="$(printf '%s' "${json_payload}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.result.action // "error"' 2>/dev/null || printf '%s' "error")"
+		action="$(printf '%s' "${json_payload}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.result.action // "unavailable"' 2>/dev/null || printf '%s' "unavailable")"
+		case "${action}" in accept | decline | cancel) ;; *) action="unavailable" ;; esac
 		content="$(printf '%s' "${json_payload}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.result.content // null' 2>/dev/null || printf 'null')"
 		action_json="$(mcp_json_quote_text "${action}")"
 		normalized="$(printf '{"action":%s,"content":%s}' "${action_json}" "${content}")"
