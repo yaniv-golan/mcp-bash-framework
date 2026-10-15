@@ -38,16 +38,20 @@ make_tool() {
 SIGTERM_SECS=7311
 STDOUT_SECS=7312
 ORPHAN_SECS=7313
+KILL_SECS=7314
+ZOMBIE_SECS=7315
 make_tool long-term "${SIGTERM_SECS}"
 make_tool long-stdout "${STDOUT_SECS}"
 make_tool long-orphan "${ORPHAN_SECS}"
+make_tool long-kill "${KILL_SECS}"
+make_tool long-zombie "${ZOMBIE_SECS}"
 make_tool slow 2
 chmod -R go-w "${WS}"
 
 trap '' PIPE
 tool_running() { pgrep -f "sleep $1\$" >/dev/null 2>&1; }
 cleanup_tools() {
-	pkill -f "sleep (${SIGTERM_SECS}|${STDOUT_SECS}|${ORPHAN_SECS})\$" 2>/dev/null || true
+	pkill -f "sleep (${SIGTERM_SECS}|${STDOUT_SECS}|${ORPHAN_SECS}|${KILL_SECS}|${ZOMBIE_SECS})\$" 2>/dev/null || true
 }
 trap cleanup_tools EXIT
 
@@ -84,7 +88,7 @@ expect_stopped() {
 INIT='{"jsonrpc":"2.0","id":"init","method":"initialize","params":{}}'
 INITIALIZED='{"jsonrpc":"2.0","method":"notifications/initialized"}'
 call() { printf '{"jsonrpc":"2.0","id":"%s","method":"tools/call","params":{"name":"%s","arguments":{}}}' "$1" "$2"; }
-ALLOW='long-term long-stdout long-orphan slow'
+ALLOW='long-term long-stdout long-orphan long-kill long-zombie slow'
 
 # 1) The host sends SIGTERM while a tool runs.
 in1="${TEST_TMPDIR}/term.in"
@@ -139,6 +143,71 @@ printf '%s\n%s\n%s\n' "${INIT}" "${INITIALIZED}" "$(call c1 long-orphan)" >&7
 wait_tool_started "${ORPHAN_SECS}"
 wait "${parent}" 2>/dev/null || true
 expect_stopped "dead parent" "${server}" "${ORPHAN_SECS}"
+exec 7>&-
+
+# A SIGKILLed server runs no cleanup of its own: what it started must still
+# stop, and the state dir it made must go. Its own temp root shows leftovers.
+unset MCPBASH_KEEP_LOGS MCPBASH_PRESERVE_STATE MCPBASH_LOG_DIR
+# $1: label; $2: tool seconds; $3: temp root. The tool must stop within 10s,
+# and no state dir may be left.
+expect_tool_and_state_gone() {
+	local label="$1" secs="$2" root="$3" n=0
+	while tool_running "${secs}"; do
+		n=$((n + 1))
+		[ "${n}" -lt 100 ] || test_fail "${label}: tool still running 10s after the server was killed"
+		sleep 0.1
+	done
+	while [ -n "$(find "${root}" -maxdepth 1 -name 'mcpbash.state.*' 2>/dev/null)" ]; do
+		n=$((n + 1))
+		[ "${n}" -lt 150 ] || test_fail "${label}: state dir left behind: $(find "${root}" -maxdepth 1 -name 'mcpbash.state.*')"
+		sleep 0.1
+	done
+	printf ' -> %s: tool stopped and state removed within %s.%ss\n' "${label}" "$((n / 10))" "$((n % 10))"
+}
+
+# 4) The host SIGKILLs the server (and reaps it) while a tool runs.
+root4="${TEST_TMPDIR}/kill-root"
+mkdir -p "${root4}"
+in4="${TEST_TMPDIR}/kill.in"
+mkfifo "${in4}"
+(cd "${WS}" && MCPBASH_TMP_ROOT="${root4}" MCPBASH_TOOL_ALLOWLIST="${ALLOW}" exec bash ./bin/mcp-bash <"${in4}" >/dev/null 2>"${TEST_TMPDIR}/kill.err") &
+server=$!
+exec 7>"${in4}"
+printf '%s\n%s\n%s\n' "${INIT}" "${INITIALIZED}" "$(call c1 long-kill)" >&7
+wait_tool_started "${KILL_SECS}"
+kill -KILL "${server}"
+wait "${server}" 2>/dev/null || true
+expect_tool_and_state_gone "host SIGKILL" "${KILL_SECS}" "${root4}"
+exec 7>&-
+
+# 5) The same, but the parent never reaps the killed server, so it stays a
+# zombie (kill -0 still succeeds on it).
+root5="${TEST_TMPDIR}/zombie-root"
+mkdir -p "${root5}"
+in5="${TEST_TMPDIR}/zombie.in"
+go5="${TEST_TMPDIR}/zombie.go"
+pid5="${TEST_TMPDIR}/zombie.pid"
+mkfifo "${in5}"
+exec 7<>"${in5}"
+(
+	cd "${WS}" || exit 1
+	MCPBASH_TMP_ROOT="${root5}" MCPBASH_TOOL_ALLOWLIST="${ALLOW}" PIDF="${pid5}" GO="${go5}" exec perl -e '
+		my $pid = fork;
+		defined $pid or exit 1;
+		if (!$pid) { exec @ARGV or exit 127; }
+		open(my $f, ">", $ENV{PIDF}) or exit 1; print $f $pid; close $f;
+		until (-e $ENV{GO}) { select(undef, undef, undef, 0.1); }
+		kill 9, $pid;
+		sleep 30;
+	' bash ./bin/mcp-bash <"${in5}" >/dev/null 2>"${TEST_TMPDIR}/zombie.err"
+) &
+zparent=$!
+while [ ! -s "${pid5}" ]; do sleep 0.1; done
+printf '%s\n%s\n%s\n' "${INIT}" "${INITIALIZED}" "$(call c1 long-zombie)" >&7
+wait_tool_started "${ZOMBIE_SECS}"
+: >"${go5}"
+expect_tool_and_state_gone "SIGKILL, never reaped" "${ZOMBIE_SECS}" "${root5}"
+kill "${zparent}" 2>/dev/null || true
 exec 7>&-
 
 printf 'exit stops tools test passed.\n'

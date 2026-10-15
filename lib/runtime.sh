@@ -595,6 +595,9 @@ mcp_runtime_cleanup() {
 	if declare -f mcp_core_stop_resource_poll >/dev/null 2>&1; then
 		mcp_core_stop_resource_poll
 	fi
+	if declare -f mcp_core_stop_lifeline >/dev/null 2>&1; then
+		mcp_core_stop_lifeline
+	fi
 
 	mcp_io_log_corruption_summary
 
@@ -607,6 +610,16 @@ mcp_runtime_cleanup() {
 		return
 	fi
 
+	mcp_runtime_remove_state_dirs
+	mcp_runtime_cleanup_bootstrap
+}
+
+# Remove the state dir and the lock root, unless MCPBASH_PRESERVE_STATE or
+# MCPBASH_KEEP_LOGS keeps them; one the operator set is only emptied of what
+# the server made (mcp_runtime_rmrf_mode). Also run by the lifeline for a
+# server that was killed (mcp_core_start_lifeline).
+mcp_runtime_remove_state_dirs() {
+	[ "${MCPBASH_PRESERVE_STATE:-}" != "true" ] || return 0
 	if [ -n "${MCPBASH_STATE_DIR}" ] && { [ -d "${MCPBASH_STATE_DIR}" ] || [ -L "${MCPBASH_STATE_DIR}" ]; }; then
 		if [ "${MCPBASH_KEEP_LOGS:-false}" = "true" ]; then
 			if mcp_runtime_log_allowed; then
@@ -620,8 +633,6 @@ mcp_runtime_cleanup() {
 	if [ -n "${MCPBASH_LOCK_ROOT}" ] && { [ -d "${MCPBASH_LOCK_ROOT}" ] || [ -L "${MCPBASH_LOCK_ROOT}" ]; }; then
 		mcp_runtime_safe_rmrf "${MCPBASH_LOCK_ROOT}" "$(mcp_runtime_rmrf_mode "${MCPBASH_LOCK_ROOT_CREATED}")" || true
 	fi
-
-	mcp_runtime_cleanup_bootstrap
 }
 
 # "operator" for a directory the operator chose (MCPBASH_STATE_DIR or

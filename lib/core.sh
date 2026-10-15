@@ -13,6 +13,7 @@ MCPBASH_SHUTDOWN_WATCHDOG_CANCEL=""
 MCPBASH_EXIT_REQUESTED=false
 MCPBASH_PROGRESS_FLUSHER_PID=""
 MCPBASH_RESOURCE_POLL_PID=""
+MCPBASH_LIFELINE_PID=""
 # Set when a resources/subscribe is dispatched; see mcp_core_maybe_start_background_workers.
 MCPBASH_RESOURCE_POLL_WANTED=false
 MCPBASH_LAST_REGISTRY_POLL=""
@@ -371,7 +372,8 @@ mcp_core_server_alive() {
 	kill -0 "$$" 2>/dev/null || return 1
 	local state=""
 	if [ -r "/proc/$$/stat" ]; then
-		state="$(cat "/proc/$$/stat" 2>/dev/null || true)"
+		# A builtin read: helpers call this every tick.
+		IFS= read -r state <"/proc/$$/stat" 2>/dev/null || true
 		state="${state##*) }"
 		state="${state%% *}"
 	else
@@ -1442,6 +1444,7 @@ mcp_core_spawn_worker() {
 	local timeout=""
 
 	mcp_core_wait_for_available_slot
+	mcp_core_start_lifeline
 
 	# Each async request runs in its own background worker with dedicated stderr
 	# capture, optional timeout wrapper, and isolated progress/log streams so
@@ -2223,6 +2226,37 @@ mcp_core_start_progress_flusher() {
 		done
 	) &
 	MCPBASH_PROGRESS_FLUSHER_PID=$!
+}
+
+# A helper that outlives a server killed without cleanup (SIGKILL, a crash):
+# once the server is gone it does what the server's exit trap would have
+# done, stopping the workers and the tools they started and removing the
+# server's state dir. Started with the first worker. Its own process, not in
+# the job table (so it never counts as a worker), with none of the server's
+# stdio (it must not hold the client's pipes open).
+mcp_core_start_lifeline() {
+	[ -z "${MCPBASH_LIFELINE_PID:-}" ] || return 0
+	[ -n "${MCPBASH_STATE_DIR:-}" ] || return 0
+	(
+		set +e
+		trap - EXIT
+		# $$ is the server's PID here too; a zombie counts as gone.
+		while mcp_core_server_alive; do
+			sleep 1
+		done
+		mcp_core_stop_all_workers
+		mcp_runtime_remove_state_dirs
+	) </dev/null >/dev/null 2>&1 &
+	MCPBASH_LIFELINE_PID=$!
+	disown "${MCPBASH_LIFELINE_PID}" 2>/dev/null || true
+}
+
+mcp_core_stop_lifeline() {
+	local pid="${MCPBASH_LIFELINE_PID:-}"
+	[ -n "${pid}" ] || return 0
+	MCPBASH_LIFELINE_PID=""
+	# Still ours: it exits only after the server is gone.
+	kill "${pid}" 2>/dev/null || true
 }
 
 mcp_core_stop_progress_flusher() {
