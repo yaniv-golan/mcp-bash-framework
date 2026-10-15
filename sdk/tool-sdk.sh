@@ -988,7 +988,12 @@ __mcp_elicit_question() {
 		return 1
 	fi
 	# The answer from the call's arguments, when --arg names a valid one. The
-	# value goes through -j and a marker, so trailing newlines are kept.
+	# value goes through -j and a marker, so trailing newlines are kept. For a
+	# confirmation, --arg is the model's answer, so it counts only when the
+	# client can't ask: a client that can always asks the user.
+	if [ "${__mcp_el_kind}" = "confirm" ] && [ "${MCP_ELICIT_SUPPORTED:-0}" = "1" ]; then
+		__mcp_el_arg=""
+	fi
 	if [ -n "${__mcp_el_arg}" ]; then
 		if __mcp_el_value="$(mcp_args_raw | "${__mcp_el_jq}" -j --arg k "${__mcp_el_kind}" --argjson a "${__mcp_el_allowed}" --arg n "${__mcp_el_arg}" \
 			"${__MCP_ELICIT_CHECK} if type == \"object\" and has(\$n) then .[\$n] | checked else error(\"absent\") end" 2>/dev/null && printf x)"; then
@@ -1107,8 +1112,9 @@ mcp_elicit_string() {
 }
 
 # Usage: mcp_elicit_confirm [--arg NAME] MESSAGE: exit 0 only when the user
-# accepted and confirmed. --arg here lets the tool's caller (the model) say
-# yes for the user: never use it to confirm something destructive.
+# accepted and confirmed. --arg is read only when the client can't ask; it
+# lets the tool's caller (the model) say yes for the user, so never use it to
+# confirm something destructive.
 mcp_elicit_confirm() {
 	__mcp_elicit_parse_opts mcp_elicit_confirm "$@" || return 1
 	shift "${_MCP_ELICIT_NOPTS}"

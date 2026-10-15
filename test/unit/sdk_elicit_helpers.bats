@@ -138,12 +138,30 @@ answer() {
 	mcp_elicit_string -v name --arg name "Name?"
 	assert_equal "${name}" "Grace"
 	assert_equal "${MCP_ELICIT_ACTION}" "accept"
+	# confirm reads --arg only when the client can't ask.
+	MCP_ELICIT_SUPPORTED=0
 	mcp_elicit_confirm --arg go "Go?"
 	mcp_elicit_confirm --arg confirmed "Proceed?" || st=$?
 	assert_equal "${st}" "1"
 	assert_equal "${MCP_ELICIT_ACTION}" "decline"
 	# Nothing was asked.
 	[ ! -e "${MCP_ELICIT_REQUEST_FILE}" ]
+}
+
+@test "elicit: confirm asks the user when the client can, whatever --arg says" {
+	local st=0
+	MCP_TOOL_ARGS_JSON='{"go":true}'
+	answer '{"action":"decline","content":null}'
+	mcp_elicit_confirm --arg go "Delete everything?" || st=$?
+	assert_equal "${st}" "1"
+	assert_equal "${MCP_ELICIT_ACTION}" "decline"
+	[ -e "${BATS_TEST_TMPDIR}/asked" ]
+	# A question the user leaves unanswered doesn't fall back to --arg.
+	MCP_ELICIT_DEFAULT_TIMEOUT=1
+	st=0
+	mcp_elicit_confirm --arg go "Delete everything?" 2>/dev/null || st=$?
+	assert_equal "${st}" "1"
+	assert_equal "${MCP_ELICIT_ACTION}" "unavailable"
 }
 
 @test "elicit: --arg that the call doesn't have asks" {

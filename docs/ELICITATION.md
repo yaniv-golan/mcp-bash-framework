@@ -33,11 +33,11 @@ The SDK exposes helpers in `sdk/tool-sdk.sh`. Since 2.0 the question helpers are
 - **exit 0**: the user accepted (for `mcp_elicit_confirm`: accepted **and** confirmed);
 - **exit 1**: anything else, with the reason in `MCP_ELICIT_ACTION`: `decline` (a no, or `confirmed: false`), `cancel`, or `unavailable` (the client can't ask, the question timed out, or there is no JSON tool).
 
-`-v VAR` puts the answer in the variable `VAR` (emptied when the answer isn't a yes; trailing newlines are kept). `--arg NAME` takes the answer from the tool's argument `NAME` when the call has a valid one, without asking: a client that can't ask (Claude Desktop extensions, scripts, CI) passes it in the arguments instead.
+`-v VAR` puts the answer in the variable `VAR` (emptied when the answer isn't a yes; trailing newlines are kept). `--arg NAME` takes the answer from the tool's argument `NAME` when the call has a valid one, without asking: a client that can't ask (Claude Desktop extensions, scripts, CI) passes it in the arguments instead. `mcp_elicit_confirm` is the exception: it reads `--arg` only when the client can't ask. A client that can always asks the user, and a declined or unanswered question is not overridden by the argument.
 
 Answers are checked: a choice must be one of the options offered (multi-choice: an array of distinct options), `mcp_elicit_string` takes a string, and `mcp_elicit_confirm` a real boolean. An invalid `--arg` value is ignored and the user is asked (`unavailable` if the client can't ask); an invalid or missing answer from the client is `unavailable`.
 
-**`--arg` lets the tool's caller answer instead of the user.** The arguments come from the model, so use it only for values the model may legitimately supply (a name, an environment), never for a confirmation of something destructive: `mcp_elicit_confirm --arg confirmed "Delete 40 files?"` would let the model say yes without asking. For those, call `mcp_elicit_confirm` without `--arg` and handle `unavailable` (for example, refuse and explain).
+**`--arg` lets the tool's caller answer instead of the user.** The arguments come from the model, so use it only for values the model may legitimately supply (a name, an environment), never for a confirmation of something destructive: `mcp_elicit_confirm --arg confirmed "Delete 40 files?"` would let the model say yes without asking whenever the client can't ask. For those, call `mcp_elicit_confirm` without `--arg` and handle `unavailable` (for example, refuse and explain).
 
 ### Form Mode (in-band)
 - `mcp_elicit_string [-v VAR] [--arg NAME] <message> [field_name]` — free-text input
