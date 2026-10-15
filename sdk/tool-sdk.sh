@@ -836,13 +836,13 @@ mcp_elicit() {
 
 	if [ "${MCP_ELICIT_SUPPORTED:-0}" != "1" ]; then
 		__mcp_sdk_warn "mcp_elicit: Client does not support elicitation"
-		printf '{"action":"decline","content":null}'
+		printf '{"action":"unavailable","content":null}'
 		return 1
 	fi
 
 	if [ -z "${MCP_ELICIT_REQUEST_FILE:-}" ] || [ -z "${MCP_ELICIT_RESPONSE_FILE:-}" ]; then
 		__mcp_sdk_warn "mcp_elicit: Elicitation environment not configured"
-		printf '{"action":"error","content":null}'
+		printf '{"action":"unavailable","content":null}'
 		return 1
 	fi
 
@@ -870,7 +870,7 @@ mcp_elicit() {
 	if [ ! -f "${MCP_ELICIT_RESPONSE_FILE}" ]; then
 		rm -f "${MCP_ELICIT_REQUEST_FILE}"
 		__mcp_sdk_warn "mcp_elicit: Timeout waiting for user response"
-		printf '{"action":"error","content":null}'
+		printf '{"action":"unavailable","content":null}'
 		return 1
 	fi
 
@@ -880,24 +880,147 @@ mcp_elicit() {
 	printf '%s' "${response}"
 }
 
+# Question helpers (2.0): call them directly, not inside $(...). Exit 0 means
+# the user accepted (for mcp_elicit_confirm: accepted and confirmed); exit 1
+# means anything else, with the reason in MCP_ELICIT_ACTION: decline, cancel
+# or unavailable (the client can't ask, the call timed out, or no JSON tool).
+# -v VAR puts the answer in VAR ("" when not accepted); multi-choice answers
+# are a compact JSON array. --arg NAME takes the answer from the tool's
+# argument NAME when the call has it, without asking. Under set -e, call
+# them in an if or before ||.
+# shellcheck disable=SC2034  # Read by the tool after a question helper.
+MCP_ELICIT_ACTION=""
+
+# Parse -v VAR and --arg NAME into _MCP_ELICIT_VAR, _MCP_ELICIT_ARG; the
+# number of words used is in _MCP_ELICIT_NOPTS.
+__mcp_elicit_parse_opts() {
+	local caller="$1"
+	shift
+	_MCP_ELICIT_VAR="" _MCP_ELICIT_ARG="" _MCP_ELICIT_NOPTS=0
+	# A usage error is reported as "unavailable": nothing was asked.
+	MCP_ELICIT_ACTION="unavailable"
+	while [ "$#" -gt 0 ]; do
+		case "$1" in
+		-v | --arg)
+			if [ "$#" -lt 2 ]; then
+				__mcp_sdk_warn "${caller}: $1 needs a value"
+				return 1
+			fi
+			if [ "$1" = "-v" ]; then _MCP_ELICIT_VAR="$2"; else _MCP_ELICIT_ARG="$2"; fi
+			shift 2
+			_MCP_ELICIT_NOPTS=$((_MCP_ELICIT_NOPTS + 2))
+			;;
+		--)
+			_MCP_ELICIT_NOPTS=$((_MCP_ELICIT_NOPTS + 1))
+			break
+			;;
+		*) break ;;
+		esac
+	done
+	MCP_ELICIT_ACTION=""
+	case "${_MCP_ELICIT_VAR}" in
+	'') ;;
+	[A-Za-z_]*)
+		case "${_MCP_ELICIT_VAR}" in *[!A-Za-z0-9_]*)
+			__mcp_sdk_warn "${caller}: -v needs a variable name, not '${_MCP_ELICIT_VAR}'"
+			MCP_ELICIT_ACTION="unavailable"
+			return 1
+			;;
+		esac
+		;;
+	*)
+		__mcp_sdk_warn "${caller}: -v needs a variable name, not '${_MCP_ELICIT_VAR}'"
+		MCP_ELICIT_ACTION="unavailable"
+		return 1
+		;;
+	esac
+	return 0
+}
+
+# __mcp_elicit_question CALLER KIND MESSAGE SCHEMA: ask (or answer from
+# --arg) and set MCP_ELICIT_ACTION and the -v variable. KIND: string
+# (.content.<field> in _MCP_ELICIT_FIELD), multi (.content.choices) or
+# confirm (.content.confirmed).
+__mcp_elicit_question() {
+	local caller="$1" kind="$2" message="$3" schema="$4"
+	local var="${_MCP_ELICIT_VAR}" arg="${_MCP_ELICIT_ARG}" field="${_MCP_ELICIT_FIELD:-value}"
+	local json_bin="${MCPBASH_JSON_TOOL_BIN:-}" value="" action="" filter=""
+	MCP_ELICIT_ACTION=""
+	[ -z "${var}" ] || printf -v "${var}" '%s' ""
+	case "${kind}" in
+	string) filter='if type == "string" then . elif . == null then empty else tostring end' ;;
+	multi) filter='if type == "array" then tojson else empty end' ;;
+	confirm) filter='if . == true or . == "true" then "true" elif . == false or . == "false" then "false" else empty end' ;;
+	esac
+	if [ -z "${json_bin}" ] || ! command -v "${json_bin}" >/dev/null 2>&1 || [ "${MCPBASH_MODE:-full}" = "minimal" ]; then
+		__mcp_sdk_warn "${caller}: JSON tooling unavailable; can't ask or read --arg"
+		MCP_ELICIT_ACTION="unavailable"
+		return 1
+	fi
+	# The answer from the call's arguments, when --arg names one it has.
+	if [ -n "${arg}" ]; then
+		value="$(mcp_args_raw | "${json_bin}" -r --arg k "${arg}" "if type == \"object\" and has(\$k) and .[\$k] != null then .[\$k] | ${filter} else empty end" 2>/dev/null || true)"
+		if [ -n "${value}" ] || mcp_args_raw | "${json_bin}" -e --arg k "${arg}" 'type == "object" and .[$k] == ""' >/dev/null 2>&1; then
+			action="accept"
+		fi
+	fi
+	if [ -z "${action}" ]; then
+		local resp=""
+		resp="$(mcp_elicit "${message}" "${schema}")" || true
+		action="$(printf '%s' "${resp}" | "${json_bin}" -r '.action // "unavailable"' 2>/dev/null || true)"
+		case "${action}" in accept | decline | cancel) ;; *) action="unavailable" ;; esac
+		if [ "${action}" = "accept" ]; then
+			local path=".content.${field}"
+			[ "${kind}" != "multi" ] || path=".content.choices"
+			[ "${kind}" != "confirm" ] || path=".content.confirmed"
+			value="$(printf '%s' "${resp}" | "${json_bin}" -r --arg f "${field}" "(${path}) // null | ${filter}" 2>/dev/null || true)"
+		fi
+	fi
+	if [ "${action}" = "accept" ] && [ "${kind}" = "confirm" ] && [ "${value}" != "true" ]; then
+		action="decline"
+	fi
+	MCP_ELICIT_ACTION="${action}"
+	[ "${action}" = "accept" ] || return 1
+	[ -z "${var}" ] || [ "${kind}" = "confirm" ] || printf -v "${var}" '%s' "${value}"
+	return 0
+}
+
 # SEP-1036: URL mode elicitation for secure out-of-band interactions
-# Opens a browser URL for OAuth, payments, or sensitive data entry
-# Usage: mcp_elicit_url <message> <url> [timeout]
-# Returns: {"action":"accept|decline|cancel","content":null}
+# Opens a browser URL for OAuth, payments, or sensitive data entry.
+# Usage: mcp_elicit_url MESSAGE URL [TIMEOUT]: exit 0 when the user accepted,
+# 1 otherwise (MCP_ELICIT_ACTION says why). For the client's raw JSON, use
+# mcp_elicit_url_raw.
 mcp_elicit_url() {
+	local resp="" action="" json_bin="${MCPBASH_JSON_TOOL_BIN:-}"
+	MCP_ELICIT_ACTION=""
+	resp="$(mcp_elicit_url_raw "$@")" || true
+	if [ -n "${json_bin}" ] && command -v "${json_bin}" >/dev/null 2>&1; then
+		action="$(printf '%s' "${resp}" | "${json_bin}" -r '.action // "unavailable"' 2>/dev/null || true)"
+	else
+		case "${resp}" in *'"action":"accept"'*) action="accept" ;; *'"action":"decline"'*) action="decline" ;; *'"action":"cancel"'*) action="cancel" ;; esac
+	fi
+	case "${action}" in accept | decline | cancel) ;; *) action="unavailable" ;; esac
+	# shellcheck disable=SC2034  # Read by the tool.
+	MCP_ELICIT_ACTION="${action}"
+	[ "${action}" = "accept" ]
+}
+
+# Usage: mcp_elicit_url_raw MESSAGE URL [TIMEOUT]
+# Prints: {"action":"accept|decline|cancel|unavailable","content":null}
+mcp_elicit_url_raw() {
 	local message="$1"
 	local url="$2"
 	local timeout="${3:-${MCP_ELICIT_DEFAULT_TIMEOUT}}"
 
 	if [ "${MCP_ELICIT_SUPPORTED:-0}" != "1" ]; then
 		__mcp_sdk_warn "mcp_elicit_url: Client does not support elicitation"
-		printf '{"action":"decline","content":null}'
+		printf '{"action":"unavailable","content":null}'
 		return 1
 	fi
 
 	if [ -z "${MCP_ELICIT_REQUEST_FILE:-}" ] || [ -z "${MCP_ELICIT_RESPONSE_FILE:-}" ]; then
 		__mcp_sdk_warn "mcp_elicit_url: Elicitation environment not configured"
-		printf '{"action":"error","content":null}'
+		printf '{"action":"unavailable","content":null}'
 		return 1
 	fi
 
@@ -926,7 +1049,7 @@ mcp_elicit_url() {
 	if [ ! -f "${MCP_ELICIT_RESPONSE_FILE}" ]; then
 		rm -f "${MCP_ELICIT_REQUEST_FILE}"
 		__mcp_sdk_warn "mcp_elicit_url: Timeout waiting for user response"
-		printf '{"action":"error","content":null}'
+		printf '{"action":"unavailable","content":null}'
 		return 1
 	fi
 
@@ -936,21 +1059,31 @@ mcp_elicit_url() {
 	printf '%s' "${response}"
 }
 
+# Usage: mcp_elicit_string [-v VAR] [--arg NAME] MESSAGE [FIELD]
 mcp_elicit_string() {
+	__mcp_elicit_parse_opts mcp_elicit_string "$@" || return 1
+	shift "${_MCP_ELICIT_NOPTS}"
 	local message="$1"
 	local field_name="${2:-value}"
 	local schema
 	schema="$(printf '{"type":"object","properties":{"%s":{"type":"string"}},"required":["%s"]}' "${field_name}" "${field_name}")"
-	mcp_elicit "${message}" "${schema}"
+	_MCP_ELICIT_FIELD="${field_name}" __mcp_elicit_question mcp_elicit_string string "${message}" "${schema}"
 }
 
+# Usage: mcp_elicit_confirm [--arg NAME] MESSAGE: exit 0 only when the user
+# accepted and confirmed.
 mcp_elicit_confirm() {
+	__mcp_elicit_parse_opts mcp_elicit_confirm "$@" || return 1
+	shift "${_MCP_ELICIT_NOPTS}"
 	local message="$1"
 	local schema='{"type":"object","properties":{"confirmed":{"type":"boolean"}},"required":["confirmed"]}'
-	mcp_elicit "${message}" "${schema}"
+	__mcp_elicit_question mcp_elicit_confirm confirm "${message}" "${schema}"
 }
 
+# Usage: mcp_elicit_choice [-v VAR] [--arg NAME] MESSAGE OPTION...
 mcp_elicit_choice() {
+	__mcp_elicit_parse_opts mcp_elicit_choice "$@" || return 1
+	shift "${_MCP_ELICIT_NOPTS}"
 	local message="$1"
 	shift
 	local options=("$@")
@@ -959,46 +1092,27 @@ mcp_elicit_choice() {
 	enum_json="$(printf '%s\n' "${options[@]}" | "${json_tool}" -R . | "${json_tool}" -s -c .)"
 	local schema
 	schema="$(printf '{"type":"object","properties":{"choice":{"type":"string","enum":%s}},"required":["choice"]}' "${enum_json}")"
-	mcp_elicit "${message}" "${schema}"
+	_MCP_ELICIT_FIELD=choice __mcp_elicit_question mcp_elicit_choice string "${message}" "${schema}"
 }
 
-# Titled choice: each option is "value:Display Title"
-# Example: mcp_elicit_titled_choice "Pick quality" "high:High (1080p)" "low:Low (480p)"
-# Returns: {"action":"accept","content":{"choice":"high"}}
+# Titled choice: each option is "value:Display Title"; the answer is the value.
+# Usage: mcp_elicit_titled_choice [-v VAR] [--arg NAME] MESSAGE VALUE:TITLE...
+# Example: mcp_elicit_titled_choice -v quality "Pick quality" "high:High (1080p)" "low:Low (480p)"
 mcp_elicit_titled_choice() {
+	__mcp_elicit_parse_opts mcp_elicit_titled_choice "$@" || return 1
+	shift "${_MCP_ELICIT_NOPTS}"
 	local message="$1"
 	shift
-	local options=("$@")
-	local json_tool="${MCPBASH_JSON_TOOL_BIN:-jq}"
-
-	# Build oneOf array: [{"const":"value","title":"Display Title"}, ...]
-	local one_of_items=""
-	local first=1
-	for opt in "${options[@]}"; do
-		local value="${opt%%:*}"
-		local title="${opt#*:}"
-		# If no colon, use value as title
-		[[ "${value}" == "${opt}" ]] && title="${value}"
-
-		local item
-		item="$("${json_tool}" -n -c --arg v "${value}" --arg t "${title}" '{const:$v,title:$t}')"
-		if [[ "${first}" -eq 1 ]]; then
-			one_of_items="${item}"
-			first=0
-		else
-			one_of_items="${one_of_items},${item}"
-		fi
-	done
-
 	local schema
-	schema="$(printf '{"type":"object","properties":{"choice":{"type":"string","oneOf":[%s]}},"required":["choice"]}' "${one_of_items}")"
-	mcp_elicit "${message}" "${schema}"
+	schema="$(printf '{"type":"object","properties":{"choice":{"type":"string","oneOf":[%s]}},"required":["choice"]}' "$(__mcp_elicit_one_of "$@")")"
+	_MCP_ELICIT_FIELD=choice __mcp_elicit_question mcp_elicit_titled_choice string "${message}" "${schema}"
 }
 
-# Multi-select choice: user can select multiple options (checkboxes)
-# Example: mcp_elicit_multi_choice "Select codecs" "h264" "h265" "vp9"
-# Returns: {"action":"accept","content":{"choices":["h264","vp9"]}}
+# Multi-select choice (checkboxes); the answer is a JSON array, e.g. ["h264","vp9"].
+# Usage: mcp_elicit_multi_choice [-v VAR] [--arg NAME] MESSAGE OPTION...
 mcp_elicit_multi_choice() {
+	__mcp_elicit_parse_opts mcp_elicit_multi_choice "$@" || return 1
+	shift "${_MCP_ELICIT_NOPTS}"
 	local message="$1"
 	shift
 	local options=("$@")
@@ -1007,39 +1121,34 @@ mcp_elicit_multi_choice() {
 	enum_json="$(printf '%s\n' "${options[@]}" | "${json_tool}" -R . | "${json_tool}" -s -c .)"
 	local schema
 	schema="$(printf '{"type":"object","properties":{"choices":{"type":"array","items":{"type":"string","enum":%s}}},"required":["choices"]}' "${enum_json}")"
-	mcp_elicit "${message}" "${schema}"
+	__mcp_elicit_question mcp_elicit_multi_choice multi "${message}" "${schema}"
 }
 
-# Multi-select with titles: each option is "value:Display Title"
-# Example: mcp_elicit_titled_multi_choice "Select outputs" "mp4:MP4 Video" "mp3:MP3 Audio"
-# Returns: {"action":"accept","content":{"choices":["mp4","mp3"]}}
+# Multi-select with titles: each option is "value:Display Title"; the answer is
+# a JSON array of values.
+# Usage: mcp_elicit_titled_multi_choice [-v VAR] [--arg NAME] MESSAGE VALUE:TITLE...
 mcp_elicit_titled_multi_choice() {
+	__mcp_elicit_parse_opts mcp_elicit_titled_multi_choice "$@" || return 1
+	shift "${_MCP_ELICIT_NOPTS}"
 	local message="$1"
 	shift
-	local options=("$@")
-	local json_tool="${MCPBASH_JSON_TOOL_BIN:-jq}"
-
-	# Build oneOf array for items
-	local one_of_items=""
-	local first=1
-	for opt in "${options[@]}"; do
-		local value="${opt%%:*}"
-		local title="${opt#*:}"
-		[[ "${value}" == "${opt}" ]] && title="${value}"
-
-		local item
-		item="$("${json_tool}" -n -c --arg v "${value}" --arg t "${title}" '{const:$v,title:$t}')"
-		if [[ "${first}" -eq 1 ]]; then
-			one_of_items="${item}"
-			first=0
-		else
-			one_of_items="${one_of_items},${item}"
-		fi
-	done
-
 	local schema
-	schema="$(printf '{"type":"object","properties":{"choices":{"type":"array","items":{"oneOf":[%s]}}},"required":["choices"]}' "${one_of_items}")"
-	mcp_elicit "${message}" "${schema}"
+	schema="$(printf '{"type":"object","properties":{"choices":{"type":"array","items":{"oneOf":[%s]}}},"required":["choices"]}' "$(__mcp_elicit_one_of "$@")")"
+	__mcp_elicit_question mcp_elicit_titled_multi_choice multi "${message}" "${schema}"
+}
+
+# The oneOf items for "value:Display Title" options (no colon: the value is
+# the title too), comma-separated.
+__mcp_elicit_one_of() {
+	local json_tool="${MCPBASH_JSON_TOOL_BIN:-jq}" opt value title items="" item
+	for opt in "$@"; do
+		value="${opt%%:*}"
+		title="${opt#*:}"
+		[[ "${value}" == "${opt}" ]] && title="${value}"
+		item="$("${json_tool}" -n -c --arg v "${value}" --arg t "${title}" '{const:$v,title:$t}')"
+		items="${items:+${items},}${item}"
+	done
+	printf '%s' "${items}"
 }
 
 # CallToolResult helpers ------------------------------------------------------

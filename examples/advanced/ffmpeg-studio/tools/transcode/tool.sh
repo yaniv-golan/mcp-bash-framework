@@ -58,15 +58,9 @@ if [[ -f "${full_output}" ]]; then
 			--hint "Choose a different output path or enable elicitation to confirm overwrite" \
 			--data "$(mcp_json_obj output "${output_path}")"
 	fi
-	if [[ -z "${json_bin}" ]]; then
-		mcp_fail --type internal "JSON tooling unavailable for elicitation parsing"
-	fi
-	# Non-zero when no answer came back; branch on .action below, don't let set -e abort.
-	overwrite_resp="$(mcp_elicit_confirm "Output ${output_path} exists. Overwrite?")" || true
-	overwrite_fields="$("${json_bin}" -r '[.action, (.content.confirmed // false)] | @tsv' <<<"${overwrite_resp}")"
-	overwrite_action="${overwrite_fields%%$'\t'*}"
-	overwrite_confirmed="${overwrite_fields#*$'\t'}"
-	if [[ "${overwrite_action}" != "accept" ]] || [[ "${overwrite_confirmed}" != "true" ]]; then
+	# Exit 0 only when the user accepted and confirmed; called in an if, so a
+	# "no" doesn't end the tool under set -e.
+	if ! mcp_elicit_confirm "Output ${output_path} exists. Overwrite?"; then
 		# Tool Execution Error: User declined, LLM can try different output
 		mcp_fail --type declined "Overwrite declined" \
 			--hint "Choose a different output path" \

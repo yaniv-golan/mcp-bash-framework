@@ -40,18 +40,12 @@ cat <<'SH' >"${WORKROOT}/tools/elicitation/tool.sh"
 set -euo pipefail
 source "${MCP_SDK}/tool-sdk.sh"
 
-resp="$(mcp_elicit_confirm "Proceed?")"
-action="$(printf '%s' "${resp}" | jq -r '.action')"
-
-if [ "${action}" = "accept" ]; then
-	confirmed="$(printf '%s' "${resp}" | jq -r '.content.confirmed')"
-	if [ "${confirmed}" = "true" ]; then
-		mcp_result_text "confirmed"
-		exit 0
-	fi
+if mcp_elicit_confirm "Proceed?"; then
+	mcp_result_text "confirmed"
+	exit 0
 fi
 
-mcp_result_text "not-confirmed:${action}"
+mcp_result_text "not-confirmed:${MCP_ELICIT_ACTION}"
 exit 0
 SH
 chmod +x "${WORKROOT}/tools/elicitation/tool.sh"
@@ -123,7 +117,7 @@ if [ -z "${call_response}" ]; then
 fi
 
 text="$(printf '%s' "${call_response}" | jq -r '.result.content[] | select(.type=="text") | .text' | head -n1)"
-if [[ "${text}" != *"confirmed"* ]]; then
+if [[ "${text}" != "confirmed" ]]; then
 	test_fail "tool output missing confirmation text (got: ${text})"
 fi
 
