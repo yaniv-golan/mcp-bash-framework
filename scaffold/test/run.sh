@@ -83,21 +83,21 @@ run_test() {
 	if [[ "${VERBOSE}" == "1" ]]; then
 		if "${MCPBASH_BIN}" run-tool "${name}" --args "${args}" --verbose; then
 			printf '%sPASS%s\n' "${GREEN}" "${RESET}"
-			((passed++))
+			passed=$((passed + 1))
 		else
 			printf '%sFAIL%s\n' "${RED}" "${RESET}"
-			((failed++))
+			failed=$((failed + 1))
 		fi
 	else
 		if output=$("${MCPBASH_BIN}" run-tool "${name}" --args "${args}" 2>&1); then
 			printf '%sPASS%s\n' "${GREEN}" "${RESET}"
-			((passed++))
+			passed=$((passed + 1))
 		else
 			printf '%sFAIL%s\n' "${RED}" "${RESET}"
 			if [[ -n "${output}" ]]; then
 				printf "    Output: %s\n" "${output}" >&2
 			fi
-			((failed++))
+			failed=$((failed + 1))
 		fi
 	fi
 }
@@ -117,13 +117,13 @@ run_dry_run() {
 
 	if output=$("${MCPBASH_BIN}" run-tool "${name}" --args "${args}" --dry-run "${extra_flags[@]}" 2>&1); then
 		printf '%sPASS%s\n' "${GREEN}" "${RESET}"
-		((passed++))
+		passed=$((passed + 1))
 	else
 		printf '%sFAIL%s\n' "${RED}" "${RESET}"
 		if [[ -n "${output}" ]]; then
 			printf "    Output: %s\n" "${output}" >&2
 		fi
-		((failed++))
+		failed=$((failed + 1))
 	fi
 }
 
@@ -136,7 +136,7 @@ skip_test() {
 		printf " (%s)" "${reason}"
 	fi
 	printf "\n"
-	((skipped++))
+	skipped=$((skipped + 1))
 }
 
 # Discover and validate tools exist

@@ -41,6 +41,23 @@ run_output="$(MCPBASH_BIN="${MCPBASH_HOME}/bin/mcp-bash" bash "${PROJECT}/test/r
 	test_fail "test/run.sh should run successfully with no tests"
 }
 
+printf ' -> the harness runs every test, not just the first\n'
+mkdir -p "${PROJECT}/tools/ok"
+printf '{"name":"ok","description":"Says ok","inputSchema":{"type":"object"}}\n' >"${PROJECT}/tools/ok/tool.meta.json"
+printf '#!/usr/bin/env bash\necho ok\n' >"${PROJECT}/tools/ok/tool.sh"
+chmod +x "${PROJECT}/tools/ok/tool.sh"
+cp "${PROJECT}/test/run.sh" "${TEST_TMPDIR}/run.sh.orig"
+# Test cases go where a user puts them: before the END OF TESTS marker.
+awk '/^# END OF TESTS/ && !done { print "run_test \"ok\" \"{}\" \"first\""; print "run_test \"ok\" \"{}\" \"second\""; done = 1 } { print }' \
+	"${TEST_TMPDIR}/run.sh.orig" >"${PROJECT}/test/run.sh"
+run_output="$(MCPBASH_TOOL_ALLOWLIST=ok MCPBASH_BIN="${MCPBASH_HOME}/bin/mcp-bash" bash "${PROJECT}/test/run.sh" --force 2>&1)" || {
+	printf 'run.sh output:\n%s\n' "${run_output}" >&2
+	test_fail "test/run.sh should pass with two passing tests"
+}
+assert_contains "ok (second)... " "${run_output}" "expected the second test to run"
+assert_contains "2 passed" "${run_output}" "expected both tests counted"
+cp "${TEST_TMPDIR}/run.sh.orig" "${PROJECT}/test/run.sh"
+
 printf ' -> scaffold test guards existing run.sh\n'
 set +e
 (
