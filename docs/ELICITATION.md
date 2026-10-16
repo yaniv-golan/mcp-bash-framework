@@ -2,7 +2,7 @@
 
 Elicitation lets a tool pause execution, ask the MCP client for user input, and continue once a response arrives. It is supported when the client advertises `capabilities.elicitation` during `initialize`.
 
-**Client support:** Claude Desktop does not advertise elicitation to installed extensions (`.mcpb`; checked in 2.31226.1); its remote connectors advertise URL mode only. In Desktop, the helpers' no-answer path is what runs, so design it as the main path (for example, require `confirm: true` in the arguments before a destructive action).
+**Client support:** Claude Desktop does not advertise elicitation to installed extensions (`.mcpb`; checked in 2.31226.1); its remote connectors advertise URL mode only. In Desktop, the helpers' no-answer path is what runs, so design it as the main path (for example, require `confirm: true` in the arguments before a destructive action). That argument comes from the model, though, so it isn't the user's approval. In Desktop's agent sessions (Cowork and Code; checked in 2.42304.0), the user approves through Desktop's own card before a tool call. The card offers "Always allow" by default, which skips it for that tool from then on, across sessions and restarts, until the tool's definition changes (admins of third-party deployments can turn that off). It is also skipped after "Allow for this task", in bypass mode, and, in Cowork's Auto mode, for a tool annotated `readOnlyHint: true`, so never mark a tool that changes anything as read-only. `destructiveHint` doesn't make Desktop ask about an extension's tool.
 
 ## Server Behavior
 - On initialize, the server records whether the client supports elicitation and which modes (`form`, `url`).
@@ -28,27 +28,73 @@ Legacy clients using `{"elicitation": {}}` are treated as form-only.
 
 ## Tool SDK Helpers
 
-The SDK exposes helpers in `sdk/tool-sdk.sh`:
+The SDK exposes helpers in `sdk/tool-sdk.sh`. Since 2.0 the question helpers are called **directly** (not inside `$(...)`), and their exit code is the answer:
+
+- **exit 0**: the user accepted (for `mcp_elicit_confirm`: accepted **and** confirmed);
+- **exit 1**: anything else, with the reason in `MCP_ELICIT_ACTION`: `decline` (a no, or `confirmed: false`), `cancel`, or `unavailable` (the client can't ask, the question timed out, or there is no JSON tool).
+
+`-v VAR` puts the answer in the variable `VAR` (emptied when the answer isn't a yes; trailing newlines are kept). `--arg NAME` takes the answer from the tool's argument `NAME` when the call has a valid one, without asking: a client that can't ask (Claude Desktop extensions, scripts, CI) passes it in the arguments instead. `mcp_elicit_confirm` is the exception: it reads `--arg` only when the client can't ask. A client that can always asks the user, and a declined or unanswered question is not overridden by the argument. Where the client can't ask, including Claude Desktop extensions, `--arg` on a confirmation is still the model's answer: nobody else can give one.
+
+Answers are checked: a choice must be one of the options offered (multi-choice: an array of distinct options), `mcp_elicit_string` takes a string, and `mcp_elicit_confirm` a real boolean. An invalid `--arg` value is ignored and the user is asked (`unavailable` if the client can't ask); an invalid or missing answer from the client is `unavailable`.
+
+**`--arg` lets the tool's caller answer instead of the user.** The arguments come from the model, so use it only for values the model may legitimately supply (a name, an environment), never for a confirmation of something destructive: `mcp_elicit_confirm --arg confirmed "Delete 40 files?"` would let the model say yes without asking whenever the client can't ask. For those, call `mcp_elicit_confirm` without `--arg` and handle `unavailable` (for example, refuse and explain).
 
 ### Form Mode (in-band)
-- `mcp_elicit <message> <schema_json> [timeout_secs] [mode]` — core function
-- `mcp_elicit_string <message> [field_name]` — free-text input
-- `mcp_elicit_confirm <message>` — yes/no boolean
-- `mcp_elicit_choice <message> opt1 opt2 ...` — radio buttons (single select)
-- `mcp_elicit_titled_choice <message> "val1:Label 1" "val2:Label 2"` — radio buttons with display labels (SEP-1330)
-- `mcp_elicit_multi_choice <message> opt1 opt2 ...` — checkboxes (multi-select, SEP-1330)
-- `mcp_elicit_titled_multi_choice <message> "val1:Label 1" ...` — checkboxes with labels
+- `mcp_elicit_string [-v VAR] [--arg NAME] <message> [field_name]` — free-text input
+- `mcp_elicit_confirm [--arg NAME] <message>` — yes/no boolean (see the `--arg` warning above)
+- `mcp_elicit_choice [-v VAR] [--arg NAME] <message> opt1 opt2 ...` — radio buttons (single select)
+- `mcp_elicit_titled_choice [-v VAR] [--arg NAME] <message> "val1:Label 1" "val2:Label 2"` — radio buttons with display labels (SEP-1330); the answer is the value
+- `mcp_elicit_multi_choice [-v VAR] [--arg NAME] <message> opt1 opt2 ...` — checkboxes (multi-select, SEP-1330); the answer is a compact JSON array such as `["opt1","opt2"]`
+- `mcp_elicit_titled_multi_choice [-v VAR] [--arg NAME] <message> "val1:Label 1" ...` — checkboxes with labels
+
+```bash
+if mcp_elicit_string -v name --arg name "Your name?"; then
+    mcp_result_text "Hello, ${name}"
+else
+    case "${MCP_ELICIT_ACTION}" in
+    decline | cancel) mcp_fail --type declined "No name given" ;;
+    unavailable) mcp_fail --type invalid_args "Pass name in the arguments" ;;
+    esac
+fi
+```
 
 ### URL Mode (out-of-band, SEP-1036)
-- `mcp_elicit_url <message> <url> [timeout_secs]` — opens browser for OAuth/payments. The server gives each request a unique `elicitationId`, as the spec requires.
+- `mcp_elicit_url <message> <url> [timeout_secs]` — opens browser for OAuth/payments; exit 0 when the user accepted. The server gives each request a unique `elicitationId`, as the spec requires.
 
 ```bash
 # Example: OAuth authorization
-resp="$(mcp_elicit_url "Authorize with GitHub" "https://github.com/login/oauth/authorize?...")" || true
-if [ "$(echo "$resp" | jq -r '.action')" = "accept" ]; then
-    echo "User completed authorization"
+if mcp_elicit_url "Authorize with GitHub" "https://github.com/login/oauth/authorize?..."; then
+    echo "User completed authorization" >&2
 fi
 ```
+
+### Raw helpers
+`mcp_elicit <message> <schema_json> [timeout_secs] [mode]` and `mcp_elicit_url_raw <message> <url> [timeout_secs]` print the client's answer as JSON (`{"action": "...", "content": ...}`), for schemas the helpers above don't cover. Capture them with `$(...)` and branch on `.action`: `accept`, `decline`, `cancel`, or `unavailable` (since 2.0; 1.x printed `error` here, and `decline` when the client couldn't ask). They exit non-zero when no answer came back (`unavailable`, including a client that answered with an error, or `cancel` when the request was cancelled), so capture them with `|| true` under `set -e`.
+
+### Calling them under `set -e`
+
+Call the helpers in an `if` (or `if !`) or before `||`. A bare call under `set -euo pipefail` ends the tool on any answer but yes; `mcp-bash validate` and `migrate` flag such calls (rule `2-elicit-bare`). Don't name a `-v` variable with the SDK's prefixes (`__mcp_el_`, `_MCP_ELICIT_`) or `MCP_ELICIT_ACTION`; they are refused (`unavailable`), and so is a readonly variable.
+
+`mcp_fail --type` ends the tool. `mcp_result_json` and `mcp_result_text` print the result but **do not exit**: in an early-return branch, follow them with `exit 0`, or the tool keeps running and prints a second result.
+
+### Upgrading from 1.x
+
+In 1.x the question helpers printed the `{"action": ...}` JSON, and tools captured it. In 2.0 they print nothing, so a 1.x capture **fails silently**: the tool keeps running, the captured text is empty, and the "not accepted" branch runs even when the user said yes. Rewrite before upgrading; `mcp-bash migrate` (and `validate`, which marks these findings as failing silently) lists every capture (rule `2-elicit-capture`). `validate` still exits 0 for deprecations, silent ones included; add `--deprecations-as-errors` to make a CI job fail on them.
+
+```bash
+# 1.x
+resp="$(mcp_elicit_confirm "Delete 40 files?")" || true   # 1.x only (lint-api-usage: allow)
+if [ "$(jq -r '.action' <<<"${resp}")" != "accept" ] || [ "$(jq -r '.content.confirmed' <<<"${resp}")" != "true" ]; then
+    mcp_fail --type declined "Not confirmed"
+fi
+
+# 2.0
+if ! mcp_elicit_confirm "Delete 40 files?"; then
+    mcp_fail --type declined "Not confirmed (${MCP_ELICIT_ACTION})"
+fi
+```
+
+On the opt-in 2026-07-28 path (`MCPBASH_MODERN_PROTOCOL=true`) the server can't ask yet: the helpers answer `unavailable` there, unless `--arg` gives a valid answer from the call's arguments (`mcp_elicit_confirm` included, since the client can't be asked).
 
 ## Environment Variables
 
@@ -57,24 +103,7 @@ Set for tools:
 - `MCP_ELICIT_REQUEST_FILE` – path to write a request (JSON: `{"message": "...", "schema": {...}, "mode": "form"}`).
 - `MCP_ELICIT_RESPONSE_FILE` – where the normalized response appears.
 
-The SDK handles writing/reading these files, timeouts, and cancellation. Tools should branch on `.action` (`accept`, `decline`, `cancel`, `error`) and only use `.content` when `action=accept`.
-
-### Using the helpers under `set -e`
-
-The helpers always print the `{"action": ...}` JSON, but they **exit non-zero** when no answer came back: the client can't elicit, the request timed out, or the tool call was cancelled. A real answer from the user (accept, decline or cancel) exits 0. Under `set -euo pipefail`, a plain `resp="$(mcp_elicit_confirm ...)"` therefore aborts the tool before it can look at `.action`, and the client gets a `tool_failed` error result (a protocol error before 2.0) instead of your fallback. Add `|| true` and branch on `.action`:
-
-```bash
-resp="$(mcp_elicit_confirm "Delete 40 files?")" || true
-action="$(jq -r '.action' <<<"${resp}")"
-if [ "${action}" != "accept" ] || [ "$(jq -r '.content.confirmed' <<<"${resp}")" != "true" ]; then
-    mcp_fail --type permission "Not confirmed (action: ${action})" \
-        --hint "Ask the user to confirm, then call the tool again"
-fi
-```
-
-`mcp_fail --type` ends the tool. `mcp_result_json` and `mcp_result_text` print the result but **do not exit**: in an early-return branch, follow them with `exit 0`, or the tool keeps running and prints a second result.
-
-This capture pattern (`resp="$(mcp_elicit_… )" || true` and branching on `.action`) keeps working in 1.x. It changes in 2.0; `mcp-bash migrate` will show the replacement once it is final. <!-- lint-api-usage: allow -->
+The SDK handles writing/reading these files, timeouts, and cancellation. `MCP_ELICIT_ACTION` is set by the SDK in the tool's own shell after each question helper; the server doesn't set it.
 
 ## Examples
 - `examples/08-elicitation` — minimal confirm + choice flow with fallback when elicitation is unsupported.

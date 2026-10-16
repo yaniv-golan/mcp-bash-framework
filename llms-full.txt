@@ -159,11 +159,14 @@ mcp_result_json "$(printf '%s' "$result" | jq -c '.')"
   - `mcp_roots_list` → newline-separated roots paths.
   - `mcp_roots_count` → root count.
   - `mcp_roots_contains "/path"` → exit 0 if path is within any root.
-- Elicitation helpers:
-  - `mcp_elicit "msg" '<schema_json>' [timeout_secs]`.
-  - `mcp_elicit_string "msg" ["fieldname"]`.
-  - `mcp_elicit_confirm "msg"`.
-  - `mcp_elicit_choice "msg" "opt1" "opt2" ...`.
+- Elicitation helpers (2.0: call directly, in an `if`; exit 0 = accepted, 1 = not, reason in `MCP_ELICIT_ACTION`: `decline`|`cancel`|`unavailable`; they print nothing):
+  - `mcp_elicit_string [-v VAR] [--arg NAME] "msg" ["fieldname"]` → the answer in `VAR`.
+  - `mcp_elicit_confirm [--arg NAME] "msg"` → exit 0 only when accepted and confirmed.
+  - `mcp_elicit_choice [-v VAR] [--arg NAME] "msg" "opt1" "opt2" ...`; `mcp_elicit_titled_choice` (`"value:Title"` options); `mcp_elicit_multi_choice` / `mcp_elicit_titled_multi_choice` (answer: a compact JSON array); `mcp_elicit_url "msg" URL`.
+  - `--arg NAME` answers from the tool's argument `NAME` when the call has a valid one (one of the choices, of the right type), without asking. `mcp_elicit_confirm` reads it only when the client can't ask. It lets the model answer for the user: never use it on a destructive confirmation.
+  - Answers are checked against the offered choices and types; an invalid or missing client answer is `unavailable`.
+  - Raw, for custom schemas: `mcp_elicit "msg" '<schema_json>' [timeout_secs]` and `mcp_elicit_url_raw "msg" URL` print the client's JSON answer, and exit non-zero when none came back (`unavailable` or `cancel`).
+  - A 1.x capture (`resp="$(mcp_elicit_confirm …)"` + `.action`) fails silently in 2.0 (empty capture: the "not accepted" branch always runs); `mcp-bash migrate`/`validate` list them (rule `2-elicit-capture`), and bare calls under `set -e` (rule `2-elicit-bare`). <!-- lint-api-usage: allow -->
 - Configuration loading helpers:
   - `mcp_config_load --env VAR --file path --example path --defaults '{...}'` → load config with precedence (env var → file → example → defaults).
   - `mcp_config_get '.key' --default value` → extract value from loaded config by jq path.
@@ -201,7 +204,7 @@ mcp_result_json "$(printf '%s' "$result" | jq -c '.')"
   - `MCP_ELICIT_SUPPORTED="1"` when elicitation is supported, `"0"` otherwise.
   - `MCP_ELICIT_REQUEST_FILE`, `MCP_ELICIT_RESPONSE_FILE` → internal paths used by SDK for request/response handoff (tools normally just call helpers).
 - Response contract:
-  - Normalized response: `{"action":"accept|decline|cancel|error","content":...}`.
+  - Normalized response (raw helpers): `{"action":"accept|decline|cancel|unavailable","content":...}` (`unavailable`: the client can't ask, or the question timed out; was `error` before 2.0).
   - Tools should only read `.content` when `action="accept"`.
 
 ## ENV VARS & LIMITS

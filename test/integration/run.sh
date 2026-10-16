@@ -158,6 +158,7 @@ TESTS=(
 	"test_timeout_without_ps.sh"
 	"test_project_root_detection.sh"
 	"test_elicitation.sh"
+	"test_elicitation_confirm_unrouted.sh"
 	"test_elicitation_modes.sh"
 	"test_icons.sh"
 	"test_cli_scaffold_test.sh"

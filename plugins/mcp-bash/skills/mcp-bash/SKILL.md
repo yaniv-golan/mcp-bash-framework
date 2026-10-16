@@ -94,13 +94,19 @@ mcp_result_json "$(mcp_json_obj query "${query}" name "${name}")"
   into the filter is jq injection, and anything the tool can read (API keys) can leak.
 - **Confirming destructive actions with elicitation:** handle accept, decline, cancel and no
   answer as four separate outcomes, and raise the tool's `timeoutSecs` (for example 120) so a
-  person has time to answer. The `mcp_elicit*` helpers return non-zero when no answer came
-  back (client without elicitation, timeout, cancelled call), so under `set -e` write
-  `resp="$(mcp_elicit_confirm "Delete it?")" || true` and branch on `.action`; otherwise the
-  tool dies at the prompt. See "Using the helpers under `set -e`" in `docs/ELICITATION.md`.
+  person has time to answer. Call the question helpers directly, in an `if`: exit 0 means
+  the user accepted, and `MCP_ELICIT_ACTION` says why not (`decline`, `cancel`,
+  `unavailable`): `if ! mcp_elicit_confirm "Delete it?"; then mcp_fail
+  --type declined "Not confirmed"; fi`. Never capture them with `$(...)`: they print
+  nothing. `-v VAR` gets an answer. Never put `--arg` on a destructive confirmation: when the client
+  can't ask, it lets the model answer yes for the user. See `docs/ELICITATION.md`.
   **Claude Desktop extensions (`.mcpb`) get no elicitation at all** (checked in 2.31226.1), so
-  the no-answer fallback (for example "call again with `confirm: true`") is the real safety
-  gate there; design it as the main path.
+  the no-answer fallback (for example "call again with `confirm: true`") is what runs there;
+  design it as the main path. That argument comes from the model: the user's checkpoint is
+  Desktop's approval card before the call (checked in 2.42304.0, Cowork and Code). The user's
+  "Always allow" skips it for that tool until the tool's definition changes, and "Allow for
+  this task", bypass mode and, in Cowork's Auto mode, `readOnlyHint: true` skip it too. Never mark
+  a tool that changes anything read-only; `destructiveHint` doesn't make Desktop ask.
 - After changing `inputSchema`, update the sample arguments in `tools/<name>/smoke.sh` if the
   scaffold created one.
 

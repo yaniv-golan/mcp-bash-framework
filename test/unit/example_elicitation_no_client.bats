@@ -1,8 +1,8 @@
 #!/usr/bin/env bats
 # Unit: the elicitation example degrades cleanly when the client cannot elicit.
-# Under `set -e`, a failing mcp_elicit_* inside "$(...)" used to abort the tool
-# before it could read .action, so it returned a protocol error instead of its
-# own "Stopped" result.
+# The question helpers exit 1 with MCP_ELICIT_ACTION=unavailable; the example
+# calls them in an if, so under `set -e` it still returns its own "Stopped"
+# result instead of a protocol error.
 
 load '../../node_modules/bats-support/load'
 load '../../node_modules/bats-assert/load'
@@ -17,5 +17,5 @@ load '../common/fixtures'
 	assert_equal "$(printf '%s' "${output}" | jq -s 'length' 2>/dev/null)" "1"
 	assert_equal "$(printf '%s' "${output}" | jq -r '._mcpToolError // false')" "false"
 	assert_equal "$(printf '%s' "${output}" | jq -r '.isError')" "false"
-	[[ "$(printf '%s' "${output}" | jq -r '.content[0].text')" == *'Stopped: elicitation action=decline'* ]]
+	[[ "$(printf '%s' "${output}" | jq -r '.content[0].text')" == *'Stopped: elicitation action=unavailable'* ]]
 }

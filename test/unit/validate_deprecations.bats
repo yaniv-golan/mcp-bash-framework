@@ -54,6 +54,38 @@ SH
 		'[{"file":"tools/proj-old/tool.sh","id":"2-mcp-error","kind":"auto","level":"deprecation","line":4}]'
 }
 
+# A 1.x captured question helper keeps running in 2.0 and silently takes the
+# "no" branch: validate must make that hard to miss.
+silent_capture_tool() {
+	cat >"${PROJ}/tools/proj-old/tool.sh" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+source "${MCP_SDK:?}/tool-sdk.sh"
+resp="$(mcp_elicit_confirm "Delete?")" || true
+[ "$(jq -r .action <<<"${resp}")" = accept ] || exit 0
+SH
+}
+
+@test "validate: a deprecation that fails silently in 2.0 is marked, and summed up at the end" {
+	silent_capture_tool
+	run mcp-bash validate --project-root "${PROJ}"
+	assert_success
+	assert_output --partial "tools/proj-old/tool.sh:4"
+	assert_output --partial "[2-elicit-capture]"
+	assert_output --partial "fails silently in 2.0"
+	assert_output --partial "1 of them fail(s) silently in mcp-bash 2.0"
+	run mcp-bash validate --project-root "${PROJ}" --json
+	assert_equal "$(printf '%s' "${output}" | jq -c '[.messages[] | select(.section == "deprecations") | {id, silent}]')" \
+		'[{"id":"2-elicit-capture","silent":true}]'
+}
+
+@test "validate: other deprecations are not marked silent" {
+	run mcp-bash validate --project-root "${PROJ}"
+	refute_output --partial "silently"
+	run mcp-bash validate --project-root "${PROJ}" --json
+	assert_equal "$(printf '%s' "${output}" | jq -c '[.messages[] | select(.section == "deprecations") | .silent]')" '[false]'
+}
+
 @test "validate: a project with no deprecated calls reports none" {
 	cat >"${PROJ}/tools/proj-old/tool.sh" <<'SH'
 #!/usr/bin/env bash

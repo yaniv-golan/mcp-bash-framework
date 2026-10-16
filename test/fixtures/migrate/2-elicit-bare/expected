@@ -1,0 +1,12 @@
+tools/a/tool.sh:13:manual
+tools/a/tool.sh:4:manual
+tools/c/tool.sh:3:manual
+tools/d/tool.sh:3:manual
+tools/d/tool.sh:4:manual
+tools/d/tool.sh:5:manual
+tools/d/tool.sh:6:manual
+tools/d/tool.sh:12:manual
+tools/e/tool.sh:3:manual
+tools/f/tool.sh:3:manual
+tools/g/tool.sh:3:manual
+tools/h/tool.sh:3:manual

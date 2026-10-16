@@ -3,7 +3,7 @@
 **What you'll learn**
 - How tools invoke the elicitation flow using SDK helpers
 - All four elicitation patterns: confirm, choice, titled choice, multi-select
-- Normalized response handling (`action` + `content`) and fallbacks when the client doesn't support elicitation
+- The 2.0 calling style: call the helper directly (in an `if`), get the answer with `-v VAR`, and read why it wasn't a yes from `MCP_ELICIT_ACTION` (`decline`, `cancel`, `unavailable`)
 
 **Prereqs**
 - Bash 3.2+
@@ -34,16 +34,21 @@
 
 **Example titled choice:**
 ```bash
-mcp_elicit_titled_choice "Select quality" \
+if mcp_elicit_titled_choice -v quality "Select quality" \
     "high:High (1080p, larger file)" \
-    "low:Low (480p, smaller file)"
+    "low:Low (480p, smaller file)"; then
+    echo "picked ${quality}" >&2      # the value: high or low
+else
+    echo "no answer: ${MCP_ELICIT_ACTION}" >&2
+fi
 ```
+
+Exit 0 means the user accepted; exit 1 anything else. Under `set -e`, call the helpers in an `if` or before `||`. Add `--arg NAME` to take the answer from the tool's argument `NAME` when the call has it (for clients that can't ask, and for scripted runs).
 
 **Example URL mode (SEP-1036):**
 ```bash
 # Secure out-of-band interaction (opens browser, data never passes through client)
-resp="$(mcp_elicit_url "Complete OAuth authorization" "https://auth.example.com/authorize?...")" || true
-if [ "$(echo "$resp" | jq -r '.action')" = "accept" ]; then
+if mcp_elicit_url "Complete OAuth authorization" "https://auth.example.com/authorize?..."; then
     echo "User completed the flow in browser" >&2
 fi
 ```

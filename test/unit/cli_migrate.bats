@@ -121,6 +121,16 @@ call_tool() {
 	assert_equal "$(jq '.mcpBash.apiVersion // 0' "${PROJ}/server.d/server.meta.json")" "0"
 }
 
+@test "migrate: the question-helper rules say their 2.0 replacement exists" {
+	local id
+	for id in 2-elicit-capture 2-elicit-bare; do
+		run mcp-bash migrate --explain "${id}"
+		assert_success
+		assert_output --partial "MCP_ELICIT_ACTION"
+		refute_output --partial "nothing to change yet"
+	done
+}
+
 @test "migrate: --list, --explain and --json" {
 	run mcp-bash migrate --list
 	assert_success
