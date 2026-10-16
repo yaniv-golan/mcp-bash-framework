@@ -879,7 +879,9 @@ mcp_elicit() {
 	rm -f "${MCP_ELICIT_RESPONSE_FILE}"
 	printf '%s' "${__mcp_el_response}"
 	# The server writes a client error as "unavailable": no answer came back.
-	case "${__mcp_el_response}" in *'"action":"unavailable"'*) return 1 ;; esac
+	# It always writes the action first, so a field of the answer's content
+	# that happens to be called action never matches.
+	case "${__mcp_el_response}" in '{"action":"unavailable"'*) return 1 ;; esac
 }
 
 # Question helpers (2.0): call them directly, not inside $(...). Exit 0 means
@@ -992,8 +994,9 @@ __mcp_elicit_question() {
 	# The answer from the call's arguments, when --arg names a valid one. The
 	# value goes through -j and a marker, so trailing newlines are kept. For a
 	# confirmation, --arg is the model's answer, so it counts only when the
-	# client can't ask: a client that can always asks the user.
-	if [ "${__mcp_el_kind}" = "confirm" ] && [ "${MCP_ELICIT_SUPPORTED:-0}" = "1" ]; then
+	# server says the client can't ask (MCP_ELICIT_SUPPORTED=0): a client that
+	# can always asks the user, and an unset or empty value fails closed.
+	if [ "${__mcp_el_kind}" = "confirm" ] && [ "${MCP_ELICIT_SUPPORTED-}" != "0" ]; then
 		__mcp_el_arg=""
 	fi
 	if [ -n "${__mcp_el_arg}" ]; then
@@ -1103,7 +1106,9 @@ mcp_elicit_url_raw() {
 	rm -f "${MCP_ELICIT_RESPONSE_FILE}"
 	printf '%s' "${__mcp_el_response}"
 	# The server writes a client error as "unavailable": no answer came back.
-	case "${__mcp_el_response}" in *'"action":"unavailable"'*) return 1 ;; esac
+	# It always writes the action first, so a field of the answer's content
+	# that happens to be called action never matches.
+	case "${__mcp_el_response}" in '{"action":"unavailable"'*) return 1 ;; esac
 }
 
 # Usage: mcp_elicit_string [-v VAR] [--arg NAME] MESSAGE [FIELD]

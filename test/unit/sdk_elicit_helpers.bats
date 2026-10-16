@@ -170,6 +170,21 @@ answer() {
 	assert_equal "${MCP_ELICIT_ACTION}" "unavailable"
 }
 
+@test "elicit: confirm reads --arg only when the server says the client can't ask" {
+	local st v
+	MCP_TOOL_ARGS_JSON='{"go":true}'
+	# Unset or empty is not "can't ask": nothing stands in for the user.
+	for v in unset ""; do
+		if [ "${v}" = unset ]; then unset MCP_ELICIT_SUPPORTED; else MCP_ELICIT_SUPPORTED="${v}"; fi
+		st=0
+		mcp_elicit_confirm --arg go "Delete everything?" 2>/dev/null || st=$?
+		assert_equal "${st}" "1"
+		assert_equal "${MCP_ELICIT_ACTION}" "unavailable"
+	done
+	MCP_ELICIT_SUPPORTED=0
+	mcp_elicit_confirm --arg go "Delete everything?"
+}
+
 @test "elicit: --arg that the call doesn't have asks" {
 	local name=""
 	MCP_TOOL_ARGS_JSON='{"other":1}'
@@ -370,5 +385,9 @@ helper_locals() {
 	# A decline is an answer.
 	answer '{"action":"decline","content":null}'
 	run mcp_elicit "Name?" '{"type":"object"}'
+	assert_success
+	# So is an accepted answer whose own field is called action.
+	answer '{"action":"accept","content":{"action":"unavailable"}}'
+	run mcp_elicit "Status?" '{"type":"object","properties":{"action":{"type":"string"}}}'
 	assert_success
 }
