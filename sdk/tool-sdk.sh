@@ -994,8 +994,9 @@ __mcp_elicit_question() {
 	# The answer from the call's arguments, when --arg names a valid one. The
 	# value goes through -j and a marker, so trailing newlines are kept. For a
 	# confirmation, --arg is the model's answer, so it counts only when the
-	# client can't ask: a client that can always asks the user.
-	if [ "${__mcp_el_kind}" = "confirm" ] && [ "${MCP_ELICIT_SUPPORTED:-0}" = "1" ]; then
+	# server says the client can't ask (MCP_ELICIT_SUPPORTED=0): a client that
+	# can always asks the user, and an unset or empty value fails closed.
+	if [ "${__mcp_el_kind}" = "confirm" ] && [ "${MCP_ELICIT_SUPPORTED-}" != "0" ]; then
 		__mcp_el_arg=""
 	fi
 	if [ -n "${__mcp_el_arg}" ]; then
