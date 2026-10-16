@@ -371,4 +371,8 @@ helper_locals() {
 	answer '{"action":"decline","content":null}'
 	run mcp_elicit "Name?" '{"type":"object"}'
 	assert_success
+	# So is an accepted answer whose own field is called action.
+	answer '{"action":"accept","content":{"action":"unavailable"}}'
+	run mcp_elicit "Status?" '{"type":"object","properties":{"action":{"type":"string"}}}'
+	assert_success
 }
