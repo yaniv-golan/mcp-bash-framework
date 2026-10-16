@@ -240,3 +240,46 @@ first_call() {
 	mcp_mrtr_close "${DIR}"
 	[ ! -d "${DIR}" ]
 }
+
+@test "mrtr journal: closing a journal is atomic for a retry waiting to claim it" {
+	first_call
+	# rm deletes run/ first here, as GNU and BusyBox rm can; a claim tried
+	# right then must not land in what is left of the journal.
+	rm() {
+		command rm -rf "${DIR}/run"
+		if mcp_mrtr_claim "${DIR}" 2>/dev/null; then
+			printf 'won' >"${BATS_TEST_TMPDIR}/claim"
+		fi
+		command rm "$@"
+	}
+	mcp_mrtr_close "${DIR}"
+	unset -f rm
+	[ ! -e "${BATS_TEST_TMPDIR}/claim" ]
+	[ ! -e "${DIR}" ]
+	[ -z "$(ls -A "$(mcp_mrtr_journal_root)")" ]
+}
+
+@test "mrtr journal: a retry that wins the claim on a journal being removed is expired" {
+	first_call
+	mcp_mrtr_claim "${DIR}"
+	(
+		sleep 0.3
+		command rm -f "${DIR}/created" "${DIR}/name"
+		mcp_mrtr_release "${DIR}" 2>/dev/null
+		command rm -f "${DIR}/created"
+	) &
+	MCPBASH_MRTR_INFLIGHT_WAIT_SECS=3 mcp_mrtr_open t '{"a":{"x":1,"y":2},"b":1}' "${TICKET}" '{"q1":{"action":"accept","content":{"confirmed":true}}}' 1 1
+	wait
+	assert_equal "${MCP_MRTR_OUTCOME}" "error"
+	assert_equal "${MCP_MRTR_ERROR_TYPE}" "request_expired"
+}
+
+@test "mrtr journal: a claim held by a process that ended means the run is gone: expired, not in progress" {
+	first_call
+	(mcp_mrtr_claim "${DIR}")
+	[ -d "${DIR}/run" ]
+	MCPBASH_MRTR_INFLIGHT_WAIT_SECS=1 mcp_mrtr_open t '{"a":{"x":1,"y":2},"b":1}' "${TICKET}" '{"q1":{"action":"accept","content":{"confirmed":true}}}' 1 1
+	assert_equal "${MCP_MRTR_OUTCOME}" "error"
+	assert_equal "${MCP_MRTR_ERROR_TYPE}" "request_expired"
+	[ ! -e "${DIR}" ]
+}

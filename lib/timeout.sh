@@ -117,7 +117,7 @@ with_timeout() {
 	local cmd
 
 	if [ $# -lt 3 ]; then
-		printf '%s\n' 'with_timeout expects: with_timeout <seconds> -- <command...>' >&2
+		printf '%s\n' 'with_timeout expects: with_timeout <seconds> [--journal-only] -- <command...>' >&2
 		return 1
 	fi
 
@@ -131,8 +131,16 @@ with_timeout() {
 		;;
 	esac
 
-	if ! [ "$1" = "--" ]; then
-		printf '%s\n' 'with_timeout usage: with_timeout <seconds> -- <command...>' >&2
+	# --journal-only: the watchdog only watches the call's journal (a tool
+	# with no timeout); no time limit of any kind.
+	local journal_only="false"
+	if [ "$1" = "--journal-only" ]; then
+		journal_only="true"
+		shift
+	fi
+
+	if ! [ "${1:-}" = "--" ]; then
+		printf '%s\n' 'with_timeout usage: with_timeout <seconds> [--journal-only] -- <command...>' >&2
 		return 1
 	fi
 
@@ -176,7 +184,7 @@ with_timeout() {
 	# Watchdog reads progress settings from inherited environment:
 	#   MCPBASH_PROGRESS_EXTENDS_TIMEOUT, MCPBASH_MAX_TIMEOUT_SECS, MCP_PROGRESS_STREAM
 	# No new arguments needed - watchdog runs inside worker subshell context
-	mcp_timeout_spawn_watchdog "${worker_pid}" "${worker_pgid}" "${seconds}" "${watchdog_state}" "${main_pgid}" "${watchdog_token}" "${caller_pgid}" &
+	mcp_timeout_spawn_watchdog "${worker_pid}" "${worker_pgid}" "${seconds}" "${watchdog_state}" "${main_pgid}" "${watchdog_token}" "${caller_pgid}" "${journal_only}" &
 	watchdog_pid=$!
 
 	wait "${worker_pid}"
@@ -221,6 +229,7 @@ mcp_timeout_spawn_watchdog() {
 	local main_pgid="$5"
 	local token="$6"
 	local caller_pgid="$7"
+	local journal_only="${8:-false}"
 
 	# Read settings from environment (inherited from worker subshell)
 	# This avoids argument explosion and leverages existing env var exports
@@ -279,7 +288,7 @@ mcp_timeout_spawn_watchdog() {
 		fi
 
 		# Here only for the journal (a tool with no timeout): no time limit.
-		if [ "${_MCP_TIMEOUT_JOURNAL_ONLY:-}" = "true" ]; then
+		if [ "${journal_only}" = "true" ]; then
 			continue
 		fi
 

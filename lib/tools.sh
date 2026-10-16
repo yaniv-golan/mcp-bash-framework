@@ -2262,12 +2262,12 @@ mcp_tools_call() {
 	# A question stops the tool through its timeout watchdog, so a call with
 	# a journal always has one. When the tool sets no timeout, that watchdog
 	# only watches the journal: no time limit of any kind, not even
-	# MCPBASH_MAX_TIMEOUT_SECS (_MCP_TIMEOUT_JOURNAL_ONLY, read by
-	# mcp_timeout_spawn_watchdog).
-	local run_timeout="${effective_timeout}" run_journal_only=""
+	# MCPBASH_MAX_TIMEOUT_SECS (with_timeout --journal-only).
+	local run_timeout="${effective_timeout}"
+	local -a run_timeout_opts=()
 	if [ -z "${run_timeout}" ] && [ -n "${mrtr_dir}" ]; then
 		run_timeout=0
-		run_journal_only="true"
+		run_timeout_opts=(--journal-only)
 	fi
 
 	local exit_code
@@ -2353,6 +2353,11 @@ mcp_tools_call() {
 			export MCP_TOOL_RESOURCES_FILE="${tool_resources_file}"
 			export MCP_ELICIT_SUPPORTED="${elicit_supported}"
 			if [ -n "${mrtr_dir}" ]; then
+				# A retry carries answers the user already gave, whatever its
+				# own capabilities: the journal decides (it also says which
+				# modes this request can ask in), and --arg never overrides
+				# them.
+				export MCP_ELICIT_SUPPORTED=1
 				export MCP_MRTR_JOURNAL="${mrtr_dir}"
 				export MCP_MRTR_ATTEMPT="${mrtr_attempt}"
 			else
@@ -2506,13 +2511,11 @@ mcp_tools_call() {
 
 		# Run tool and capture exit code - then write timeout reason without affecting exit
 		local tool_exit_code=0
-		# shellcheck disable=SC2034  # Read by the watchdog with_timeout starts
-		_MCP_TIMEOUT_JOURNAL_ONLY="${run_journal_only}"
 		if [ -n "${run_timeout}" ]; then
 			if [ "${stderr_streaming_enabled}" = "true" ]; then
-				with_timeout "${run_timeout}" -- "${tool_runner[@]}" 2> >(tee "${stderr_file}" >&2) && tool_exit_code=0 || tool_exit_code=$?
+				with_timeout "${run_timeout}" ${run_timeout_opts[@]+"${run_timeout_opts[@]}"} -- "${tool_runner[@]}" 2> >(tee "${stderr_file}" >&2) && tool_exit_code=0 || tool_exit_code=$?
 			else
-				with_timeout "${run_timeout}" -- "${tool_runner[@]}" 2>>"${stderr_file}" && tool_exit_code=0 || tool_exit_code=$?
+				with_timeout "${run_timeout}" ${run_timeout_opts[@]+"${run_timeout_opts[@]}"} -- "${tool_runner[@]}" 2>>"${stderr_file}" && tool_exit_code=0 || tool_exit_code=$?
 			fi
 		else
 			if [ "${stderr_streaming_enabled}" = "true" ]; then

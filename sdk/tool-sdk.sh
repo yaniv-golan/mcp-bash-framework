@@ -836,11 +836,17 @@ mcp_require_path() {
 
 # 0 on a modern call with its journal, 1 when there is none (not a modern
 # call). A journal that is gone ends the tool: never a plain run, which could
-# repeat a side effect, or the legacy question path.
+# repeat a side effect, or the legacy question path. Inside $(...) an exit
+# ends only the substitution, so under the server (MCP_TOOL_ERROR_FILE) the
+# tool's own shell ($$, the same in every subshell) is stopped too; the
+# server answers request_expired.
 __mcp_mrtr_active() {
 	[ -n "${MCP_MRTR_JOURNAL:-}" ] || return 1
 	if [ -d "${MCP_MRTR_JOURNAL}" ]; then
 		return 0
+	fi
+	if [ -n "${MCP_TOOL_ERROR_FILE:-}" ]; then
+		kill -TERM "$$" 2>/dev/null || true
 	fi
 	__mcp_sdk_end_with_error request_expired "This call's journal is gone: run the tool again"
 }
@@ -1018,18 +1024,19 @@ mcp_elicit() {
 	local __mcp_el_timeout="${3:-${MCP_ELICIT_DEFAULT_TIMEOUT}}"
 	local __mcp_el_mode="${4:-form}"
 
+	# A modern call: the question goes through the journal, which has the
+	# answer from an earlier run and says what this request can ask. TIMEOUT
+	# doesn't apply there: the call ends at the question and the client takes
+	# as long as it takes (up to MCPBASH_MRTR_TICKET_TTL_SECS).
+	if __mcp_mrtr_active; then
+		__mcp_mrtr_question mcp_elicit "${__mcp_el_mode}" "${__mcp_el_message}" "${__mcp_el_schema_json}"
+		return
+	fi
+
 	if [ "${MCP_ELICIT_SUPPORTED:-0}" != "1" ]; then
 		__mcp_sdk_warn "mcp_elicit: Client does not support elicitation"
 		printf '{"action":"unavailable","content":null}'
 		return 1
-	fi
-
-	# A modern call: the question goes through the journal. TIMEOUT doesn't
-	# apply there: the call ends at the question and the client takes as long
-	# as it takes (up to MCPBASH_MRTR_TICKET_TTL_SECS).
-	if __mcp_mrtr_active; then
-		__mcp_mrtr_question mcp_elicit "${__mcp_el_mode}" "${__mcp_el_message}" "${__mcp_el_schema_json}"
-		return
 	fi
 
 	if [ -z "${MCP_ELICIT_REQUEST_FILE:-}" ] || [ -z "${MCP_ELICIT_RESPONSE_FILE:-}" ]; then
@@ -1256,15 +1263,15 @@ mcp_elicit_url_raw() {
 	local __mcp_el_url="$2"
 	local __mcp_el_timeout="${3:-${MCP_ELICIT_DEFAULT_TIMEOUT}}"
 
+	if __mcp_mrtr_active; then
+		__mcp_mrtr_question mcp_elicit_url url "${__mcp_el_message}" "${__mcp_el_url}"
+		return
+	fi
+
 	if [ "${MCP_ELICIT_SUPPORTED:-0}" != "1" ]; then
 		__mcp_sdk_warn "mcp_elicit_url: Client does not support elicitation"
 		printf '{"action":"unavailable","content":null}'
 		return 1
-	fi
-
-	if __mcp_mrtr_active; then
-		__mcp_mrtr_question mcp_elicit_url url "${__mcp_el_message}" "${__mcp_el_url}"
-		return
 	fi
 
 	if [ -z "${MCP_ELICIT_REQUEST_FILE:-}" ] || [ -z "${MCP_ELICIT_RESPONSE_FILE:-}" ]; then

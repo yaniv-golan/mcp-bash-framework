@@ -219,10 +219,10 @@ teardown() {
 @test "journal-only watchdog: no time limit, even with progress extension and a hard cap" {
 	local progress="${BATS_TEST_TMPDIR}/progress"
 	: >"${progress}"
-	_MCP_TIMEOUT_JOURNAL_ONLY=true MCPBASH_PROGRESS_EXTENDS_TIMEOUT=true MCPBASH_MAX_TIMEOUT_SECS=1 MCP_PROGRESS_STREAM="${progress}" \
-		run with_timeout 0 -- sleep 3
+	MCPBASH_PROGRESS_EXTENDS_TIMEOUT=true MCPBASH_MAX_TIMEOUT_SECS=1 MCP_PROGRESS_STREAM="${progress}" \
+		run with_timeout 0 --journal-only -- sleep 3
 	assert_success
-	_MCP_TIMEOUT_JOURNAL_ONLY=true run with_timeout 0 -- sleep 2
+	run with_timeout 0 --journal-only -- sleep 2
 	assert_success
 }
 
@@ -234,7 +234,7 @@ teardown() {
 		printf 'input_required' >"${j}/stop"
 	) &
 	local start="${SECONDS}"
-	_MCP_TIMEOUT_JOURNAL_ONLY=true MCP_MRTR_JOURNAL="${j}" run with_timeout 0 -- sleep 30
+	MCP_MRTR_JOURNAL="${j}" run with_timeout 0 --journal-only -- sleep 30
 	wait
 	assert_failure
 	[ $((SECONDS - start)) -lt 10 ]
@@ -260,4 +260,9 @@ teardown() {
 	done
 	# Six passes: at least six seconds with a fixed one-second grace.
 	[ $((SECONDS - start)) -lt 5 ]
+}
+
+@test "journal-only watchdog: the host environment can't turn it on" {
+	_MCP_TIMEOUT_JOURNAL_ONLY=true run with_timeout 1 -- sleep 5
+	assert_failure 124
 }

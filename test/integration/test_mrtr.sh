@@ -67,15 +67,25 @@ add_tool notimeout "" 'if mcp_elicit_confirm "Go?"; then echo go; else echo "no:
 add_tool drift 60 'mcp_elicit_confirm "Question for attempt ${MCP_MRTR_ATTEMPT}" && echo yes || echo no'
 # shellcheck disable=SC2016
 add_tool byarg 60 'mcp_elicit_string -v n --arg name "Name?" && echo "name=${n}" || echo "no: ${MCP_ELICIT_ACTION}"'
-# A step before the question and one after it, for duplicate retries.
+# A step before the question and one after it, for duplicate retries. The
+# step after it is slow, so duplicates arrive while it runs: two runs at once
+# would both run it (neither has recorded it yet).
 add_tool charge 60 '
+slow_bump() { sleep 2; bump "$1"; }
 mcp_once bump charged >/dev/null
 if mcp_elicit_confirm "Ship?"; then
-	mcp_once bump shipped >/dev/null
+	mcp_once slow_bump shipped >/dev/null
 	echo shipped
 else
 	echo "no: ${MCP_ELICIT_ACTION}"
 fi'
+# Its journal goes away during the run (here the tool removes it), without
+# set -e: the substitution must not carry on with an empty value.
+# shellcheck disable=SC2016
+add_tool vanish 60 'set +e
+v="$(rm -rf "${MCP_MRTR_JOURNAL}"; mcp_once bump gone_step)"
+bump after_gone >/dev/null
+echo "v=${v}"'
 # A step whose arguments change between runs (here a "token").
 # shellcheck disable=SC2016
 add_tool secret 60 'mcp_once printf "%s" "token-${MCP_MRTR_ATTEMPT}" >/dev/null
@@ -274,6 +284,21 @@ done
 assert_eq "1" "${shipped}" "exactly one retry completed"
 assert_eq "1" "$(count charged)" "the step before the question ran once"
 assert_eq "1" "$(count shipped)" "the step after the question ran once"
+
+# --- A retry that can't ask still gets the answer the user gave -------------
+send "$(req 35 '{"name":"notimeout","arguments":{"r":1}}')"
+wait_for 35
+T7="$(field '.result.requestState')"
+send "$(req 36 "$(jq -cn --arg t "${T7}" '{name: "notimeout", arguments: {r: 1}, requestState: $t, inputResponses: {q1: {action: "accept", content: {confirmed: true}}}}')" '{}')"
+wait_for 36
+assert_eq "go" "$(field '.result.content[0].text' | tr -d '\n')" "a retry without elicitation capabilities reads the journaled answer"
+
+# --- The journal goes away during the run: request_expired, and it stops ----
+send "$(req 37 '{"name":"vanish","arguments":{}}')"
+wait_for 37
+assert_eq "request_expired" "$(field '.result._meta["mcpbash/error"].type')" "a journal gone during the run: request_expired, not the tool's output"
+assert_eq "0" "$(count gone_step)" "no step runs without its journal"
+assert_eq "0" "$(count after_gone)" "the tool stops, even inside \$(...) without set -e"
 
 # --- A cancelled call: no response, and its journal is removed -------------
 journals() { find "${TEST_TMPDIR}/tmproot" -path '*/journal/*' -maxdepth 4 -type d ! -name run 2>/dev/null | wc -l | tr -d ' '; }

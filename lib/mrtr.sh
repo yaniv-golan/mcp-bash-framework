@@ -53,9 +53,9 @@ mcp_mrtr_ttl_secs() {
 }
 
 # sha256 of the arguments with object keys sorted and numbers in one form
-# (jq 1.7+ keeps a number as written, so 1.0 and 1 would differ). jq 1.6
-# reads numbers as doubles: integers past 2^53 that differ only in their last
-# digits get one digest there.
+# (jq 1.7+ keeps a number as written, so 1.0 and 1 would differ). jq reads
+# numbers as doubles (gojq doesn't): integers past 2^53 that differ only in
+# their last digits get one digest there.
 mcp_mrtr_args_digest() {
 	local args="${1:-}"
 	[ -n "${args}" ] || args='{}'
@@ -121,16 +121,23 @@ mcp_mrtr_sweep() {
 		created="$(cat "${dir}/created" 2>/dev/null || printf 0)"
 		case "${created}" in '' | *[!0-9]*) created=0 ;; esac
 		if [ $((now - created)) -gt "${ttl}" ]; then
-			rm -rf "${dir:?}" 2>/dev/null || true
+			mcp_mrtr_close "${dir}"
 		fi
 	done
 }
 
+# Remove a journal. It is renamed first (atomic), so a retry waiting to claim
+# it never finds part of it: rm -rf can delete run/ before created and name,
+# and a claim made then would run on what is left. The new name starts with a
+# dot, which the sweep's glob and a ticket never match.
 mcp_mrtr_close() {
-	local dir="${1:-}"
+	local dir="${1:-}" root dead
 	[ -n "${dir}" ] || return 0
-	case "${dir}" in "$(mcp_mrtr_journal_root)"/*) ;; *) return 0 ;; esac
-	rm -rf "${dir:?}" 2>/dev/null || true
+	root="$(mcp_mrtr_journal_root)"
+	case "${dir}" in "${root}"/*) ;; *) return 0 ;; esac
+	dead="${root}/.closed.${dir##*/}.${RANDOM}${RANDOM}"
+	mv -f "${dir}" "${dead}" 2>/dev/null || return 0
+	rm -rf "${dead:?}" 2>/dev/null || true
 }
 
 # An answer as the tool sees it: the legacy rule (lib/rpc.sh), so a tool
@@ -229,8 +236,18 @@ mcp_mrtr_open_journal() {
 			mcp_mrtr_open_expired
 			return 0
 		fi
+		# Held by a process that has ended (killed outside a cancel): no run
+		# is coming back to it. Expired, never taken over: the run may have
+		# stopped in the middle of a step.
+		if [ -d "${dir}/run" ] && ! mcp_mrtr_claim_live "${dir}"; then
+			mcp_mrtr_close "${dir}"
+			mcp_mrtr_open_expired
+			return 0
+		fi
 		if [ "${waited}" -ge $((wait_secs * 10)) ]; then
-			if mcp_mrtr_has_pending "${dir}"; then
+			if [ ! -d "${dir}" ]; then
+				mcp_mrtr_open_expired
+			elif mcp_mrtr_has_pending "${dir}"; then
 				MCP_MRTR_OUTCOME="input_required"
 			else
 				MCP_MRTR_OUTCOME="error"
@@ -245,7 +262,7 @@ mcp_mrtr_open_journal() {
 	# The journal may have been removed (the run before finished) while the
 	# claim was taken: then the claim is all that is left of it.
 	if [ ! -f "${dir}/created" ] || [ ! -f "${dir}/name" ]; then
-		rm -rf "${dir:?}" 2>/dev/null || true
+		mcp_mrtr_close "${dir}"
 		mcp_mrtr_open_expired
 		return 0
 	fi
