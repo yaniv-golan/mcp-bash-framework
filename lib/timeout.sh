@@ -80,14 +80,32 @@ mcp_timeout_terminate_worker() {
 		kill -TERM "${worker_pid}" ${tree} 2>/dev/null || true
 	fi
 
-	sleep 1
+	# Up to a second for them to end on TERM; most are gone at the first look.
+	local waited=0 p alive
+	while [ "${waited}" -lt 10 ]; do
+		alive=""
+		if [ "${isolated}" = "true" ]; then
+			if kill -0 "${worker_pid}" 2>/dev/null || kill -0 "-${worker_pgid}" 2>/dev/null; then
+				alive=1
+			fi
+		else
+			for p in ${worker_pid} ${tree}; do
+				if kill -0 "${p}" 2>/dev/null; then
+					alive=1
+					break
+				fi
+			done
+		fi
+		[ -n "${alive}" ] || break
+		sleep 0.1
+		waited=$((waited + 1))
+	done
 
 	if [ "${isolated}" = "true" ]; then
 		if kill -0 "${worker_pid}" 2>/dev/null || kill -0 "-${worker_pgid}" 2>/dev/null; then
 			mcp_runtime_signal_checked KILL "${worker_pgid}" "${worker_pid}" "${main_pgid}" "${identity}"
 		fi
 	else
-		local p
 		for p in ${worker_pid} ${tree}; do
 			kill -KILL "${p}" 2>/dev/null || true
 		done
@@ -258,6 +276,11 @@ mcp_timeout_spawn_watchdog() {
 			if [ "${current_token}" != "${token}" ]; then
 				exit 0
 			fi
+		fi
+
+		# Here only for the journal (a tool with no timeout): no time limit.
+		if [ "${_MCP_TIMEOUT_JOURNAL_ONLY:-}" = "true" ]; then
+			continue
 		fi
 
 		# Progress-aware timeout extension

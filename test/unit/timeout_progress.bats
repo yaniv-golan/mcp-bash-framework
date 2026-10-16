@@ -215,3 +215,49 @@ teardown() {
 	# Check timeout reason was set
 	assert_equal "fixed" "${MCPBASH_TIMEOUT_REASON}"
 }
+
+@test "journal-only watchdog: no time limit, even with progress extension and a hard cap" {
+	local progress="${BATS_TEST_TMPDIR}/progress"
+	: >"${progress}"
+	_MCP_TIMEOUT_JOURNAL_ONLY=true MCPBASH_PROGRESS_EXTENDS_TIMEOUT=true MCPBASH_MAX_TIMEOUT_SECS=1 MCP_PROGRESS_STREAM="${progress}" \
+		run with_timeout 0 -- sleep 3
+	assert_success
+	_MCP_TIMEOUT_JOURNAL_ONLY=true run with_timeout 0 -- sleep 2
+	assert_success
+}
+
+@test "journal-only watchdog: still stops the tool at the journal's stop marker" {
+	local j="${BATS_TEST_TMPDIR}/journal"
+	mkdir -p "${j}"
+	(
+		sleep 1
+		printf 'input_required' >"${j}/stop"
+	) &
+	local start="${SECONDS}"
+	_MCP_TIMEOUT_JOURNAL_ONLY=true MCP_MRTR_JOURNAL="${j}" run with_timeout 0 -- sleep 30
+	wait
+	assert_failure
+	[ $((SECONDS - start)) -lt 10 ]
+}
+
+@test "terminate: a worker that ends on TERM isn't waited on for a whole second" {
+	local start="${SECONDS}" i p holder pidfile="${BATS_TEST_TMPDIR}/pid"
+	for i in 1 2 3 4 5 6; do
+		# Its parent reaps it at once, as with_timeout does a worker; a child
+		# of this shell would stay a zombie (and look alive) until waited for.
+		rm -f "${pidfile}"
+		(
+			sleep 30 &
+			printf '%s' "$!" >"${pidfile}"
+			wait
+		) 3>&- &
+		holder=$!
+		while [ ! -s "${pidfile}" ]; do sleep 0.05; done
+		p="$(cat "${pidfile}")"
+		# In a subshell, like the watchdog: it ignores TERM from then on.
+		(mcp_timeout_terminate_worker "${p}" "" "" "")
+		wait "${holder}" 2>/dev/null || true
+	done
+	# Six passes: at least six seconds with a fixed one-second grace.
+	[ $((SECONDS - start)) -lt 5 ]
+}
