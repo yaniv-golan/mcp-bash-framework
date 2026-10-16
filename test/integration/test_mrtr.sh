@@ -201,7 +201,9 @@ wait_for 15
 A="$(field '.result.requestState')"
 wait_for 16
 B="$(field '.result.requestState')"
-[ -n "${A}" ] && [ -n "${B}" ] && [ "${A}" != "${B}" ] || test_fail "concurrent calls share a ticket: ${A} ${B}"
+if [ -z "${A}" ] || [ -z "${B}" ] || [ "${A}" = "${B}" ]; then
+	test_fail "concurrent calls share a ticket: ${A} ${B}"
+fi
 
 # --- A cancelled call: no response, and its journal is removed -------------
 journals() { find "${TEST_TMPDIR}/tmproot" -path '*/journal/*' -maxdepth 4 -type d 2>/dev/null | wc -l | tr -d ' '; }

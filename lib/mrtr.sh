@@ -224,21 +224,27 @@ mcp_mrtr_pending_result() {
 # with a signal, before it can clean up) can remove it.
 mcp_mrtr_bind_worker() {
 	local key="$1" dir="$2"
-	[ -n "${key}" ] && [ -n "${MCPBASH_STATE_DIR:-}" ] || return 0
+	if [ -z "${key}" ] || [ -z "${MCPBASH_STATE_DIR:-}" ]; then
+		return 0
+	fi
 	printf '%s' "${dir}" >"${MCPBASH_STATE_DIR}/mrtr.${key}" 2>/dev/null || true
 }
 
 # The call answered: a later cancel of its id no longer concerns the journal.
 mcp_mrtr_unbind_worker() {
 	local key="$1"
-	[ -n "${key}" ] && [ -n "${MCPBASH_STATE_DIR:-}" ] || return 0
+	if [ -z "${key}" ] || [ -z "${MCPBASH_STATE_DIR:-}" ]; then
+		return 0
+	fi
 	rm -f "${MCPBASH_STATE_DIR}/mrtr.${key}"
 }
 
 # The worker's call was cancelled: remove its journal.
 mcp_mrtr_abandon_worker() {
 	local key="$1" dir
-	[ -n "${key}" ] && [ -n "${MCPBASH_STATE_DIR:-}" ] || return 0
+	if [ -z "${key}" ] || [ -z "${MCPBASH_STATE_DIR:-}" ]; then
+		return 0
+	fi
 	dir="$(cat "${MCPBASH_STATE_DIR}/mrtr.${key}" 2>/dev/null || true)"
 	mcp_mrtr_close "${dir}"
 	rm -f "${MCPBASH_STATE_DIR}/mrtr.${key}"
