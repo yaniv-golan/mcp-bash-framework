@@ -39,14 +39,34 @@ chmod +x "${WORKROOT}/tools/confirm/tool.sh"
 # A tools/call with "id": null gets no worker key, so the server has no
 # question files for it. The client said it can ask, so the model's go: true
 # must not stand in for the user.
-response="$(
-	cd "${WORKROOT}" && {
-		printf '%s\n' '{"jsonrpc":"2.0","id":"init","method":"initialize","params":{"capabilities":{"elicitation":{}}}}'
-		printf '%s\n' '{"jsonrpc":"2.0","method":"notifications/initialized"}'
-		printf '%s\n' '{"jsonrpc":"2.0","id":null,"method":"tools/call","params":{"name":"confirm.test","arguments":{"go":true}}}'
-		sleep 8
-	} | MCPBASH_PROJECT_ROOT="${WORKROOT}" ./bin/mcp-bash 2>/dev/null | jq -c 'select(.id == null and has("result"))'
-)"
+IN_FIFO="${TEST_TMPDIR}/unrouted.in"
+OUT_FIFO="${TEST_TMPDIR}/unrouted.out"
+mkfifo "${IN_FIFO}" "${OUT_FIFO}"
+(
+	cd "${WORKROOT}" || exit 1
+	MCPBASH_PROJECT_ROOT="${WORKROOT}" ./bin/mcp-bash <"${IN_FIFO}" >"${OUT_FIFO}" 2>/dev/null
+) &
+SERVER_PID=$!
+exec 3>"${IN_FIFO}"
+exec 4<"${OUT_FIFO}"
+printf '%s\n' '{"jsonrpc":"2.0","id":"init","method":"initialize","params":{"capabilities":{"elicitation":{}}}}' >&3
+printf '%s\n' '{"jsonrpc":"2.0","method":"notifications/initialized"}' >&3
+printf '%s\n' '{"jsonrpc":"2.0","id":null,"method":"tools/call","params":{"name":"confirm.test","arguments":{"go":true}}}' >&3
+
+# Wait (up to 60s on a slow machine) for the call's result.
+response=""
+start_ts="${SECONDS}"
+while [ $((SECONDS - start_ts)) -lt 60 ]; do
+	test_read_line 4 1 || continue
+	if printf '%s' "${TEST_LINE}" | jq -e '.id == null and has("result")' >/dev/null 2>&1; then
+		response="${TEST_LINE}"
+		break
+	fi
+done
+exec 3>&-
+wait "${SERVER_PID}" || true
+exec 4<&-
+
 [ -n "${response}" ] || test_fail "no tools/call response"
 text="$(printf '%s' "${response}" | jq -r '.result.content[0].text')"
 assert_eq "not-confirmed:unavailable" "${text}" "confirm took --arg although the client can ask"
