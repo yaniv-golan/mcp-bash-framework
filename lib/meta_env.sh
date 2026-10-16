@@ -43,7 +43,7 @@ mcp_meta_env_check() {
 			test("^(SHELLOPTS|BASHOPTS|PS4|BASH_ENV|ENV|BASH_XTRACEFD|IFS)$")
 			or test("^(LD_|DYLD_|BASH_FUNC_|_MCP|MCPBASH_)")
 			or test("^MCP_(SDK|LOG_STREAM|CANCEL_FILE|RESOURCES_ROOTS|CONFIG_JSON|TRANSPORT|PATH_DEBUG)$")
-			or test("^MCP_(TOOL|ELICIT|PROGRESS|ROOTS|COMPLETION|PROMPT|RESOURCE)_");
+			or test("^MCP_(TOOL|ELICIT|MRTR|PROGRESS|ROOTS|COMPLETION|PROMPT|RESOURCE)_");
 		def modes($k):
 			if $k == "MCPBASH_TOOL_ENV_MODE" then ["minimal", "allowlist", "inherit"]
 			else ["isolate", "allowlist", "inherit"] end;

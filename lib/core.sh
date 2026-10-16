@@ -1835,6 +1835,10 @@ mcp_core_cancel_escalate() {
 	fi
 	# A worker stopped by KILL never ran its cleanup.
 	mcp_core_clear_inputs "${inputs_tag}"
+	# Nor removed the journal of a modern call (lib/mrtr.sh).
+	if declare -F mcp_mrtr_abandon_worker >/dev/null 2>&1; then
+		mcp_mrtr_abandon_worker "${key}"
+	fi
 	# If the worker died while holding the stdout lock, force-release it using the tracked pid.
 	mcp_lock_release_owned "${MCPBASH_STDOUT_LOCK_NAME}" "${pid}"
 	# Fallback for environments where kill -0 cannot verify ownership (e.g., some Windows shells).

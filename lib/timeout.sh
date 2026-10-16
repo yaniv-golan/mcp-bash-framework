@@ -244,6 +244,13 @@ mcp_timeout_spawn_watchdog() {
 			exit 0
 		fi
 
+		# A modern call's tool asked a question (or took another path than its
+		# journal): stop it now; mcp_tools_call answers (lib/mrtr.sh).
+		if [ -n "${MCP_MRTR_JOURNAL:-}" ] && [ -s "${MCP_MRTR_JOURNAL}/stop" ]; then
+			mcp_timeout_terminate_worker "${worker_pid}" "${worker_pgid}" "${state_file}" "${main_pgid}"
+			exit 0
+		fi
+
 		# Check cancellation token
 		if [ -n "${state_file}" ] && [ -n "${token}" ] && [ -f "${state_file}" ]; then
 			local current_token

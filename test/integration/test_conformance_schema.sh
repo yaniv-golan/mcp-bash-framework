@@ -43,7 +43,7 @@ MODERN_VERSION="2026-07-28"
 WORKSPACE="${TEST_TMPDIR}/project"
 test_stage_workspace "${WORKSPACE}"
 mkdir -p "${WORKSPACE}/tools/echo" "${WORKSPACE}/tools/text" "${WORKSPACE}/tools/fail" \
-	"${WORKSPACE}/tools/progress" "${WORKSPACE}/tools/crash" \
+	"${WORKSPACE}/tools/progress" "${WORKSPACE}/tools/crash" "${WORKSPACE}/tools/ask" \
 	"${WORKSPACE}/resources" "${WORKSPACE}/prompts" "${WORKSPACE}/completions" "${WORKSPACE}/server.d"
 
 cat <<'JSON' >"${WORKSPACE}/tools/echo/tool.meta.json"
@@ -96,6 +96,15 @@ cat <<'SH' >"${WORKSPACE}/tools/crash/tool.sh"
 #!/usr/bin/env bash
 printf 'something broke\n' >&2
 exit 3
+SH
+# Asks a question: on 2026-07-28 the call ends with input_required.
+cat <<'JSON' >"${WORKSPACE}/tools/ask/tool.meta.json"
+{"name": "conf.ask", "description": "Asks the user", "inputSchema": {"type": "object", "properties": {}}, "timeoutSecs": 30}
+JSON
+cat <<'SH' >"${WORKSPACE}/tools/ask/tool.sh"
+#!/usr/bin/env bash
+source "${MCP_SDK}/tool-sdk.sh"
+if mcp_elicit_confirm "Proceed?"; then mcp_result_text "yes"; else mcp_result_text "no"; fi
 SH
 chmod +x "${WORKSPACE}"/tools/*/tool.sh
 
@@ -180,6 +189,7 @@ write_modern_requests() {
 		printf '%s\n' '{"jsonrpc":"2.0","id":"tools/call#8","method":"tools/call","params":{"name":"conf.progress","arguments":{},'"${meta_log}"'}}'
 		printf '%s\n' '{"jsonrpc":"2.0","id":"tools/call#9","method":"tools/call","params":{"name":"conf.crash","arguments":{},'"${meta}"'}}'
 		printf '%s\n' '{"jsonrpc":"2.0","id":"tools/call#10","method":"tools/call","params":{"name":"conf.missing","arguments":{},'"${meta}"'}}'
+		printf '%s\n' '{"jsonrpc":"2.0","id":"tools/call#16","method":"tools/call","params":{"name":"conf.ask","arguments":{},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{"elicitation":{"form":{}}}}}}'
 		printf '%s\n' '{"jsonrpc":"2.0","id":"resources/list#11","method":"resources/list","params":{'"${meta}"'}}'
 		printf '%s\n' '{"jsonrpc":"2.0","id":"resources/templates/list#12","method":"resources/templates/list","params":{'"${meta}"'}}'
 		printf '%s\n' '{"jsonrpc":"2.0","id":"resources/read#13","method":"resources/read","params":{"uri":"'"${greeting_uri}"'",'"${meta}"'}}'
@@ -253,7 +263,7 @@ for version in ${VERSIONS}; do
 	if [ "${version}" = "${MODERN_VERSION}" ]; then
 		MCPBASH_MODERN_PROTOCOL=true test_run_mcp "${WORKSPACE}" "${run_dir}/requests.ndjson" "${run_dir}/responses.ndjson" || true
 		# No initialize, and no EmptyResult (ping and friends were removed).
-		required_defs="DiscoverResult ListToolsResult CallToolResult ListResourcesResult ListResourceTemplatesResult ReadResourceResult ListPromptsResult GetPromptResult CompleteResult ServerNotification UnsupportedProtocolVersionError MethodNotFoundError"
+		required_defs="DiscoverResult ListToolsResult CallToolResult InputRequiredResult ListResourcesResult ListResourceTemplatesResult ReadResourceResult ListPromptsResult GetPromptResult CompleteResult ServerNotification UnsupportedProtocolVersionError MethodNotFoundError"
 		for removed in ping#2 logging/setLevel#3 resources/subscribe#15; do
 			if ! jq -e --arg id "${removed}" 'select(.id == $id) | .error.code == -32601' "${run_dir}/responses.ndjson" >/dev/null; then
 				printf '%s: %s should get -32601\n' "${version}" "${removed}" >&2
@@ -313,6 +323,9 @@ for version in ${VERSIONS}; do
 				printf '%s: result for unexpected id %s\n' "${version}" "${id}" >&2
 				failures=$((failures + 1))
 				continue
+			fi
+			if printf '%s' "${line}" | jq -e '.result.resultType == "input_required"' >/dev/null; then
+				def="InputRequiredResult"
 			fi
 			mkdir -p "${run_dir}/instances/${def}"
 			printf '%s' "${line}" | jq -c '.result' >"${run_dir}/instances/${def}/${n}.json"

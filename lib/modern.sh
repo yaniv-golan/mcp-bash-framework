@@ -3,10 +3,11 @@
 # protocol version and the client's capabilities in params._meta, served next
 # to the legacy initialize session in the same process.
 #
-# Off unless MCPBASH_MODERN_PROTOCOL=true. Until server-to-client input
-# requests (roots, elicitation) and subscriptions/listen exist on this path,
-# a client that goes modern would get less than it gets from the legacy
-# session, so the server answers server/discover only when switched on.
+# Off unless MCPBASH_MODERN_PROTOCOL=true. Until roots through inputRequests
+# and subscriptions/listen exist on this path, a client that goes modern would
+# get less than it gets from the legacy session, so the server answers
+# server/discover only when switched on. A tool's question works: the call
+# ends with resultType "input_required" (lib/mrtr.sh).
 # Minimal mode (no JSON tool) is legacy-only.
 
 set -euo pipefail
@@ -141,16 +142,26 @@ mcp_modern_apply_worker_context() {
 	fi
 	export MCPBASH_CLIENT_SUPPORTS_UI="${ui}"
 
-	# Nothing on this path may ask the client anything: stdio forbids
-	# server-to-client requests in 2026-07-28, and their replacement
-	# (input_required results) isn't built yet. Elicitation is unavailable
-	# and roots come from MCPBASH_ROOTS, config/roots.json or the project root.
+	# stdio forbids server-to-client requests in 2026-07-28. A tool's question
+	# ends the call with resultType "input_required" instead (lib/mrtr.sh),
+	# when this request's capabilities say the client can answer it: an
+	# elicitation object with form and/or url (an empty one means form).
+	# Roots aren't asked for yet: they come from MCPBASH_ROOTS,
+	# config/roots.json or the project root.
+	local elicit_modes
+	elicit_modes="$(printf '%s' "${caps}" | "${MCPBASH_JSON_TOOL_BIN}" -r '
+		if (.elicitation | type) == "object" then
+			(.elicitation | has("form")) as $f | ((.elicitation | has("url")) or (.elicitation | has("oob"))) as $u
+			| if ($f or $u) then "1 \(if $f then 1 else 0 end) \(if $u then 1 else 0 end)" else "1 1 0" end
+		else "0 0 0" end
+	' 2>/dev/null || printf '0 0 0')"
 	# shellcheck disable=SC2034
-	MCPBASH_CLIENT_SUPPORTS_ELICITATION=0
+	MCPBASH_CLIENT_SUPPORTS_ELICITATION="${elicit_modes%% *}"
+	elicit_modes="${elicit_modes#* }"
 	# shellcheck disable=SC2034
-	MCPBASH_CLIENT_ELICIT_FORM=0
+	MCPBASH_CLIENT_ELICIT_FORM="${elicit_modes%% *}"
 	# shellcheck disable=SC2034
-	MCPBASH_CLIENT_ELICIT_URL=0
+	MCPBASH_CLIENT_ELICIT_URL="${elicit_modes#* }"
 	# shellcheck disable=SC2034
 	MCPBASH_CLIENT_SUPPORTS_ROOTS=0
 	# shellcheck disable=SC2034
