@@ -705,7 +705,8 @@ _mcp_tools_emit_error_result() {
 		# shellcheck source=../sdk/tool-error.sh disable=SC1091
 		. "${MCPBASH_HOME}/sdk/tool-error.sh"
 	fi
-	[[ "${exit_code}" =~ ^-?[0-9]+$ ]] || exit_code=1
+	# "null" for a result that no tool exit produced.
+	[[ "${exit_code}" =~ ^-?[0-9]+$ ]] || [ "${exit_code}" = "null" ] || exit_code=1
 	[ "${data}" = "null" ] && data=""
 
 	local args=()
@@ -2218,6 +2219,57 @@ mcp_tools_call() {
 		[ -n "${request_meta_file}" ] && rm -f "${request_meta_file}"
 	}
 
+	# A modern call whose client can answer a question, or a retry after one:
+	# give it a journal (lib/mrtr.sh). This is the one check that turns on
+	# input_required for a call; a mechanism that blocks in place instead
+	# (Tasks) would skip it here.
+	local mrtr_dir="" mrtr_ticket="" mrtr_attempt=""
+	if [ "${MCPBASH_PROTOCOL_ERA:-legacy}" = "modern" ] && declare -F mcp_mrtr_open >/dev/null 2>&1; then
+		# Never the legacy question files: the main loop's poller would send
+		# them to a legacy client of this process, or answer decline.
+		elicit_request_file=""
+		elicit_response_file=""
+		if [ "${elicit_supported}" = "1" ] || [ -n "${MCPBASH_MRTR_REQUEST_STATE:-}" ] || [ -n "${MCPBASH_MRTR_INPUT_RESPONSES:-}" ]; then
+			local mrtr_form=0 mrtr_url=0
+			if mcp_elicitation_form_supported; then mrtr_form=1; fi
+			if mcp_elicitation_url_supported; then mrtr_url=1; fi
+			mcp_mrtr_open "${name}" "${args_json}" "${MCPBASH_MRTR_REQUEST_STATE:-}" "${MCPBASH_MRTR_INPUT_RESPONSES:-}" "${mrtr_form}" "${mrtr_url}"
+			case "${MCP_MRTR_OUTCOME}" in
+			run)
+				mrtr_dir="${MCP_MRTR_DIR}"
+				mrtr_ticket="${MCP_MRTR_TICKET}"
+				mrtr_attempt="${MCP_MRTR_ATTEMPT}"
+				mcp_mrtr_bind_worker "${elicit_key}" "${mrtr_dir}"
+				;;
+			input_required)
+				_MCP_TOOLS_RESULT="$(mcp_mrtr_pending_result "${MCP_MRTR_DIR}" "${MCP_MRTR_TICKET}")"
+				cleanup_tool_temp_files
+				return 0
+				;;
+			error)
+				_mcp_tools_emit_error_result "${MCP_MRTR_ERROR_TYPE}" "${MCP_MRTR_ERROR_MESSAGE}" "" "" "" 0
+				cleanup_tool_temp_files
+				return 0
+				;;
+			invalid)
+				_mcp_tools_emit_error -32602 "${MCP_MRTR_ERROR_MESSAGE}" "null"
+				cleanup_tool_temp_files
+				return 1
+				;;
+			esac
+		fi
+	fi
+	# A question stops the tool through its timeout watchdog, so a call with
+	# a journal always has one. When the tool sets no timeout, that watchdog
+	# only watches the journal: no time limit of any kind, not even
+	# MCPBASH_MAX_TIMEOUT_SECS (with_timeout --journal-only).
+	local run_timeout="${effective_timeout}"
+	local -a run_timeout_opts=()
+	if [ -z "${run_timeout}" ] && [ -n "${mrtr_dir}" ]; then
+		run_timeout=0
+		run_timeout_opts=(--journal-only)
+	fi
+
 	local exit_code
 	# shellcheck disable=SC2030,SC2031,SC2094
 	(
@@ -2300,6 +2352,17 @@ mcp_tools_call() {
 			export MCP_TOOL_ERROR_FILE
 			export MCP_TOOL_RESOURCES_FILE="${tool_resources_file}"
 			export MCP_ELICIT_SUPPORTED="${elicit_supported}"
+			if [ -n "${mrtr_dir}" ]; then
+				# A retry carries answers the user already gave, whatever its
+				# own capabilities: the journal decides (it also says which
+				# modes this request can ask in), and --arg never overrides
+				# them.
+				export MCP_ELICIT_SUPPORTED=1
+				export MCP_MRTR_JOURNAL="${mrtr_dir}"
+				export MCP_MRTR_ATTEMPT="${mrtr_attempt}"
+			else
+				unset MCP_MRTR_JOURNAL MCP_MRTR_ATTEMPT
+			fi
 			# The client's MCP Apps (UI) capability, for mcp_client_supports_ui in
 			# the tool: the server knows it, the tool's environment doesn't
 			# otherwise (the state dir isn't passed to tools).
@@ -2316,7 +2379,7 @@ mcp_tools_call() {
 			elif [[ -n "${debug_log_file}" ]]; then
 				export MCPBASH_DEBUG_LOG="${debug_log_file}"
 			fi
-			if [ "${elicit_supported}" = "1" ]; then
+			if [ "${elicit_supported}" = "1" ] && [ -z "${mrtr_dir}" ]; then
 				export MCP_ELICIT_REQUEST_FILE="${elicit_request_file}"
 				export MCP_ELICIT_RESPONSE_FILE="${elicit_response_file}"
 			fi
@@ -2362,7 +2425,7 @@ mcp_tools_call() {
 				# Framework-owned MCP_* families only; other MCP_* names (for example a
 				# user's MCP_REGISTRY_TOKEN) need the allowlist. Keep in sync with
 				# lib/runtime.sh (provider env) and lib/meta_env.sh (reserved names).
-				MCP_SDK | MCP_TOOL_* | MCP_ELICIT_* | MCP_PROGRESS_* | MCP_LOG_STREAM | MCP_CANCEL_FILE) ;;
+				MCP_SDK | MCP_TOOL_* | MCP_ELICIT_* | MCP_MRTR_* | MCP_PROGRESS_* | MCP_LOG_STREAM | MCP_CANCEL_FILE) ;;
 				MCP_ROOTS_* | MCP_RESOURCES_ROOTS | MCP_COMPLETION_* | MCP_PROMPT_* | MCP_RESOURCE_*) ;;
 				MCP_CONFIG_JSON | MCP_TRANSPORT | MCP_PATH_DEBUG) ;;
 				MCPBASH_*) ;;
@@ -2448,11 +2511,11 @@ mcp_tools_call() {
 
 		# Run tool and capture exit code - then write timeout reason without affecting exit
 		local tool_exit_code=0
-		if [ -n "${effective_timeout}" ]; then
+		if [ -n "${run_timeout}" ]; then
 			if [ "${stderr_streaming_enabled}" = "true" ]; then
-				with_timeout "${effective_timeout}" -- "${tool_runner[@]}" 2> >(tee "${stderr_file}" >&2) && tool_exit_code=0 || tool_exit_code=$?
+				with_timeout "${run_timeout}" ${run_timeout_opts[@]+"${run_timeout_opts[@]}"} -- "${tool_runner[@]}" 2> >(tee "${stderr_file}" >&2) && tool_exit_code=0 || tool_exit_code=$?
 			else
-				with_timeout "${effective_timeout}" -- "${tool_runner[@]}" 2>>"${stderr_file}" && tool_exit_code=0 || tool_exit_code=$?
+				with_timeout "${run_timeout}" ${run_timeout_opts[@]+"${run_timeout_opts[@]}"} -- "${tool_runner[@]}" 2>>"${stderr_file}" && tool_exit_code=0 || tool_exit_code=$?
 			fi
 		else
 			if [ "${stderr_streaming_enabled}" = "true" ]; then
@@ -2468,6 +2531,42 @@ mcp_tools_call() {
 		# Outer stderr append captures shell-level errors; tool stderr is redirected above.
 	) >"${stdout_file}" 2>>"${stderr_file}" || exit_code=$?
 	exit_code=${exit_code:-0}
+
+	# A call with a journal: did it stop at a question, or take another path
+	# than the run before? Neither is a tool failure. A cancelled call falls
+	# through to the cancel handling below.
+	if [ -n "${mrtr_dir}" ]; then
+		mcp_mrtr_unbind_worker "${elicit_key}"
+		if [ -z "${MCP_CANCEL_FILE:-}" ] || [ ! -f "${MCP_CANCEL_FILE}" ]; then
+			# The journal went away under the run: its steps may not have been
+			# recorded, so its output isn't this call's answer.
+			if [ ! -d "${mrtr_dir}" ]; then
+				mcp_mrtr_open_expired
+				_mcp_tools_emit_error_result "${MCP_MRTR_ERROR_TYPE}" "${MCP_MRTR_ERROR_MESSAGE}" "" "" "" null
+				cleanup_tool_temp_files
+				return 0
+			fi
+			case "$(mcp_mrtr_run_outcome "${mrtr_dir}")" in
+			input_required)
+				mcp_mrtr_release "${mrtr_dir}"
+				_MCP_TOOLS_RESULT="$(mcp_mrtr_pending_result "${mrtr_dir}" "${mrtr_ticket}")"
+				cleanup_tool_temp_files
+				return 0
+				;;
+			diverged)
+				# Only the position goes to the client: the steps' command
+				# lines can hold secrets (diverged.detail keeps them here).
+				local mrtr_why
+				mrtr_why="$(cat "${mrtr_dir}/diverged" 2>/dev/null || true)"
+				mcp_mrtr_close "${mrtr_dir}"
+				_mcp_tools_emit_error_result diverged "${mrtr_why:-The tool took another path than the run before}" "Run the tool again. A step whose arguments change between runs needs mcp_once --key NAME." "" "" null
+				cleanup_tool_temp_files
+				return 0
+				;;
+			esac
+		fi
+		mcp_mrtr_close "${mrtr_dir}"
+	fi
 
 	if mcp_logging_is_enabled "debug"; then
 		local stdout_size=0

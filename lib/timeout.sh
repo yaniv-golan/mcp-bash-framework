@@ -80,14 +80,32 @@ mcp_timeout_terminate_worker() {
 		kill -TERM "${worker_pid}" ${tree} 2>/dev/null || true
 	fi
 
-	sleep 1
+	# Up to a second for them to end on TERM; most are gone at the first look.
+	local waited=0 p alive
+	while [ "${waited}" -lt 10 ]; do
+		alive=""
+		if [ "${isolated}" = "true" ]; then
+			if kill -0 "${worker_pid}" 2>/dev/null || kill -0 "-${worker_pgid}" 2>/dev/null; then
+				alive=1
+			fi
+		else
+			for p in ${worker_pid} ${tree}; do
+				if kill -0 "${p}" 2>/dev/null; then
+					alive=1
+					break
+				fi
+			done
+		fi
+		[ -n "${alive}" ] || break
+		sleep 0.1
+		waited=$((waited + 1))
+	done
 
 	if [ "${isolated}" = "true" ]; then
 		if kill -0 "${worker_pid}" 2>/dev/null || kill -0 "-${worker_pgid}" 2>/dev/null; then
 			mcp_runtime_signal_checked KILL "${worker_pgid}" "${worker_pid}" "${main_pgid}" "${identity}"
 		fi
 	else
-		local p
 		for p in ${worker_pid} ${tree}; do
 			kill -KILL "${p}" 2>/dev/null || true
 		done
@@ -99,7 +117,7 @@ with_timeout() {
 	local cmd
 
 	if [ $# -lt 3 ]; then
-		printf '%s\n' 'with_timeout expects: with_timeout <seconds> -- <command...>' >&2
+		printf '%s\n' 'with_timeout expects: with_timeout <seconds> [--journal-only] -- <command...>' >&2
 		return 1
 	fi
 
@@ -113,8 +131,16 @@ with_timeout() {
 		;;
 	esac
 
-	if ! [ "$1" = "--" ]; then
-		printf '%s\n' 'with_timeout usage: with_timeout <seconds> -- <command...>' >&2
+	# --journal-only: the watchdog only watches the call's journal (a tool
+	# with no timeout); no time limit of any kind.
+	local journal_only="false"
+	if [ "$1" = "--journal-only" ]; then
+		journal_only="true"
+		shift
+	fi
+
+	if ! [ "${1:-}" = "--" ]; then
+		printf '%s\n' 'with_timeout usage: with_timeout <seconds> [--journal-only] -- <command...>' >&2
 		return 1
 	fi
 
@@ -158,7 +184,7 @@ with_timeout() {
 	# Watchdog reads progress settings from inherited environment:
 	#   MCPBASH_PROGRESS_EXTENDS_TIMEOUT, MCPBASH_MAX_TIMEOUT_SECS, MCP_PROGRESS_STREAM
 	# No new arguments needed - watchdog runs inside worker subshell context
-	mcp_timeout_spawn_watchdog "${worker_pid}" "${worker_pgid}" "${seconds}" "${watchdog_state}" "${main_pgid}" "${watchdog_token}" "${caller_pgid}" &
+	mcp_timeout_spawn_watchdog "${worker_pid}" "${worker_pgid}" "${seconds}" "${watchdog_state}" "${main_pgid}" "${watchdog_token}" "${caller_pgid}" "${journal_only}" &
 	watchdog_pid=$!
 
 	wait "${worker_pid}"
@@ -203,6 +229,7 @@ mcp_timeout_spawn_watchdog() {
 	local main_pgid="$5"
 	local token="$6"
 	local caller_pgid="$7"
+	local journal_only="${8:-false}"
 
 	# Read settings from environment (inherited from worker subshell)
 	# This avoids argument explosion and leverages existing env var exports
@@ -244,6 +271,13 @@ mcp_timeout_spawn_watchdog() {
 			exit 0
 		fi
 
+		# A modern call's tool asked a question (or took another path than its
+		# journal): stop it now; mcp_tools_call answers (lib/mrtr.sh).
+		if [ -n "${MCP_MRTR_JOURNAL:-}" ] && [ -s "${MCP_MRTR_JOURNAL}/stop" ]; then
+			mcp_timeout_terminate_worker "${worker_pid}" "${worker_pgid}" "${state_file}" "${main_pgid}"
+			exit 0
+		fi
+
 		# Check cancellation token
 		if [ -n "${state_file}" ] && [ -n "${token}" ] && [ -f "${state_file}" ]; then
 			local current_token
@@ -251,6 +285,11 @@ mcp_timeout_spawn_watchdog() {
 			if [ "${current_token}" != "${token}" ]; then
 				exit 0
 			fi
+		fi
+
+		# Here only for the journal (a tool with no timeout): no time limit.
+		if [ "${journal_only}" = "true" ]; then
+			continue
 		fi
 
 		# Progress-aware timeout extension

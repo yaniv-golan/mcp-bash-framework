@@ -106,6 +106,31 @@ mcp_handle_tools() {
 			mcp_handler_error_response "${id}" "-32602" "${message}"
 			return 0
 		fi
+		# A modern retry after a question (lib/mrtr.sh): the ticket and the
+		# client's answers. A legacy request never has them. A requestState
+		# that isn't hex is replaced before jq -r and $(...) could strip a
+		# trailing newline from it and make it look like a ticket.
+		MCPBASH_MRTR_REQUEST_STATE=""
+		MCPBASH_MRTR_INPUT_RESPONSES=""
+		if [ "${MCPBASH_PROTOCOL_ERA:-legacy}" = "modern" ]; then
+			local mrtr_fields
+			mrtr_fields="$(printf '%s' "${json_payload}" | "${MCPBASH_JSON_TOOL_BIN}" -c '
+				.params as $p
+				| if ($p | has("requestState")) and (($p.requestState | type) != "string") then "requestState must be a string"
+				elif ($p | has("inputResponses")) and (($p.inputResponses | type) != "object") then "inputResponses must be an object"
+				else [($p.requestState // "" | if (explode | all(.[]; (. >= 48 and . <= 57) or (. >= 97 and . <= 102))) then . else "not-a-ticket" end), ($p.inputResponses // null)] end
+			' 2>/dev/null || printf '"Invalid params"')"
+			case "${mrtr_fields}" in
+			'"'*)
+				mcp_handler_error_response "${id}" "-32602" "${mrtr_fields}"
+				return 0
+				;;
+			esac
+			# shellcheck disable=SC2034  # Read by mcp_tools_call (lib/tools.sh).
+			MCPBASH_MRTR_REQUEST_STATE="$(printf '%s' "${mrtr_fields}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.[0]')"
+			# shellcheck disable=SC2034  # Read by mcp_tools_call (lib/tools.sh).
+			MCPBASH_MRTR_INPUT_RESPONSES="$(printf '%s' "${mrtr_fields}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.[1] // empty')"
+		fi
 		local result_json
 		if ! mcp_tools_call "${name}" "${args_json}" "${timeout_override}" "${meta_json}"; then
 			result_json="${_MCP_TOOLS_RESULT:-}"

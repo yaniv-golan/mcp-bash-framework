@@ -111,9 +111,9 @@ case "$(text_of "${OUT}" 7)" in
 *roots-from-env*) ;;
 *) test_fail "on: a modern call should get the fallback roots: $(resp "${OUT}" 7)" ;;
 esac
-assert_eq "no-elicit" "$(text_of "${OUT}" 8 | tr -d '\n')" "on: elicitation is unavailable on the modern path"
+assert_eq "input_required" "$(resp "${OUT}" 8 | jq -r '.result.resultType')" "on: a question ends a modern call with input_required"
 assert_eq "ui-yes" "$(text_of "${OUT}" 9 | tr -d '\n')" "on: the request's own UI capability"
-if grep -q '"method":"\(roots/list\|elicitation/create\)"' "${OUT}"; then
+if [ -n "$(jq -c 'select((.method? // "") | test("^(roots/list|elicitation/create)$"))' "${OUT}")" ]; then
 	test_fail "on: the server sent a request to a modern client: $(grep '"method"' "${OUT}")"
 fi
 
@@ -130,7 +130,10 @@ run "${TEST_TMPDIR}/mixed.out" "${REQ}" MCPBASH_MODERN_PROTOCOL=true
 OUT="${TEST_TMPDIR}/mixed.out"
 assert_eq "ui-no" "$(text_of "${OUT}" 1 | tr -d '\n')" "mixed: a modern call must not see the legacy client's UI capability"
 assert_eq "ui-yes" "$(text_of "${OUT}" 2 | tr -d '\n')" "mixed: the legacy session keeps its UI capability"
-assert_eq "no-elicit" "$(text_of "${OUT}" 3 | tr -d '\n')" "mixed: a modern call never elicits, even when the legacy client can"
+assert_eq "input_required" "$(resp "${OUT}" 3 | jq -r '.result.resultType')" "mixed: a modern call's question is input_required"
+if [ -n "$(jq -c 'select(.method? == "elicitation/create")' "${OUT}")" ]; then
+	test_fail "mixed: a modern call's question reached the legacy client as elicitation/create"
+fi
 
 # --- initialize stays legacy whatever _meta it carries; inherited per-request
 # variables (a nested mcp-bash gets a tool's) don't reach the legacy session --

@@ -103,6 +103,7 @@ TESTS=(
 	"test_tool_ui_capability.sh"
 	"test_live_progress_logs.sh"
 	"test_modern_core.sh"
+	"test_mrtr.sh"
 	"test_modern_discover.sh"
 	"test_modern_results.sh"
 	"test_modern_logging.sh"

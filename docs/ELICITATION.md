@@ -94,7 +94,29 @@ if ! mcp_elicit_confirm "Delete 40 files?"; then
 fi
 ```
 
-On the opt-in 2026-07-28 path (`MCPBASH_MODERN_PROTOCOL=true`) the server can't ask yet: the helpers answer `unavailable` there, unless `--arg` gives a valid answer from the call's arguments (`mcp_elicit_confirm` included, since the client can't be asked).
+## On the 2026-07-28 path: the tool runs again after a question
+
+With `MCPBASH_MODERN_PROTOCOL=true`, a modern (2026-07-28) client can't be sent a request in the middle of a call. A question ends the call instead: the client gets a result with `resultType: "input_required"`, the question in `inputRequests` and a `requestState`, asks the user, and calls the tool again with the answer. The helpers are called the same way; what changes is that **the tool runs again from the start** on the second call, and this time the helper returns the answer.
+
+So anything before the question runs twice, unless you wrap it in `mcp_once`:
+
+```bash
+build_id="$(mcp_once start_build "${target}")"   # runs once; replayed on the retry
+if ! mcp_elicit_confirm "Deploy build ${build_id}?"; then
+    mcp_fail --type declined "Not confirmed (${MCP_ELICIT_ACTION})"
+fi
+deploy "${build_id}"                              # after the question: runs once
+```
+
+- `mcp_once [--key NAME] CMD [ARG...]` runs CMD in a subshell the first time and records its stdout, stderr and exit status; on the retry it replays them without running CMD. Wrap anything before a question that has a side effect, is slow, or can give a different answer next time. A step runs in a subshell in every run, so `cd`, `export` and assignments inside it don't reach your script: compute a value with `mcp_once` and assign it outside, as above. On legacy clients, and outside a modern call, CMD simply runs.
+- Steps and questions are matched by their position and their command line (or question). A run that takes another path than the one before ends in an error result of type `diverged` that names the step or question (not its command line, which can hold secrets), never with an answer meant for another question. `--key NAME` matches a step by name instead, for a command whose arguments change between runs (a timestamp, a token).
+- Run steps and questions one after another: positions are counted in order, so steps started in parallel (`mcp_once a & mcp_once b & wait`) can get the same one.
+- A step that was still running when the tool was stopped wasn't recorded, and runs again.
+- Progress and log notifications sent before the question are sent again on the retry.
+- `MCP_MRTR_ATTEMPT` is `1` on the first run, `2` on the retry, and so on: for logging, not to change what the tool does.
+- This server process keeps the call's journal for `MCPBASH_MRTR_TICKET_TTL_SECS` (15 minutes) after each question. A retry after that, or after the server restarted, gets an error result of type `request_expired` (run the tool again); one with another tool or other arguments gets `request_mismatch`. Only one retry with a `requestState` runs at a time: a duplicate sent while it runs is asked the open question again, or gets `request_in_progress`. A run that was killed (not cancelled) leaves its call `request_expired`. The tool is never re-run silently, which could repeat a side effect. Each retry, answered or not, starts the TTL again, so a client that keeps retrying keeps the journal (one small directory per call).
+- The `TIMEOUT` argument of `mcp_elicit` doesn't apply on this path: the call ends at the question, and the user has until the TTL to answer.
+- A question is asked only when the request's `clientCapabilities` include `elicitation` (form, URL or both); otherwise the helpers answer `unavailable`, and `--arg` answers as on the legacy path. `mcp_elicit_confirm` never takes `--arg` from a client that can ask.
 
 ## Environment Variables
 
@@ -102,6 +124,8 @@ Set for tools:
 - `MCP_ELICIT_SUPPORTED` – `"1"` when the client supports elicitation, `"0"` otherwise.
 - `MCP_ELICIT_REQUEST_FILE` – path to write a request (JSON: `{"message": "...", "schema": {...}, "mode": "form"}`).
 - `MCP_ELICIT_RESPONSE_FILE` – where the normalized response appears.
+- `MCP_MRTR_JOURNAL` – on a 2026-07-28 call whose client can answer questions: the call's journal (instead of the two files above).
+- `MCP_MRTR_ATTEMPT` – with it: `1`, then `2` on the retry after a question, and so on.
 
 The SDK handles writing/reading these files, timeouts, and cancellation. `MCP_ELICIT_ACTION` is set by the SDK in the tool's own shell after each question helper; the server doesn't set it.
 
