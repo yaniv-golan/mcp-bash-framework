@@ -30,6 +30,17 @@ _MCP_TOOLS_ERROR_MESSAGE=""
 _MCP_TOOLS_ERROR_DATA=""
 # shellcheck disable=SC2034
 _MCP_TOOLS_RESULT=""
+# A call with a journal (2026-07-28): how its run ended (complete,
+# input_required or diverged) and the SDK's trace of its steps and questions.
+# run-tool prints them; the server ignores them.
+# shellcheck disable=SC2034
+_MCP_TOOLS_MRTR_OUTCOME=""
+# shellcheck disable=SC2034
+_MCP_TOOLS_MRTR_TRACE=""
+# A diverged run: what changed (command lines, questions). Never sent to the
+# client, which gets only the position; run-tool prints it.
+# shellcheck disable=SC2034
+_MCP_TOOLS_MRTR_DETAIL=""
 MCP_TOOLS_TTL="${MCP_TOOLS_TTL:-5}"
 MCP_TOOLS_LAST_SCAN="" # Empty means "use cache mtime if loading"; 0 means "force scan"
 MCP_TOOLS_LAST_NOTIFIED_HASH=""
@@ -1942,6 +1953,12 @@ mcp_tools_call() {
 	_MCP_TOOLS_ERROR_DATA=""
 	# shellcheck disable=SC2034
 	_MCP_TOOLS_RESULT=""
+	# shellcheck disable=SC2034
+	_MCP_TOOLS_MRTR_OUTCOME=""
+	# shellcheck disable=SC2034
+	_MCP_TOOLS_MRTR_TRACE=""
+	# shellcheck disable=SC2034
+	_MCP_TOOLS_MRTR_DETAIL=""
 
 	request_meta="$(mcp_tools_strip_remote_token_meta "${request_meta}")"
 
@@ -2537,6 +2554,11 @@ mcp_tools_call() {
 	# through to the cancel handling below.
 	if [ -n "${mrtr_dir}" ]; then
 		mcp_mrtr_unbind_worker "${elicit_key}"
+		# Read before the journal is closed; each run starts a new trace.
+		# shellcheck disable=SC2034
+		_MCP_TOOLS_MRTR_TRACE="$(cat "${mrtr_dir}/trace" 2>/dev/null || true)"
+		rm -f "${mrtr_dir}/trace"
+		_MCP_TOOLS_MRTR_OUTCOME="$(mcp_mrtr_run_outcome "${mrtr_dir}")"
 		if [ -z "${MCP_CANCEL_FILE:-}" ] || [ ! -f "${MCP_CANCEL_FILE}" ]; then
 			# The journal went away under the run: its steps may not have been
 			# recorded, so its output isn't this call's answer.
@@ -2546,7 +2568,7 @@ mcp_tools_call() {
 				cleanup_tool_temp_files
 				return 0
 			fi
-			case "$(mcp_mrtr_run_outcome "${mrtr_dir}")" in
+			case "${_MCP_TOOLS_MRTR_OUTCOME}" in
 			input_required)
 				mcp_mrtr_release "${mrtr_dir}"
 				_MCP_TOOLS_RESULT="$(mcp_mrtr_pending_result "${mrtr_dir}" "${mrtr_ticket}")"
@@ -2558,6 +2580,8 @@ mcp_tools_call() {
 				# lines can hold secrets (diverged.detail keeps them here).
 				local mrtr_why
 				mrtr_why="$(cat "${mrtr_dir}/diverged" 2>/dev/null || true)"
+				# shellcheck disable=SC2034
+				_MCP_TOOLS_MRTR_DETAIL="$(cat "${mrtr_dir}/diverged.detail" 2>/dev/null || true)"
 				mcp_mrtr_close "${mrtr_dir}"
 				_mcp_tools_emit_error_result diverged "${mrtr_why:-The tool took another path than the run before}" "Run the tool again. A step whose arguments change between runs needs mcp_once --key NAME." "" "" null
 				cleanup_tool_temp_files

@@ -335,7 +335,7 @@ mcp_result_json "$(printf '%s' "$result" | jq -c '.')"
   - Create new project in new directory: `bin/mcp-bash new <name> [--no-hello]`.
   - Scaffold assets in a project: `bin/mcp-bash scaffold tool|prompt|resource <name>`.
   - Run server: `bin/mcp-bash` (auto-detects project root when run inside a project directory; for MCP clients set `MCPBASH_PROJECT_ROOT` explicitly).
-  - Run a single tool without starting the server: `bin/mcp-bash run-tool <name> [--args JSON] [--roots paths] [--dry-run] [--timeout SECS] [--verbose] [--no-refresh] [--minimal] [--project-root DIR] [--print-env]`.
+  - Run a single tool without starting the server: `bin/mcp-bash run-tool <name> [--args JSON] [--roots paths] [--dry-run] [--timeout SECS] [--verbose] [--no-refresh] [--minimal] [--project-root DIR] [--print-env] [--answer ANSWER]...`. It calls the tool as a 2026-07-28 client: each question ends a run, and the next `--answer` (`FIELD=VALUE`, a bare value, a JSON object, `accept`, `decline` or `cancel`) answers it on the rerun; a trace of executed and replayed `mcp_once` steps goes to stderr; a question with no answer left exits 1; `--no-elicitation` calls as a client that can't ask (questions answer `unavailable`).
   - Debug mode: `bin/mcp-bash debug` (enables payload logging and preserved state; see `docs/DEBUGGING.md`).
   - Registry refresh: `bin/mcp-bash registry refresh [--project-root DIR] [--no-notify] [--quiet] [--filter SUBPATH]`.
   - Validate project: `bin/mcp-bash validate [--project-root DIR] [--fix] [--json] [--explain-defaults] [--strict] [--deprecations-as-errors]` (deprecations, uses of APIs that change in 2.0, are counted separately and don't fail validation unless `--deprecations-as-errors`).

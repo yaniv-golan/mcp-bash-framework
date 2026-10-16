@@ -118,6 +118,18 @@ deploy "${build_id}"                              # after the question: runs onc
 - The `TIMEOUT` argument of `mcp_elicit` doesn't apply on this path: the call ends at the question, and the user has until the TTL to answer.
 - A question is asked only when the request's `clientCapabilities` include `elicitation` (form, URL or both); otherwise the helpers answer `unavailable`, and `--arg` answers as on the legacy path. `mcp_elicit_confirm` never takes `--arg` from a client that can ask.
 
+### Testing it: `mcp-bash run-tool --answer`
+
+`mcp-bash run-tool` calls a tool the way a 2026-07-28 client does, so you test the rerun your users get. Give one `--answer` per question, in the order the tool asks them:
+
+```bash
+mcp-bash run-tool deploy --allow-self --answer confirmed=true
+# run 1: 1 step executed, stopped at question 1 (Deploy build 42?)
+# run 2: 1 step replayed, completed
+```
+
+An answer is `FIELD=VALUE` (typed by the question's schema: `true`/`false` for a boolean, a number, comma-separated for a list), a bare `VALUE` for a question with one field, a JSON object (the content as is), or `accept`, `decline` or `cancel` (a URL question takes only these). The trace on stderr shows, for each run, how many `mcp_once` steps ran and how many were replayed; a step that runs again on every run is a side effect to wrap. `--verbose` lists each step. A question with no `--answer` left prints the `input_required` result and exits 1, naming the question and its fields. On a divergence the trace shows what changed, which the client is never told. In the scaffolded harness, put the answers after the description: `run_test "deploy" '{}' "confirmed" --answer confirmed=true`. To test what a client that can't ask gets (Claude Desktop extensions), use `--no-elicitation`: every question answers `unavailable`, and `--arg` answers them.
+
 ## Environment Variables
 
 Set for tools:

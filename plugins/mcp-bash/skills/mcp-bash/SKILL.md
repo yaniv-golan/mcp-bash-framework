@@ -99,7 +99,8 @@ mcp_result_json "$(mcp_json_obj query "${query}" name "${name}")"
   `unavailable`): `if ! mcp_elicit_confirm "Delete it?"; then mcp_fail
   --type declined "Not confirmed"; fi`. Never capture them with `$(...)`: they print
   nothing. `-v VAR` gets an answer. On a 2026-07-28 client a question ends the call and the tool
-  runs again with the answer: wrap side effects before a question in `mcp_once`. Never put `--arg` on a destructive confirmation: when the client
+  runs again with the answer: wrap side effects before a question in `mcp_once`, and test it with
+  `mcp-bash run-tool NAME --answer confirmed=true` (its trace shows which steps ran again). Never put `--arg` on a destructive confirmation: when the client
   can't ask, it lets the model answer yes for the user. See `docs/ELICITATION.md`.
   **Claude Desktop extensions (`.mcpb`) get no elicitation at all** (checked in 2.31226.1), so
   the no-answer fallback (for example "call again with `confirm: true`") is what runs there;

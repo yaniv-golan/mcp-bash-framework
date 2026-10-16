@@ -514,9 +514,12 @@ mcp-bash run-tool my-tool --print-env --dry-run
 
 # Dry-run validates metadata/args without executing the tool
 mcp-bash run-tool my-tool --dry-run
+
+# Answer the tool's questions, one --answer per question in the order asked
+mcp-bash run-tool deploy --allow-self --answer confirmed=true
 ```
 
-Flags: `--args` (JSON object), `--roots` (comma-separated paths), `--dry-run`, `--timeout <secs>`, `--verbose` (stream tool stderr), `--no-refresh` (reuse the cached registry; by default, run-tool rescans when anything under `tools/` is newer than the cache), `--minimal` (force degraded mode), `--project-root <dir>`, `--print-env` (dump wiring without executing), `--allow-self` / `--allow TOOL` / `--allow-all` (allowlist this run; tools are denied by default), `--with-server-env` (source `server.d/env.sh` first), `--source FILE` (source a file first; repeatable). Elicitation is not supported in CLI mode.
+Flags: `--args` (JSON object), `--roots` (comma-separated paths), `--dry-run`, `--timeout <secs>`, `--verbose` (stream tool stderr), `--no-refresh` (reuse the cached registry; by default, run-tool rescans when anything under `tools/` is newer than the cache), `--minimal` (force degraded mode), `--project-root <dir>`, `--print-env` (dump wiring without executing), `--allow-self` / `--allow TOOL` / `--allow-all` (allowlist this run; tools are denied by default), `--with-server-env` (source `server.d/env.sh` first), `--source FILE` (source a file first; repeatable), `--answer ANSWER` (answer the next question; repeatable), `--no-elicitation` (call as a client that can't ask: questions answer `unavailable`). run-tool calls the tool as a 2026-07-28 client: a question ends the run, and the tool runs again with the next `--answer`, replaying its `mcp_once` steps; a trace of the runs goes to stderr. A question with no answer left exits 1. See [docs/ELICITATION.md](docs/ELICITATION.md#testing-it-mcp-bash-run-tool---answer).
 
 The scaffolder and examples use per-tool directories (e.g., `tools/check-disk/tool.sh`); automatic discovery requires tools to live under subdirectories of `tools/` (root-level scripts are not discovered).
 

@@ -72,6 +72,8 @@ run_test() {
 	local no_args='{}'
 	local args="${2:-${no_args}}"
 	local description="${3:-}"
+	# Anything after the description goes to run-tool (--answer, --roots, ...).
+	local -a extra=("${@:4}")
 
 	if [[ -n "${description}" ]]; then
 		printf "  %s (%s)... " "${name}" "${description}"
@@ -81,7 +83,7 @@ run_test() {
 
 	local output
 	if [[ "${VERBOSE}" == "1" ]]; then
-		if "${MCPBASH_BIN}" run-tool "${name}" --args "${args}" --verbose; then
+		if "${MCPBASH_BIN}" run-tool "${name}" --args "${args}" --verbose ${extra[@]+"${extra[@]}"}; then
 			printf '%sPASS%s\n' "${GREEN}" "${RESET}"
 			passed=$((passed + 1))
 		else
@@ -89,7 +91,7 @@ run_test() {
 			failed=$((failed + 1))
 		fi
 	else
-		if output=$("${MCPBASH_BIN}" run-tool "${name}" --args "${args}" 2>&1); then
+		if output=$("${MCPBASH_BIN}" run-tool "${name}" --args "${args}" ${extra[@]+"${extra[@]}"} 2>&1); then
 			printf '%sPASS%s\n' "${GREEN}" "${RESET}"
 			passed=$((passed + 1))
 		else
@@ -168,6 +170,10 @@ printf "\nRunning tests...\n"
 #
 #   # Dry-run validation (checks args/metadata without executing)
 #   run_dry_run "hello" '{"name":"Test"}'
+#
+#   # Answer the tool's questions, one --answer per question in the order
+#   # asked (the tool runs again for each; --verbose shows the replay trace)
+#   run_test "deploy" '{}' "confirmed" --answer confirmed=true
 #
 #   # Pass roots (comma-separated) and timeout overrides
 #   # run_test "hello" '{"name":"Roots"}' "" "--roots" "/repo,/other" "--timeout" "15"

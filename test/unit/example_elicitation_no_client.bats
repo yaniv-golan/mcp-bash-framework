@@ -11,7 +11,7 @@ load '../common/fixtures'
 @test "example 08: without client elicitation support the tool returns its own result" {
 	command -v jq >/dev/null 2>&1 || skip "jq not available"
 	run env MCPBASH_TOOL_ALLOWLIST='*' "${MCPBASH_HOME}/bin/mcp-bash" run-tool example-elicitation \
-		--project-root "${MCPBASH_HOME}/examples/08-elicitation" --args '{}'
+		--project-root "${MCPBASH_HOME}/examples/08-elicitation" --args '{}' --no-elicitation
 	assert_success
 	# exactly one JSON result on stdout
 	assert_equal "$(printf '%s' "${output}" | jq -s 'length' 2>/dev/null)" "1"

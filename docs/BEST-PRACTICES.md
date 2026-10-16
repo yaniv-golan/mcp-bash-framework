@@ -1671,6 +1671,9 @@ mcp-bash run-tool my-tool --args '{}' --minimal
 
 # Specify project root explicitly
 mcp-bash run-tool my-tool --args '{}' --project-root /path/to/project
+
+# Answer the tool's questions (one --answer per question, in order)
+mcp-bash run-tool deploy --args '{}' --answer confirmed=true
 ```
 
 > **Windows/Git Bash users**: Set `MSYS2_ARG_CONV_EXCL="*"` before running commands with path arguments (`--roots`, `--project-root`) to prevent automatic path mangling. Example: `MSYS2_ARG_CONV_EXCL="*" mcp-bash run-tool my-tool --roots '/repo'`. See [docs/WINDOWS.md](WINDOWS.md) for details.
@@ -1689,6 +1692,7 @@ Notes:
 | Validate input schema handling | `mcp-bash run-tool my-tool --args '{"invalid":true}' --dry-run` |
 | Reproduce bug with specific inputs | `mcp-bash run-tool my-tool --args '{"buggy":"input"}'` |
 | CI smoke test | `mcp-bash run-tool my-tool --args '{}' --timeout 10` |
+| A tool that asks the user | `mcp-bash run-tool deploy --args '{}' --answer confirmed=true --verbose` |
 
 **Dry-run output:**
 ```
@@ -1696,17 +1700,18 @@ Tool: my-tool
 Args: 42 bytes
 Roots: 2
 Timeout: 30
+Answers: 0
 Status: Ready to execute (re-run without --dry-run to run)
 ```
 
 **Notes:**
 - Roots are comma-separated (not colon) to avoid conflicts with Windows drive letters
-- Elicitation is not supported in CLI mode; tools requiring user input will receive decline responses
+- run-tool calls tools as a 2026-07-28 client: a question ends the run, and `--answer` (one per question, in order) answers it on the rerun; with no answer left, run-tool prints the `input_required` result and exits 1. See [ELICITATION.md](ELICITATION.md#testing-it-mcp-bash-run-tool---answer)
 - Exit codes propagate from the tool; non-zero indicates failure
 
 #### Scaffolded test harness
 - Generate `test/run.sh` and `test/README.md` with `bin/mcp-bash scaffold test` (inside an existing project).
-- Run `./test/run.sh [--verbose] [--force]` to exercise tools via `run-tool`; validation runs first unless `--force` is set.
+- Run `./test/run.sh [--verbose] [--force]` to exercise tools via `run-tool`; validation runs first unless `--force` is set. Arguments after a test's description go to `run-tool`, so `run_test "deploy" '{}' "confirmed" --answer confirmed=true` answers its question.
 - The scaffold refuses to overwrite existing files so contributors do not lose local edits.
 
 Cache results by exporting `MCP_TESTS_SKIP_REMOTE=1` when remote fixtures are unavailable. Document skipped suites in your PR description.

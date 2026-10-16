@@ -27,7 +27,7 @@ setup() {
 
 run_tool() {
 	run env PATH="${FAKEBIN}:${PATH}" MCPBASH_TOOL_ALLOWLIST='*' \
-		"${MCPBASH_HOME}/bin/mcp-bash" run-tool "$1" --project-root "${PROJ}" --args "$2"
+		"${MCPBASH_HOME}/bin/mcp-bash" run-tool "$1" --project-root "${PROJ}" --args "$2" --no-elicitation
 }
 
 # The tool's own refusal must arrive as one isError result, not a protocol

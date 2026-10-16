@@ -830,7 +830,8 @@ mcp_require_path() {
 # the server), step.N.{sig,out,err,rc}, q.N.{sig,req,ans}, modes ("F U": the
 # client can answer form / URL questions), and stop ("input_required" or
 # "diverged", which the server acts on; diverged says where for the client,
-# diverged.detail what changed). Files are 0600. Steps and questions are
+# diverged.detail what changed), and trace (one line per step or question in
+# this run, for mcp-bash run-tool). Files are 0600. Steps and questions are
 # numbered in the order they run, so they must run one after another, not
 # in parallel (mcp_once a & mcp_once b & wait can number both 1).
 
@@ -859,6 +860,14 @@ __mcp_mrtr_next() {
 	__mcp_el_n=$((__mcp_el_n + 1))
 	__mcp_mrtr_write "${__mcp_el_file}" "${__mcp_el_n}"
 	printf '%s' "${__mcp_el_n}"
+}
+
+# Add a line to this run's trace: "step N executed|replayed SIG" or
+# "question N asked|answered".
+__mcp_mrtr_trace() {
+	local __mcp_el_file="${MCP_MRTR_JOURNAL}/trace"
+	[ -f "${__mcp_el_file}" ] || (umask 077 && : >"${__mcp_el_file}") 2>/dev/null || true
+	printf '%s\n' "$1" >>"${__mcp_el_file}" 2>/dev/null || true
 }
 
 # Write FILE atomically (the server may read it at any time), 0600 whatever
@@ -928,6 +937,7 @@ mcp_once() {
 		if [ "${__mcp_once_old}" != "${__mcp_once_sig}" ]; then
 			__mcp_mrtr_diverged "step ${__mcp_once_n}" "step ${__mcp_once_n} was \`${__mcp_once_old}\`, now \`${__mcp_once_sig}\`"
 		fi
+		__mcp_mrtr_trace "step ${__mcp_once_n} replayed ${__mcp_once_sig}"
 		cat "${__mcp_once_base}.out"
 		cat "${__mcp_once_base}.err" >&2
 		__mcp_once_rc="$(cat "${__mcp_once_base}.rc" 2>/dev/null || printf 1)"
@@ -941,6 +951,7 @@ mcp_once() {
 	__mcp_mrtr_write "${__mcp_once_base}.sig" "${__mcp_once_sig}"
 	# Written last: a step with no .rc never finished, and runs again.
 	__mcp_mrtr_write "${__mcp_once_base}.rc" "${__mcp_once_rc}"
+	__mcp_mrtr_trace "step ${__mcp_once_n} executed ${__mcp_once_sig}"
 	cat "${__mcp_once_base}.out"
 	cat "${__mcp_once_base}.err" >&2
 	return "${__mcp_once_rc}"
@@ -978,6 +989,7 @@ __mcp_mrtr_question() {
 	fi
 	if [ -f "${__mcp_el_base}.ans" ]; then
 		__mcp_el_ans="$(cat "${__mcp_el_base}.ans" 2>/dev/null || true)"
+		__mcp_mrtr_trace "question ${__mcp_el_n} answered"
 		printf '%s' "${__mcp_el_ans}"
 		case "${__mcp_el_ans}" in '{"action":"unavailable"'*) return 1 ;; esac
 		return 0
@@ -1006,6 +1018,7 @@ __mcp_mrtr_question() {
 			__mcp_mrtr_write "${__mcp_el_base}.req" "${__mcp_el_sig}"
 		fi
 	fi
+	__mcp_mrtr_trace "question ${__mcp_el_n} asked"
 	__mcp_mrtr_write "${MCP_MRTR_JOURNAL}/stop" "input_required"
 	__mcp_mrtr_block
 }

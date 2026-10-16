@@ -291,3 +291,23 @@ run_until_stop() {
 	run ls -l "${BATS_TEST_TMPDIR}/made"
 	assert_output --regexp '^-rw-r--r--'
 }
+
+@test "mrtr: each run's trace lists its steps and questions, for run-tool" {
+	flow() {
+		mcp_once side_effect before >/dev/null 2>&1
+		mcp_elicit_confirm "Go?" || return 1
+		mcp_once side_effect after >/dev/null 2>&1
+	}
+	run_until_stop flow
+	kill_tree "${BLOCKED}"
+	BLOCKED=""
+	assert_equal "$(cat "${J}/trace")" "step 1 executed side_effect before
+question 1 asked"
+	rm -f "${J}/trace"
+	printf '%s' '{"action":"accept","content":{"confirmed":true}}' >"${J}/q.1.ans"
+	next_run
+	flow
+	assert_equal "$(cat "${J}/trace")" "step 1 replayed side_effect before
+question 1 answered
+step 2 executed side_effect after"
+}

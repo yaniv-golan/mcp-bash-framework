@@ -188,6 +188,100 @@ mcp_cli_run_tool_print_env_policy() {
 	done < <(mcp_meta_env_report)
 }
 
+# The inputResponses entry for one question from one --answer value.
+# Usage: mcp_cli_run_tool_answer_response PARAMS_JSON ANSWER
+# PARAMS_JSON is the question (inputRequests.<key>.params). ANSWER is
+# accept, decline, cancel, a JSON object (the content as is), FIELD=VALUE, or
+# a bare VALUE for a question with one field. A value is typed by the field's
+# schema: boolean, number, integer, or an array split on commas. Prints the
+# response, or the reason it can't be built (and returns 1).
+mcp_cli_run_tool_answer_response() {
+	local reply
+	reply="$(printf '%s' "$1" | "${MCPBASH_JSON_TOOL_BIN}" -c --arg a "$2" '
+		def fields: (.requestedSchema.properties // {});
+		def typed($f; $k; $v):
+			($f[$k].type // "string") as $t
+			| if $t == "boolean" then
+				(if $v == "true" then true elif $v == "false" then false
+				else error("\($k) must be true or false") end)
+			elif $t == "integer" then
+				(($v | tonumber?) // null) as $n
+				| if $n == null or ($n | floor) != $n then error("\($k) must be a whole number") else $n end
+			elif $t == "number" then
+				(($v | tonumber?) // null) as $n
+				| if $n == null then error("\($k) must be a number") else $n end
+			elif $t == "array" then ($v | split(","))
+			else $v end;
+		def accept($f; $k; $v):
+			if ($f | has($k)) then {action: "accept", content: {($k): typed($f; $k; $v)}}
+			else error("the question has no field \($k) (its fields: \($f | keys | join(", ")))") end;
+		. as $q
+		| fields as $f
+		| try (
+			if $a == "decline" or $a == "cancel" then {action: $a}
+			elif ($q.mode // "form") == "url" then
+				(if $a == "accept" then {action: "accept"}
+				else error("a URL question takes accept, decline or cancel") end)
+			elif $a == "accept" then {action: "accept", content: {}}
+			elif ($a | startswith("{")) then
+				((try ($a | fromjson) catch null) as $c
+				| if ($c | type) == "object" then {action: "accept", content: $c}
+				else error("the answer is not a JSON object") end)
+			elif ($a | contains("=")) then
+				($a | split("=")) as $kv
+				| accept($f; $kv[0]; ($kv[1:] | join("=")))
+			elif ($f | keys | length) == 1 then accept($f; ($f | keys)[0]; $a)
+			else error("answer with FIELD=VALUE (the question'"'"'s fields: \($f | keys | join(", ")))") end
+			| {response: .}
+		) catch {error: (if type == "string" then . else "invalid answer" end)}
+	' 2>/dev/null)" || reply='{"error":"invalid answer"}'
+	if printf '%s' "${reply}" | "${MCPBASH_JSON_TOOL_BIN}" -e 'has("response")' >/dev/null 2>&1; then
+		printf '%s' "${reply}" | "${MCPBASH_JSON_TOOL_BIN}" -c '.response'
+		return 0
+	fi
+	printf '%s' "${reply}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.error'
+	return 1
+}
+
+# One line of the replay trace, for run N of a call with questions:
+# "run 2: 1 step replayed, 1 executed, stopped at question 2 (Who?)". With
+# VERBOSE=true, each step and question follows on its own line.
+# Usage: mcp_cli_run_tool_print_trace N OUTCOME TRACE RESULT_JSON VERBOSE
+mcp_cli_run_tool_print_trace() {
+	local run="$1" outcome="$2" trace="$3" result="$4" verbose="$5"
+	local executed=0 replayed=0 line parts="" end=""
+	while IFS= read -r line; do
+		case "${line}" in
+		"step "*" executed"*) executed=$((executed + 1)) ;;
+		"step "*" replayed"*) replayed=$((replayed + 1)) ;;
+		esac
+	done <<<"${trace}"
+	if [ "${replayed}" -gt 0 ]; then
+		parts="${replayed} step"
+		[ "${replayed}" -eq 1 ] || parts="${parts}s"
+		parts="${parts} replayed"
+		[ "${executed}" -eq 0 ] || parts="${parts}, ${executed} executed"
+	elif [ "${executed}" -gt 0 ]; then
+		parts="${executed} step"
+		[ "${executed}" -eq 1 ] || parts="${parts}s"
+		parts="${parts} executed"
+	fi
+	case "${outcome}" in
+	input_required)
+		end="$(printf '%s' "${result}" | "${MCPBASH_JSON_TOOL_BIN}" -r '
+			.inputRequests | to_entries[0] | "stopped at question \(.key | ltrimstr("q")) (\(.value.params.message // ""))"' 2>/dev/null || printf 'stopped at a question')"
+		;;
+	diverged) end="diverged${_MCP_TOOLS_MRTR_DETAIL:+: ${_MCP_TOOLS_MRTR_DETAIL}}" ;;
+	*) end="completed" ;;
+	esac
+	printf 'run %s: %s\n' "${run}" "${parts:+${parts}, }${end}" >&2
+	if [ "${verbose}" = "true" ] && [ -n "${trace}" ]; then
+		while IFS= read -r line; do
+			[ -n "${line}" ] && printf '  %s\n' "${line}" >&2
+		done <<<"${trace}"
+	fi
+}
+
 mcp_cli_run_tool() {
 	local project_root=""
 	local args_json="{}"
@@ -204,6 +298,8 @@ mcp_cli_run_tool() {
 	local tool_name=""
 	local with_server_env="false"
 	local source_files=()
+	local answers=()
+	local no_elicitation="false"
 
 	while [ $# -gt 0 ]; do
 		case "$1" in
@@ -258,6 +354,21 @@ mcp_cli_run_tool() {
 		--with-server-env)
 			with_server_env="true"
 			;;
+		--answer)
+			shift
+			# A flag after --answer is a missing value, not an answer; a
+			# value that starts with -- can still be given as FIELD=--x.
+			case "${1:-}" in
+			'' | --*)
+				printf 'run-tool: --answer requires a value (FIELD=VALUE, VALUE, a JSON object, accept, decline or cancel)\n' >&2
+				exit 1
+				;;
+			esac
+			answers+=("$1")
+			;;
+		--no-elicitation)
+			no_elicitation="true"
+			;;
 		--source)
 			shift
 			if [ -z "${1:-}" ]; then
@@ -274,13 +385,26 @@ Usage:
                      [--minimal] [--project-root DIR] [--print-env]
                      [--allow-self] [--allow TOOL] [--allow-all]
                      [--with-server-env] [--source FILE]...
+                     [--answer ANSWER]... [--no-elicitation]
 
-Invoke a tool directly with the same env wiring used by the server.
+Invoke a tool directly with the same env wiring used by the server, as a
+2026-07-28 client calls it.
 
 Options:
   --with-server-env  Source env.sh from the server dir (server.d, or MCPBASH_SERVER_DIR) before tool execution
   --source FILE      Source FILE before tool execution (repeatable;
                      sourced after --with-server-env, in order specified)
+  --answer ANSWER    Answer the tool's next question (repeatable, one per
+                     question, in the order asked): FIELD=VALUE, a bare VALUE
+                     for a question with one field, a JSON object (the
+                     content as is), accept, decline or cancel. The tool runs
+                     again from the start for each answer; steps wrapped in
+                     mcp_once replay. A trace of the runs goes to stderr
+                     (--verbose lists each step). A question with no answer
+                     left prints the input_required result and exits 1.
+  --no-elicitation   Call as a client that can't ask (such as a Claude
+                     Desktop extension): questions answer "unavailable"
+                     and --arg answers them, as there.
 
 Examples:
   # Allow just this invocation
@@ -293,6 +417,8 @@ Examples:
   # Source server environment before execution
   mcp-bash run-tool hello --with-server-env --allow-self
   mcp-bash run-tool hello --source config/test.sh --allow-self
+  # Answer the tool's questions
+  mcp-bash run-tool deploy --allow-self --answer confirmed=true
 EOF
 			exit 0
 			;;
@@ -315,6 +441,11 @@ EOF
 		esac
 		shift
 	done
+
+	if [ "${no_elicitation}" = "true" ] && [ "${#answers[@]}" -gt 0 ]; then
+		printf 'run-tool: --answer and --no-elicitation do not go together: a client that cannot ask gets no questions\n' >&2
+		exit 1
+	fi
 
 	if [ -z "${tool_name}" ]; then
 		if [ $# -gt 0 ]; then
@@ -490,6 +621,7 @@ EOF
 		printf 'Args: %s bytes\n' "$(printf '%s' "${args_json}" | wc -c | tr -d ' ')"
 		printf 'Roots: %d\n' "${roots_count}"
 		printf 'Timeout: %s\n' "${effective_timeout:-none}"
+		printf 'Answers: %d\n' "${#answers[@]}"
 		printf 'Status: Ready to execute (re-run without --dry-run to run)\n'
 		exit 0
 	fi
@@ -503,10 +635,71 @@ EOF
 	MCPBASH_TOOL_POLICY_CONTEXT="run-tool"
 	export MCPBASH_TOOL_POLICY_CONTEXT
 
-	local result_json=""
-	# CLI invocations don't have request _meta; pass empty object
-	if mcp_tools_call "${tool_name}" "${args_json}" "${effective_timeout}" "{}"; then
+	# Call the tool as a 2026-07-28 client that can answer questions: a
+	# question ends the run with input_required, and the next --answer goes
+	# into the retry. With --no-elicitation, as one that can't ask.
+	local can_ask=1
+	[ "${no_elicitation}" != "true" ] || can_ask=0
+	# shellcheck disable=SC2034  # Read by mcp_tools_call and lib/elicitation.sh
+	MCPBASH_PROTOCOL_ERA="modern"
+	# shellcheck disable=SC2034
+	MCPBASH_CLIENT_SUPPORTS_ELICITATION="${can_ask}"
+	# shellcheck disable=SC2034
+	MCPBASH_CLIENT_ELICIT_FORM="${can_ask}"
+	# shellcheck disable=SC2034
+	MCPBASH_CLIENT_ELICIT_URL="${can_ask}"
+	# shellcheck disable=SC2034  # Read by mcp_tools_call (lib/tools.sh)
+	MCPBASH_MRTR_REQUEST_STATE=""
+	# shellcheck disable=SC2034
+	MCPBASH_MRTR_INPUT_RESPONSES=""
+
+	local result_json="" call_status run=0 used=0
+	local question_key question_params response
+	while :; do
+		run=$((run + 1))
+		call_status=0
+		# CLI invocations don't have request _meta; pass empty object
+		mcp_tools_call "${tool_name}" "${args_json}" "${effective_timeout}" "{}" || call_status=$?
 		result_json="${_MCP_TOOLS_RESULT:-}"
+		if [ "${run}" -gt 1 ] || [ "${_MCP_TOOLS_MRTR_OUTCOME:-}" = "input_required" ]; then
+			mcp_cli_run_tool_print_trace "${run}" "${_MCP_TOOLS_MRTR_OUTCOME:-}" "${_MCP_TOOLS_MRTR_TRACE:-}" "${result_json}" "${verbose}"
+		fi
+		[ "${call_status}" -eq 0 ] || break
+		printf '%s' "${result_json}" | "${MCPBASH_JSON_TOOL_BIN}" -e '.resultType == "input_required"' >/dev/null 2>&1 || break
+		question_key="$(printf '%s' "${result_json}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.inputRequests | keys[0]')"
+		question_params="$(printf '%s' "${result_json}" | "${MCPBASH_JSON_TOOL_BIN}" -c --arg k "${question_key}" '.inputRequests[$k].params')"
+		if [ "${used}" -ge "${#answers[@]}" ]; then
+			printf '%s\n' "${result_json}"
+			printf '%s' "${question_params}" | "${MCPBASH_JSON_TOOL_BIN}" -r --arg k "${question_key}" '
+				"run-tool: the tool asks question \($k | ltrimstr("q")): \(.message // "")\n"
+				+ "Answer it with --answer "
+				+ (if (.mode // "form") == "url" then "accept, decline or cancel"
+				else ((.requestedSchema.properties // {}) | keys) as $f
+					| if ($f | length) == 0 then "accept, decline or cancel"
+					else "\($f[0])=VALUE (its fields: \($f | join(", "))), decline or cancel" end
+				end)' >&2
+			exit 1
+		fi
+		if ! response="$(mcp_cli_run_tool_answer_response "${question_params}" "${answers[${used}]}")"; then
+			printf 'run-tool: --answer %s for question %s: %s\n' "${answers[${used}]}" "${question_key#q}" "${response}" >&2
+			exit 1
+		fi
+		used=$((used + 1))
+		# shellcheck disable=SC2034  # Read by mcp_tools_call (lib/tools.sh)
+		MCPBASH_MRTR_REQUEST_STATE="$(printf '%s' "${result_json}" | "${MCPBASH_JSON_TOOL_BIN}" -r '.requestState')"
+		# shellcheck disable=SC2034
+		MCPBASH_MRTR_INPUT_RESPONSES="$("${MCPBASH_JSON_TOOL_BIN}" -n -c --arg k "${question_key}" --argjson r "${response}" '{($k): $r}')"
+	done
+	if [ "${used}" -lt "${#answers[@]}" ]; then
+		local unused=$((${#answers[@]} - used))
+		if [ "${unused}" -eq 1 ]; then
+			printf 'run-tool: 1 --answer value was not used\n' >&2
+		else
+			printf 'run-tool: %d --answer values were not used\n' "${unused}" >&2
+		fi
+	fi
+
+	if [ "${call_status}" -eq 0 ]; then
 		printf '%s\n' "${result_json}"
 		# Any error result (isError: true), a policy denial included, exits 1,
 		# so scripts and CI that run a tool see that it failed.

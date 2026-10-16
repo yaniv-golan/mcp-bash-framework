@@ -58,6 +58,43 @@ assert_contains "ok (second)... " "${run_output}" "expected the second test to r
 assert_contains "2 passed" "${run_output}" "expected both tests counted"
 cp "${TEST_TMPDIR}/run.sh.orig" "${PROJECT}/test/run.sh"
 
+printf ' -> run_test passes --answer through to run-tool\n'
+mkdir -p "${PROJECT}/tools/ask"
+printf '{"name":"ask","description":"Asks first","inputSchema":{"type":"object"},"timeoutSecs":30}\n' >"${PROJECT}/tools/ask/tool.meta.json"
+cat >"${PROJECT}/tools/ask/tool.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+source "${MCP_SDK}/tool-sdk.sh"
+mcp_elicit_confirm "Go?" || exit 1
+echo went
+EOF
+chmod +x "${PROJECT}/tools/ask/tool.sh"
+cp "${PROJECT}/test/run.sh" "${TEST_TMPDIR}/run.sh.orig"
+# Put a test case where a user would: before the END OF TESTS marker.
+add_case() {
+	awk -v line="$1" '/^# END OF TESTS/ && !done { print line; done = 1 } { print }' \
+		"${TEST_TMPDIR}/run.sh.orig" >"${PROJECT}/test/run.sh"
+	grep -q -- "$1" "${PROJECT}/test/run.sh" || test_fail "could not add a test case to run.sh"
+}
+add_case 'run_test "ask" "{}" "answered" --answer confirmed=true'
+run_output="$(MCPBASH_TOOL_ALLOWLIST=ask MCPBASH_BIN="${MCPBASH_HOME}/bin/mcp-bash" bash "${PROJECT}/test/run.sh" --force 2>&1)" || {
+	printf 'run.sh output:\n%s\n' "${run_output}" >&2
+	test_fail "run_test with --answer should pass"
+}
+assert_contains "PASS" "${run_output}" "expected the answered tool to pass"
+# Without an answer the question stops the tool: the test fails and says why.
+add_case 'run_test "ask" "{}" "unanswered"'
+set +e
+run_output="$(MCPBASH_TOOL_ALLOWLIST=ask MCPBASH_BIN="${MCPBASH_HOME}/bin/mcp-bash" bash "${PROJECT}/test/run.sh" --force 2>&1)"
+status=$?
+set -e
+if [ "${status}" -eq 0 ]; then
+	printf 'run.sh output:\n%s\n' "${run_output}" >&2
+	test_fail "run_test without --answer should fail on a question"
+fi
+assert_contains "--answer" "${run_output}" "expected the failure to say how to answer"
+cp "${TEST_TMPDIR}/run.sh.orig" "${PROJECT}/test/run.sh"
+
 printf ' -> scaffold test guards existing run.sh\n'
 set +e
 (

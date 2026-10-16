@@ -61,6 +61,17 @@ mcp-bash run-tool my-tool \
 
 > **Windows/Git Bash Note**: Set `MSYS2_ARG_CONV_EXCL="*"` before running commands with path arguments to prevent automatic path mangling (e.g., `/repo` becoming `C:/Git/repo`). The scaffolded `test/run.sh` sets this automatically.
 
+### Testing Tools That Ask the User
+
+A question ends the run; `--answer` answers it and the tool runs again (one `--answer` per question, in the order asked). Pass them after the description:
+
+```bash
+run_test "deploy" '{}' "confirmed" --answer confirmed=true
+run_test "deploy" '{}' "declined" --answer decline
+```
+
+Without an answer the test fails and says which question needs one. `--verbose` shows the trace of each run (steps executed and replayed).
+
 ### Testing Error Cases
 
 ```bash
