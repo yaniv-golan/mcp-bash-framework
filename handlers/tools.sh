@@ -107,7 +107,9 @@ mcp_handle_tools() {
 			return 0
 		fi
 		# A modern retry after a question (lib/mrtr.sh): the ticket and the
-		# client's answers. A legacy request never has them.
+		# client's answers. A legacy request never has them. A requestState
+		# that isn't hex is replaced before jq -r and $(...) could strip a
+		# trailing newline from it and make it look like a ticket.
 		MCPBASH_MRTR_REQUEST_STATE=""
 		MCPBASH_MRTR_INPUT_RESPONSES=""
 		if [ "${MCPBASH_PROTOCOL_ERA:-legacy}" = "modern" ]; then
@@ -116,7 +118,7 @@ mcp_handle_tools() {
 				.params as $p
 				| if ($p | has("requestState")) and (($p.requestState | type) != "string") then "requestState must be a string"
 				elif ($p | has("inputResponses")) and (($p.inputResponses | type) != "object") then "inputResponses must be an object"
-				else [($p.requestState // ""), ($p.inputResponses // null)] end
+				else [($p.requestState // "" | if (explode | all(.[]; (. >= 48 and . <= 57) or (. >= 97 and . <= 102))) then . else "not-a-ticket" end), ($p.inputResponses // null)] end
 			' 2>/dev/null || printf '"Invalid params"')"
 			case "${mrtr_fields}" in
 			'"'*)

@@ -705,7 +705,8 @@ _mcp_tools_emit_error_result() {
 		# shellcheck source=../sdk/tool-error.sh disable=SC1091
 		. "${MCPBASH_HOME}/sdk/tool-error.sh"
 	fi
-	[[ "${exit_code}" =~ ^-?[0-9]+$ ]] || exit_code=1
+	# "null" for a result that no tool exit produced.
+	[[ "${exit_code}" =~ ^-?[0-9]+$ ]] || [ "${exit_code}" = "null" ] || exit_code=1
 	[ "${data}" = "null" ] && data=""
 
 	local args=()
@@ -2259,10 +2260,14 @@ mcp_tools_call() {
 		fi
 	fi
 	# A question stops the tool through its timeout watchdog, so a call with
-	# a journal always has one (a day, when the tool sets no timeout).
-	local run_timeout="${effective_timeout}"
+	# a journal always has one. When the tool sets no timeout, that watchdog
+	# only watches the journal: no time limit of any kind, not even
+	# MCPBASH_MAX_TIMEOUT_SECS (_MCP_TIMEOUT_JOURNAL_ONLY, read by
+	# mcp_timeout_spawn_watchdog).
+	local run_timeout="${effective_timeout}" run_journal_only=""
 	if [ -z "${run_timeout}" ] && [ -n "${mrtr_dir}" ]; then
-		run_timeout=86400
+		run_timeout=0
+		run_journal_only="true"
 	fi
 
 	local exit_code
@@ -2501,6 +2506,8 @@ mcp_tools_call() {
 
 		# Run tool and capture exit code - then write timeout reason without affecting exit
 		local tool_exit_code=0
+		# shellcheck disable=SC2034  # Read by the watchdog with_timeout starts
+		_MCP_TIMEOUT_JOURNAL_ONLY="${run_journal_only}"
 		if [ -n "${run_timeout}" ]; then
 			if [ "${stderr_streaming_enabled}" = "true" ]; then
 				with_timeout "${run_timeout}" -- "${tool_runner[@]}" 2> >(tee "${stderr_file}" >&2) && tool_exit_code=0 || tool_exit_code=$?
@@ -2526,20 +2533,30 @@ mcp_tools_call() {
 	# than the run before? Neither is a tool failure. A cancelled call falls
 	# through to the cancel handling below.
 	if [ -n "${mrtr_dir}" ]; then
-		rm -f "${mrtr_dir}/inflight"
 		mcp_mrtr_unbind_worker "${elicit_key}"
 		if [ -z "${MCP_CANCEL_FILE:-}" ] || [ ! -f "${MCP_CANCEL_FILE}" ]; then
+			# The journal went away under the run: its steps may not have been
+			# recorded, so its output isn't this call's answer.
+			if [ ! -d "${mrtr_dir}" ]; then
+				mcp_mrtr_open_expired
+				_mcp_tools_emit_error_result "${MCP_MRTR_ERROR_TYPE}" "${MCP_MRTR_ERROR_MESSAGE}" "" "" "" null
+				cleanup_tool_temp_files
+				return 0
+			fi
 			case "$(mcp_mrtr_run_outcome "${mrtr_dir}")" in
 			input_required)
+				mcp_mrtr_release "${mrtr_dir}"
 				_MCP_TOOLS_RESULT="$(mcp_mrtr_pending_result "${mrtr_dir}" "${mrtr_ticket}")"
 				cleanup_tool_temp_files
 				return 0
 				;;
 			diverged)
+				# Only the position goes to the client: the steps' command
+				# lines can hold secrets (diverged.detail keeps them here).
 				local mrtr_why
 				mrtr_why="$(cat "${mrtr_dir}/diverged" 2>/dev/null || true)"
 				mcp_mrtr_close "${mrtr_dir}"
-				_mcp_tools_emit_error_result diverged "${mrtr_why:-the tool took a different path on resume}" "Run the tool again: its answers no longer match the question it asks." "" "" "${exit_code}"
+				_mcp_tools_emit_error_result diverged "${mrtr_why:-The tool took another path than the run before}" "Run the tool again. A step whose arguments change between runs needs mcp_once --key NAME." "" "" null
 				cleanup_tool_temp_files
 				return 0
 				;;

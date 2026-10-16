@@ -140,8 +140,12 @@ run_until_stop() {
 	next_run
 	run_until_stop mcp_once side_effect b
 	assert_equal "$(cat "${J}/stop")" "diverged"
+	# The client sees the position only: command lines can hold secrets.
 	run cat "${J}/diverged"
 	assert_output --partial "step 1"
+	refute_output --partial "side_effect"
+	# The detail stays in the journal.
+	run cat "${J}/diverged.detail"
 	assert_output --partial "side_effect a"
 	assert_output --partial "side_effect b"
 	# The new step never ran.
@@ -215,6 +219,10 @@ run_until_stop() {
 	assert_equal "$(cat "${J}/stop")" "diverged"
 	run cat "${J}/diverged"
 	assert_output --partial "question 1"
+	refute_output --partial "Delete"
+	run cat "${J}/diverged.detail"
+	assert_output --partial "Delete a?"
+	assert_output --partial "Delete b?"
 }
 
 @test "mrtr: a URL question is journaled in URL mode" {
@@ -241,4 +249,45 @@ run_until_stop() {
 	mcp_elicit_string -v name --arg name "Name?"
 	assert_equal "${name}" "Ada"
 	[ ! -e "${J}/stop" ]
+}
+
+@test "mrtr: a journal that is gone ends the call, never a plain run or the legacy path" {
+	MCP_MRTR_JOURNAL="${BATS_TEST_TMPDIR}/gone"
+	run --separate-stderr mcp_once side_effect a
+	assert_failure
+	assert_output --partial "request_expired"
+	assert_equal "$(cat "${COUNT}")" ""
+	run --separate-stderr mcp_elicit_confirm "Go?"
+	assert_failure
+	assert_output --partial "request_expired"
+	[[ "${stderr}" != *"not configured"* ]]
+}
+
+@test "mrtr: a journaled answer is read even when the retry's client can't answer that mode" {
+	run_until_stop mcp_elicit_url "Sign in" "https://example.com/login"
+	kill_tree "${BLOCKED}"
+	BLOCKED=""
+	printf '%s' '{"action":"accept","content":null}' >"${J}/q.1.ans"
+	next_run
+	printf '0 0' >"${J}/modes"
+	mcp_elicit_url "Sign in" "https://example.com/login"
+	assert_equal "${MCP_ELICIT_ACTION}" "accept"
+}
+
+@test "mrtr: journal files are private whatever the tool's umask" {
+	umask 022
+	mcp_once side_effect a >/dev/null 2>&1
+	run_until_stop mcp_elicit_confirm "Go?"
+	local f
+	for f in pos.step step.1.out step.1.err step.1.sig step.1.rc pos.q q.1.sig q.1.req stop; do
+		run ls -l "${J}/${f}"
+		assert_output --regexp '^-rw-------'
+	done
+	# The step itself still runs with the tool's umask.
+	mk() { : >"${BATS_TEST_TMPDIR}/made"; }
+	next_run
+	rm -f "${J}"/step.*
+	mcp_once mk
+	run ls -l "${BATS_TEST_TMPDIR}/made"
+	assert_output --regexp '^-rw-r--r--'
 }

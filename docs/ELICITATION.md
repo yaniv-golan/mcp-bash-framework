@@ -109,11 +109,13 @@ deploy "${build_id}"                              # after the question: runs onc
 ```
 
 - `mcp_once [--key NAME] CMD [ARG...]` runs CMD in a subshell the first time and records its stdout, stderr and exit status; on the retry it replays them without running CMD. Wrap anything before a question that has a side effect, is slow, or can give a different answer next time. A step runs in a subshell in every run, so `cd`, `export` and assignments inside it don't reach your script: compute a value with `mcp_once` and assign it outside, as above. On legacy clients, and outside a modern call, CMD simply runs.
-- Steps and questions are matched by their position and their command line (or question). A run that takes another path than the one before ends in an error result of type `diverged`, never with an answer meant for another question. `--key NAME` matches a step by name instead, for a command whose arguments change between runs (a timestamp).
+- Steps and questions are matched by their position and their command line (or question). A run that takes another path than the one before ends in an error result of type `diverged` that names the step or question (not its command line, which can hold secrets), never with an answer meant for another question. `--key NAME` matches a step by name instead, for a command whose arguments change between runs (a timestamp, a token).
+- Run steps and questions one after another: positions are counted in order, so steps started in parallel (`mcp_once a & mcp_once b & wait`) can get the same one.
 - A step that was still running when the tool was stopped wasn't recorded, and runs again.
 - Progress and log notifications sent before the question are sent again on the retry.
 - `MCP_MRTR_ATTEMPT` is `1` on the first run, `2` on the retry, and so on: for logging, not to change what the tool does.
-- This server process keeps the call's journal for `MCPBASH_MRTR_TICKET_TTL_SECS` (15 minutes). A retry after that, or after the server restarted, gets an error result of type `request_expired` (run the tool again); one with another tool or other arguments gets `request_mismatch`. The tool is never re-run silently, which could repeat a side effect.
+- This server process keeps the call's journal for `MCPBASH_MRTR_TICKET_TTL_SECS` (15 minutes) after each question. A retry after that, or after the server restarted, gets an error result of type `request_expired` (run the tool again); one with another tool or other arguments gets `request_mismatch`. Only one retry with a `requestState` runs at a time: a duplicate sent while it runs is asked the open question again, or gets `request_in_progress`. The tool is never re-run silently, which could repeat a side effect.
+- The `TIMEOUT` argument of `mcp_elicit` doesn't apply on this path: the call ends at the question, and the user has until the TTL to answer.
 - A question is asked only when the request's `clientCapabilities` include `elicitation` (form, URL or both); otherwise the helpers answer `unavailable`, and `--arg` answers as on the legacy path. `mcp_elicit_confirm` never takes `--arg` from a client that can ask.
 
 ## Environment Variables

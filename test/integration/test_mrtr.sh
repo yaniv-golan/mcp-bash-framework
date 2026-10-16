@@ -3,9 +3,11 @@
 TEST_DESC="Modern tools/call questions: input_required, the retry with inputResponses, mcp_once replay, ticket checks."
 set -euo pipefail
 
+# It drives the server through named pipes (mkfifo), which Git Bash doesn't
+# provide.
 case "$(uname -s 2>/dev/null)" in
 MINGW* | MSYS* | CYGWIN*)
-	printf 'Skipping MRTR test on Windows environment\n'
+	printf 'Skipping MRTR test on Windows environment (no mkfifo)\n'
 	exit 0
 	;;
 esac
@@ -65,6 +67,19 @@ add_tool notimeout "" 'if mcp_elicit_confirm "Go?"; then echo go; else echo "no:
 add_tool drift 60 'mcp_elicit_confirm "Question for attempt ${MCP_MRTR_ATTEMPT}" && echo yes || echo no'
 # shellcheck disable=SC2016
 add_tool byarg 60 'mcp_elicit_string -v n --arg name "Name?" && echo "name=${n}" || echo "no: ${MCP_ELICIT_ACTION}"'
+# A step before the question and one after it, for duplicate retries.
+add_tool charge 60 '
+mcp_once bump charged >/dev/null
+if mcp_elicit_confirm "Ship?"; then
+	mcp_once bump shipped >/dev/null
+	echo shipped
+else
+	echo "no: ${MCP_ELICIT_ACTION}"
+fi'
+# A step whose arguments change between runs (here a "token").
+# shellcheck disable=SC2016
+add_tool secret 60 'mcp_once printf "%s" "token-${MCP_MRTR_ATTEMPT}" >/dev/null
+mcp_elicit_confirm "Go?" && echo yes || echo no'
 
 ELICIT_CAPS='{"elicitation":{"form":{}}}'
 
@@ -95,10 +110,18 @@ cleanup() {
 trap cleanup EXIT
 
 send() { printf '%s\n' "$1" >&3; }
-# wait_for ID: the response to ID (up to 60s); sets RESP and ELAPSED.
+# wait_for ID: the response to ID (up to 60s); sets RESP and ELAPSED. A
+# response read earlier while waiting for another id is in the transcript.
 wait_for() {
 	local id="$1" start="${SECONDS}"
 	RESP=""
+	if [ -f "${TRANSCRIPT}" ]; then
+		RESP="$(jq -c --argjson id "${id}" 'select(.id == $id)' "${TRANSCRIPT}" 2>/dev/null | tail -n 1)"
+		if [ -n "${RESP}" ]; then
+			ELAPSED=0
+			return 0
+		fi
+	fi
 	while [ $((SECONDS - start)) -lt 60 ]; do
 		test_read_line 4 1 || continue
 		printf '%s\n' "${TEST_LINE}" >>"${TRANSCRIPT}"
@@ -205,8 +228,55 @@ if [ -z "${A}" ] || [ -z "${B}" ] || [ "${A}" = "${B}" ]; then
 	test_fail "concurrent calls share a ticket: ${A} ${B}"
 fi
 
+# --- A requestState with a trailing newline is not the ticket -----------------
+send "$(req 19 '{"name":"deploy","arguments":{"env":"nl"}}')"
+wait_for 19
+T4="$(field '.result.requestState')"
+send "$(req 20 "$(jq -cn --arg t "${T4}"$'\n' '{name: "deploy", arguments: {env: "nl"}, requestState: $t, inputResponses: {q1: {action: "accept", content: {confirmed: true}}}}')")"
+wait_for 20
+assert_eq "request_expired" "$(field '.result._meta["mcpbash/error"].type')" "a ticket with a trailing newline is unknown"
+
+# --- A step that changes: the error names its position, not its command ------
+send "$(req 21 '{"name":"secret","arguments":{}}')"
+wait_for 21
+T5="$(field '.result.requestState')"
+send "$(req 22 "$(jq -cn --arg t "${T5}" '{name: "secret", arguments: {}, requestState: $t, inputResponses: {q1: {action: "accept", content: {confirmed: true}}}}')")"
+wait_for 22
+assert_eq "diverged" "$(field '.result._meta["mcpbash/error"].type')" "a changed step is a divergence"
+field '.result.content[0].text' | grep -q 'step 1' || test_fail "the error names the step: $(field '.result.content[0].text')"
+if printf '%s' "${RESP}" | grep -q 'token-'; then
+	test_fail "the divergence sent the step's command line: ${RESP}"
+fi
+assert_eq "null" "$(field '.result._meta.exitCode')" "no tool exit status for a divergence"
+
+# --- Duplicate retries with one ticket: the tool runs once ------------------
+send "$(req 30 '{"name":"charge","arguments":{}}')"
+wait_for 30
+T6="$(field '.result.requestState')"
+for id in 31 32 33 34; do
+	send "$(req "${id}" "$(jq -cn --arg t "${T6}" '{name: "charge", arguments: {}, requestState: $t, inputResponses: {q1: {action: "accept", content: {confirmed: true}}}}')")"
+done
+shipped=0
+for id in 31 32 33 34; do
+	wait_for "${id}"
+	case "$(field '.result.content[0].text // ""' | tr -d '\n')" in
+	shipped) shipped=$((shipped + 1)) ;;
+	"no: "*) test_fail "a duplicate retry ran the tool without its journal: ${RESP}" ;;
+	esac
+	case "$(field '.result.resultType'):$(field '.result._meta["mcpbash/error"].type // ""')" in
+	complete:"" | input_required:* | complete:request_in_progress | complete:request_expired) ;;
+	*) test_fail "unexpected answer to a duplicate retry: ${RESP}" ;;
+	esac
+	if [ "$(field '.result.resultType')" = "input_required" ]; then
+		assert_eq '["q1"]' "$(field '.result.inputRequests | keys | tostring')" "asked again, never with no questions"
+	fi
+done
+assert_eq "1" "${shipped}" "exactly one retry completed"
+assert_eq "1" "$(count charged)" "the step before the question ran once"
+assert_eq "1" "$(count shipped)" "the step after the question ran once"
+
 # --- A cancelled call: no response, and its journal is removed -------------
-journals() { find "${TEST_TMPDIR}/tmproot" -path '*/journal/*' -maxdepth 4 -type d 2>/dev/null | wc -l | tr -d ' '; }
+journals() { find "${TEST_TMPDIR}/tmproot" -path '*/journal/*' -maxdepth 4 -type d ! -name run 2>/dev/null | wc -l | tr -d ' '; }
 before="$(journals)"
 send "$(req 17 '{"name":"slowask","arguments":{}}')"
 sleep 1
@@ -214,14 +284,33 @@ send '{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":
 # A ping-like marker: the next call's answer comes after anything for 17.
 send "$(req 18 '{"name":"byarg","arguments":{"name":"Z"}}')"
 wait_for 18
-sleep 5
+waited=0
+while [ "$(journals)" != "${before}" ] && [ "${waited}" -lt 30 ]; do
+	sleep 1
+	waited=$((waited + 1))
+done
+assert_eq "${before}" "$(journals)" "the cancelled call left no journal"
+while test_read_line 4 1; do
+	printf '%s\n' "${TEST_LINE}" >>"${TRANSCRIPT}"
+done
 if grep -q '"id":17' "${TRANSCRIPT}"; then
 	test_fail "a cancelled call got a response: $(grep '"id":17' "${TRANSCRIPT}")"
 fi
-while test_read_line 4 1; do
-	case "${TEST_LINE}" in *'"id":17'*) test_fail "a cancelled call got a response: ${TEST_LINE}" ;; esac
-done
-assert_eq "${before}" "$(journals)" "the cancelled call left no journal"
+
+# --- No journal could be made: the question is unavailable, never sent -----
+# A regular file where the journal directory goes makes mkdir fail.
+JROOT="$(find "${TEST_TMPDIR}/tmproot" -type d -name journal 2>/dev/null | head -n 1)"
+[ -n "${JROOT}" ] || test_fail "no journal directory found"
+mv "${JROOT}" "${JROOT}.away"
+: >"${JROOT}"
+send "$(req 40 '{"name":"notimeout","arguments":{}}')"
+wait_for 40
+assert_eq "no: unavailable" "$(field '.result.content[0].text' | tr -d '\n')" "without a journal the question is unavailable"
+# At once: not through the legacy question files, which nothing answers on
+# this path.
+field '.result._meta.stderr // ""' | grep -q 'not configured' || test_fail "the question went to the legacy path: ${RESP}"
+rm -f "${JROOT}"
+mv "${JROOT}.away" "${JROOT}"
 
 # --- Never a server-to-client request on the modern path -------------------
 if [ -n "$(jq -c 'select(.method? != null)' "${TRANSCRIPT}")" ]; then

@@ -16,9 +16,14 @@
 # process, or comes after the TTL, is told to run the tool again; it is never
 # re-run silently, which could repeat a side effect.
 #
+# One run at a time: a run claims the journal (mkdir run, which is atomic) and
+# the server releases it when the run ends. A retry that can't claim it (a
+# duplicate of a retry already running) never runs the tool.
+#
 # Server files besides the SDK's: name, digest (sha256 of the canonical
-# arguments), created (epoch), attempt, modes ("F U"), inflight (pid of the
-# run in progress).
+# arguments), created (epoch of the last round: the TTL counts from it),
+# attempt, modes ("F U"), and the claim run/ with run/pid (the process that
+# holds it). Files are 0600 in a 0700 directory.
 
 set -euo pipefail
 
@@ -47,16 +52,61 @@ mcp_mrtr_ttl_secs() {
 	printf '%s' "${ttl}"
 }
 
-# sha256 of the arguments with object keys sorted (jq, gojq and jq 1.6 agree).
+# sha256 of the arguments with object keys sorted and numbers in one form
+# (jq 1.7+ keeps a number as written, so 1.0 and 1 would differ). jq 1.6
+# reads numbers as doubles: integers past 2^53 that differ only in their last
+# digits get one digest there.
 mcp_mrtr_args_digest() {
 	local args="${1:-}"
 	[ -n "${args}" ] || args='{}'
 	local canonical
-	canonical="$(printf '%s' "${args}" | "${MCPBASH_JSON_TOOL_BIN}" -c 'def canon: if type == "object" then to_entries | sort_by(.key) | map(.value |= canon) | from_entries elif type == "array" then map(canon) else . end; canon' 2>/dev/null)" || return 1
+	canonical="$(printf '%s' "${args}" | "${MCPBASH_JSON_TOOL_BIN}" -c 'def canon: if type == "object" then to_entries | sort_by(.key) | map(.value |= canon) | from_entries elif type == "array" then map(canon) elif type == "number" then . + 0 else . end; canon' 2>/dev/null)" || return 1
 	mcp_ids_sha256 "${canonical}"
 }
 
-# Remove journals past the TTL. Cheap: one directory listing per call.
+# Claim DIR for a run: fails when another run holds it. The pid is that of the
+# calling process (the worker), not $$, which is the server in every subshell
+# on bash 3.2.
+mcp_mrtr_claim() {
+	local dir="$1"
+	mkdir "${dir}/run" 2>/dev/null || return 1
+	mcp_lock_self_pid
+	printf '%s' "${_MCP_LOCK_SELF_PID}" >"${dir}/run/pid" 2>/dev/null || true
+	return 0
+}
+
+# Is DIR held by a run that is still alive? A claim without its pid yet is
+# being taken, so it counts as held.
+mcp_mrtr_claim_live() {
+	local dir="$1" pid
+	[ -d "${dir}/run" ] || return 1
+	pid="$(cat "${dir}/run/pid" 2>/dev/null || true)"
+	[ -n "${pid}" ] || return 0
+	kill -0 "${pid}" 2>/dev/null
+}
+
+# The run on DIR stopped at a question: free the journal for the retry, and
+# start the TTL of this round now.
+mcp_mrtr_release() {
+	local dir="$1"
+	[ -d "${dir}" ] || return 0
+	(umask 077 && date +%s >"${dir}/created.tmp" && mv -f "${dir}/created.tmp" "${dir}/created") 2>/dev/null || true
+	rm -f "${dir}/run/pid"
+	rmdir "${dir}/run" 2>/dev/null || true
+}
+
+# Questions in DIR that have no answer yet?
+mcp_mrtr_has_pending() {
+	local req
+	for req in "$1"/q.*.req; do
+		[ -f "${req}" ] || continue
+		[ -f "${req%.req}.ans" ] || return 0
+	done
+	return 1
+}
+
+# Remove journals past the TTL, except one a live run holds. Cheap: one
+# directory listing per call.
 mcp_mrtr_sweep() {
 	local root now ttl dir created
 	root="$(mcp_mrtr_journal_root)"
@@ -65,10 +115,13 @@ mcp_mrtr_sweep() {
 	ttl="$(mcp_mrtr_ttl_secs)"
 	for dir in "${root}"/*; do
 		[ -d "${dir}" ] || continue
+		if mcp_mrtr_claim_live "${dir}"; then
+			continue
+		fi
 		created="$(cat "${dir}/created" 2>/dev/null || printf 0)"
 		case "${created}" in '' | *[!0-9]*) created=0 ;; esac
 		if [ $((now - created)) -gt "${ttl}" ]; then
-			rm -rf "${dir:?}"
+			rm -rf "${dir:?}" 2>/dev/null || true
 		fi
 	done
 }
@@ -77,7 +130,7 @@ mcp_mrtr_close() {
 	local dir="${1:-}"
 	[ -n "${dir}" ] || return 0
 	case "${dir}" in "$(mcp_mrtr_journal_root)"/*) ;; *) return 0 ;; esac
-	rm -rf "${dir:?}"
+	rm -rf "${dir:?}" 2>/dev/null || true
 }
 
 # An answer as the tool sees it: the legacy rule (lib/rpc.sh), so a tool
@@ -104,6 +157,18 @@ mcp_mrtr_normalize_answer() {
 # The MCP_MRTR_* results are read by the caller (mcp_tools_call).
 # shellcheck disable=SC2034
 mcp_mrtr_open() {
+	# Journal files are 0600 whatever the server's umask.
+	local saved_umask
+	saved_umask="$(umask)"
+	umask 077
+	local status=0
+	mcp_mrtr_open_journal "$@" || status=$?
+	umask "${saved_umask}"
+	return "${status}"
+}
+
+# shellcheck disable=SC2034
+mcp_mrtr_open_journal() {
 	local name="$1" args="$2" state="$3" responses="$4" form="${5:-0}" url="${6:-0}"
 	MCP_MRTR_OUTCOME="" MCP_MRTR_DIR="" MCP_MRTR_TICKET="" MCP_MRTR_ATTEMPT=""
 	MCP_MRTR_ERROR_TYPE="" MCP_MRTR_ERROR_MESSAGE=""
@@ -128,25 +193,22 @@ mcp_mrtr_open() {
 			return 0
 		fi
 		dir="${root}/${ticket}"
-		(umask 077 && mkdir -p "${root}" && mkdir "${dir}") || {
+		if ! mkdir -p "${root}" 2>/dev/null || ! mkdir "${dir}" 2>/dev/null || ! mcp_mrtr_claim "${dir}"; then
 			MCP_MRTR_OUTCOME="none"
 			return 0
-		}
+		fi
 		printf '%s' "${name}" >"${dir}/name"
 		printf '%s' "${digest}" >"${dir}/digest"
 		date +%s >"${dir}/created"
 		printf '%s %s' "${form}" "${url}" >"${dir}/modes"
 		printf '1' >"${dir}/attempt"
-		printf '%s' "${BASHPID:-$$}" >"${dir}/inflight"
 		MCP_MRTR_OUTCOME="run" MCP_MRTR_DIR="${dir}" MCP_MRTR_TICKET="${ticket}" MCP_MRTR_ATTEMPT=1
 		return 0
 	fi
 
 	dir="${root}/${state}"
 	if ! mcp_mrtr_valid_ticket "${state}" || [ ! -d "${dir}" ] || [ ! -f "${dir}/created" ]; then
-		MCP_MRTR_OUTCOME="error"
-		MCP_MRTR_ERROR_TYPE="request_expired"
-		MCP_MRTR_ERROR_MESSAGE="This request expired or is unknown to this server: run the tool again"
+		mcp_mrtr_open_expired
 		return 0
 	fi
 	if [ "$(cat "${dir}/name" 2>/dev/null || true)" != "${name}" ] || [ "$(cat "${dir}/digest" 2>/dev/null || true)" != "${digest}" ]; then
@@ -157,19 +219,36 @@ mcp_mrtr_open() {
 	fi
 	MCP_MRTR_TICKET="${state}" MCP_MRTR_DIR="${dir}"
 
-	# The run that asked may still be stopping: wait a little, then ask again
-	# rather than run two copies of the tool on one journal.
-	local inflight waited=0 wait_secs="${MCPBASH_MRTR_INFLIGHT_WAIT_SECS:-2}"
+	# Claim the journal. Another run holds it when a retry with this ticket
+	# is already running (a client's duplicate): wait a little, then ask the
+	# open questions again, or say it is in progress. Never two runs.
+	local waited=0 wait_secs="${MCPBASH_MRTR_INFLIGHT_WAIT_SECS:-2}"
 	case "${wait_secs}" in '' | *[!0-9]*) wait_secs=2 ;; esac
-	inflight="$(cat "${dir}/inflight" 2>/dev/null || true)"
-	while [ -n "${inflight}" ] && kill -0 "${inflight}" 2>/dev/null; do
+	until mcp_mrtr_claim "${dir}"; do
+		if [ ! -d "${dir}" ]; then
+			mcp_mrtr_open_expired
+			return 0
+		fi
 		if [ "${waited}" -ge $((wait_secs * 10)) ]; then
-			MCP_MRTR_OUTCOME="input_required"
+			if mcp_mrtr_has_pending "${dir}"; then
+				MCP_MRTR_OUTCOME="input_required"
+			else
+				MCP_MRTR_OUTCOME="error"
+				MCP_MRTR_ERROR_TYPE="request_in_progress"
+				MCP_MRTR_ERROR_MESSAGE="Another call with this requestState is running: wait for its result"
+			fi
 			return 0
 		fi
 		sleep 0.1
 		waited=$((waited + 1))
 	done
+	# The journal may have been removed (the run before finished) while the
+	# claim was taken: then the claim is all that is left of it.
+	if [ ! -f "${dir}/created" ] || [ ! -f "${dir}/name" ]; then
+		rm -rf "${dir:?}" 2>/dev/null || true
+		mcp_mrtr_open_expired
+		return 0
+	fi
 
 	# Record the answers to the questions still open.
 	local req key answer missing=""
@@ -186,6 +265,7 @@ mcp_mrtr_open() {
 		printf '%s' "${answer}" | mcp_mrtr_normalize_answer >"${req%.req}.ans.tmp" && mv -f "${req%.req}.ans.tmp" "${req%.req}.ans"
 	done
 	if [ -n "${missing}" ]; then
+		mcp_mrtr_release "${dir}"
 		MCP_MRTR_OUTCOME="input_required"
 		return 0
 	fi
@@ -196,10 +276,16 @@ mcp_mrtr_open() {
 	attempt=$((attempt + 1))
 	printf '%s' "${attempt}" >"${dir}/attempt"
 	printf '%s %s' "${form}" "${url}" >"${dir}/modes"
-	rm -f "${dir}/pos.step" "${dir}/pos.q" "${dir}/stop" "${dir}/diverged"
-	printf '%s' "${BASHPID:-$$}" >"${dir}/inflight"
+	rm -f "${dir}/pos.step" "${dir}/pos.q" "${dir}/stop" "${dir}/diverged" "${dir}/diverged.detail"
 	MCP_MRTR_OUTCOME="run" MCP_MRTR_ATTEMPT="${attempt}"
 	return 0
+}
+
+# shellcheck disable=SC2034
+mcp_mrtr_open_expired() {
+	MCP_MRTR_OUTCOME="error"
+	MCP_MRTR_ERROR_TYPE="request_expired"
+	MCP_MRTR_ERROR_MESSAGE="This request expired or is unknown to this server: run the tool again"
 }
 
 # The input_required result for the questions still open in DIR.

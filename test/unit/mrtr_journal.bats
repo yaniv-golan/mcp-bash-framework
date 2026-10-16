@@ -20,16 +20,14 @@ setup() {
 	# shellcheck source=lib/ids.sh
 	# shellcheck disable=SC1091
 	. "${MCPBASH_HOME}/lib/ids.sh"
+	# shellcheck source=lib/lock.sh
+	# shellcheck disable=SC1091
+	. "${MCPBASH_HOME}/lib/lock.sh"
 	# shellcheck source=lib/mrtr.sh
 	# shellcheck disable=SC1091
 	. "${MCPBASH_HOME}/lib/mrtr.sh"
 	MCPBASH_STATE_DIR="${BATS_TEST_TMPDIR}/state"
 	mkdir -p "${MCPBASH_STATE_DIR}"
-	SLEEPER=""
-}
-
-teardown() {
-	[ -z "${SLEEPER}" ] || kill "${SLEEPER}" 2>/dev/null || true
 }
 
 # A first call of tool t, then the question it asked (q.1).
@@ -40,8 +38,8 @@ first_call() {
 	cp "${MCP_MRTR_DIR}/q.1.req" "${MCP_MRTR_DIR}/q.1.sig"
 	printf '3' >"${MCP_MRTR_DIR}/pos.step"
 	printf 'input_required' >"${MCP_MRTR_DIR}/stop"
-	# The run ended (the server clears this when it answers).
-	rm -f "${MCP_MRTR_DIR}/inflight"
+	# The run ended: the server releases the journal when it answers.
+	mcp_mrtr_release "${MCP_MRTR_DIR}"
 	TICKET="${MCP_MRTR_TICKET}"
 	DIR="${MCP_MRTR_DIR}"
 }
@@ -73,6 +71,11 @@ first_call() {
 	assert_equal "${a}" "${b}"
 	[ "${a}" != "${c}" ]
 	assert_equal "$(mcp_mrtr_args_digest '')" "$(mcp_mrtr_args_digest '{}')"
+}
+
+@test "mrtr journal: the arguments digest doesn't depend on how a number is written" {
+	assert_equal "$(mcp_mrtr_args_digest '{"n":1.0,"m":[1e2]}')" "$(mcp_mrtr_args_digest '{"n":1,"m":[100]}')"
+	[ "$(mcp_mrtr_args_digest '{"n":1.5}')" != "$(mcp_mrtr_args_digest '{"n":1}')" ]
 }
 
 @test "mrtr journal: a first call gets a fresh journal in the state dir" {
@@ -149,14 +152,82 @@ first_call() {
 		"[\"input_required\",\"${TICKET}\",[\"q1\"],\"elicitation/create\",\"Go?\"]"
 }
 
-@test "mrtr journal: a retry while the first run is still alive asks again rather than racing it" {
+@test "mrtr journal: a call holds its journal while it runs; release frees it" {
+	mcp_mrtr_open t '{}' "" "" 1 1
+	[ -d "${MCP_MRTR_DIR}/run" ]
+	mcp_mrtr_release "${MCP_MRTR_DIR}"
+	[ ! -e "${MCP_MRTR_DIR}/run" ]
+}
+
+@test "mrtr journal: of two retries with one ticket, only the first runs" {
 	first_call
-	sleep 30 &
-	SLEEPER=$!
-	printf '%s' "${SLEEPER}" >"${DIR}/inflight"
+	local answer='{"q1":{"action":"accept","content":{"confirmed":true}}}'
+	mcp_mrtr_open t '{"a":{"x":1,"y":2},"b":1}' "${TICKET}" "${answer}" 1 1
+	assert_equal "${MCP_MRTR_OUTCOME}" "run"
+	MCPBASH_MRTR_INFLIGHT_WAIT_SECS=1 mcp_mrtr_open t '{"a":{"x":1,"y":2},"b":1}' "${TICKET}" "${answer}" 1 1
+	assert_equal "${MCP_MRTR_OUTCOME}" "error"
+	assert_equal "${MCP_MRTR_ERROR_TYPE}" "request_in_progress"
+	assert_equal "$(cat "${DIR}/attempt")" "2"
+}
+
+@test "mrtr journal: a retry that waits on a run with open questions is asked them again" {
+	first_call
+	mcp_mrtr_claim "${DIR}"
 	MCPBASH_MRTR_INFLIGHT_WAIT_SECS=1 mcp_mrtr_open t '{"a":{"x":1,"y":2},"b":1}' "${TICKET}" '{"q1":{"action":"accept","content":{"confirmed":true}}}' 1 1
 	assert_equal "${MCP_MRTR_OUTCOME}" "input_required"
 	[ ! -e "${DIR}/q.1.ans" ]
+}
+
+@test "mrtr journal: a journal removed while a retry waits is expired, never an empty question list" {
+	first_call
+	mcp_mrtr_claim "${DIR}"
+	(
+		sleep 0.3
+		rm -rf "${DIR:?}"
+	) &
+	MCPBASH_MRTR_INFLIGHT_WAIT_SECS=3 mcp_mrtr_open t '{"a":{"x":1,"y":2},"b":1}' "${TICKET}" '{"q1":{"action":"accept","content":{"confirmed":true}}}' 1 1
+	wait
+	assert_equal "${MCP_MRTR_OUTCOME}" "error"
+	assert_equal "${MCP_MRTR_ERROR_TYPE}" "request_expired"
+}
+
+@test "mrtr journal: the sweep keeps a journal while its run is alive, and counts the TTL from the last round" {
+	first_call
+	mcp_mrtr_claim "${DIR}"
+	printf '%s' "$(($(date +%s) - 1000))" >"${DIR}/created"
+	MCPBASH_MRTR_TICKET_TTL_SECS=900 mcp_mrtr_sweep
+	[ -d "${DIR}" ]
+	# Released after asking again: a new round starts now.
+	mcp_mrtr_release "${DIR}"
+	MCPBASH_MRTR_TICKET_TTL_SECS=900 mcp_mrtr_sweep
+	[ -d "${DIR}" ]
+	printf '%s' "$(($(date +%s) - 1000))" >"${DIR}/created"
+	MCPBASH_MRTR_TICKET_TTL_SECS=900 mcp_mrtr_sweep
+	[ ! -d "${DIR}" ]
+}
+
+@test "mrtr journal: a claim left by a process that ended doesn't keep its journal past the TTL" {
+	(
+		mcp_mrtr_open t '{}' "" "" 1 1
+		printf '%s' "${MCP_MRTR_DIR}" >"${BATS_TEST_TMPDIR}/dir"
+	)
+	local d
+	d="$(cat "${BATS_TEST_TMPDIR}/dir")"
+	[ -d "${d}/run" ]
+	printf '%s' "$(($(date +%s) - 1000))" >"${d}/created"
+	MCPBASH_MRTR_TICKET_TTL_SECS=900 mcp_mrtr_sweep
+	[ ! -d "${d}" ]
+}
+
+@test "mrtr journal: journal files are private whatever the umask" {
+	umask 022
+	first_call
+	mcp_mrtr_open t '{"a":{"x":1,"y":2},"b":1}' "${TICKET}" '{"q1":{"action":"accept","content":{"confirmed":true}}}' 1 1
+	local f
+	for f in name digest created attempt modes q.1.ans; do
+		run ls -l "${DIR}/${f}"
+		assert_output --regexp '^-rw-------'
+	done
 }
 
 @test "mrtr journal: after a run, the stop marker says how it ended" {

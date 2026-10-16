@@ -829,7 +829,21 @@ mcp_require_path() {
 # is read from it. Files: pos.step and pos.q (positions in this run, reset by
 # the server), step.N.{sig,out,err,rc}, q.N.{sig,req,ans}, modes ("F U": the
 # client can answer form / URL questions), and stop ("input_required" or
-# "diverged", which the server acts on; diverged says why).
+# "diverged", which the server acts on; diverged says where for the client,
+# diverged.detail what changed). Files are 0600. Steps and questions are
+# numbered in the order they run, so they must run one after another, not
+# in parallel (mcp_once a & mcp_once b & wait can number both 1).
+
+# 0 on a modern call with its journal, 1 when there is none (not a modern
+# call). A journal that is gone ends the tool: never a plain run, which could
+# repeat a side effect, or the legacy question path.
+__mcp_mrtr_active() {
+	[ -n "${MCP_MRTR_JOURNAL:-}" ] || return 1
+	if [ -d "${MCP_MRTR_JOURNAL}" ]; then
+		return 0
+	fi
+	__mcp_sdk_end_with_error request_expired "This call's journal is gone: run the tool again"
+}
 
 # Next position of KIND (step or q) in this run.
 __mcp_mrtr_next() {
@@ -837,13 +851,14 @@ __mcp_mrtr_next() {
 	[ -f "${__mcp_el_file}" ] && __mcp_el_n="$(cat "${__mcp_el_file}" 2>/dev/null || true)"
 	case "${__mcp_el_n}" in '' | *[!0-9]*) __mcp_el_n=0 ;; esac
 	__mcp_el_n=$((__mcp_el_n + 1))
-	printf '%s' "${__mcp_el_n}" >"${__mcp_el_file}.tmp.$$" && mv -f "${__mcp_el_file}.tmp.$$" "${__mcp_el_file}"
+	__mcp_mrtr_write "${__mcp_el_file}" "${__mcp_el_n}"
 	printf '%s' "${__mcp_el_n}"
 }
 
-# Write FILE atomically (the server may read it at any time).
+# Write FILE atomically (the server may read it at any time), 0600 whatever
+# the tool's umask.
 __mcp_mrtr_write() {
-	printf '%s' "$2" >"$1.tmp.$$" && mv -f "$1.tmp.$$" "$1"
+	(umask 077 && printf '%s' "$2" >"$1.tmp.$$") && mv -f "$1.tmp.$$" "$1"
 }
 
 # Wait for the server to stop the tool. Never returns: inside $(...) a
@@ -855,9 +870,12 @@ __mcp_mrtr_block() {
 }
 
 # The run took a different path than the journal: stop it (the call ends in
-# an error result saying so). Never returns.
+# an error result saying so). WHERE goes to the client; DETAIL (command lines
+# and questions, which can hold secrets) stays in the journal. Never returns.
+# Usage: __mcp_mrtr_diverged WHERE DETAIL
 __mcp_mrtr_diverged() {
-	__mcp_mrtr_write "${MCP_MRTR_JOURNAL}/diverged" "$1"
+	__mcp_mrtr_write "${MCP_MRTR_JOURNAL}/diverged.detail" "$2"
+	__mcp_mrtr_write "${MCP_MRTR_JOURNAL}/diverged" "The tool took another path than the run before: $1 differs"
 	__mcp_mrtr_write "${MCP_MRTR_JOURNAL}/stop" "diverged"
 	__mcp_mrtr_block
 }
@@ -886,7 +904,7 @@ mcp_once() {
 		__mcp_sdk_warn "mcp_once: no command given"
 		return 2
 	fi
-	if [ -z "${MCP_MRTR_JOURNAL:-}" ] || [ ! -d "${MCP_MRTR_JOURNAL}" ]; then
+	if ! __mcp_mrtr_active; then
 		("$@")
 		return
 	fi
@@ -902,13 +920,15 @@ mcp_once() {
 	if [ -f "${__mcp_once_base}.rc" ]; then
 		__mcp_once_old="$(cat "${__mcp_once_base}.sig" 2>/dev/null || true)"
 		if [ "${__mcp_once_old}" != "${__mcp_once_sig}" ]; then
-			__mcp_mrtr_diverged "the tool took a different path on resume: step ${__mcp_once_n} was \`${__mcp_once_old}\`, now \`${__mcp_once_sig}\`"
+			__mcp_mrtr_diverged "step ${__mcp_once_n}" "step ${__mcp_once_n} was \`${__mcp_once_old}\`, now \`${__mcp_once_sig}\`"
 		fi
 		cat "${__mcp_once_base}.out"
 		cat "${__mcp_once_base}.err" >&2
 		__mcp_once_rc="$(cat "${__mcp_once_base}.rc" 2>/dev/null || printf 1)"
 		return "${__mcp_once_rc}"
 	fi
+	# Created 0600 first; the step itself runs with the tool's umask.
+	(umask 077 && : >"${__mcp_once_base}.out.tmp" && : >"${__mcp_once_base}.err.tmp")
 	("$@") >"${__mcp_once_base}.out.tmp" 2>"${__mcp_once_base}.err.tmp" || __mcp_once_rc=$?
 	mv -f "${__mcp_once_base}.out.tmp" "${__mcp_once_base}.out"
 	mv -f "${__mcp_once_base}.err.tmp" "${__mcp_once_base}.err"
@@ -926,13 +946,8 @@ mcp_once() {
 __mcp_mrtr_question() {
 	local __mcp_el_caller="$1" __mcp_el_mode="$2" __mcp_el_message="$3" __mcp_el_what="$4"
 	local __mcp_el_jq="${MCPBASH_JSON_TOOL_BIN:-}" __mcp_el_modes="" __mcp_el_ok=""
-	__mcp_el_modes="$(cat "${MCP_MRTR_JOURNAL}/modes" 2>/dev/null || true)"
-	case "${__mcp_el_mode}" in
-	url) [ "${__mcp_el_modes##* }" = "1" ] && __mcp_el_ok=1 ;;
-	*) [ "${__mcp_el_modes%% *}" = "1" ] && __mcp_el_ok=1 ;;
-	esac
-	if [ -z "${__mcp_el_ok}" ] || [ -z "${__mcp_el_jq}" ]; then
-		__mcp_sdk_warn "${__mcp_el_caller}: the client can't answer a ${__mcp_el_mode} question"
+	if [ -z "${__mcp_el_jq}" ]; then
+		__mcp_sdk_warn "${__mcp_el_caller}: no JSON tool to ask with"
 		printf '{"action":"unavailable","content":null}'
 		return 1
 	fi
@@ -952,7 +967,7 @@ __mcp_mrtr_question() {
 	if [ -f "${__mcp_el_base}.sig" ]; then
 		__mcp_el_old="$(cat "${__mcp_el_base}.sig" 2>/dev/null || true)"
 		if [ "${__mcp_el_old}" != "${__mcp_el_sig}" ]; then
-			__mcp_mrtr_diverged "the tool took a different path on resume: question ${__mcp_el_n} was ${__mcp_el_old}, now ${__mcp_el_sig}"
+			__mcp_mrtr_diverged "question ${__mcp_el_n}" "question ${__mcp_el_n} was ${__mcp_el_old}, now ${__mcp_el_sig}"
 		fi
 	fi
 	if [ -f "${__mcp_el_base}.ans" ]; then
@@ -960,6 +975,18 @@ __mcp_mrtr_question() {
 		printf '%s' "${__mcp_el_ans}"
 		case "${__mcp_el_ans}" in '{"action":"unavailable"'*) return 1 ;; esac
 		return 0
+	fi
+	# Not answered yet: ask, if this client can answer this mode. (An answer
+	# already in the journal is used above whatever this retry's client says.)
+	__mcp_el_modes="$(cat "${MCP_MRTR_JOURNAL}/modes" 2>/dev/null || true)"
+	case "${__mcp_el_mode}" in
+	url) [ "${__mcp_el_modes##* }" = "1" ] && __mcp_el_ok=1 ;;
+	*) [ "${__mcp_el_modes%% *}" = "1" ] && __mcp_el_ok=1 ;;
+	esac
+	if [ -z "${__mcp_el_ok}" ]; then
+		__mcp_sdk_warn "${__mcp_el_caller}: the client can't answer a ${__mcp_el_mode} question"
+		printf '{"action":"unavailable","content":null}'
+		return 1
 	fi
 	__mcp_mrtr_write "${__mcp_el_base}.sig" "${__mcp_el_sig}"
 	if [ ! -f "${__mcp_el_base}.req" ]; then
@@ -997,8 +1024,10 @@ mcp_elicit() {
 		return 1
 	fi
 
-	# A modern call: the question goes through the journal.
-	if [ -n "${MCP_MRTR_JOURNAL:-}" ] && [ -d "${MCP_MRTR_JOURNAL}" ]; then
+	# A modern call: the question goes through the journal. TIMEOUT doesn't
+	# apply there: the call ends at the question and the client takes as long
+	# as it takes (up to MCPBASH_MRTR_TICKET_TTL_SECS).
+	if __mcp_mrtr_active; then
 		__mcp_mrtr_question mcp_elicit "${__mcp_el_mode}" "${__mcp_el_message}" "${__mcp_el_schema_json}"
 		return
 	fi
@@ -1142,6 +1171,9 @@ __mcp_elicit_parse_opts() {
 # (.content.<field>, one of ALLOWED_JSON), multi (.content.choices, each one
 # of ALLOWED_JSON), confirm (.content.confirmed).
 __mcp_elicit_question() {
+	# Called directly (mcp_elicit runs in $(...) below): a modern call whose
+	# journal is gone ends here, not just in that subshell.
+	__mcp_mrtr_active || :
 	local __mcp_el_caller="$1" __mcp_el_kind="$2" __mcp_el_message="$3" __mcp_el_schema="$4"
 	local __mcp_el_allowed="${5:-[]}"
 	local __mcp_el_var="${_MCP_ELICIT_VAR}" __mcp_el_arg="${_MCP_ELICIT_ARG}"
@@ -1202,6 +1234,7 @@ __mcp_elicit_question() {
 # 1 otherwise (MCP_ELICIT_ACTION says why). For the client's raw JSON, use
 # mcp_elicit_url_raw.
 mcp_elicit_url() {
+	__mcp_mrtr_active || :
 	local __mcp_el_resp="" __mcp_el_action="" __mcp_el_jq="${MCPBASH_JSON_TOOL_BIN:-}"
 	MCP_ELICIT_ACTION=""
 	__mcp_el_resp="$(mcp_elicit_url_raw "$@")" || true
@@ -1229,7 +1262,7 @@ mcp_elicit_url_raw() {
 		return 1
 	fi
 
-	if [ -n "${MCP_MRTR_JOURNAL:-}" ] && [ -d "${MCP_MRTR_JOURNAL}" ]; then
+	if __mcp_mrtr_active; then
 		__mcp_mrtr_question mcp_elicit_url url "${__mcp_el_message}" "${__mcp_el_url}"
 		return
 	fi
