@@ -86,6 +86,12 @@ add_tool vanish 60 'set +e
 v="$(rm -rf "${MCP_MRTR_JOURNAL}"; mcp_once bump gone_step)"
 bump after_gone >/dev/null
 echo "v=${v}"'
+# Its journal goes away and it finishes without the SDK noticing: the server
+# alone must refuse its output.
+# shellcheck disable=SC2016
+add_tool vanish_quiet 60 'rm -rf "${MCP_MRTR_JOURNAL}"
+bump quiet_done >/dev/null
+echo "finished"'
 # A step whose arguments change between runs (here a "token").
 # shellcheck disable=SC2016
 add_tool secret 60 'mcp_once printf "%s" "token-${MCP_MRTR_ATTEMPT}" >/dev/null
@@ -299,6 +305,10 @@ wait_for 37
 assert_eq "request_expired" "$(field '.result._meta["mcpbash/error"].type')" "a journal gone during the run: request_expired, not the tool's output"
 assert_eq "0" "$(count gone_step)" "no step runs without its journal"
 assert_eq "0" "$(count after_gone)" "the tool stops, even inside \$(...) without set -e"
+
+send "$(req 38 '{"name":"vanish_quiet","arguments":{}}')"
+wait_for 38
+assert_eq "request_expired" "$(field '.result._meta["mcpbash/error"].type')" "the server refuses output from a run whose journal went away"
 
 # --- A cancelled call: no response, and its journal is removed -------------
 journals() { find "${TEST_TMPDIR}/tmproot" -path '*/journal/*' -maxdepth 4 -type d ! -name run 2>/dev/null | wc -l | tr -d ' '; }

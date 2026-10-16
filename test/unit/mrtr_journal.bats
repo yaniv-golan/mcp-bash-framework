@@ -283,3 +283,71 @@ first_call() {
 	assert_equal "${MCP_MRTR_ERROR_TYPE}" "request_expired"
 	[ ! -e "${DIR}" ]
 }
+
+@test "mrtr journal: a claim released just as a waiting retry looks at it is not taken for dead" {
+	first_call
+	mcp_mrtr_claim "${DIR}"
+	# The holder releases right after the waiting retry saw run/ (the 1.x
+	# check then asked mcp_mrtr_claim_live, which says no for a missing run/).
+	# (Its first call is the sweep's, which sees the claim held.)
+	CALLS=0
+	mcp_mrtr_claim_live() {
+		CALLS=$((CALLS + 1))
+		[ "${CALLS}" -ge 2 ] || return 0
+		mcp_mrtr_release "$1"
+		return 1
+	}
+	# The holder's release, for a check that doesn't go through the stub.
+	(
+		sleep 0.5
+		mcp_mrtr_release "${DIR}"
+	) &
+	MCPBASH_MRTR_INFLIGHT_WAIT_SECS=3 mcp_mrtr_open t '{"a":{"x":1,"y":2},"b":1}' "${TICKET}" '{"q1":{"action":"accept","content":{"confirmed":true}}}' 1 1
+	wait
+	unset -f mcp_mrtr_claim_live
+	assert_equal "${MCP_MRTR_OUTCOME}" "run"
+	[ -d "${DIR}" ]
+}
+
+@test "mrtr journal: a claim whose pid now belongs to another process is dead" {
+	first_call
+	mcp_mrtr_claim "${DIR}"
+	# This process is alive, but it isn't the one that took the claim.
+	printf 'not-this-process' >"${DIR}/run/start"
+	MCPBASH_MRTR_INFLIGHT_WAIT_SECS=1 mcp_mrtr_open t '{"a":{"x":1,"y":2},"b":1}' "${TICKET}" '{"q1":{"action":"accept","content":{"confirmed":true}}}' 1 1
+	assert_equal "${MCP_MRTR_OUTCOME}" "error"
+	assert_equal "${MCP_MRTR_ERROR_TYPE}" "request_expired"
+}
+
+@test "mrtr journal: a journal removed just before the wait ends is expired, not in progress" {
+	first_call
+	mcp_mrtr_claim "${DIR}"
+	# The journal goes as the wait ends. (The first call is the sweep's.)
+	CALLS=0
+	mcp_mrtr_claim_dead() {
+		CALLS=$((CALLS + 1))
+		[ "${CALLS}" -ge 2 ] || return 1
+		command rm -rf "$1"
+		return 1
+	}
+	MCPBASH_MRTR_INFLIGHT_WAIT_SECS=0 mcp_mrtr_open t '{"a":{"x":1,"y":2},"b":1}' "${TICKET}" '{"q1":{"action":"accept","content":{"confirmed":true}}}' 1 1
+	unset -f mcp_mrtr_claim_dead
+	assert_equal "${MCP_MRTR_OUTCOME}" "error"
+	assert_equal "${MCP_MRTR_ERROR_TYPE}" "request_expired"
+}
+
+@test "mrtr journal: when the journal can't be renamed aside, closing still leaves nothing to claim" {
+	first_call
+	mv() { return 1; }
+	mcp_mrtr_close "${DIR}"
+	unset -f mv
+	[ ! -e "${DIR}" ]
+	mcp_mrtr_open t '{"a":{"x":1,"y":2},"b":1}' "${TICKET}" '{"q1":{"action":"accept","content":{"confirmed":true}}}' 1 1
+	assert_equal "${MCP_MRTR_ERROR_TYPE}" "request_expired"
+}
+
+@test "mrtr journal: the sweep removes journals left half-closed" {
+	mkdir -p "$(mcp_mrtr_journal_root)/.closed.0123456789abcdef0123456789abcdef.1/run"
+	mcp_mrtr_sweep
+	[ -z "$(ls -A "$(mcp_mrtr_journal_root)")" ]
+}

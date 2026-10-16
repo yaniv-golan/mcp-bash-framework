@@ -66,23 +66,44 @@ mcp_mrtr_args_digest() {
 
 # Claim DIR for a run: fails when another run holds it. The pid is that of the
 # calling process (the worker), not $$, which is the server in every subshell
-# on bash 3.2.
+# on bash 3.2; run/start is its start time, so a later process given the same
+# pid isn't taken for it. pid is written last: a claim without it is still
+# being taken.
 mcp_mrtr_claim() {
 	local dir="$1"
 	mkdir "${dir}/run" 2>/dev/null || return 1
 	mcp_lock_self_pid
+	if declare -F mcp_runtime_process_identity >/dev/null 2>&1; then
+		mcp_runtime_process_identity "${_MCP_LOCK_SELF_PID}" >"${dir}/run/start" 2>/dev/null || true
+	fi
 	printf '%s' "${_MCP_LOCK_SELF_PID}" >"${dir}/run/pid" 2>/dev/null || true
 	return 0
 }
 
-# Is DIR held by a run that is still alive? A claim without its pid yet is
-# being taken, so it counts as held.
-mcp_mrtr_claim_live() {
-	local dir="$1" pid
-	[ -d "${dir}/run" ] || return 1
+# Is the claim on DIR held by a process that has ended? Only from a pid that
+# was read: a claim being released (run/ gone) or still being taken (no pid
+# yet) is not dead.
+mcp_mrtr_claim_dead() {
+	local dir="$1" pid start now_start
 	pid="$(cat "${dir}/run/pid" 2>/dev/null || true)"
-	[ -n "${pid}" ] || return 0
-	kill -0 "${pid}" 2>/dev/null
+	case "${pid}" in '' | *[!0-9]*) return 1 ;; esac
+	if kill -0 "${pid}" 2>/dev/null; then
+		start="$(cat "${dir}/run/start" 2>/dev/null || true)"
+		[ -n "${start}" ] || return 1
+		declare -F mcp_runtime_process_identity >/dev/null 2>&1 || return 1
+		now_start="$(mcp_runtime_process_identity "${pid}" 2>/dev/null || true)"
+		# Alive, and the same process (or no way to tell): held.
+		if [ -z "${now_start}" ] || [ "${now_start}" = "${start}" ]; then
+			return 1
+		fi
+	fi
+	# Still the claim we read (not released and taken again meanwhile).
+	[ "$(cat "${dir}/run/pid" 2>/dev/null || true)" = "${pid}" ]
+}
+
+# Is DIR held by a run that is still alive?
+mcp_mrtr_claim_live() {
+	[ -d "$1/run" ] && ! mcp_mrtr_claim_dead "$1"
 }
 
 # The run on DIR stopped at a question: free the journal for the retry, and
@@ -91,7 +112,7 @@ mcp_mrtr_release() {
 	local dir="$1"
 	[ -d "${dir}" ] || return 0
 	(umask 077 && date +%s >"${dir}/created.tmp" && mv -f "${dir}/created.tmp" "${dir}/created") 2>/dev/null || true
-	rm -f "${dir}/run/pid"
+	rm -f "${dir}/run/pid" "${dir}/run/start"
 	rmdir "${dir}/run" 2>/dev/null || true
 }
 
@@ -113,6 +134,11 @@ mcp_mrtr_sweep() {
 	[ -d "${root}" ] || return 0
 	now="$(date +%s)"
 	ttl="$(mcp_mrtr_ttl_secs)"
+	# Left by a close whose rm didn't finish (a server killed then).
+	for dir in "${root}"/.closed.*; do
+		[ -d "${dir}" ] || continue
+		rm -rf "${dir:?}" 2>/dev/null || true
+	done
 	for dir in "${root}"/*; do
 		[ -d "${dir}" ] || continue
 		if mcp_mrtr_claim_live "${dir}"; then
@@ -136,8 +162,15 @@ mcp_mrtr_close() {
 	root="$(mcp_mrtr_journal_root)"
 	case "${dir}" in "${root}"/*) ;; *) return 0 ;; esac
 	dead="${root}/.closed.${dir##*/}.${RANDOM}${RANDOM}"
-	mv -f "${dir}" "${dead}" 2>/dev/null || return 0
-	rm -rf "${dead:?}" 2>/dev/null || true
+	if mv -f "${dir}" "${dead}" 2>/dev/null; then
+		rm -rf "${dead:?}" 2>/dev/null || true
+		return 0
+	fi
+	# Can't rename (Windows, with a file open inside): remove what a claim
+	# checks first, so nothing can use what is left, then the rest.
+	[ -d "${dir}" ] || return 0
+	rm -f "${dir}/created" "${dir}/name" 2>/dev/null || true
+	rm -rf "${dir:?}" 2>/dev/null || true
 }
 
 # An answer as the tool sees it: the legacy rule (lib/rpc.sh), so a tool
@@ -239,7 +272,7 @@ mcp_mrtr_open_journal() {
 		# Held by a process that has ended (killed outside a cancel): no run
 		# is coming back to it. Expired, never taken over: the run may have
 		# stopped in the middle of a step.
-		if [ -d "${dir}/run" ] && ! mcp_mrtr_claim_live "${dir}"; then
+		if mcp_mrtr_claim_dead "${dir}"; then
 			mcp_mrtr_close "${dir}"
 			mcp_mrtr_open_expired
 			return 0
