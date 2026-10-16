@@ -28,7 +28,9 @@ guessing — it is short and current:
    one). Commands run inside the project find it by walking up to `server.d/server.meta.json`.
 3. **Scaffold, don't hand-write.** `mcp-bash scaffold tool|resource|prompt|completion <name>`.
    The scaffold gets the SDK sourcing, metadata shape and executable bit right. Then edit
-   `tools/<name>/tool.sh` and `tool.meta.json` (`inputSchema` is the argument contract).
+   `tools/<name>/tool.sh` and `tool.meta.json` (`inputSchema` is the argument contract). Set
+   its `annotations` to match the tool: mark `readOnlyHint: true` only if it changes nothing,
+   since some clients run a read-only tool without asking the user.
 4. **Validate.** `mcp-bash validate` (add `--fix` for permissions). Fix every error; read the
    warnings, they usually name a real problem.
 5. **Run one tool without a client.**

@@ -24,6 +24,15 @@ setup() {
 	assert_success
 }
 
+@test "scaffold: a new tool claims nothing about being safe" {
+	# The scaffold can't know what the tool will do, so its hints are the
+	# spec's cautious defaults: a client may skip asking for a read-only tool.
+	run "${MCPBASH_HOME}/bin/mcp-bash" scaffold tool hello
+	assert_success
+	run jq -c '.annotations | [.readOnlyHint, .destructiveHint, .idempotentHint, .openWorldHint]' "${PROJECT_ROOT}/tools/hello/tool.meta.json"
+	assert_output '[false,true,false,true]'
+}
+
 @test "scaffold: creates prompt files" {
 	run "${MCPBASH_HOME}/bin/mcp-bash" scaffold prompt welcome
 	assert_success

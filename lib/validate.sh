@@ -185,6 +185,15 @@ mcp_validate_tools() {
 							printf '⚠ %s - outputSchema type is %s: only 2026-07-28 clients get structured output (older ones get text only)\n' "${rel_meta}" "${out_type}"
 							warnings=$((warnings + 1))
 						fi
+						# The annotations the scaffold wrote before 2.0, whatever the
+						# tool did. Some clients call a read-only tool without asking
+						# the user. A note, not a warning: a tool that really is
+						# read-only has the same set, and --strict must not fail it.
+						local old_scaffold
+						old_scaffold="$("${MCPBASH_JSON_TOOL_BIN}" -r 'if (.annotations | type) == "object" and ([.annotations.readOnlyHint, .annotations.destructiveHint, .annotations.idempotentHint, .annotations.openWorldHint] == [true, false, true, false]) then "yes" else "" end' "${meta_path}" 2>/dev/null || printf '')"
+						if [ -n "${old_scaffold}" ]; then
+							printf 'ℹ %s - annotations are the pre-2.0 scaffold defaults (read-only): some clients run a read-only tool without asking the user. If this tool changes anything, set readOnlyHint to false\n' "${rel_meta}"
+						fi
 						# Validate icons format
 						local icons_result
 						icons_result="$(mcp_validate_icons "${MCPBASH_JSON_TOOL_BIN}" "${meta_path}")"
