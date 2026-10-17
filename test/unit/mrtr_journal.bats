@@ -351,3 +351,64 @@ first_call() {
 	mcp_mrtr_sweep
 	[ -z "$(ls -A "$(mcp_mrtr_journal_root)")" ]
 }
+
+@test "mrtr journal: a claim with run/ but no pid yet is not dead" {
+	first_call
+	# run/ exists but the claim is still being taken: no pid file yet.
+	mkdir "${DIR}/run"
+	run mcp_mrtr_claim_dead "${DIR}"
+	assert_failure
+}
+
+@test "mrtr journal: a claim released and taken again while checked is not dead" {
+	first_call
+	mcp_mrtr_claim "${DIR}"
+	# A pid of a process that has already exited.
+	( : ) &
+	dead_pid=$!
+	wait "${dead_pid}"
+	printf '%s' "${dead_pid}" >"${DIR}/run/pid"
+	kill() {
+		if [ "$1" = "-0" ] && [ "$2" = "${dead_pid}" ]; then
+			# The holder released, and another took the claim meanwhile.
+			printf '%s' "$$" >"${DIR}/run/pid"
+			return 1
+		fi
+		command kill "$@"
+	}
+	run mcp_mrtr_claim_dead "${DIR}"
+	unset -f kill
+	assert_failure
+}
+
+@test "mrtr journal: a close that can't rename removes created and name before the rest" {
+	first_call
+	mv() { return 1; }
+	rm() {
+		printf '%s\n' "$*" >>"${BATS_TEST_TMPDIR}/rm.log"
+		command rm "$@"
+	}
+	mcp_mrtr_close "${DIR}"
+	unset -f mv
+	unset -f rm
+	[ ! -e "${DIR}" ]
+	local first="" later="" line flags
+	while IFS= read -r line; do
+		case "${line}" in
+		*"${DIR}"*) ;;
+		*) continue ;;
+		esac
+		if [ -z "${first}" ]; then
+			first="${line}"
+		else
+			later="${line}"
+			break
+		fi
+	done <"${BATS_TEST_TMPDIR}/rm.log"
+	[ -n "${first}" ]
+	[[ "${first}" == *"${DIR}/created"* ]]
+	[[ "${first}" == *"${DIR}/name"* ]]
+	flags="${first%% *}"
+	[[ "${flags}" != *r* ]]
+	[ "${later}" = "-rf ${DIR}" ]
+}
